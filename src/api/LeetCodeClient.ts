@@ -1,7 +1,57 @@
-// Plan 01 Wave-1 stub. Plan 02 (`api/LeetCodeClient`) replaces this file with
-// the real @leetnotion/leetcode-api wrapper. Keeping the class export name
-// lets Plan 01's `src/main.ts` field-stub (`client!: LeetCodeClient`)
-// type-check across Wave 1.
+// src/api/LeetCodeClient.ts
+// Thin wrapper over @leetnotion/leetcode-api. All network calls flow through
+// `installRequestUrlFetcher()`'s replaced fetcher -> throttle -> requestUrl.
+//
+// OWNERSHIP: `isSessionExpired` is defined here and ONLY here (AUTH-04). Plan 03
+// (AuthService) and Plan 06 (ProblemBrowserView) both call it from error paths.
+// Neither redefines it.
+import { LeetCode, Credential } from '@leetnotion/leetcode-api';
+import type { SettingsStore } from '../settings/SettingsStore';
+
 export class LeetCodeClient {
-  readonly __brand!: 'LeetCodeClient';
+  public lc!: InstanceType<typeof LeetCode>;
+  private settings: SettingsStore;
+
+  constructor(settings: SettingsStore) {
+    this.settings = settings;
+    this.rebuildClientSync();
+  }
+
+  private rebuildClientSync(): void {
+    const cookies = this.settings.getAuthCookies();
+    if (!cookies) {
+      this.lc = new LeetCode();
+      return;
+    }
+    const cred = new Credential();
+    this.lc = new LeetCode(cred);
+    void cred.init(cookies.LEETCODE_SESSION);
+  }
+
+  /** Rebuild the LeetCode client with current cookies and await Credential bootstrap. */
+  async reauthenticate(): Promise<void> {
+    const cookies = this.settings.getAuthCookies();
+    if (!cookies) {
+      this.lc = new LeetCode();
+      return;
+    }
+    const cred = new Credential();
+    await cred.init(cookies.LEETCODE_SESSION);
+    this.lc = new LeetCode(cred);
+  }
+}
+
+/**
+ * Detect LC session expiry from a GraphQL response. (AUTH-04 - Plan 02 OWNS this helper.)
+ * Primary signal (most reliable): `data === null`.
+ * Secondary signal: error-message pattern.
+ */
+export function isSessionExpired(resp: unknown): boolean {
+  if (!resp || typeof resp !== 'object') return false;
+  const r = resp as { data?: unknown; errors?: Array<{ message?: string }> };
+  if (r.data === null) return true;
+  if (!Array.isArray(r.errors)) return false;
+  return r.errors.some((e) =>
+    /logged in|authentication|CSRF|unauthori[sz]ed/i.test(e?.message ?? '')
+  );
 }

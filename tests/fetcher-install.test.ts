@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RateLimitError } from '../src/shared/errors';
 
-// Mock obsidian.requestUrl — individual tests override with mockImplementationOnce.
-const mockRequestUrl = vi.fn(async () => ({
+// Mock obsidian.requestUrl — individual tests override with mockImplementation.
+// Typed as a generic record so later mocks can swap headers / body shape freely.
+interface MockRequestUrlResponse {
+  status: number;
+  headers: Record<string, string>;
+  text: string;
+  json: unknown;
+  arrayBuffer: ArrayBuffer;
+}
+const mockRequestUrl = vi.fn<(arg: unknown) => Promise<MockRequestUrlResponse>>(async () => ({
   status: 200,
   headers: { 'content-type': 'application/json' },
   text: '{"data":{"hello":"world"}}',
