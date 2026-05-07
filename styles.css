@@ -1,0 +1,62 @@
+/* All plugin styles are scoped under .leetcode-browser or .leetcode-settings. */
+/* Every color references an Obsidian CSS variable — no raw hex, no rgba literals. */
+.leetcode-browser { padding: 16px; }
+.leetcode-browser .lc-search {
+  margin-bottom: 8px;
+  font-size: var(--font-ui-small);
+}
+.leetcode-browser .lc-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  margin-right: 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.leetcode-browser .lc-chip.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.leetcode-browser .lc-row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 8px;
+  gap: 8px;
+  cursor: pointer;
+}
+.leetcode-browser .lc-row:hover {
+  background: var(--background-secondary);
+}
+.leetcode-browser .lc-row__id {
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: right;
+}
+.leetcode-browser .lc-diff--easy {
+  color: var(--color-green);
+  background: color-mix(in srgb, var(--color-green) 15%, transparent);
+}
+.leetcode-browser .lc-diff--medium {
+  color: var(--color-yellow);
+  background: color-mix(in srgb, var(--color-yellow) 15%, transparent);
+}
+.leetcode-browser .lc-diff--hard {
+  color: var(--color-red);
+  background: color-mix(in srgb, var(--color-red) 15%, transparent);
+}
+.leetcode-browser .lc-footer {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--background-modifier-border);
+}
+.leetcode-settings .lc-cookie-input input {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+}
