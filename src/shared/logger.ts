@@ -2,7 +2,12 @@
  * Logger that redacts any object key matching /session|csrf|cookie|token/i.
  * MUST be used for any contextual logging that might carry auth objects.
  * Direct `console.*` calls with auth values are forbidden (enforced by grep gate).
+ *
+ * Note: this file is the canonical logging wrapper — the obsidianmd/no-console
+ * rule is intentionally disabled here because the whole point of the module is
+ * to funnel console output through a redacting facade.
  */
+/* eslint-disable obsidianmd/rule-custom-message */
 const REDACT = /session|csrf|cookie|token/i;
 
 function redact(obj: unknown): unknown {
