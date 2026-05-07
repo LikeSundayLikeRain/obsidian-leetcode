@@ -1,3 +1,4 @@
+/* eslint-disable obsidianmd/prefer-active-window-timers -- tests run in Node; no activeWindow */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Throttle } from '../src/api/throttle';
 
@@ -44,7 +45,10 @@ describe('Throttle (BROWSE-05)', () => {
     let inFlight = 0;
     let peak = 0;
 
-    await Promise.all(
+    // Kick off all 10 tasks WITHOUT awaiting so we can advance fake timers
+    // between scheduling and settlement. Each task uses setTimeout to simulate
+    // work; fake timers require vi.advanceTimersByTimeAsync() to drain them.
+    const all = Promise.all(
       Array.from({ length: 10 }, async () => {
         await t.acquire();
         inFlight++;
@@ -54,7 +58,9 @@ describe('Throttle (BROWSE-05)', () => {
         t.release();
       })
     );
+    // Drain the 10 × 5ms setTimeouts. 100ms is safely over the sum.
     await vi.advanceTimersByTimeAsync(100);
+    await all;
     expect(peak).toBeLessThanOrEqual(2);
   });
 });
