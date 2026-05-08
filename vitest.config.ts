@@ -3,7 +3,11 @@ import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   test: {
-    environment: 'node',
+    // Phase 3 Plan 06: happy-dom provides the global `document` / `HTMLElement`
+    // that the verdict-modal renderer tests need. Happy-dom is a superset of
+    // Node's global surface for our purposes, so Node-environment tests from
+    // earlier phases continue to work unchanged.
+    environment: 'happy-dom',
     include: ['tests/**/*.test.ts'],
     exclude: ['node_modules', 'main.js', 'dist'],
     reporters: ['default'],
