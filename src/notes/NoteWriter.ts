@@ -245,6 +245,99 @@ export class NoteWriter {
       buildFrontmatterInput(entry, this.settings.getDefaultLanguage()),
     );
   }
+
+  /**
+   * GAP-11: explicit force-refresh of an existing problem note. Invoked by
+   * the "Refresh current problem" command; bypasses the 7-day TTL gate.
+   *
+   * Contrast with `backgroundRefresh` (D-11/D-12):
+   *   - backgroundRefresh: fires only when cache is stale, silent on failure.
+   *   - forceRefresh: user explicitly asked → surface failures via Notice so
+   *     they know the network hop failed (matches D-13 spirit — this IS an
+   *     explicit user action, just like new-note creation).
+   *
+   * Preserves all user content (D-08/D-10):
+   *   - `## Notes` body untouched (rewriteProblemSection only replaces
+   *     the `## Problem` region between consecutive H2 headings).
+   *   - Non-lc-* frontmatter keys untouched.
+   *   - aliases / tags union-merged by applyFrontmatter.
+   *   - lc-status is NEVER downgraded — Phase 4's 'accepted' value survives
+   *     a force-refresh because applyFrontmatter keeps existing non-empty
+   *     status values.
+   *
+   * D-22 compliance: body writes via vault.process; frontmatter via
+   * fileManager.processFrontMatter inside applyFrontmatter. No vault.modify.
+   *
+   * Error paths:
+   *   - No note exists for slug → Notice "No note for problem {slug}" and return.
+   *   - Session expired → standard LeetCode session-expired Notice.
+   *   - Generic network failure → Notice "Couldn't refresh {title}. Check your
+   *     connection." — re-uses the D-13 copy since this is an explicit user
+   *     action just like new-note creation.
+   *   - LC returns null detail → Notice "LeetCode problem not found: {slug}."
+   */
+  async forceRefresh(slug: string): Promise<void> {
+    const folder = this.settings.getProblemsFolder();
+    const cached = this.settings.getProblemDetail(slug);
+
+    // Locate the existing note by cached id + slug. If there's no cache, we
+    // can't compute the filename — ask the user to open the problem first.
+    const existingPath = cached ? buildNotePath(folder, cached.id, slug) : null;
+    const existingFile = existingPath
+      ? this.app.vault.getAbstractFileByPath(existingPath)
+      : null;
+
+    if (!existingFile || !isFileLike(existingFile)) {
+      new Notice(`No note for problem ${slug}.`, 4000);
+      return;
+    }
+
+    // Fetch fresh detail. Any error surfaces to the user — they explicitly
+    // asked for a refresh, so silent-failure (D-12) is the wrong posture.
+    let detail: NoteWriterDetail | null;
+    try {
+      detail = await this.client.getProblemDetail(slug);
+    } catch (err) {
+      const maybeResp = (typeof err === 'object' && err !== null)
+        ? (err as { response?: unknown }).response
+        : undefined;
+      if (isSessionExpired(err) || isSessionExpired(maybeResp)) {
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "LeetCode" is a proper-noun brand name
+        new Notice('LeetCode session expired. Log in again.', 8000);
+        return;
+      }
+      const displayTitle = cached?.title ?? slug;
+      new Notice(`Couldn't refresh ${displayTitle}. Check your connection.`, 4000);
+      return;
+    }
+
+    if (!detail || !detail.content) {
+      new Notice(`LeetCode problem not found: ${slug}.`, 4000);
+      return;
+    }
+
+    // Persist the fresh cache entry first — subsequent background-refresh
+    // invocations on this slug see the new fetchedAt timestamp and skip the
+    // network hop until the 7-day TTL elapses.
+    const entry = toDetailCacheEntry(detail);
+    await this.settings.setProblemDetail(slug, entry);
+
+    // Rewrite the plugin-owned `## Problem` region; everything else is
+    // preserved by rewriteProblemSection (pure string transform — D-08).
+    const freshMarkdown = htmlToMarkdown(entry.contentHtml);
+    await this.app.vault.process(
+      existingFile as unknown as TFile,
+      (current) => rewriteProblemSection(current, freshMarkdown),
+    );
+
+    // Union-merge frontmatter. D-04 status non-downgrade + D-10 user-key
+    // preservation happen inside applyFrontmatter's callback.
+    await applyFrontmatter(
+      this.app,
+      existingFile as unknown as TFile,
+      buildFrontmatterInput(entry, this.settings.getDefaultLanguage()),
+    );
+  }
 }
 
 /** Map LC's detail shape into the on-disk cache entry. */

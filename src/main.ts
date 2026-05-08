@@ -80,6 +80,36 @@ export default class LeetCodePlugin extends Plugin {
       callback: () => { void this.activateBrowser(); },
     });
 
+    // GAP-11 — explicit "Refresh current problem" command. editorCheckCallback
+    // so the command is only enabled when the active note has an `lc-slug`
+    // frontmatter entry (i.e., is a plugin-generated problem note). Community
+    // plugin rules carried forward:
+    //   - id does NOT contain 'obsidian' or 'command' (substring check in CR gate)
+    //   - id does NOT contain the plugin id 'leetcode' (no-plugin-id-in-command-id)
+    //   - name is sentence case and does NOT start with the plugin name
+    //   - NO hotkeys field (commands/no-default-hotkeys)
+    this.addCommand({
+      id: 'refresh-current-problem',
+      // Name deliberately omits "LeetCode" — Obsidian's command palette already
+      // prefixes the plugin display name, so including it would duplicate it
+      // (`LeetCode: Refresh current problem from LeetCode`). Keeping it short
+      // also satisfies the obsidianmd/commands/no-plugin-name-in-command-name
+      // lint rule.
+      name: 'Refresh current problem',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm: Record<string, unknown> | undefined = cache?.frontmatter;
+        const slug = fm?.['lc-slug'];
+        if (typeof slug !== 'string' || !slug) return false;
+        if (!checking) {
+          void this.refreshProblem(slug);
+        }
+        return true;
+      },
+    });
+
     // Step 6d — settings tab.
     this.addSettingTab(new LeetCodeSettingTab(this.app, this));
 
@@ -133,6 +163,17 @@ export default class LeetCodePlugin extends Plugin {
     initialStatus?: 'solved' | 'attempted' | 'untouched',
   ): Promise<void> {
     return this.notes.openProblem(slug, initialStatus);
+  }
+
+  /** GAP-11: force-refresh the `## Problem` body of the currently-open note,
+   *  bypassing the 7-day cache TTL. Invoked by the "Refresh current problem"
+   *  command palette entry. Delegates to NoteWriter.forceRefresh which owns
+   *  cache invalidation, body rewrite (via vault.process), and frontmatter
+   *  update (via processFrontMatter). All error surfaces via Notice — unlike
+   *  background-refresh (D-12 silent), this is an explicit user action so
+   *  failure copy is surfaced. */
+  async refreshProblem(slug: string): Promise<void> {
+    return this.notes.forceRefresh(slug);
   }
 
   private async activateBrowser(): Promise<void> {
