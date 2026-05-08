@@ -4,6 +4,7 @@
 // NO OTHER MODULE may hardcode:
 //   - `lc-` prefixed frontmatter key names (PLUGIN_LC_KEYS)
 //   - the `lc/` tag namespace (LC_TAG_PREFIX)
+//   - the `lc-status` value vocabulary (LC_STATUS_VALUES)
 //   - the `{id}-{slug}.md` filename pattern (buildNoteFilename)
 //   - the two-heading body layout (`## Problem` + `## Notes`) (buildNoteBody)
 //
@@ -11,6 +12,11 @@
 // extend the tag policy to include topic tags AND will write solve-time lc-*
 // keys (lc-solved-date, lc-runtime-ms, lc-memory-mb) and flip lc-status to
 // 'accepted' — see D-04 / D-05 / D-10 for the boundary.
+//
+// GAP-2a closure: this module also owns the IndexedProblem.status →
+// lc-status mapping (see `mapStatusDisplay`). Callers pass the internal
+// vocabulary ('solved' | 'attempted' | 'untouched'); we return the
+// frontmatter vocabulary ('accepted' | 'attempted' | 'untouched').
 
 import type { App, TFile } from 'obsidian';
 import type { DetailCacheEntry } from './types';
@@ -29,6 +35,16 @@ export const PLUGIN_LC_KEYS = [
 /** Canonical tag namespace prefix. All LC-derived tags begin with this. */
 export const LC_TAG_PREFIX = 'lc/' as const;
 
+/**
+ * Vocabulary for the `lc-status` frontmatter field. Single source of truth (D-03).
+ * Phase 2 writes 'untouched' or 'attempted' on first open; Phase 4 will flip to
+ * 'accepted' on first Accepted submission. GAP-2a lets Phase 2 also write
+ * 'accepted' or 'attempted' on first open when the user's LC submission history
+ * already reflects that status.
+ */
+export const LC_STATUS_VALUES = ['accepted', 'attempted', 'untouched'] as const;
+export type LcStatus = typeof LC_STATUS_VALUES[number];
+
 export interface NoteTemplateInput {
   id: number;
   slug: string;
@@ -44,6 +60,14 @@ export interface NoteTemplateInput {
    * happens INSIDE applyFrontmatter's processFrontMatter callback.
    */
   pluginTags: string[];
+  /**
+   * Caller-supplied hint for the on-first-write value of `lc-status` (GAP-2a).
+   * D-04 preservation: applyFrontmatter NEVER downgrades an existing 'accepted'
+   * value, regardless of this hint. Use `mapStatusDisplay` to derive this from
+   * an IndexedProblem row's internal vocabulary.
+   * Undefined → default to 'untouched' (back-compat).
+   */
+  initialStatus?: LcStatus;
 }
 
 /** D-16: unpadded filename like `1-two-sum.md`, `10-regular-expression-matching.md`, `100-same-tree.md`. */
@@ -58,6 +82,25 @@ export function buildNotePath(folder: string, id: number, slug: string): string 
 }
 
 /**
+ * Map IndexedProblem.status → lc-status frontmatter value (GAP-2a SSoT).
+ *   'solved'    → 'accepted'   (LC's `ac` means Accepted)
+ *   'attempted' → 'attempted'
+ *   'untouched' → 'untouched'
+ *   undefined   → 'untouched'  (no hint from caller; safe default)
+ *
+ * This is the ONE place that translates the internal IndexedProblem vocabulary
+ * to the on-disk lc-status vocabulary. D-03 bans any other module from
+ * hardcoding these literals.
+ */
+export function mapStatusDisplay(
+  indexStatus: 'solved' | 'attempted' | 'untouched' | undefined,
+): LcStatus {
+  if (indexStatus === 'solved') return 'accepted';
+  if (indexStatus === 'attempted') return 'attempted';
+  return 'untouched';
+}
+
+/**
  * D-01: Phase 2 writes exactly two headings on first write.
  * `## Solution` and `## Techniques` are added by Phase 4 on first Accepted submission.
  */
@@ -69,10 +112,16 @@ export function buildNoteBody(input: { problemMarkdown: string }): string {
  * Build the frontmatter input from a cached detail entry + user's default language.
  * D-05: Phase 2 derives pluginTags from difficulty only. Phase 4 will rebuild this
  * with difficulty + topic tags derived from detail.topicSlugs.
+ *
+ * GAP-2a: optional 3rd arg `initialStatus` is the already-mapped lc-status
+ * vocabulary (use `mapStatusDisplay` to translate from IndexedProblem.status).
+ * When omitted, applyFrontmatter defaults the on-disk value to 'untouched' per
+ * D-04 back-compat.
  */
 export function buildFrontmatterInput(
   detail: DetailCacheEntry,
   defaultLanguage: string,
+  initialStatus?: LcStatus,
 ): NoteTemplateInput {
   const slug = slugFromUrl(detail.url, detail.title);
   return {
@@ -83,6 +132,7 @@ export function buildFrontmatterInput(
     url: detail.url,
     language: defaultLanguage,
     pluginTags: [`${LC_TAG_PREFIX}${detail.difficulty.toLowerCase()}`],
+    initialStatus,
   };
 }
 
@@ -123,12 +173,22 @@ export async function applyFrontmatter(
     fm['lc-title'] = input.title;
     fm['lc-difficulty'] = input.difficulty;
     fm['lc-url'] = input.url;
-    // D-04: lc-status defaults to 'untouched' on first write. Never DOWNGRADE a
-    // non-untouched value (Phase 4 writes 'accepted' — a Phase 2 re-open must
-    // not clobber that).
-    if (typeof fm['lc-status'] !== 'string' || fm['lc-status'] === '' || fm['lc-status'] === 'untouched') {
-      fm['lc-status'] = 'untouched';
+    // D-04 + GAP-2a: on first write (or when the existing value is empty /
+    // 'untouched'), adopt the caller's `initialStatus` hint (defaulting to
+    // 'untouched' when the caller didn't supply one). NEVER downgrade from an
+    // existing 'accepted' — Phase 4 writes 'accepted' on first Accepted
+    // submission, and a Phase 2 re-open must not clobber that. Rows whose
+    // status is 'attempted' are also preserved (we only upgrade from empty /
+    // 'untouched'); callers who want to flip 'attempted' → 'accepted' must
+    // go through Phase 4's solve-time writer.
+    const existingStatus = fm['lc-status'];
+    const existingIsEmpty = typeof existingStatus !== 'string'
+      || existingStatus === ''
+      || existingStatus === 'untouched';
+    if (existingIsEmpty) {
+      fm['lc-status'] = input.initialStatus ?? 'untouched';
     }
+    // else: keep existing ('accepted' or 'attempted') — never downgrade.
     fm['lc-language'] = input.language;
 
     // 2. aliases — union-merge (D-06 + D-10). String(id) per Pitfall 9.
