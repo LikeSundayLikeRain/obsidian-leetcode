@@ -222,6 +222,115 @@ function getService(): TurndownService {
 }
 
 /**
+ * GAP-2b-2: Reshape "Shape B" LC example blocks in the post-turndown Markdown.
+ *
+ * Background: LC serves example blocks in two HTML shapes. "Shape A" wraps the
+ * labels in a single <pre> — handled by the lc-example-block turndown rule
+ * above. "Shape B" (observed on Problem 65 "Valid Number") uses flat <p>
+ * paragraphs with inline <strong> labels, no <pre> wrapper:
+ *
+ *     <p><strong>Example 1:</strong></p>
+ *     <p><strong>Input:</strong> s = "0"</p>
+ *     <p><strong>Output:</strong> true</p>
+ *
+ * Turndown converts this straightforwardly to:
+ *
+ *     **Example 1:**
+ *
+ *     **Input:** s = "0"
+ *
+ *     **Output:** true
+ *
+ * …which is a different visual treatment than Shape A's fenced ```text block.
+ * This helper rewrites Shape B into Shape A's fenced form so both LC shapes
+ * render identically in Obsidian:
+ *
+ *     **Example 1:**
+ *
+ *     ```text
+ *     Input: s = "0"
+ *     Output: true
+ *     ```
+ *
+ * Detection is tight — we only collapse a run of 2+ consecutive lines matching
+ * `**{Input|Output|Explanation}:** rest` separated only by blank lines. Stray
+ * bolded text elsewhere (e.g. `**Note:** ...`) is left untouched. The
+ * `**Example N:**` heading above the run stays intact as bold text outside the
+ * fence (matches Shape A's visual convention).
+ *
+ * Why post-processing instead of a turndown rule: a single <p>-level turndown
+ * rule cannot inspect following sibling <p> tags to know whether the run
+ * qualifies as a Shape B example. Post-processing the full Markdown string
+ * sees the full structure and avoids a heavy custom traversal.
+ *
+ * Determinism (D-20): pure string → string function. No RNG, no state, no
+ * date/time, no iteration order dependence — byte-identical across any number
+ * of calls with identical input.
+ */
+function reshapeShapeBExamples(md: string): string {
+  // Matches ONE Shape B label line: `**{Label}:** value`, where Label is
+  // exactly Input, Output, or Explanation (colon inside the bold, value on
+  // the same line). Anchored at line-start, non-greedy to EOL.
+  const LABEL_LINE = /^\*\*(Input|Output|Explanation):\*\*([^\n]*)$/;
+
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const current = lines[i] ?? '';
+    // Try to detect a run starting at line i.
+    if (LABEL_LINE.test(current)) {
+      // Collect consecutive label lines, allowing blank lines between them.
+      const labelLines: string[] = [];
+      let j = i;
+      while (j < lines.length) {
+        const candidate = lines[j] ?? '';
+        const m = candidate.match(LABEL_LINE);
+        if (m) {
+          labelLines.push(`${m[1]}:${m[2]}`);
+          j++;
+          // Consume blank lines after a label line.
+          while (j < lines.length && (lines[j] ?? '').trim() === '') j++;
+          continue;
+        }
+        break;
+      }
+
+      // A run of 2+ labels qualifies as Shape B. `j` currently points past
+      // trailing blank lines following the final label; we need to emit the
+      // fence and then resume processing from `j`. Preserve ONE trailing blank
+      // line after the closing fence so downstream block boundaries are sane
+      // (markdown paragraph separation).
+      if (labelLines.length >= 2) {
+        out.push('```text');
+        for (const line of labelLines) out.push(line);
+        out.push('```');
+        out.push(''); // single blank separator after the fence
+        i = j;
+        continue;
+      }
+      // Single stray label — leave it as plain bolded text (regression guard).
+    }
+
+    out.push(current);
+    i++;
+  }
+
+  // Collapse at-most-one trailing blank line introduced by our emitter above
+  // when the run already sat at end-of-input, to avoid drifting output length.
+  while (
+    out.length > 0 &&
+    out[out.length - 1] === '' &&
+    (out.length < 2 || out[out.length - 2] === '')
+  ) {
+    out.pop();
+  }
+
+  return out.join('\n');
+}
+
+/**
  * Convert a string of HTML to Markdown.
  *
  * Empty / whitespace-only input → empty string (D-21: don't crash).
@@ -231,7 +340,8 @@ function getService(): TurndownService {
 export function htmlToMarkdown(html: string): string {
   if (typeof html !== 'string' || html.trim() === '') return '';
   try {
-    return getService().turndown(html).trim();
+    const raw = getService().turndown(html);
+    return reshapeShapeBExamples(raw).trim();
   } catch {
     return '';
   }

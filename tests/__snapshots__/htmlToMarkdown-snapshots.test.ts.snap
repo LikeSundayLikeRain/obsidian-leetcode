@@ -74,3 +74,38 @@ Output: [1,2]
 -   \`-10⁹ <= target <= 10⁹\`
 -   **Only one valid answer exists.**"
 `;
+
+exports[`htmlToMarkdown fixture snapshots (NOTE-02) > valid-number fixture produces stable Markdown with Shape B \`\`\`text blocks 1`] = `
+"A **valid number** can be split up into these components (in order):
+
+1.  A **decimal number** or an **integer**.
+2.  (Optional) An \`'e'\` or \`'E'\`, followed by an **integer**.
+
+Given a string \`s\`, return \`true\` _if_ \`s\` _is a_ **valid number**.
+
+**Example 1:**
+
+\`\`\`text
+Input: s = "0"
+Output: true
+\`\`\`
+
+**Example 2:**
+
+\`\`\`text
+Input: s = "e"
+Output: false
+\`\`\`
+
+**Example 3:**
+
+\`\`\`text
+Input: s = "."
+Output: false
+\`\`\`
+
+**Constraints:**
+
+-   \`1 <= s.length <= 20\`
+-   \`s\` consists of only English letters (both uppercase and lowercase), digits (\`0-9\`), plus \`'+'\`, minus \`'-'\`, or dot \`'.'\`."
+`;

@@ -20,6 +20,27 @@ describe('htmlToMarkdown fixture snapshots (NOTE-02)', () => {
     expect(md).toContain('```python');
   });
 
+  // GAP-2b-2 — Problem 65 "Valid Number" exercises Shape B example blocks
+  // (flat <p> paragraphs with inline <strong> labels, no <pre> wrapper).
+  // The snapshot locks in the post-processor output: `**Example N:**` heading
+  // followed by a ```text-fenced block with Input:/Output: lines stripped of
+  // bold. A regression in reshapeShapeBExamples would produce stray
+  // **Input:**/**Output:** paragraphs and fail the guard assertions below.
+  it('valid-number fixture produces stable Markdown with Shape B ```text blocks', () => {
+    const md = htmlToMarkdown(fx('lc-valid-number.html'));
+    expect(md).toMatchSnapshot();
+    // Three Shape B examples in this fixture — each must collapse to its own
+    // fenced text block.
+    expect((md.match(/```text/g) ?? []).length).toBe(3);
+    // Bold label stripping worked — no **Input:** / **Output:** bold leaking.
+    expect(md).not.toContain('**Input:**');
+    expect(md).not.toContain('**Output:**');
+    // Example headings preserved as bold.
+    expect(md).toContain('**Example 1:**');
+    expect(md).toContain('**Example 2:**');
+    expect(md).toContain('**Example 3:**');
+  });
+
   // GAP-2b smoke check — a future refactor that silently reverts the
   // lc-example-block rule would leave **Input:** / **Output:** flat
   // paragraphs in the two-sum output. This guard fails loudly in that case

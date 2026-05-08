@@ -135,3 +135,110 @@ describe('htmlToMarkdown — example blocks (GAP-2b, NOTE-02)', () => {
     expect(md).not.toContain('```');
   });
 });
+
+describe('htmlToMarkdown — Shape B examples (GAP-2b-2, NOTE-02)', () => {
+  // GAP-2b-2: LC's "Shape B" example format — flat <p> paragraphs with inline
+  // <strong> labels, NO <pre> wrapper — must render the same as Shape A. This
+  // is the real-world shape seen on Problem 65 (Valid Number) and others.
+  it('collapses Shape B Input/Output paragraphs into a ```text fenced block (Problem 65 pattern)', () => {
+    const html = [
+      '<p><strong>Example 1:</strong></p>',
+      '<p><strong>Input:</strong> s = "0"</p>',
+      '<p><strong>Output:</strong> true</p>',
+    ].join('\n');
+    const md = htmlToMarkdown(html);
+    // `**Example 1:**` heading stays above the fence as bold text.
+    expect(md).toContain('**Example 1:**');
+    // Fenced text block containing the stripped Input/Output lines.
+    expect(md).toMatch(/```text[\s\S]*```/);
+    expect(md).toContain('Input: s = "0"');
+    expect(md).toContain('Output: true');
+    // No Markdown bold asterisks leaking into the fenced content.
+    expect(md).not.toContain('**Input:**');
+    expect(md).not.toContain('**Output:**');
+  });
+
+  it('collapses Shape B with Explanation line into the same fenced block', () => {
+    const html = [
+      '<p><strong>Example 2:</strong></p>',
+      '<p><strong>Input:</strong> s = "e"</p>',
+      '<p><strong>Output:</strong> false</p>',
+      '<p><strong>Explanation:</strong> "e" is not a valid number.</p>',
+    ].join('\n');
+    const md = htmlToMarkdown(html);
+    expect(md).toContain('**Example 2:**');
+    expect(md).toMatch(/```text\nInput: s = "e"\nOutput: false\nExplanation: "e" is not a valid number\.\n```/);
+    expect(md).not.toContain('**Input:**');
+    expect(md).not.toContain('**Output:**');
+    expect(md).not.toContain('**Explanation:**');
+  });
+
+  it('leaves existing Shape A (pre-wrapped) output unchanged — no double-collapse', () => {
+    // Shape A: <pre> with <strong>-wrapped labels. The lc-example-block turndown
+    // rule already emits a fenced block — Shape B post-processing must not
+    // disturb it (there are no **Input:** bold paragraphs in Shape A's output
+    // because the <pre> rule strips the inline <strong> tags).
+    const html =
+      '<p><strong class="example">Example 1:</strong></p>' +
+      '<pre><strong>Input:</strong> nums = [2,7,11,15]\n<strong>Output:</strong> [0,1]</pre>';
+    const md = htmlToMarkdown(html);
+    expect(md).toContain('**Example 1:**');
+    expect(md).toMatch(/```text\nInput: nums = \[2,7,11,15\]\nOutput: \[0,1\]\n```/);
+    // There must be exactly one opening fence and one closing fence — no
+    // accidental double-wrap from a Shape-A/Shape-B interaction.
+    const fenceOpens = (md.match(/```text/g) ?? []).length;
+    const fenceCloses = (md.match(/```\s*$/gm) ?? []).length;
+    expect(fenceOpens).toBe(1);
+    expect(fenceCloses).toBe(1);
+  });
+
+  it('does NOT collapse a single stray **Input:** paragraph (regression guard)', () => {
+    // Non-example content that happens to use a bolded `**Input:**` label —
+    // e.g., a description paragraph introducing a function's input — must not
+    // be mistaken for a Shape B example. Detection requires 2+ consecutive
+    // qualifying labels.
+    const html =
+      '<p><strong>Input:</strong> the function receives an array of integers.</p>' +
+      '<p>Return the median value.</p>';
+    const md = htmlToMarkdown(html);
+    // Stray bold label survives verbatim (not stripped to plain text, not
+    // wrapped in a fence).
+    expect(md).toContain('**Input:**');
+    expect(md).not.toContain('```text');
+  });
+
+  it('does NOT collapse unrelated bolded paragraphs (**Note:**, **Warning:** etc.)', () => {
+    const html =
+      '<p><strong>Note:</strong> read the constraints first.</p>' +
+      '<p><strong>Warning:</strong> large inputs may overflow.</p>';
+    const md = htmlToMarkdown(html);
+    // Both labels survive as bold; no fence wraps them because the labels
+    // are not in the Input/Output/Explanation set.
+    expect(md).toContain('**Note:**');
+    expect(md).toContain('**Warning:**');
+    expect(md).not.toContain('```text');
+  });
+
+  it('handles two consecutive Shape B example groups in the same document', () => {
+    // Problem 65 style — Example 1 and Example 2 as separate Shape B runs.
+    const html = [
+      '<p><strong>Example 1:</strong></p>',
+      '<p><strong>Input:</strong> s = "0"</p>',
+      '<p><strong>Output:</strong> true</p>',
+      '<p><strong>Example 2:</strong></p>',
+      '<p><strong>Input:</strong> s = "e"</p>',
+      '<p><strong>Output:</strong> false</p>',
+    ].join('\n');
+    const md = htmlToMarkdown(html);
+    // Two example headings survive.
+    expect(md).toContain('**Example 1:**');
+    expect(md).toContain('**Example 2:**');
+    // Two fenced blocks — one per example.
+    const fenceOpens = (md.match(/```text/g) ?? []).length;
+    expect(fenceOpens).toBe(2);
+    expect(md).toContain('Input: s = "0"');
+    expect(md).toContain('Output: true');
+    expect(md).toContain('Input: s = "e"');
+    expect(md).toContain('Output: false');
+  });
+});

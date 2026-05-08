@@ -75,4 +75,45 @@ describe('htmlToMarkdown determinism (D-20)', () => {
       expect(htmlToMarkdown(html)).toBe(first);
     }
   });
+
+  // Test 11 — GAP-2b-2: combined Shape A (<pre>) + Shape B (<p><strong>) example
+  // blocks in a single fixture. Both paths land in the same ```text fence shape
+  // via independent code paths (turndown rule for A, post-processing for B).
+  // The post-processor is a pure string→string function — 100 runs over the
+  // same mixed input must produce identical bytes (D-20).
+  it('produces byte-identical output across 100 runs for combined Shape A + Shape B examples', () => {
+    const html = [
+      // Shape A — <pre>-wrapped (Two Sum style).
+      '<p><strong class="example">Example 1:</strong></p>',
+      '<pre><strong>Input:</strong> nums = [2,7,11,15]\n<strong>Output:</strong> [0,1]</pre>',
+      // Shape B — flat <p> paragraphs (Problem 65 style).
+      '<p><strong>Example 2:</strong></p>',
+      '<p><strong>Input:</strong> s = "0"</p>',
+      '<p><strong>Output:</strong> true</p>',
+      // Shape B with Explanation — three-label run.
+      '<p><strong>Example 3:</strong></p>',
+      '<p><strong>Input:</strong> s = "e"</p>',
+      '<p><strong>Output:</strong> false</p>',
+      '<p><strong>Explanation:</strong> not a valid number.</p>',
+      // Regression guard content that must NOT be collapsed.
+      '<p><strong>Note:</strong> stray bolded label left verbatim.</p>',
+    ].join('\n');
+    const first = htmlToMarkdown(html);
+    // Sanity: all three example heads survive.
+    expect(first).toContain('**Example 1:**');
+    expect(first).toContain('**Example 2:**');
+    expect(first).toContain('**Example 3:**');
+    // Three fenced blocks — Shape A + two Shape B runs.
+    expect((first.match(/```text/g) ?? []).length).toBe(3);
+    // Shape B label-stripping worked.
+    expect(first).toContain('Input: s = "0"');
+    expect(first).toContain('Output: true');
+    expect(first).toContain('Explanation: not a valid number.');
+    // Regression guard fired — stray **Note:** preserved.
+    expect(first).toContain('**Note:**');
+    // Byte-equality across 100 runs (D-20 determinism gate).
+    for (let i = 0; i < 100; i++) {
+      expect(htmlToMarkdown(html)).toBe(first);
+    }
+  });
 });
