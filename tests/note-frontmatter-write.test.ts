@@ -41,3 +41,69 @@ describe('applyFrontmatter (NOTE-03 lc-* keys)', () => {
     expect(fm!['lc-status']).toBe('accepted');
   });
 });
+
+describe('applyFrontmatter — lc-status initial mapping (GAP-2a, D-04)', () => {
+  const baseInput = {
+    id: 1,
+    slug: 'two-sum',
+    title: 'Two Sum',
+    difficulty: 'Easy' as const,
+    url: 'https://leetcode.com/problems/two-sum/',
+    language: 'python3',
+    pluginTags: ['lc/easy'],
+  };
+
+  it("writes lc-status: accepted on empty frontmatter when initialStatus='accepted'", async () => {
+    const m = makeMockVaultApp();
+    const file = await m.app.vault.create('LeetCode/1-two-sum.md', '');
+    await applyFrontmatter(m.app as never, file as never, {
+      ...baseInput,
+      initialStatus: 'accepted',
+    });
+    const fm = m.getFrontmatter('LeetCode/1-two-sum.md');
+    expect(fm!['lc-status']).toBe('accepted');
+  });
+
+  it("writes lc-status: attempted on empty frontmatter when initialStatus='attempted'", async () => {
+    const m = makeMockVaultApp();
+    const file = await m.app.vault.create('LeetCode/1-two-sum.md', '');
+    await applyFrontmatter(m.app as never, file as never, {
+      ...baseInput,
+      initialStatus: 'attempted',
+    });
+    const fm = m.getFrontmatter('LeetCode/1-two-sum.md');
+    expect(fm!['lc-status']).toBe('attempted');
+  });
+
+  it('writes lc-status: untouched on empty frontmatter when initialStatus is undefined (back-compat)', async () => {
+    const m = makeMockVaultApp();
+    const file = await m.app.vault.create('LeetCode/1-two-sum.md', '');
+    await applyFrontmatter(m.app as never, file as never, baseInput);
+    const fm = m.getFrontmatter('LeetCode/1-two-sum.md');
+    expect(fm!['lc-status']).toBe('untouched');
+  });
+
+  it("D-04 preservation: initialStatus='untouched' MUST NOT downgrade existing 'accepted'", async () => {
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': '' });
+    m.seedFrontmatter('LeetCode/1-two-sum.md', { 'lc-status': 'accepted' });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    await applyFrontmatter(m.app as never, file as never, {
+      ...baseInput,
+      initialStatus: 'untouched',
+    });
+    const fm = m.getFrontmatter('LeetCode/1-two-sum.md');
+    expect(fm!['lc-status']).toBe('accepted');
+  });
+
+  it("D-04 idempotence: initialStatus='accepted' on existing 'accepted' leaves it as 'accepted'", async () => {
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': '' });
+    m.seedFrontmatter('LeetCode/1-two-sum.md', { 'lc-status': 'accepted' });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    await applyFrontmatter(m.app as never, file as never, {
+      ...baseInput,
+      initialStatus: 'accepted',
+    });
+    const fm = m.getFrontmatter('LeetCode/1-two-sum.md');
+    expect(fm!['lc-status']).toBe('accepted');
+  });
+});

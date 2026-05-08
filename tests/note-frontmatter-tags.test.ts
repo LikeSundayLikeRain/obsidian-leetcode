@@ -39,4 +39,18 @@ describe('Phase 2 tag policy (NOTE-04, D-05 difficulty-only)', () => {
     expect(input.pluginTags).not.toContain('lc/array');
     expect(input.pluginTags).not.toContain('lc/two-pointers');
   });
+
+  // GAP-2a scope guard: supplying an initialStatus must NOT bleed into the tag set.
+  // D-05 still holds — pluginTags remains `[lc/{difficulty}]` regardless of status.
+  it.each([undefined, 'accepted', 'attempted', 'untouched'] as const)(
+    'buildFrontmatterInput leaves pluginTags = [lc/easy] when initialStatus=%s (D-05 scope guard, GAP-2a)',
+    (status) => {
+      const input = buildFrontmatterInput({
+        fetchedAt: 0, id: 1, title: 'Two Sum', difficulty: 'Easy',
+        url: 'https://leetcode.com/problems/two-sum/',
+        contentHtml: '<p>...</p>', topicSlugs: ['array', 'hash-table'],
+      } as never, 'python3', status);
+      expect(input.pluginTags).toEqual(['lc/easy']);
+    },
+  );
 });
