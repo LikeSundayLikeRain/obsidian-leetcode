@@ -14,21 +14,20 @@ export class LeetCodeClient {
 
   constructor(settings: SettingsStore) {
     this.settings = settings;
-    this.rebuildClientSync();
+    // WR-01: construct with an UNAUTHENTICATED baseline synchronously so the
+    // .lc field is never undefined. If cookies exist, the caller (main.ts
+    // onload / AuthService after login) MUST await reauthenticate() to bind
+    // the credential. Previously we fire-and-forgot `void cred.init(...)` —
+    // if init rejected, the rejection became an unhandled promise rejection
+    // and the client was left attached to a partially-initialised Credential,
+    // causing API calls to return null data indistinguishable from session
+    // expiry and triggering a spurious logout notice.
+    this.lc = new LeetCode();
   }
 
-  private rebuildClientSync(): void {
-    const cookies = this.settings.getAuthCookies();
-    if (!cookies) {
-      this.lc = new LeetCode();
-      return;
-    }
-    const cred = new Credential();
-    this.lc = new LeetCode(cred);
-    void cred.init(cookies.LEETCODE_SESSION);
-  }
-
-  /** Rebuild the LeetCode client with current cookies and await Credential bootstrap. */
+  /** Rebuild the LeetCode client with current cookies and await Credential bootstrap.
+   *  Call this from onload() and from AuthService after login/logout to guarantee
+   *  the LC client's credential is fully initialized before the first API call. */
   async reauthenticate(): Promise<void> {
     const cookies = this.settings.getAuthCookies();
     if (!cookies) {

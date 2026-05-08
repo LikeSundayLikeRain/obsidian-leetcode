@@ -34,6 +34,13 @@ export default class LeetCodePlugin extends Plugin {
     // Step 3 — construct LC client. Must come BEFORE AuthService because AuthService's
     // two-arg constructor takes the client (BLOCKER 2).
     this.client = new LeetCodeClient(this.settings);
+    // WR-01: if cookies were persisted from a prior run, reauthenticate NOW
+    // so the client's Credential is fully initialised before any feature
+    // code issues an API call. Failures here surface as a plain logged-out
+    // state on next API call (isSessionExpired catches the null-data
+    // signal); swallow so plugin load never fails on a transient network
+    // hiccup at startup.
+    await this.client.reauthenticate().catch(() => undefined);
 
     // Step 4 — auth service orchestrates login/logout. TWO-ARG constructor.
     this.auth = new AuthService(this.settings, this.client);
