@@ -8,6 +8,23 @@
 import { LeetCode, Credential } from '@leetnotion/leetcode-api';
 import type { SettingsStore } from '../settings/SettingsStore';
 
+/** LC's `question` object as returned by `lc.problem(slug)`.
+ *  Only the fields we consume are declared; LC returns additional fields we ignore.
+ *  Verified against node_modules/@leetnotion/leetcode-api/lib/index.js:356 which
+ *  contains the literal GraphQL query. */
+export interface LeetCodeProblemDetail {
+  questionFrontendId: string;
+  titleSlug: string;
+  title: string;
+  content: string | null;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  isPaidOnly: boolean;
+  exampleTestcases?: string;
+  topicTags?: Array<{ name: string; slug: string }>;
+  codeSnippets?: Array<{ lang: string; langSlug: string; code: string }>;
+  stats?: string;
+}
+
 export class LeetCodeClient {
   public lc!: InstanceType<typeof LeetCode>;
   private settings: SettingsStore;
@@ -70,6 +87,39 @@ export class LeetCodeClient {
       };
     } catch {
       return null;
+    }
+  }
+
+  /** Fetch problem detail by slug. Returns the LC `question` object or null.
+   *
+   *  DIVERGENCE from fetchWhoami: Phase 2 callers (NoteWriter, D-13) need to
+   *  distinguish "LC returned null" (treated as not-found OR session-expired,
+   *  disambiguated via isSessionExpired) from "network threw" (treated as
+   *  offline — Notice + abort). fetchWhoami conflates the two because it's
+   *  display-only. Here we RE-THROW network errors so the caller can branch.
+   *
+   *  On success: returns the detail.
+   *  On LC null-data: returns null (caller checks isSessionExpired vs not-found).
+   *  On network error: throws (caller catches, inspects via isSessionExpired,
+   *  and shows an appropriate Notice).
+   */
+  async getProblemDetail(slug: string): Promise<LeetCodeProblemDetail | null> {
+    // Intentional try/catch: the explicit re-throw documents the D-13 contract —
+    // NoteWriter's error dispatch (Shared Pattern C) decides between the
+    // session-expired notice and the generic couldn't-fetch notice. Lint rule
+    // `no-useless-catch` can't see the documentation load the block carries.
+    // eslint-disable-next-line no-useless-catch
+    try {
+      const q = await (this.lc as unknown as {
+        problem: (s: string) => Promise<LeetCodeProblemDetail | null>;
+      }).problem(slug);
+      if (!q || !q.questionFrontendId) return null;
+      return q;
+    } catch (err) {
+      // Re-throw so NoteWriter's error dispatch (D-13 + Shared Pattern C) can
+      // decide between the session-expired notice and the generic couldn't-fetch
+      // notice.
+      throw err;
     }
   }
 }
