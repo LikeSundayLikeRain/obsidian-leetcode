@@ -19,11 +19,17 @@ const mockRequestUrl = vi.fn<(arg: unknown) => Promise<MockRequestUrlResponse>>(
 }));
 vi.mock('obsidian', () => ({ requestUrl: mockRequestUrl }));
 
-// Shared mutable fetcher singleton (simulates @fetch-impl/fetcher).
+// Shared mutable fetcher singleton (simulates both @fetch-impl/fetcher and
+// @leetnotion/leetcode-api's re-exported `fetcher`). The real leetcode-api
+// bundles its own `new Fetcher()` instance and re-exports it; the production
+// fetcher installer mutates both the external singleton and the library's
+// re-exported instance. In tests we point both mocks at the SAME object so
+// a single `fetcherMock.fetch` assertion confirms both patches landed.
 const fetcherMock: { fetch: (input: unknown, init?: unknown) => Promise<unknown> } = {
   fetch: vi.fn(),
 };
 vi.mock('@fetch-impl/fetcher', () => ({ fetcher: fetcherMock }));
+vi.mock('@leetnotion/leetcode-api', () => ({ fetcher: fetcherMock }));
 
 describe('installRequestUrlFetcher (FND-04)', () => {
   beforeEach(() => {

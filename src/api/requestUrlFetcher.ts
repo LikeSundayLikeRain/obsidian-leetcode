@@ -14,8 +14,14 @@
 // it catches this error; Plan 02's job is just the throw + parsing. Full 429-handling
 // polish (backoff ladder, multiple-Notice suppression) lives in POLISH-02.
 import { requestUrl } from 'obsidian';
-// eslint-disable-next-line import/no-extraneous-dependencies -- @fetch-impl/fetcher is a transitive module-singleton exposed by @leetnotion/leetcode-api; we intentionally mutate its .fetch
-import { fetcher } from '@fetch-impl/fetcher';
+// eslint-disable-next-line import/no-extraneous-dependencies -- @fetch-impl/fetcher is a transitive module-singleton that we ALSO patch for completeness, though the primary patch target is @leetnotion/leetcode-api's re-exported `fetcher`
+import { fetcher as externalFetcher } from '@fetch-impl/fetcher';
+// The library bundles its OWN `fetcher = new Fetcher()` at module scope and
+// re-exports it. This is the instance `_fetch` / `fetch_default` / every
+// `fetch_default(...)` call inside the library actually routes through. We
+// MUST mutate THIS instance — the external @fetch-impl/fetcher singleton is
+// a different object post-bundling.
+import { fetcher as leetcodeFetcher } from '@leetnotion/leetcode-api';
 import { Throttle } from './throttle';
 import { RateLimitError } from '../shared/errors';
 
@@ -29,7 +35,7 @@ export function installRequestUrlFetcher(): void {
   const throttle = new Throttle({ capacity: 20, refillMs: 10_000, maxConcurrent: 2 });
   activeThrottle = throttle;
 
-  (fetcher as unknown as { fetch: (input: unknown, init?: FetchInit) => Promise<Response> }).fetch = async (input, init) => {
+  const shim = async (input: unknown, init?: FetchInit): Promise<Response> => {
     await throttle.acquire();
     try {
       const url = typeof input === 'string' ? input : (input as URL).toString();
@@ -60,6 +66,18 @@ export function installRequestUrlFetcher(): void {
       throttle.release();
     }
   };
+
+  // Primary patch target: the library's internal `fetcher` instance.
+  // @leetnotion/leetcode-api bundles `fetcher = new Fetcher()` at module scope
+  // and routes every `fetch_default(...)` call through `leetcodeFetcher.fetch`.
+  // We overwrite its .fetch with our shim so the library's CSRF bootstrap,
+  // GraphQL queries, and submission calls all go through requestUrl + throttle.
+  (leetcodeFetcher as unknown as { fetch: typeof shim }).fetch = shim;
+
+  // Defence in depth: also patch the external @fetch-impl/fetcher singleton
+  // so any third-party code that somehow resolves the shared singleton path
+  // (e.g., during tests or future library updates) gets the same shim.
+  (externalFetcher as unknown as { fetch: typeof shim }).fetch = shim;
 }
 
 /**
