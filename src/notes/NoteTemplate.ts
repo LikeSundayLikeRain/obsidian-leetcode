@@ -35,6 +35,12 @@ export const PLUGIN_LC_KEYS = [
 /** Canonical tag namespace prefix. All LC-derived tags begin with this. */
 export const LC_TAG_PREFIX = 'lc/' as const;
 
+// Schema SSoT for every plugin-owned H2 heading across Phases 2 and 3.
+// Phase 2 canonical headings:
+/** Plugin-owned H2 where the problem markdown lives (rewriteProblemSection target). */
+export const PROBLEM_HEADING_LINE = '## Problem' as const;
+/** User-owned H2 immediately after `## Problem`; plugin never writes into this region. */
+export const NOTES_HEADING_LINE = '## Notes' as const;
 // Phase 3 heading extensions (CONTEXT D-06, D-20).
 /** Plugin-owned H2 under which the user's solution fenced block lives. */
 export const CODE_HEADING_LINE = '## Code' as const;
