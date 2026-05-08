@@ -2,7 +2,7 @@
   "id": "leetcode",
   "name": "LeetCode",
   "version": "0.1.0",
-  "minAppVersion": "1.5.0",
+  "minAppVersion": "1.10.0",
   "description": "Browse, solve, and note LeetCode problems inside your Obsidian vault.",
   "author": "moxu",
   "authorUrl": "https://github.com/moxu",
