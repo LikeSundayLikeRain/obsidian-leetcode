@@ -35,6 +35,23 @@ export const PLUGIN_LC_KEYS = [
 /** Canonical tag namespace prefix. All LC-derived tags begin with this. */
 export const LC_TAG_PREFIX = 'lc/' as const;
 
+// Phase 3 heading extensions (CONTEXT D-06, D-20).
+/** Plugin-owned H2 under which the user's solution fenced block lives. */
+export const CODE_HEADING_LINE = '## Code' as const;
+/** Plugin-owned H2 under which persisted `### Case N` subheadings live. Lazy-created (D-18). */
+export const CUSTOM_TESTS_HEADING_LINE = '## Custom Tests' as const;
+/** Prefix for each custom-test subheading. Trailing space matches `### Case 1` (D-18). */
+export const CASE_HEADING_PREFIX = '### Case ' as const;
+
+/**
+ * Renders a fenced code block with the given langSlug tag + starter code.
+ * Caller appends trailing newline as needed.
+ */
+export function codeBlockFor(langSlug: string, starterCode: string): string {
+  const code = starterCode.trim();
+  return '```' + langSlug + '\n' + code + '\n```';
+}
+
 /**
  * Vocabulary for the `lc-status` frontmatter field. Single source of truth (D-03).
  * Phase 2 writes 'untouched' or 'attempted' on first open; Phase 4 will flip to
@@ -101,11 +118,24 @@ export function mapStatusDisplay(
 }
 
 /**
- * D-01: Phase 2 writes exactly two headings on first write.
+ * Phase 3 D-06: Body layout is `## Problem` → `## Code` → `## Notes`.
  * `## Solution` and `## Techniques` are added by Phase 4 on first Accepted submission.
+ * `## Custom Tests` is lazy-created by CaseRegion.writeCases when the user first saves a case (D-18).
+ *
+ * Backward-compat: `langSlug` is optional and defaults to `'python3'` so Phase 2
+ * callers that pass only `{ problemMarkdown }` continue to compile and render
+ * the same shape (with an additional `## Code` section containing an empty
+ * python3 fenced block).
  */
-export function buildNoteBody(input: { problemMarkdown: string }): string {
-  return `## Problem\n${input.problemMarkdown.trim()}\n\n## Notes\n\n`;
+export function buildNoteBody(input: {
+  problemMarkdown: string;
+  langSlug?: string;
+  starterCode?: string;
+}): string {
+  const langSlug = input.langSlug ?? 'python3';
+  const starter = input.starterCode ?? '';
+  const codeBlock = codeBlockFor(langSlug, starter);
+  return `## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
 }
 
 /**
