@@ -24,6 +24,7 @@ import { Notice } from 'obsidian';
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import type { AuthCookies } from '../auth/types';
 import type { DetailCacheEntry } from '../settings/SettingsStore';
+import { setWindowTimeout } from '../shared/timers';
 import { extractFirstFencedBlock } from './codeExtractor';
 import { resolveLangSlug } from './languages';
 import {
@@ -243,11 +244,12 @@ export class SubmissionOrchestrator {
               fetcher: this.deps.fetcher,
               submissionId,
               slug,
-              // In production the orchestrator binds Plugin.registerInterval.
-              // In tests the fallback is setTimeout — safe because the test
-              // harness controls the scheduler via vi.useFakeTimers().
-              // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- orchestrator fallback; production wires plugin.registerInterval
-              registerInterval: (fn, ms) => setTimeout(fn, ms),
+              // Popout-window-safe timer fallback. Plan 07 wiring in main.ts
+              // will wrap this with plugin.registerInterval(handle) for
+              // unload-cleanup (Warning 7); the orchestrator stays
+              // timer-agnostic here so unit tests can drive pollSubmission
+              // under vi.useFakeTimers() without touching a real Plugin.
+              registerInterval: (fn, ms) => setWindowTimeout(fn, ms),
               abortSignal: abortFlag,
             });
             // For Wave 0 the terminal payload is handled silently — Plan 06
