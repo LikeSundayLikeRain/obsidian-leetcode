@@ -14,6 +14,12 @@ import type { SettingsStore } from '../settings/SettingsStore';
  *  contains the literal GraphQL query. */
 export interface LeetCodeProblemDetail {
   questionFrontendId: string;
+  /** Phase 3 D-30 — LC's internal numeric id, distinct from `questionFrontendId`
+   *  for some problems (premium variants). Submitted in the REST body as
+   *  `question_id`. Source: `DetailedProblem.questionId` per the library's
+   *  `lib/index.d.ts:300-302`. Optional because the library may omit it on
+   *  older calls; callers fall back gracefully. */
+  questionId?: string | null;
   titleSlug: string;
   title: string;
   content: string | null;
