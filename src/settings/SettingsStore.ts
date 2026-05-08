@@ -7,6 +7,24 @@ import type { AuthCookies } from '../auth/types';
 import type { IndexedProblem, ProblemIndex } from '../browse/types';
 import { logger } from '../shared/logger';
 
+// CF-03 compliance: contentHtml is LC public problem content — non-sensitive. Only
+// auth.LEETCODE_SESSION (a sibling in PluginData) is a secret; logger.ts redaction
+// patterns target that field. contentHtml is safely persisted in data.json without redaction.
+/** Per-problem detail cache entry persisted in data.json.
+ *  Schema locked by CONTEXT.md D-14. Keyed by slug inside PluginData.problemDetails.
+ *  ~10–50 KB per entry; 7-day TTL enforced by callers (NoteWriter.CACHE_TTL_MS). */
+export interface DetailCacheEntry {
+  fetchedAt: number;
+  id: number;
+  title: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  url: string;
+  contentHtml: string;
+  topicSlugs: string[];
+  exampleTestcases?: string;
+  codeSnippets?: Array<{ lang: string; langSlug: string; code: string }>;
+}
+
 export interface PluginData {
   version: 1;
   auth: AuthCookies | null;
@@ -20,6 +38,10 @@ export interface PluginData {
   /** Compound filter rules from the filter modal. Null = no filter active.
    *  Persisted so filter survives plugin reload / Obsidian restart. */
   filter: CompoundFilter | null;
+  /** Per-slug problem-detail cache. Populated on first problem open; refreshed
+   *  by NoteWriter on re-open after a 7-day TTL. Malformed entries dropped at
+   *  load time. D-14. */
+  problemDetails: Record<string, DetailCacheEntry>;
 }
 
 /** Compound filter matching LC's "Match All/Any of the following" UI. Each
@@ -47,6 +69,7 @@ const DEFAULT_DATA: PluginData = {
   defaultLanguage: 'python3',
   problemIndex: null,
   filter: null,
+  problemDetails: {},
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -133,6 +156,42 @@ function isValidCompoundFilter(v: unknown): v is CompoundFilter {
   });
 }
 
+/** Shape-guard for a single DetailCacheEntry; same posture as isValidIndexedProblem. */
+function isValidDetailCacheEntry(v: unknown): v is DetailCacheEntry {
+  if (!v || typeof v !== 'object') return false;
+  const d = v as Partial<DetailCacheEntry>;
+  if (typeof d.fetchedAt !== 'number') return false;
+  if (typeof d.id !== 'number') return false;
+  if (typeof d.title !== 'string') return false;
+  if (typeof d.difficulty !== 'string' || !VALID_DIFFICULTIES.has(d.difficulty)) return false;
+  if (typeof d.url !== 'string') return false;
+  if (typeof d.contentHtml !== 'string') return false;
+  if (!Array.isArray(d.topicSlugs) || !d.topicSlugs.every((s) => typeof s === 'string')) return false;
+  if (d.exampleTestcases !== undefined && typeof d.exampleTestcases !== 'string') return false;
+  if (d.codeSnippets !== undefined) {
+    if (!Array.isArray(d.codeSnippets)) return false;
+    if (!d.codeSnippets.every((c) =>
+      c && typeof c === 'object' &&
+      typeof (c as { lang?: unknown }).lang === 'string' &&
+      typeof (c as { langSlug?: unknown }).langSlug === 'string' &&
+      typeof (c as { code?: unknown }).code === 'string'
+    )) return false;
+  }
+  return true;
+}
+
+/** Filter incoming problemDetails down to valid entries; drop the rest. */
+function sanitizeProblemDetails(raw: unknown): Record<string, DetailCacheEntry> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, DetailCacheEntry> = {};
+  for (const [slug, entry] of Object.entries(raw)) {
+    if (typeof slug === 'string' && slug.length > 0 && isValidDetailCacheEntry(entry)) {
+      out[slug] = entry;
+    }
+  }
+  return out;
+}
+
 export class SettingsStore {
   private constructor(private plugin: Plugin, private data: PluginData) {}
 
@@ -155,6 +214,7 @@ export class SettingsStore {
         : DEFAULT_DATA.defaultLanguage,
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
       filter: isValidCompoundFilter(raw.filter) ? raw.filter : DEFAULT_DATA.filter,
+      problemDetails: sanitizeProblemDetails(raw.problemDetails),
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -168,6 +228,14 @@ export class SettingsStore {
         sanitizeFolder(raw.problemsFolder) === DEFAULT_DATA.problemsFolder &&
         raw.problemsFolder.trim().replace(/[\\/]+$/, '') !== DEFAULT_DATA.problemsFolder) {
       logger.warn('settings.load: rejected unsafe problemsFolder; reverted to default');
+    }
+    if (raw.problemDetails !== undefined && raw.problemDetails !== null) {
+      const rawMap = raw.problemDetails;
+      const inputKeys = rawMap && typeof rawMap === 'object' ? Object.keys(rawMap).length : 0;
+      const keptKeys = Object.keys(data.problemDetails).length;
+      if (inputKeys !== keptKeys) {
+        logger.warn(`settings.load: dropped ${inputKeys - keptKeys} malformed problemDetails entries`);
+      }
     }
     return new SettingsStore(plugin, data);
   }
@@ -212,6 +280,32 @@ export class SettingsStore {
   async setFilter(f: CompoundFilter | null): Promise<void> {
     this.data.filter = f;
     await this.persist();
+  }
+
+  /** Read the cached detail for a slug. D-15. Returns null if missing. */
+  getProblemDetail(slug: string): DetailCacheEntry | null {
+    return this.data.problemDetails[slug] ?? null;
+  }
+
+  /** Persist a detail cache entry. D-15. Mutates in place + persists. */
+  async setProblemDetail(slug: string, detail: DetailCacheEntry): Promise<void> {
+    this.data.problemDetails[slug] = detail;
+    await this.persist();
+  }
+
+  /** Remove cache entries older than `maxAgeMs`. Returns pruned count.
+   *  Opportunistic; called at caller's discretion (D-15). */
+  async pruneProblemDetails(maxAgeMs: number): Promise<number> {
+    const cutoff = Date.now() - maxAgeMs;
+    let pruned = 0;
+    for (const [slug, entry] of Object.entries(this.data.problemDetails)) {
+      if (entry.fetchedAt < cutoff) {
+        delete this.data.problemDetails[slug];
+        pruned++;
+      }
+    }
+    if (pruned > 0) await this.persist();
+    return pruned;
   }
 
   private async persist(): Promise<void> {
