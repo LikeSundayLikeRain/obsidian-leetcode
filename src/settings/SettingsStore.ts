@@ -23,6 +23,11 @@ export interface DetailCacheEntry {
   topicSlugs: string[];
   exampleTestcases?: string;
   codeSnippets?: Array<{ lang: string; langSlug: string; code: string }>;
+  /** Phase 3 D-30 — LC's internal `questionId` (distinct from `questionFrontendId`
+   *  for some problems, e.g., premium variants). Used as the `question_id` REST
+   *  body field by Plan 04's leetcodeRest.ts. Optional: Phase 2 cache entries
+   *  written before this field existed remain valid. */
+  internalQuestionId?: string;
 }
 
 export interface PluginData {
@@ -183,6 +188,10 @@ function isValidDetailCacheEntry(v: unknown): v is DetailCacheEntry {
       typeof (c as { code?: unknown }).code === 'string'
     )) return false;
   }
+  // Phase 3 D-30 — internalQuestionId optional string. Old entries without
+  // the field remain valid (Phase 2 backward compat); malformed non-string
+  // rejects the whole entry (T-03-03-03 threat mitigation).
+  if (d.internalQuestionId !== undefined && typeof d.internalQuestionId !== 'string') return false;
   return true;
 }
 
@@ -298,6 +307,15 @@ export class SettingsStore {
   async setProblemDetail(slug: string, detail: DetailCacheEntry): Promise<void> {
     this.data.problemDetails[slug] = detail;
     await this.persist();
+  }
+
+  /** Phase 3 D-30 — read the internal LC questionId for a slug, if cached.
+   *  Returns null if the slug has no cached detail or the detail pre-dates
+   *  Phase 3 (no internalQuestionId field). Plan 05's SubmissionOrchestrator
+   *  falls back to a live fetch when this returns null. */
+  getInternalQuestionId(slug: string): string | null {
+    const entry = this.getProblemDetail(slug);
+    return entry?.internalQuestionId ?? null;
   }
 
   /** GAP-6: has the one-time "regenerate LeetCode.base" Notice fired yet?

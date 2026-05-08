@@ -66,6 +66,10 @@ export interface NoteWriterClient {
  */
 export interface NoteWriterDetail {
   questionFrontendId: string;
+  /** Phase 3 D-30 — LC's internal questionId (distinct from questionFrontendId
+   *  for premium variants). Populated into DetailCacheEntry.internalQuestionId
+   *  by toDetailCacheEntry so Plan 04's REST body gets the right id. */
+  questionId?: string | null;
   titleSlug: string;
   title: string;
   content: string | null;
@@ -354,5 +358,10 @@ function toDetailCacheEntry(raw: NoteWriterDetail): DetailCacheEntry {
       : [],
     exampleTestcases: raw.exampleTestcases,
     codeSnippets: raw.codeSnippets,
+    // Phase 3 D-30 — carry LC's internal questionId through to the cache so
+    // Plan 04's REST body can read it via SettingsStore.getInternalQuestionId().
+    // `undefined` (not empty string) when LC omits the field so shape-guard
+    // treats old-cache-shape-compatible entries as valid.
+    internalQuestionId: typeof raw.questionId === 'string' ? raw.questionId : undefined,
   };
 }

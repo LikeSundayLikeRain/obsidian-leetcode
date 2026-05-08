@@ -13,7 +13,7 @@
 // one-shot Notice ("LeetCode rate-limited - slowing down.") is emitted by Plan 06 where
 // it catches this error; Plan 02's job is just the throw + parsing. Full 429-handling
 // polish (backoff ladder, multiple-Notice suppression) lives in POLISH-02.
-import { requestUrl } from 'obsidian';
+import { requestUrl, type RequestUrlParam, type RequestUrlResponse } from 'obsidian';
 // eslint-disable-next-line import/no-extraneous-dependencies -- @fetch-impl/fetcher is a transitive module-singleton that we ALSO patch for completeness, though the primary patch target is @leetnotion/leetcode-api's re-exported `fetcher`
 import { fetcher as externalFetcher } from '@fetch-impl/fetcher';
 // The library bundles its OWN `fetcher = new Fetcher()` at module scope and
@@ -89,4 +89,48 @@ export function installRequestUrlFetcher(): void {
  */
 export function getActiveThrottle(): Throttle | null {
   return activeThrottle;
+}
+
+/**
+ * Phase 3 — direct requestUrl access routed through the same throttle bucket
+ * Phase 1 uses for GraphQL. REST callers (src/solve/leetcodeRest.ts in Plan 04)
+ * use this instead of the fetch-compatible `shim` so they get raw `res.json` /
+ * `res.status` / `res.headers` with no fetch `Response` wrapper in the way.
+ *
+ * Semantics:
+ *   - Reuses the same module-scoped `activeThrottle` (D-25 — single 20 req/10 s
+ *     bucket + max-2 concurrent limit across GraphQL and REST).
+ *   - Passes `throw: false` so the caller sees every status code (REST verdict
+ *     flow needs 4xx for session-expiry disambiguation, CF-04).
+ *   - Parses `Retry-After` (seconds) into ms and throws `RateLimitError` on 429;
+ *     Plan 06's one-shot Notice is wired the same way as the GraphQL path.
+ *   - Releases the throttle on every exit path (success, 429, thrown network
+ *     error) — no leaked token on exception.
+ *
+ * Throws:
+ *   - Error('throttledRequestUrl: fetcher not installed') if the throttle has
+ *     not been wired yet (plugin startup race — Plan 05 guards this).
+ *   - RateLimitError on 429 responses; caller's catch can retry or surface.
+ */
+export async function throttledRequestUrl(
+  params: RequestUrlParam,
+): Promise<RequestUrlResponse> {
+  const throttle = activeThrottle;
+  if (!throttle) {
+    throw new Error('throttledRequestUrl: fetcher not installed');
+  }
+  await throttle.acquire();
+  try {
+    const res = await requestUrl({ ...params, throw: false });
+    if (res.status === 429) {
+      const retryAfter = res.headers['retry-after'] ?? res.headers['Retry-After'];
+      const retryMs = retryAfter
+        ? (Number.isFinite(+retryAfter) ? +retryAfter * 1000 : 10_000)
+        : 10_000;
+      throw new RateLimitError(retryMs);
+    }
+    return res;
+  } finally {
+    throttle.release();
+  }
 }
