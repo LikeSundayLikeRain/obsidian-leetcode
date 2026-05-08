@@ -42,6 +42,11 @@ export interface PluginData {
    *  by NoteWriter on re-open after a 7-day TTL. Malformed entries dropped at
    *  load time. D-14. */
   problemDetails: Record<string, DetailCacheEntry>;
+  /** GAP-6 migration flag: set to true after the one-time "your LeetCode.base
+   *  may need to be regenerated" Notice fires, so subsequent plugin loads do
+   *  not spam the user. Checked against the v0.1.0 broken signature in
+   *  src/notes/BaseFile.ts. */
+  legacyBaseNoticeShown: boolean;
 }
 
 /** Compound filter matching LC's "Match All/Any of the following" UI. Each
@@ -70,6 +75,7 @@ const DEFAULT_DATA: PluginData = {
   problemIndex: null,
   filter: null,
   problemDetails: {},
+  legacyBaseNoticeShown: false,
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -215,6 +221,7 @@ export class SettingsStore {
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
       filter: isValidCompoundFilter(raw.filter) ? raw.filter : DEFAULT_DATA.filter,
       problemDetails: sanitizeProblemDetails(raw.problemDetails),
+      legacyBaseNoticeShown: raw.legacyBaseNoticeShown === true,
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -290,6 +297,20 @@ export class SettingsStore {
   /** Persist a detail cache entry. D-15. Mutates in place + persists. */
   async setProblemDetail(slug: string, detail: DetailCacheEntry): Promise<void> {
     this.data.problemDetails[slug] = detail;
+    await this.persist();
+  }
+
+  /** GAP-6: has the one-time "regenerate LeetCode.base" Notice fired yet?
+   *  Checked by main.ts on every plugin load — returns true once the Notice
+   *  has been shown so we don't spam the user on subsequent loads. */
+  hasShownLegacyBaseNotice(): boolean {
+    return this.data.legacyBaseNoticeShown === true;
+  }
+
+  /** GAP-6: mark the one-time "regenerate LeetCode.base" Notice as shown and
+   *  persist so subsequent plugin loads skip the notice path. */
+  async markLegacyBaseNoticeShown(): Promise<void> {
+    this.data.legacyBaseNoticeShown = true;
     await this.persist();
   }
 
