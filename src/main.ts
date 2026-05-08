@@ -6,6 +6,7 @@
 //   3. Construct LeetCodeClient (depends on SettingsStore)
 //   4. Construct AuthService(settings, client) — TWO-ARG; LC client must exist by now
 //   5. Construct ProblemListService (depends on client + settings)
+//   5.5. Construct NoteWriter (Phase 2 — row-click orchestrator; depends on app + client + settings)
 //   6. Register view, ribbon, command, settings tab
 import { Plugin, WorkspaceLeaf } from 'obsidian';
 import { SettingsStore } from './settings/SettingsStore';
@@ -14,6 +15,7 @@ import { LeetCodeClient } from './api/LeetCodeClient';
 import { AuthService } from './auth/AuthService';
 import { ProblemListService } from './browse/ProblemListService';
 import { ProblemBrowserView, BROWSER_VIEW_TYPE } from './browse/ProblemBrowserView';
+import { NoteWriter } from './notes/NoteWriter';
 import { LeetCodeSettingTab } from './settings/SettingsTab';
 
 export default class LeetCodePlugin extends Plugin {
@@ -21,6 +23,7 @@ export default class LeetCodePlugin extends Plugin {
   client!: LeetCodeClient;
   auth!: AuthService;
   list!: ProblemListService;
+  notes!: NoteWriter;
 
   async onload(): Promise<void> {
     // Step 1 — load persisted settings (cookies, folder, language, index)
@@ -47,6 +50,11 @@ export default class LeetCodePlugin extends Plugin {
 
     // Step 5 — list service (depends on client + settings).
     this.list = new ProblemListService(this.client, this.settings);
+
+    // Step 5.5 — note writer (depends on app + client + settings). Phase 2.
+    // Row-click in ProblemBrowserView delegates to plugin.openProblem(slug)
+    // which in turn delegates to this.notes.openProblem(slug).
+    this.notes = new NoteWriter(this.app, this.client, this.settings);
 
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
@@ -79,6 +87,14 @@ export default class LeetCodePlugin extends Plugin {
     // FND-05: plugin must enable/disable without crashes.
     // Obsidian tears down registered views / commands / ribbon icons automatically;
     // we do not need explicit cleanup because all subscriptions go through plugin.registerX().
+  }
+
+  /** Phase 2 entry point for row-click in ProblemBrowserView.
+   *  Delegates to NoteWriter.openProblem(slug). Safe-to-await; errors are
+   *  swallowed inside NoteWriter (D-12 silent-offline) or surfaced via Notice
+   *  (D-13 new-note fetch failure). */
+  async openProblem(slug: string): Promise<void> {
+    return this.notes.openProblem(slug);
   }
 
   private async activateBrowser(): Promise<void> {
