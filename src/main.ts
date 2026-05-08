@@ -90,11 +90,20 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
-   *  Delegates to NoteWriter.openProblem(slug). Safe-to-await; errors are
-   *  swallowed inside NoteWriter (D-12 silent-offline) or surfaced via Notice
-   *  (D-13 new-note fetch failure). */
-  async openProblem(slug: string): Promise<void> {
-    return this.notes.openProblem(slug);
+   *  Delegates to NoteWriter.openProblem(slug, initialStatus). Safe-to-await;
+   *  errors are swallowed inside NoteWriter (D-12 silent-offline) or surfaced
+   *  via Notice (D-13 new-note fetch failure).
+   *
+   *  GAP-2a: `initialStatus` is the user's current LC submission status for
+   *  this problem, sourced from the clicked IndexedProblem row. NoteWriter
+   *  translates this into the on-disk `lc-status` vocabulary on first write.
+   *  D-04 non-downgrade guard in applyFrontmatter means an existing
+   *  'accepted' never gets clobbered on re-open. */
+  async openProblem(
+    slug: string,
+    initialStatus?: 'solved' | 'attempted' | 'untouched',
+  ): Promise<void> {
+    return this.notes.openProblem(slug, initialStatus);
   }
 
   private async activateBrowser(): Promise<void> {

@@ -1,10 +1,17 @@
 // src/notes/NoteWriter.ts
 // Row-click orchestrator for Phase 2.
 //
-// Public surface: `openProblem(slug)` — one verb. Internally branches on:
+// Public surface: `openProblem(slug, initialStatus?)` — one verb. Internally branches on:
 //   - does the note exist?
 //   - is the detail cached, and is it fresh?
 //   - did the network fetch succeed?
+//
+// The optional `initialStatus` 2nd arg is the caller's hint about the user's
+// current LC submission status for this problem (GAP-2a). It uses the
+// IndexedProblem.status internal vocabulary ('solved'|'attempted'|'untouched');
+// the mapping to the on-disk `lc-status` vocabulary is owned by NoteTemplate's
+// `mapStatusDisplay`. The D-04 non-downgrade guard in `applyFrontmatter`
+// protects an existing 'accepted' from being clobbered on re-open.
 //
 // Decision references:
 //   D-01 body layout (two headings: ## Problem, ## Notes)
@@ -33,6 +40,7 @@ import {
   buildFrontmatterInput,
   buildNoteBody,
   buildNotePath,
+  mapStatusDisplay,
 } from './NoteTemplate';
 import { htmlToMarkdown } from './htmlToMarkdown';
 import { rewriteProblemSection } from './HeadingRegion';
@@ -100,7 +108,10 @@ export class NoteWriter {
     private readonly settings: NoteWriterSettings,
   ) {}
 
-  async openProblem(slug: string): Promise<void> {
+  async openProblem(
+    slug: string,
+    initialStatus?: 'solved' | 'attempted' | 'untouched',
+  ): Promise<void> {
     const folder = this.settings.getProblemsFolder();
     const cached = this.settings.getProblemDetail(slug);
 
@@ -184,7 +195,11 @@ export class NoteWriter {
       await applyFrontmatter(
         this.app,
         file as unknown as TFile,
-        buildFrontmatterInput(newEntry, this.settings.getDefaultLanguage()),
+        buildFrontmatterInput(
+          newEntry,
+          this.settings.getDefaultLanguage(),
+          mapStatusDisplay(initialStatus),
+        ),
       );
     } catch (err) {
       logger.debug('notes.openProblem: applyFrontmatter first attempt threw — retrying after 50ms', err);
@@ -192,7 +207,11 @@ export class NoteWriter {
       await applyFrontmatter(
         this.app,
         file as unknown as TFile,
-        buildFrontmatterInput(newEntry, this.settings.getDefaultLanguage()),
+        buildFrontmatterInput(
+          newEntry,
+          this.settings.getDefaultLanguage(),
+          mapStatusDisplay(initialStatus),
+        ),
       );
     }
 

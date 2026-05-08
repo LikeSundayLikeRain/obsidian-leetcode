@@ -422,7 +422,9 @@ export class ProblemBrowserView extends ItemView {
     }
     const pick = visible[Math.floor(Math.random() * visible.length)];
     if (!pick) return;
-    void this.plugin.openProblem(pick.slug);
+    // GAP-2a: forward the row's IndexedProblem.status so the on-first-write
+    // lc-status reflects the user's real LC submission status.
+    void this.plugin.openProblem(pick.slug, pick.status);
   }
 
   /** Compute the currently-visible row set: apply compound filter then search. */
@@ -546,7 +548,9 @@ export class ProblemBrowserView extends ItemView {
     });
 
     row.addEventListener('click', () => {
-      void this.plugin.openProblem(p.slug);
+      // GAP-2a: forward the row's IndexedProblem.status so the on-first-write
+      // lc-status reflects the user's real LC submission status.
+      void this.plugin.openProblem(p.slug, p.status);
     });
   }
 }
