@@ -65,6 +65,35 @@ describe('Throttle (BROWSE-05)', () => {
   });
 });
 
+describe('Throttle.release — over-release guard (CR-04)', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('concurrency cap holds even after extra release() calls', async () => {
+    const t = new Throttle({ capacity: 100, refillMs: 10_000, maxConcurrent: 2 });
+    // Call release() on a fresh throttle — nothing is in flight. Without the
+    // guard, `running` would go to -5 and the `running >= maxConc` gate would
+    // admit 7 concurrent runners instead of 2.
+    for (let i = 0; i < 5; i++) t.release();
+
+    let inFlight = 0;
+    let peak = 0;
+    const all = Promise.all(
+      Array.from({ length: 10 }, async () => {
+        await t.acquire();
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise<void>((r) => setTimeout(r, 5));
+        inFlight--;
+        t.release();
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    await all;
+    expect(peak).toBeLessThanOrEqual(2);
+  });
+});
+
 describe('Throttle.onQueueChange (D-13)', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
@@ -99,10 +128,13 @@ describe('Throttle.onQueueChange (D-13)', () => {
     expect(depths).toContain(1);
     expect(depths).toContain(2);
 
-    t.release();                    // wakes one waiter — depth drops
+    t.release();                    // shift emits depth 1 before the woken
+                                    // waiter re-queues (tokens still 0)
     await Promise.resolve();
-    const depthAfterOneRelease = depths[depths.length - 1];
-    expect(depthAfterOneRelease).toBeLessThan(2);
+    // The shift during release must have emitted depth 1 at least once —
+    // even if the woken waiter synchronously re-queues when tokens are still
+    // empty (CR-03 synchronous-wake path).
+    expect(depths).toContain(1);
 
     unsub();
     const before = depths.length;

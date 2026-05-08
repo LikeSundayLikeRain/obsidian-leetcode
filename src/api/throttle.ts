@@ -93,15 +93,30 @@ export class Throttle {
         this.lastRefill = nowAgain;
       }
     }
-    this.tokens--;
+    // Defensive clamp: the while-loop guarantees tokens > 0 on entry, but
+    // if a future refactor ever reorders the guards, keep this from going
+    // negative (CR-03 defense-in-depth). Math.max(0, ...) is a no-op in the
+    // current correct path.
+    this.tokens = Math.max(0, this.tokens - 1);
     this.running++;
   }
 
   release(): void {
-    this.running--;
+    // CR-04: guard against over-release. If release() is called more times
+    // than acquire() has returned (e.g. exception thrown between acquire and
+    // the request body, or a buggy caller), `running` would go negative and
+    // the `running >= maxConc` gate would silently admit more than maxConc
+    // concurrent requests. Clamp to zero instead.
+    if (this.running > 0) this.running--;
     const w = this.waiters.shift();
     this.emitDepthChange();
-    if (w) _setTimeout(w, 0);
+    // CR-03: wake the next waiter synchronously. The previous impl used
+    // _setTimeout(w, 0), which introduced a tick gap during which a second
+    // concurrent acquire() could exit its while-loop with the same token
+    // count, resulting in `tokens-- === -1`. A synchronous call preserves
+    // the single-threaded invariant (one waker runs to completion before the
+    // next starts).
+    if (w) w();
   }
 
   getQueueDepth(): number {
