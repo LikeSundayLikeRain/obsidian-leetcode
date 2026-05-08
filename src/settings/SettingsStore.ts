@@ -11,18 +11,42 @@ export interface PluginData {
   version: 1;
   auth: AuthCookies | null;
   username: string | null;
+  /** Whether the signed-in user has LC Premium. Controls the default-hide-premium
+   *  behavior in the filter modal (if null → unknown, treat as non-premium). */
+  isPremium: boolean | null;
   problemsFolder: string;  // D-10: default 'LeetCode' (stored without trailing slash)
   defaultLanguage: string; // D-10: default 'python3' (LC's Python slug)
   problemIndex: ProblemIndex | null;
+  /** Compound filter rules from the filter modal. Null = no filter active.
+   *  Persisted so filter survives plugin reload / Obsidian restart. */
+  filter: CompoundFilter | null;
 }
+
+/** Compound filter matching LC's "Match All/Any of the following" UI. Each
+ *  rule targets a single field with an operator; the top-level `match` field
+ *  decides AND vs OR across rules. */
+export interface CompoundFilter {
+  match: 'all' | 'any';
+  rules: FilterRule[];
+}
+
+export type FilterRule =
+  | { field: 'status'; op: 'is' | 'is-not'; values: string[] }
+  | { field: 'difficulty'; op: 'is' | 'is-not'; values: string[] }
+  | { field: 'topics'; op: 'is' | 'is-not'; values: string[] }
+  | { field: 'question-id'; op: 'range'; min: number | null; max: number | null }
+  | { field: 'acceptance'; op: 'range'; min: number | null; max: number | null }
+  | { field: 'premium'; op: 'is'; value: 'premium' | 'non-premium' | null };
 
 const DEFAULT_DATA: PluginData = {
   version: 1,
   auth: null,
   username: null,
+  isPremium: null,
   problemsFolder: 'LeetCode',
   defaultLanguage: 'python3',
   problemIndex: null,
+  filter: null,
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -63,7 +87,10 @@ function isValidIndexedProblem(v: unknown): v is IndexedProblem {
     typeof p.title === 'string' &&
     typeof p.diff === 'string' && VALID_DIFFICULTIES.has(p.diff) &&
     typeof p.paid === 'boolean' &&
-    (p.status === undefined || (typeof p.status === 'string' && VALID_STATUSES.has(p.status)))
+    (p.status === undefined || (typeof p.status === 'string' && VALID_STATUSES.has(p.status))) &&
+    (p.acRate === undefined || (typeof p.acRate === 'number' && p.acRate >= 0 && p.acRate <= 100)) &&
+    (p.topics === undefined ||
+      (Array.isArray(p.topics) && p.topics.every((t) => typeof t === 'string')))
   );
 }
 
@@ -72,6 +99,38 @@ function isValidProblemIndex(v: unknown): v is ProblemIndex {
   const idx = v as Partial<ProblemIndex>;
   if (typeof idx.fetchedAt !== 'number' || !Array.isArray(idx.problems)) return false;
   return idx.problems.every(isValidIndexedProblem);
+}
+
+/** Shape-guard for persisted compound filter. Rejects unknown field names /
+ *  operator values so a corrupt data.json can't inject a filter rule that
+ *  crashes the evaluator. */
+function isValidCompoundFilter(v: unknown): v is CompoundFilter {
+  if (!v || typeof v !== 'object') return false;
+  const f = v as Partial<CompoundFilter>;
+  if (f.match !== 'all' && f.match !== 'any') return false;
+  if (!Array.isArray(f.rules)) return false;
+  return f.rules.every((r: unknown) => {
+    if (!r || typeof r !== 'object') return false;
+    const rule = r as Record<string, unknown>;
+    const multiValueFields = new Set(['status', 'difficulty', 'topics']);
+    const rangeFields = new Set(['question-id', 'acceptance']);
+    if (typeof rule.field !== 'string') return false;
+    if (multiValueFields.has(rule.field)) {
+      return (rule.op === 'is' || rule.op === 'is-not') &&
+        Array.isArray(rule.values) &&
+        rule.values.every((x) => typeof x === 'string');
+    }
+    if (rangeFields.has(rule.field)) {
+      return rule.op === 'range' &&
+        (rule.min === null || typeof rule.min === 'number') &&
+        (rule.max === null || typeof rule.max === 'number');
+    }
+    if (rule.field === 'premium') {
+      return rule.op === 'is' &&
+        (rule.value === null || rule.value === 'premium' || rule.value === 'non-premium');
+    }
+    return false;
+  });
 }
 
 export class SettingsStore {
@@ -89,11 +148,13 @@ export class SettingsStore {
       version: 1,
       auth: isValidAuthCookies(raw.auth) ? raw.auth : DEFAULT_DATA.auth,
       username: typeof raw.username === 'string' ? raw.username : DEFAULT_DATA.username,
+      isPremium: typeof raw.isPremium === 'boolean' ? raw.isPremium : DEFAULT_DATA.isPremium,
       problemsFolder: sanitizeFolder(raw.problemsFolder),
       defaultLanguage: (typeof raw.defaultLanguage === 'string' && raw.defaultLanguage.trim())
         ? raw.defaultLanguage
         : DEFAULT_DATA.defaultLanguage,
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
+      filter: isValidCompoundFilter(raw.filter) ? raw.filter : DEFAULT_DATA.filter,
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -138,6 +199,18 @@ export class SettingsStore {
   getUsername(): string | null { return this.data.username; }
   async setUsername(u: string | null): Promise<void> {
     this.data.username = u;
+    await this.persist();
+  }
+
+  getIsPremium(): boolean | null { return this.data.isPremium; }
+  async setIsPremium(v: boolean | null): Promise<void> {
+    this.data.isPremium = v;
+    await this.persist();
+  }
+
+  getFilter(): CompoundFilter | null { return this.data.filter; }
+  async setFilter(f: CompoundFilter | null): Promise<void> {
+    this.data.filter = f;
     await this.persist();
   }
 
