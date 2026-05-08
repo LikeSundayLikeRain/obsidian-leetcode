@@ -86,11 +86,11 @@ describe('NoteWriter starter-code retrofit (D-06, D-07, D-09, Pitfall 6)', () =>
       "User's private observations — must not be touched.",
       '',
     ].join('\n');
-    const m = makeMockVaultApp({ 'LeetCode/1. Two Sum.md': existingBody });
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': existingBody });
     const client = makeMockLeetCodeClient({ detail: pythonStarterDetail() });
     const writer = new NoteWriter(m.app as never, client as never, makeEmptySettings() as never);
     await writer.openProblem('two-sum');
-    const body = m.getContent('LeetCode/1. Two Sum.md') ?? '';
+    const body = m.getContent('LeetCode/1-two-sum.md') ?? '';
     expect(body).toContain('## Code');
     expect(body.indexOf('## Problem')).toBeLessThan(body.indexOf('## Code'));
     expect(body.indexOf('## Code')).toBeLessThan(body.indexOf('## Notes'));
@@ -125,11 +125,11 @@ describe('NoteWriter starter-code retrofit (D-06, D-07, D-09, Pitfall 6)', () =>
       '## Notes',
       '',
     ].join('\n');
-    const m = makeMockVaultApp({ 'LeetCode/1. Two Sum.md': existingBody });
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': existingBody });
     const client = makeMockLeetCodeClient({ detail: pythonStarterDetail() });
     const writer = new NoteWriter(m.app as never, client as never, makeEmptySettings() as never);
     await writer.openProblem('two-sum');
-    const body = m.getContent('LeetCode/1. Two Sum.md') ?? '';
+    const body = m.getContent('LeetCode/1-two-sum.md') ?? '';
     // User's code survives verbatim.
     expect(body).toContain('# My work in progress — do not touch');
     expect(body).toContain('return [nums[0], nums[1]]');
@@ -154,11 +154,11 @@ describe('NoteWriter starter-code retrofit (D-06, D-07, D-09, Pitfall 6)', () =>
       '## Notes',
       '',
     ].join('\n');
-    const m = makeMockVaultApp({ 'LeetCode/1. Two Sum.md': existingBody });
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': existingBody });
     const client = makeMockLeetCodeClient({ detail: pythonStarterDetail() });
     const writer = new NoteWriter(m.app as never, client as never, makeEmptySettings() as never);
     await writer.openProblem('two-sum');
-    const body = m.getContent('LeetCode/1. Two Sum.md') ?? '';
+    const body = m.getContent('LeetCode/1-two-sum.md') ?? '';
     // Starter inserted (langSlug match on python3).
     expect(body).toContain('class Solution:');
     // Pseudo-code preserved (Pitfall 6: text blocks are non-starter).
@@ -180,7 +180,7 @@ describe('NoteWriter starter-code retrofit (D-06, D-07, D-09, Pitfall 6)', () =>
       '## Notes',
       '',
     ].join('\n');
-    const m = makeMockVaultApp({ 'LeetCode/1. Two Sum.md': existingBody });
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': existingBody });
     const client = makeMockLeetCodeClient({ detail: emptyDetail });
     const writer = new NoteWriter(m.app as never, client as never, makeEmptySettings({ defaultLanguage: null }) as never);
     await writer.openProblem('two-sum');
@@ -188,7 +188,7 @@ describe('NoteWriter starter-code retrofit (D-06, D-07, D-09, Pitfall 6)', () =>
     //   (a) not surface a user-visible Notice (D-09 silent), and
     //   (b) not leave the note with a malformed ## Code heading (no dangling heading
     //       with no body). The simplest pre-Plan-07 contract: body is unchanged.
-    const body = m.getContent('LeetCode/1. Two Sum.md') ?? '';
+    const body = m.getContent('LeetCode/1-two-sum.md') ?? '';
     // The user-facing retrofit path did NOT shout at the user.
     const hadRetrofitNotice = noticeSpy.mock.calls.some(([msg]) =>
       /retrofit|starter|code section/i.test(String(msg))

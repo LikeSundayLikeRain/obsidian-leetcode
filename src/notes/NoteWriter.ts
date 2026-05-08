@@ -46,6 +46,8 @@ import { htmlToMarkdown } from './htmlToMarkdown';
 import { rewriteProblemSection } from './HeadingRegion';
 import { ensureLeetcodeBase } from './BaseFile';
 import type { DetailCacheEntry } from './types';
+// Phase 3 Plan 07 — retrofit hook for existing + new notes (D-06/D-07/D-09).
+import { retrofit as retrofitStarterCodeRaw } from '../solve/starterCodeInjector';
 
 /** D-11 / D-14: 7 days between forced background refreshes. */
 export const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -112,6 +114,30 @@ export class NoteWriter {
     private readonly settings: NoteWriterSettings,
   ) {}
 
+  /**
+   * Phase 3 Plan 07 — retrofit wrapper with D-09 pre-guards.
+   *
+   * starterCodeInjector.retrofit is silent-on-failure internally, but it is
+   * not silent-on-no-language: with an empty langSlug and no starter it
+   * would still write an empty tag-less fenced block under a fresh `## Code`
+   * heading (malformed). We short-circuit that case here so the user's note
+   * is left structurally unchanged until they either configure a default
+   * language in settings or invoke the explicit "Insert starter code"
+   * command (Plan 07 Task 2).
+   */
+  private async retrofitStarterCode(
+    file: TFile,
+    detail: DetailCacheEntry | null,
+  ): Promise<void> {
+    const defaultLang = this.settings.getDefaultLanguage();
+    const hasAnyStarter = Array.isArray(detail?.codeSnippets) && (detail?.codeSnippets?.length ?? 0) > 0;
+    if (!defaultLang && !hasAnyStarter) {
+      logger.debug('notes.retrofitStarterCode: skipped — no default language and no starter snippets');
+      return;
+    }
+    await retrofitStarterCodeRaw(this.app, file, detail, this.settings);
+  }
+
   async openProblem(
     slug: string,
     initialStatus?: 'solved' | 'attempted' | 'untouched',
@@ -132,6 +158,9 @@ export class NoteWriter {
       await ensureLeetcodeBase(this.app, folder).catch((err) => {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
       });
+      // Phase 3 Plan 07 — retrofit starter code on re-open path (D-07 idempotent).
+      // Silent on every failure per D-09 (retrofit owns its own error surface).
+      await this.retrofitStarterCode(existingFile as unknown as TFile, cached);
       // D-11/D-12: background-refresh if cache is stale; silent on failure.
       const now = Date.now();
       const cacheStale = !cached || (now - cached.fetchedAt) > CACHE_TTL_MS;
@@ -180,9 +209,50 @@ export class NoteWriter {
       await this.app.vault.createFolder(trimmedFolder);
     }
 
-    // Create the file with body; frontmatter comes on a separate pass via processFrontMatter.
+    // Phase 3 Plan 07 — canonical-path pre-check. The re-open branch above
+    // only fires when the settings cache already has a detail entry (so we
+    // can compute the canonical path from cache). If the cache was cleared
+    // (prune, manual reset, plugin reinstall) but the note file still exists
+    // on disk, we MUST retrofit rather than re-create. Otherwise
+    // `vault.create` below throws ("already exists") and the user sees a
+    // broken re-open. Using the fresh detail's id, we can now compute the
+    // canonical path and retrofit silently.
     const filePath = buildNotePath(folder, newEntry.id, slug);
-    const body = buildNoteBody({ problemMarkdown: htmlToMarkdown(newEntry.contentHtml) });
+    const existingAtCanonical = this.app.vault.getAbstractFileByPath(filePath);
+    if (existingAtCanonical && isFileLike(existingAtCanonical)) {
+      // Treat as re-open: reveal + retrofit + refresh frontmatter.
+      await this.app.workspace.openLinkText(existingAtCanonical.path, '', false);
+      await ensureLeetcodeBase(this.app, folder).catch((err) => {
+        logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
+      });
+      // Silent retrofit (D-09) — starterCodeInjector handles all error surfaces.
+      await this.retrofitStarterCode(existingAtCanonical as unknown as TFile, newEntry);
+      // Union-merge frontmatter so lc-* keys track the fresh detail, mirroring
+      // backgroundRefresh's posture.
+      try {
+        await applyFrontmatter(
+          this.app,
+          existingAtCanonical as unknown as TFile,
+          buildFrontmatterInput(
+            newEntry,
+            this.settings.getDefaultLanguage(),
+            mapStatusDisplay(initialStatus),
+          ),
+        );
+      } catch (err) {
+        logger.debug('notes.openProblem: applyFrontmatter on recovered note failed', err);
+      }
+      return;
+    }
+
+    // Create the file with body; frontmatter comes on a separate pass via processFrontMatter.
+    const defaultLang = this.settings.getDefaultLanguage();
+    const starterCode = pickStarterCode(newEntry, defaultLang);
+    const body = buildNoteBody({
+      problemMarkdown: htmlToMarkdown(newEntry.contentHtml),
+      langSlug: defaultLang || undefined,
+      starterCode,
+    });
     const file = await this.app.vault.create(filePath, body);
 
     if (!isFileLike(file)) {
@@ -219,6 +289,13 @@ export class NoteWriter {
       );
     }
 
+    // Phase 3 Plan 07 — belt-and-suspenders retrofit on the new-note path.
+    // buildNoteBody above already emits `## Code` with the starter block, so
+    // this call is typically an idempotent no-op (recognized langSlug fence
+    // detected → early return). Retained so a future change to buildNoteBody
+    // that drops `## Code` doesn't silently break new-note creation.
+    await this.retrofitStarterCode(file as unknown as TFile, newEntry);
+
     // D-18 lazy ship — opportunistic, non-fatal.
     await ensureLeetcodeBase(this.app, folder).catch((err) => {
       logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
@@ -242,6 +319,11 @@ export class NoteWriter {
     const freshMarkdown = htmlToMarkdown(entry.contentHtml);
     // Body rewrite — vault.process is atomic; rewriteProblemSection is pure.
     await this.app.vault.process(file, (current) => rewriteProblemSection(current, freshMarkdown));
+    // Phase 3 Plan 07 — retrofit starter code if the note still lacks `## Code`
+    // (e.g., cached entry had no codeSnippets when first written but a later
+    // refresh returns them). Idempotent on notes that already have the
+    // section. Silent on failure per D-09.
+    await this.retrofitStarterCode(file, entry);
     // Frontmatter update — same pass, union-merge semantics inside applyFrontmatter.
     await applyFrontmatter(
       this.app,
@@ -342,6 +424,20 @@ export class NoteWriter {
       buildFrontmatterInput(entry, this.settings.getDefaultLanguage()),
     );
   }
+}
+
+/**
+ * Phase 3 Plan 07 — resolve the starter snippet for the user's default
+ * language. Returns empty string when either the language is empty (user
+ * cleared the setting) or the detail has no matching snippet. Empty string
+ * is safe — `buildNoteBody` will emit an empty fenced block with the
+ * configured langSlug tag.
+ */
+function pickStarterCode(entry: DetailCacheEntry, langSlug: string): string {
+  if (!langSlug) return '';
+  const snippets = entry.codeSnippets ?? [];
+  const hit = snippets.find((s) => s.langSlug === langSlug);
+  return hit?.code ?? '';
 }
 
 /** Map LC's detail shape into the on-disk cache entry. */
