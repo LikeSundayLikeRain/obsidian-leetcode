@@ -1,0 +1,19 @@
+<p>Given an input string <code>s</code> and a pattern <code>p</code>, implement regular expression matching with support for <code>'.'</code> and <code>'*'</code> where:</p>
+<ul>
+ <li><code>'.'</code> Matches any single character.</li>
+ <li><code>'*'</code> Matches zero or more of the preceding element.</li>
+</ul>
+<p>The matching should cover the <strong>entire</strong> input string (not partial).</p>
+<p>&nbsp;</p>
+<p><strong class="example">Example — reference solution:</strong></p>
+<pre><code class="language-python">def isMatch(s: str, p: str) -&gt; bool:
+    dp = [[False] * (len(p) + 1) for _ in range(len(s) + 1)]
+    dp[0][0] = True
+    return dp[-1][-1]
+</code></pre>
+<p>&nbsp;</p>
+<p><strong>Constraints:</strong></p>
+<ul>
+ <li><code>1 &lt;= s.length &lt;= 20</code></li>
+ <li><code>1 &lt;= p.length &lt;= 20</code></li>
+</ul>
