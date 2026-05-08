@@ -206,13 +206,27 @@ versus approximate.
 
 ### Synthetic Fixture Flags
 
-_(Fill in only if you had to fall back to synthetic for any fixture.)_
+All 8 Wave 0 fixtures were seeded as **SYNTHETIC-NOT-LIVE** by the GSD
+executor agent (which does not have live LC session access). Shapes were
+drawn from the leetcode-cli helper.js status table + documented LC
+response structure. Each fixture has a top-level `_fixture_note` field
+confirming its synthetic provenance.
 
-- [ ] `mle.json` — synthetic (reason: ______ )
-- [ ] `compile-error.json` — synthetic (reason: ______ )
-- [ ] `runtime-error.json` — synthetic (reason: ______ )
-- [ ] `tle.json` — synthetic (reason: ______ )
-- [ ] All others captured live.
+- [x] `accepted.json` — synthetic (executor has no live LC; re-capture before Plan 04)
+- [x] `wrong-answer.json` — synthetic (executor has no live LC; re-capture before Plan 04)
+- [x] `tle.json` — synthetic (executor has no live LC; re-capture before Plan 04)
+- [x] `mle.json` — synthetic (executor has no live LC; re-capture before Plan 04)
+- [x] `compile-error.json` — synthetic (executor has no live LC; re-capture before Plan 04)
+- [x] `runtime-error.json` — synthetic (executor has no live LC; re-capture before Plan 04)
+- [x] `run-sample.json` — synthetic (executor has no live LC; re-capture before Plan 04)
+- [x] `run-custom.json` — synthetic (executor has no live LC; re-capture before Plan 04)
+
+**Re-capture gate (blocking for Plan 04 merge):** Every synthetic fixture
+MUST be replaced with a live-captured JSON before Plan 04's REST client
+ships. A live capture removes the `_fixture_note` field from the JSON and
+UPDATES this checklist (checkbox → unchecked OR row removed entirely).
+Verify-work in Plan 04 greps for `_fixture_note` in `tests/solve/fixtures/`;
+any hit blocks merge.
 
 ## Redirect spike result
 
