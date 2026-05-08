@@ -8,6 +8,14 @@ import type { IndexedProblem } from './types';
 import { isSessionExpired } from '../api/LeetCodeClient';
 import { getActiveThrottle } from '../api/requestUrlFetcher';
 import { RateLimitError } from '../shared/errors';
+// WR-02: route all timers through the popout-aware helpers used by Throttle
+// so that timers on a view hosted in an Obsidian popout bind to the popout's
+// event loop, not the main window's.
+import {
+  setWindowTimeout,
+  clearWindowTimeout,
+  type TimerHandle,
+} from '../shared/timers';
 
 export const BROWSER_VIEW_TYPE = 'leetcode-browser';
 
@@ -33,13 +41,13 @@ export class ProblemBrowserView extends ItemView {
   private searchTerm = '';
   private activeDifficulties: Set<Diff> = new Set();
   private activeStatuses: Set<StatusValue> = new Set();
-  private searchDebounce: number | null = null;
+  private searchDebounce: TimerHandle | null = null;
   private rowsContainer: HTMLElement | null = null;
 
   // Throttle footer indicator state (BLOCKER 3 / D-13).
   private throttleUnsub: (() => void) | null = null;
   private throttleFooterEl: HTMLElement | null = null;
-  private throttleFooterTimer: number | null = null;
+  private throttleFooterTimer: TimerHandle | null = null;
 
   constructor(leaf: WorkspaceLeaf, private readonly plugin: LeetCodePlugin) {
     super(leaf);
@@ -78,7 +86,7 @@ export class ProblemBrowserView extends ItemView {
 
   async onClose(): Promise<void> {
     if (this.searchDebounce !== null) {
-      window.clearTimeout(this.searchDebounce);
+      clearWindowTimeout(this.searchDebounce);
       this.searchDebounce = null;
     }
     // Tear down throttle subscription + pending timer (D-13 cleanup).
@@ -155,8 +163,8 @@ export class ProblemBrowserView extends ItemView {
       },
     });
     input.addEventListener('input', () => {
-      if (this.searchDebounce !== null) window.clearTimeout(this.searchDebounce);
-      this.searchDebounce = window.setTimeout(() => {
+      if (this.searchDebounce !== null) clearWindowTimeout(this.searchDebounce);
+      this.searchDebounce = setWindowTimeout(() => {
         this.searchTerm = input.value;
         this.renderRows();
       }, SEARCH_DEBOUNCE_MS);
@@ -230,7 +238,7 @@ export class ProblemBrowserView extends ItemView {
     this.throttleUnsub = throttle.onQueueChange((depth: number) => {
       if (depth > 0) {
         if (this.throttleFooterTimer === null && !this.throttleFooterEl) {
-          this.throttleFooterTimer = window.setTimeout(() => {
+          this.throttleFooterTimer = setWindowTimeout(() => {
             this.throttleFooterEl = root.createDiv({ cls: 'lc-footer' });
             // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "LeetCode" is a proper-noun brand name
             this.throttleFooterEl.setText('⋯ Fetching from LeetCode…');
@@ -249,7 +257,7 @@ export class ProblemBrowserView extends ItemView {
 
   private clearThrottleFooterTimer(): void {
     if (this.throttleFooterTimer !== null) {
-      window.clearTimeout(this.throttleFooterTimer);
+      clearWindowTimeout(this.throttleFooterTimer);
       this.throttleFooterTimer = null;
     }
   }

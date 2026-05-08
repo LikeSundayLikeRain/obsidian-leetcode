@@ -3,29 +3,10 @@
 // D-13 — exposes a queue-depth observer so Plan 06's footer indicator can show
 // "⋯ Fetching from LeetCode…" only when the queue stays > 0 for > 2 s.
 
-// Popout-window-safe timer helpers. Obsidian injects `activeWindow` as the
-// currently-focused window (including popouts); its `setTimeout` binds timers
-// to that window's event loop. In Node-hosted unit tests `activeWindow` is
-// undefined, so we fall back to the platform `setTimeout`. Resolution happens
-// per-call so that vitest's `useFakeTimers()` (which swaps the platform timer
-// functions after module load) still works.
-declare const activeWindow: Window | undefined;
-type TimerHandle = ReturnType<typeof setTimeout>;
-const _setTimeout = (fn: () => void, ms: number): TimerHandle => {
-  if (typeof activeWindow !== 'undefined' && activeWindow) {
-    return activeWindow.setTimeout(fn, ms) as unknown as TimerHandle;
-  }
-  // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test fallback; activeWindow branch is the runtime path
-  return setTimeout(fn, ms);
-};
-const _clearTimeout = (handle: TimerHandle): void => {
-  if (typeof activeWindow !== 'undefined' && activeWindow) {
-    activeWindow.clearTimeout(handle as unknown as number);
-    return;
-  }
-  // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test fallback; activeWindow branch is the runtime path
-  clearTimeout(handle);
-};
+// Popout-window-safe timer helpers live in shared/timers (WR-02) so that
+// every module needing a timer — throttle, ProblemBrowserView, future views —
+// routes through the same activeWindow-aware path.
+import { setWindowTimeout as _setTimeout, clearWindowTimeout as _clearTimeout } from '../shared/timers';
 
 export interface ThrottleOpts {
   capacity: number;
