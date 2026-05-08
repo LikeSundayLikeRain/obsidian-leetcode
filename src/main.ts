@@ -7,10 +7,22 @@
 //   4. Construct AuthService(settings, client) — TWO-ARG; LC client must exist by now
 //   5. Construct ProblemListService (depends on client + settings)
 //   5.5. Construct NoteWriter (Phase 2 — row-click orchestrator; depends on app + client + settings)
-//   6. Register view, ribbon, command, settings tab
-import { Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+//   5.6. Phase 3 — register solve-path state (commands wired in Step 6c).
+//   6. Register view, ribbon, commands, settings tab
+//
+// Phase 3 note on the solve-path wiring shape: Plan 05 shipped
+// SubmissionOrchestrator with a fetcher-based DI shape (NOT the modalFactory
+// shape the plan sketch described). Plan 07 therefore wires the modal in the
+// COMMAND LAYER rather than inside the orchestrator — the command lambda
+// opens VerdictModal, sniffs polling-detail responses off a wrapping fetcher
+// to capture the terminal payload, and drives the modal transitions itself.
+// This keeps the Plan 05 orchestrator untouched (its public API is just
+// submit/cancel/isInFlight) while still satisfying Plan 07's user-facing
+// contract (pending → verdict / abort / timeout).
+import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SettingsStore } from './settings/SettingsStore';
-import { installRequestUrlFetcher } from './api/requestUrlFetcher';
+import { installRequestUrlFetcher, throttledRequestUrl } from './api/requestUrlFetcher';
 import { LeetCodeClient } from './api/LeetCodeClient';
 import { AuthService } from './auth/AuthService';
 import { ProblemListService } from './browse/ProblemListService';
@@ -18,6 +30,37 @@ import { ProblemBrowserView, BROWSER_VIEW_TYPE } from './browse/ProblemBrowserVi
 import { NoteWriter } from './notes/NoteWriter';
 import { isLegacyLeetcodeBaseV010 } from './notes/BaseFile';
 import { LeetCodeSettingTab } from './settings/SettingsTab';
+// Phase 3 Plan 07 imports — orchestrator + modals + REST + pure utilities.
+import { SubmissionOrchestrator } from './solve/submissionOrchestrator';
+import { VerdictModal } from './solve/VerdictModal';
+import { CustomTestModal } from './solve/CustomTestModal';
+import { readCasesFromVault } from './solve/customTestStore';
+import { forceInjectCodeSection } from './solve/starterCodeInjector';
+import { extractFirstFencedBlock } from './solve/codeExtractor';
+import { resolveLangSlug } from './solve/languages';
+import { interpretSolution } from './solve/leetcodeRest';
+import {
+  pollSubmission,
+  AbortError as PollAbortError,
+  JudgeTimeoutError,
+  type AbortLike,
+  type TerminalCheckResponse,
+} from './solve/pollingOrchestrator';
+import { setWindowTimeout } from './shared/timers';
+import { logger } from './shared/logger';
+import type { SubmitCheckResponse, RunCheckResponse } from './solve/types';
+
+/** Shape returned by getActiveProblemContext — the minimum info every Phase 3
+ *  command needs: the TFile (for readCasesFromVault etc.), the slug (from
+ *  lc-slug frontmatter), and a live `currentBody()` getter that re-reads at
+ *  invocation time (SOLVE-09). */
+interface ProblemContext {
+  view: MarkdownView;
+  file: TFile;
+  slug: string;
+  title: string;
+  currentBody: () => string;
+}
 
 export default class LeetCodePlugin extends Plugin {
   settings!: SettingsStore;
@@ -25,6 +68,13 @@ export default class LeetCodePlugin extends Plugin {
   auth!: AuthService;
   list!: ProblemListService;
   notes!: NoteWriter;
+
+  // Phase 3 solve-path state.
+  //   activeSolve: currently-in-flight submission/run orchestrator-wrapper.
+  //     Tracks the single-flight state across ALL phase-3 commands (submit,
+  //     run-sample, run-custom) so the Cancel command can abort whichever is
+  //     running and the guard fires for any attempted concurrent kick-off.
+  private activeSolve: ActiveSolve | null = null;
 
   async onload(): Promise<void> {
     // Step 1 — load persisted settings (cookies, folder, language, index)
@@ -57,6 +107,8 @@ export default class LeetCodePlugin extends Plugin {
     // which in turn delegates to this.notes.openProblem(slug).
     this.notes = new NoteWriter(this.app, this.client, this.settings);
 
+    // Step 5.6 — Phase 3 solve-path state already nulled; commands wired in 6c.
+
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
       new ProblemBrowserView(leaf, this));
@@ -67,12 +119,12 @@ export default class LeetCodePlugin extends Plugin {
       void this.activateBrowser();
     });
 
-    // Step 6c — command palette entry (BROWSE-01). Shared Pattern 8 rules:
+    // Step 6c — command palette entries. Shared Pattern 8 rules:
     //   - id does NOT contain the plugin id ('leetcode') or the word 'command'
     //   - name is sentence case and does NOT start with the plugin name
     //   - NO hotkeys field (commands/no-default-hotkeys)
-    // Plan 06 acceptance criterion LOCKS the command id verbatim; Obsidian prefixes
-    // it at runtime with the plugin id, so the resulting command is "leetcode:open-...".
+    // Plan 06 acceptance criterion LOCKS the 'open-leetcode-browser' id verbatim;
+    // Obsidian prefixes it at runtime with the plugin id.
     this.addCommand({
       // eslint-disable-next-line obsidianmd/commands/no-plugin-id-in-command-id -- Plan 06 acceptance grep pins this id verbatim
       id: 'open-leetcode-browser',
@@ -106,6 +158,93 @@ export default class LeetCodePlugin extends Plugin {
         if (!checking) {
           void this.refreshProblem(slug);
         }
+        return true;
+      },
+    });
+
+    // ── Phase 3 Plan 07 command set (5 commands) ────────────────────────
+    // All five gate on the active editor having an `lc-slug` frontmatter
+    // entry (so the Obsidian command palette disables them on non-problem
+    // notes via editorCheckCallback returning false). Cancel is the
+    // exception — it is enabled whenever an activeSolve is present.
+
+    // Run code (sample) — invokes LC's /interpret_solution/ endpoint with the
+    // problem's exampleTestcases. Opens a VerdictModal in pending state, polls
+    // via pollSubmission, then renders the terminal verdict (RunCheckResponse).
+    this.addCommand({
+      id: 'run-sample',
+      name: 'Run code (sample)',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+        if (typeof fm?.['lc-slug'] !== 'string') return false;
+        if (!checking) { void this.runSampleFromActive(); }
+        return true;
+      },
+    });
+
+    // Run code (custom input) — opens CustomTestModal seeded from the note's
+    // `## Custom Tests` section (readCasesFromVault). On Run, invokes LC's
+    // /interpret_solution/ with the active tab's dataInput and renders the
+    // VerdictModal. Persist-on-close is owned by CustomTestModal itself (D-17).
+    this.addCommand({
+      id: 'run-custom',
+      name: 'Run code (custom input)',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+        if (typeof fm?.['lc-slug'] !== 'string') return false;
+        if (!checking) { void this.openCustomTestModalFromActive(file); }
+        return true;
+      },
+    });
+
+    // Submit — full judge run. Delegates to SubmissionOrchestrator (Plan 05)
+    // for gate enforcement + /submit/ POST + polling cadence. The command
+    // lambda wraps the orchestrator with VerdictModal lifecycle glue.
+    this.addCommand({
+      id: 'submit',
+      name: 'Submit',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+        if (typeof fm?.['lc-slug'] !== 'string') return false;
+        if (!checking) { void this.submitFromActive(); }
+        return true;
+      },
+    });
+
+    // Insert starter code — unconditionally replaces the first recognized
+    // fenced block under `## Code` with a fresh starter from the cached
+    // detail's codeSnippets (D-07 forced variant). Uses Plan 02 Task 4's
+    // forceInjectCodeSection helper — Plan 07 only imports and invokes.
+    this.addCommand({
+      id: 'insert-starter-code',
+      name: 'Insert starter code',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+        const slug = fm?.['lc-slug'];
+        if (typeof slug !== 'string') return false;
+        if (!checking) { void this.insertStarterCodeForced(file, slug); }
+        return true;
+      },
+    });
+
+    // Cancel running submission — global checkCallback (not editor-scoped).
+    // Enabled whenever an activeSolve is present; disabled otherwise. Flips
+    // the shared abort flag so the polling loop rejects with AbortError at
+    // its next three-point check.
+    this.addCommand({
+      id: 'cancel-submission',
+      name: 'Cancel running submission',
+      checkCallback: (checking) => {
+        if (!this.activeSolve) return false;
+        if (!checking) { this.cancelActiveSolve(); }
         return true;
       },
     });
@@ -146,6 +285,14 @@ export default class LeetCodePlugin extends Plugin {
     // FND-05: plugin must enable/disable without crashes.
     // Obsidian tears down registered views / commands / ribbon icons automatically;
     // we do not need explicit cleanup because all subscriptions go through plugin.registerX().
+    // Phase 3: abort any in-flight solve so its polling timers don't fire
+    // after the plugin is torn down. setWindowTimeout-scheduled polls still
+    // chain to real setTimeouts; flipping the abort flag ensures the next
+    // three-point check rejects and the chain stops.
+    if (this.activeSolve) {
+      this.activeSolve.abort.aborted = true;
+      this.activeSolve = null;
+    }
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
@@ -192,6 +339,293 @@ export default class LeetCodePlugin extends Plugin {
     // eslint-disable-next-line obsidianmd/no-unsupported-api -- see above: smoke test covers 1.5+
     await workspace.revealLeaf(leaf);
   }
+
+  // ── Phase 3 command helpers ─────────────────────────────────────────
+
+  /** Return the active problem-note context, or null if no eligible note is
+   *  focused. Rejects non-markdown views and markdown views without an
+   *  lc-slug frontmatter entry (editorCheckCallback already gates the
+   *  palette but this helper is used by the custom-input path which is
+   *  invoked from other command lambdas). */
+  private getActiveProblemContext(): ProblemContext | null {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) return null;
+    const file = view.file;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+    const slug = fm?.['lc-slug'];
+    const title = fm?.['lc-title'];
+    if (typeof slug !== 'string' || slug.length === 0) return null;
+    return {
+      view,
+      file,
+      slug,
+      title: typeof title === 'string' ? title : slug,
+      currentBody: () => view.editor.getValue(),
+    };
+  }
+
+  /** D-24 single-flight guard — shared across all Phase 3 solve commands.
+   *  Fires the locked Notice and returns false when an in-flight op exists. */
+  private guardSingleFlight(): boolean {
+    if (!this.activeSolve) return true;
+    // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+    new Notice(
+      'A submission is already in progress. Cancel it first or wait for the verdict.',
+      6000,
+    );
+    return false;
+  }
+
+  /** Cancel the current activeSolve (if any). Flips the abort flag; the
+   *  polling loop rejects at its next three-point check. The command
+   *  lambda's .catch branch then closes the modal. Also clears
+   *  this.activeSolve eagerly so a rapid re-kick succeeds. */
+  private cancelActiveSolve(): void {
+    if (!this.activeSolve) return;
+    this.activeSolve.abort.aborted = true;
+    // Proactively close the modal so the user sees the UI respond to their
+    // click even before the polling rejection settles.
+    try { this.activeSolve.modal.close(); } catch { /* headless */ }
+    this.activeSolve = null;
+  }
+
+  /** Submit the active note via SubmissionOrchestrator (Plan 05). Opens a
+   *  VerdictModal, drives it through pending → terminal / abort / timeout. */
+  private async submitFromActive(): Promise<void> {
+    const ctx = this.getActiveProblemContext();
+    if (!ctx) {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    if (!this.guardSingleFlight()) return;
+
+    const modal = new VerdictModal(this.app, {
+      problemTitle: ctx.title,
+      onCancel: () => { this.cancelActiveSolve(); },
+      onCopyFailingInput: (input: string) => {
+        void this.openCustomTestModalWithSeeded(input);
+      },
+    });
+    modal.open();
+
+    // Sniff the polling-detail responses off the wrapping fetcher so we can
+    // capture the terminal payload (Plan 05 orchestrator discards it). The
+    // orchestrator uses the `throttledRequestUrl` fetcher; we wrap it with a
+    // closure-local capture of the last terminal body.
+    let terminal: TerminalCheckResponse | null = null;
+    const sniffingFetcher = async (params: RequestUrlParam): Promise<RequestUrlResponse> => {
+      const res = await throttledRequestUrl(params);
+      try {
+        const url = params.url;
+        if (typeof url === 'string' && url.includes('/submissions/detail/') && url.endsWith('/check/')) {
+          const body = (res.json ?? {}) as { state?: string; status_code?: unknown };
+          const isTerminal =
+            body.state === 'SUCCESS' ||
+            (body.state !== 'PENDING' && body.state !== 'STARTED' &&
+              typeof body.status_code === 'number');
+          if (isTerminal) {
+            terminal = body as TerminalCheckResponse;
+          }
+        }
+      } catch (err) {
+        logger.debug('solve.submit.sniff: non-fatal', err);
+      }
+      return res;
+    };
+
+    const abort: AbortLike = { aborted: false };
+    const orch = new SubmissionOrchestrator({
+      fetcher: sniffingFetcher,
+      settings: {
+        getAuthCookies: () => this.settings.getAuthCookies(),
+        getDefaultLanguage: () => this.settings.getDefaultLanguage(),
+        getProblemDetail: (s) => this.settings.getProblemDetail(s),
+      },
+      slug: ctx.slug,
+      getCurrentBody: ctx.currentBody,
+    });
+    this.activeSolve = { modal, abort, orchestrator: orch };
+
+    try {
+      await orch.submit();
+      if (terminal) {
+        modal.renderVerdict(terminal as SubmitCheckResponse, ctx.title);
+      } else {
+        // Gate failure (Notice already fired) or orchestrator resolved
+        // silently — close the pending modal.
+        modal.close();
+      }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError' || err instanceof PollAbortError) {
+        // User cancelled — silent close (cancelActiveSolve already closed it).
+        try { modal.close(); } catch { /* headless */ }
+      } else if ((err as Error).name === 'JudgeTimeoutError' || err instanceof JudgeTimeoutError) {
+        modal.renderTimeout();
+      } else {
+        logger.debug('solve.submit: unexpected error', err);
+        try { modal.close(); } catch { /* headless */ }
+      }
+    } finally {
+      // Clear activeSolve only if it's still us (cancelActiveSolve might
+      // have nulled it earlier).
+      if (this.activeSolve && this.activeSolve.orchestrator === orch) {
+        this.activeSolve = null;
+      }
+    }
+  }
+
+  /** Run sample (exampleTestcases) or custom input via LC's
+   *  /interpret_solution/ endpoint. Opens a VerdictModal + drives the same
+   *  pending/terminal/abort/timeout state machine as submit. */
+  private async runSampleFromActive(): Promise<void> {
+    const ctx = this.getActiveProblemContext();
+    if (!ctx) {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const detail = this.settings.getProblemDetail(ctx.slug);
+    const sample = detail?.exampleTestcases ?? '';
+    await this.runInterpretedInput(ctx, sample);
+  }
+
+  /** Shared helper — used by both runSample and CustomTestModal's onRun. */
+  private async runInterpretedInput(ctx: ProblemContext, dataInput: string): Promise<void> {
+    if (!this.guardSingleFlight()) return;
+
+    // Gate: fenced block present (D-04).
+    const body = ctx.currentBody();
+    const extracted = extractFirstFencedBlock(body);
+    if (!extracted) {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+      new Notice(
+        'No code block found. Add a fenced block with your solution.',
+        6000,
+      );
+      return;
+    }
+    // Gate: auth cookies.
+    const cookies = this.settings.getAuthCookies();
+    if (!cookies) {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+      new Notice('LeetCode session expired. Log in again.', 8000);
+      return;
+    }
+
+    const lang = resolveLangSlug(extracted.lang, this.settings.getDefaultLanguage());
+    const detail = this.settings.getProblemDetail(ctx.slug);
+    const questionId = detail?.internalQuestionId ?? (detail ? String(detail.id) : '');
+
+    const modal = new VerdictModal(this.app, {
+      problemTitle: ctx.title,
+      onCancel: () => { this.cancelActiveSolve(); },
+      onCopyFailingInput: (input: string) => {
+        void this.openCustomTestModalWithSeeded(input);
+      },
+    });
+    modal.open();
+
+    const abort: AbortLike = { aborted: false };
+    this.activeSolve = { modal, abort, orchestrator: null };
+
+    try {
+      const { interpret_id } = await interpretSolution({
+        slug: ctx.slug,
+        cookies,
+        lang,
+        questionId,
+        typedCode: extracted.code,
+        dataInput,
+      });
+      const terminal = await pollSubmission({
+        fetcher: throttledRequestUrl,
+        submissionId: interpret_id,
+        slug: ctx.slug,
+        registerInterval: (fn, ms) => setWindowTimeout(fn, ms),
+        abortSignal: abort,
+      });
+      modal.renderVerdict(terminal as RunCheckResponse, ctx.title);
+    } catch (err) {
+      if ((err as Error).name === 'AbortError' || err instanceof PollAbortError) {
+        try { modal.close(); } catch { /* headless */ }
+      } else if ((err as Error).name === 'JudgeTimeoutError' || err instanceof JudgeTimeoutError) {
+        modal.renderTimeout();
+      } else if ((err as Error).name === 'SessionExpiredError') {
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+        new Notice('LeetCode session expired. Log in again.', 8000);
+        try { modal.close(); } catch { /* headless */ }
+      } else {
+        logger.debug('solve.run: unexpected error', err);
+        try { modal.close(); } catch { /* headless */ }
+      }
+    } finally {
+      if (this.activeSolve && this.activeSolve.abort === abort) {
+        this.activeSolve = null;
+      }
+    }
+  }
+
+  /** Open CustomTestModal seeded from `## Custom Tests` section of the given
+   *  problem note. On Run, invokes runInterpretedInput. */
+  private async openCustomTestModalFromActive(file: TFile): Promise<void> {
+    const existing = await readCasesFromVault(this.app, file);
+    const initialCases = existing.map((c) => c.input);
+    new CustomTestModal(this.app, {
+      file,
+      initialCases,
+      onRun: (input: string) => {
+        const ctx = this.getActiveProblemContext();
+        if (ctx) void this.runInterpretedInput(ctx, input);
+      },
+    }).open();
+  }
+
+  /** Open CustomTestModal pre-seeded with an additional failing-input tab —
+   *  invoked from VerdictModal's "Copy failing testcase to custom input"
+   *  affordance (D-25). Appends the failing input to existing cases. */
+  private async openCustomTestModalWithSeeded(seedInput: string): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const file = view.file;
+    const existing = await readCasesFromVault(this.app, file);
+    const initialCases = [...existing.map((c) => c.input), seedInput];
+    new CustomTestModal(this.app, {
+      file,
+      initialCases,
+      onRun: (input: string) => {
+        const ctx = this.getActiveProblemContext();
+        if (ctx) void this.runInterpretedInput(ctx, input);
+      },
+    }).open();
+  }
+
+  /** Unconditionally replace the first recognized fenced block under
+   *  `## Code` with the fresh starter snippet for the user's default
+   *  language (D-07 forced variant). Uses Plan 02 Task 4's
+   *  forceInjectCodeSection helper — Plan 07 only imports + invokes. */
+  private async insertStarterCodeForced(file: TFile, slug: string): Promise<void> {
+    const detail = this.settings.getProblemDetail(slug);
+    const langSlug = this.settings.getDefaultLanguage();
+    const starter = detail?.codeSnippets?.find((s) => s.langSlug === langSlug)?.code ?? '';
+    await this.app.vault.process(file, (current) =>
+      forceInjectCodeSection(current, { starterCode: starter, langSlug }),
+    );
+    // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+    new Notice('Starter code inserted.', 3000);
+  }
+}
+
+/** Tracks the currently-in-flight solve operation. orchestrator is non-null
+ *  for submit-path operations; null for interpret-path (run sample / custom). */
+interface ActiveSolve {
+  modal: VerdictModal;
+  abort: AbortLike;
+  orchestrator: SubmissionOrchestrator | null;
 }
 
 /**
