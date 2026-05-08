@@ -8,11 +8,22 @@
 //   - search()   : BROWSE-03 — in-memory case-insensitive title substring OR id-prefix.
 //   - filter()   : BROWSE-04 — in-memory multi-select on difficulty AND status.
 import type { LeetCodeClient } from '../api/LeetCodeClient';
-import type { SettingsStore } from '../settings/SettingsStore';
+import type { SettingsStore, CompoundFilter, FilterRule } from '../settings/SettingsStore';
 import type { IndexedProblem, ProblemIndex } from './types';
 
 export const INDEX_TTL_MS = 24 * 60 * 60 * 1000; // D-07: 24h TTL
 export const PAGE_SIZE = 50; // D-07: page size (anti-bulk gate)
+
+/** Per-page progress signal emitted during refresh() when a callback is supplied.
+ *  `loaded` is cumulative rows fetched so far, `total` is LC's reported total when
+ *  available (first page carries it), `rows` is the batch JUST loaded (for append-render). */
+export interface RefreshProgress {
+  loaded: number;
+  total: number | null;
+  rows: IndexedProblem[];
+  done: boolean;
+}
+export type RefreshProgressCallback = (p: RefreshProgress) => void;
 
 // LC's problemsetQuestionList result shape (verified in 01-RESEARCH.md).
 interface LcQuestion {
@@ -23,6 +34,10 @@ interface LcQuestion {
   isPaidOnly: boolean;
   // User progress on this problem. 'ac' = solved, 'notac' = attempted, null = untouched.
   status?: 'ac' | 'notac' | null;
+  // Acceptance rate — LC returns a number (0-100) with fractional precision.
+  acRate?: number;
+  // Topic tags — each tag has a slug (stable key) and a human name.
+  topicTags?: Array<{ slug?: string; name?: string }>;
 }
 
 /** Map LC's `q.status` into the `IndexedProblem.status` vocabulary (BROWSE-04 status dim). */
@@ -56,21 +71,36 @@ export class ProblemListService {
    * WR-03: concurrent calls share the same in-flight promise.
    * @param force When true, bypass the TTL check and always re-fetch.
    */
-  async refresh(force = false): Promise<IndexedProblem[]> {
+  async refresh(force = false, onProgress?: RefreshProgressCallback): Promise<IndexedProblem[]> {
     if (this.refreshPromise) return this.refreshPromise;
-    this.refreshPromise = this._doRefresh(force).finally(() => {
+    this.refreshPromise = this._doRefresh(force, onProgress).finally(() => {
       this.refreshPromise = null;
     });
     return this.refreshPromise;
   }
 
-  private async _doRefresh(force: boolean): Promise<IndexedProblem[]> {
+  private async _doRefresh(
+    force: boolean,
+    onProgress?: RefreshProgressCallback,
+  ): Promise<IndexedProblem[]> {
     const cached = this.settings.getProblemIndex();
     if (!force && cached && Date.now() - cached.fetchedAt < INDEX_TTL_MS) {
+      // Synthesize a single "done" progress tick so callers that rely on the
+      // progress stream to drive UI state transitions (e.g. hide a progress bar)
+      // still receive a terminal signal when we return cached data.
+      if (onProgress) {
+        onProgress({
+          loaded: cached.problems.length,
+          total: cached.problems.length,
+          rows: cached.problems,
+          done: true,
+        });
+      }
       return cached.problems;
     }
     const all: IndexedProblem[] = [];
     let offset = 0;
+    let total: number | null = null;
     // Paginate with limit=50 (D-07). LC lib param is `offset` (not `skip`).
     // Loop terminates on a short page (page.questions.length < PAGE_SIZE) — T-05-01.
     for (;;) {
@@ -79,18 +109,40 @@ export class ProblemListService {
         offset,
       } as unknown as Parameters<typeof this.client.lc.problems>[0])) as unknown as {
         questions: LcQuestion[];
+        total?: number;
       };
+      if (total === null && typeof page.total === 'number') {
+        total = page.total;
+      }
+      const batch: IndexedProblem[] = [];
       for (const q of page.questions) {
-        all.push({
+        // Extract topic slugs. We store slugs (not names) because they're the
+        // stable identifier LC uses in URLs / cross-referencing; the human-
+        // readable name is easily reconstructed by replacing '-' with ' '
+        // and capitalising. Tags with missing slug are dropped silently.
+        const topics: string[] = Array.isArray(q.topicTags)
+          ? q.topicTags
+              .map((t) => (typeof t.slug === 'string' ? t.slug : null))
+              .filter((s): s is string => s !== null)
+          : [];
+        const row: IndexedProblem = {
           id: Number(q.questionFrontendId),
           slug: q.titleSlug,
           title: q.title,
           diff: q.difficulty,
           paid: q.isPaidOnly,
           status: mapStatus(q.status ?? null),
-        });
+          acRate: typeof q.acRate === 'number' ? q.acRate : undefined,
+          topics: topics.length > 0 ? topics : undefined,
+        };
+        all.push(row);
+        batch.push(row);
       }
-      if (page.questions.length < PAGE_SIZE) break;
+      const isLast = page.questions.length < PAGE_SIZE;
+      if (onProgress && batch.length > 0) {
+        onProgress({ loaded: all.length, total, rows: batch, done: isLast });
+      }
+      if (isLast) break;
       offset += PAGE_SIZE;
     }
     const index: ProblemIndex = { fetchedAt: Date.now(), problems: all };
@@ -136,5 +188,78 @@ export class ProblemListService {
       }
       return true;
     });
+  }
+
+  /**
+   * Apply a compound (LC-style) filter. Each rule evaluates against one field;
+   * `match: 'all'` ANDs across rules, `match: 'any'` ORs. An empty rule list
+   * returns the input unchanged. A rule with no effective values (empty array,
+   * null range bounds) is a no-op — it passes every row (doesn't prune anything).
+   *
+   * Rule semantics:
+   * - status/difficulty/topics with `is`:      row's value must be in `values`
+   * - status/difficulty/topics with `is-not`:  row's value must NOT be in `values`
+   *   (topics: row matches if ANY of its topics is NOT in `values` for is-not;
+   *   i.e., row is rejected only if all its topics are in `values` — intersection
+   *   is empty. Matches LC's "problems tagged with anything other than X".)
+   * - question-id / acceptance range: inclusive on both ends; null = unbounded
+   * - premium: single value 'premium' / 'non-premium' / null (null = no filter)
+   */
+  applyCompoundFilter(idx: IndexedProblem[], f: CompoundFilter | null): IndexedProblem[] {
+    if (!f || f.rules.length === 0) return idx;
+    return idx.filter((p) => {
+      const outcomes = f.rules.map((r) => evaluateRule(p, r));
+      // Ignore no-op rules (undefined outcome) so a partially-filled filter row
+      // (e.g. "Status is <blank>") doesn't accidentally reject all rows in AND
+      // mode or include all rows in OR mode.
+      const active = outcomes.filter((o): o is boolean => o !== undefined);
+      if (active.length === 0) return true;
+      return f.match === 'all' ? active.every((b) => b) : active.some((b) => b);
+    });
+  }
+}
+
+/** Evaluate a single rule against a row. Returns `undefined` if the rule is
+ *  effectively empty (no values / null bounds) — callers must treat undefined
+ *  as "skip this rule", not as a false match. */
+function evaluateRule(p: IndexedProblem, r: FilterRule): boolean | undefined {
+  switch (r.field) {
+    case 'status': {
+      if (r.values.length === 0) return undefined;
+      const eff = p.status ?? 'untouched';
+      const hit = r.values.includes(eff);
+      return r.op === 'is' ? hit : !hit;
+    }
+    case 'difficulty': {
+      if (r.values.length === 0) return undefined;
+      const hit = r.values.includes(p.diff);
+      return r.op === 'is' ? hit : !hit;
+    }
+    case 'topics': {
+      if (r.values.length === 0) return undefined;
+      const rowTopics = p.topics ?? [];
+      // `is`: any row-topic intersects the rule values.
+      // `is-not`: no row-topic intersects the rule values (empty intersection).
+      const intersects = rowTopics.some((t) => r.values.includes(t));
+      return r.op === 'is' ? intersects : !intersects;
+    }
+    case 'question-id': {
+      if (r.min === null && r.max === null) return undefined;
+      if (r.min !== null && p.id < r.min) return false;
+      if (r.max !== null && p.id > r.max) return false;
+      return true;
+    }
+    case 'acceptance': {
+      if (r.min === null && r.max === null) return undefined;
+      if (typeof p.acRate !== 'number') return false; // no acceptance data → doesn't match a range filter
+      if (r.min !== null && p.acRate < r.min) return false;
+      if (r.max !== null && p.acRate > r.max) return false;
+      return true;
+    }
+    case 'premium': {
+      if (r.value === null) return undefined;
+      const wantPaid = r.value === 'premium';
+      return p.paid === wantPaid;
+    }
   }
 }

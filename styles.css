@@ -1,55 +1,190 @@
 /* All plugin styles are scoped under .leetcode-browser or .leetcode-settings. */
 /* Every color references an Obsidian CSS variable — no raw hex, no rgba literals. */
-.leetcode-browser { padding: 16px; }
-.leetcode-browser .lc-search {
-  margin-bottom: 8px;
+.leetcode-browser {
+  padding: 16px;
   font-size: var(--font-ui-small);
 }
-.leetcode-browser .lc-chip {
+
+/* ── Top bar: search pill on the left, solved-counter on the right ─────────── */
+.leetcode-browser .lc-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.leetcode-browser .lc-search {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 18px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+.leetcode-browser .lc-search__icon {
+  display: inline-flex;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.leetcode-browser .lc-search input {
+  flex: 1 1 auto;
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  color: inherit;
+  font-size: 14px;
+  padding: 0;
+}
+.leetcode-browser .lc-search input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Icon buttons (filter / shuffle / future sort) */
+.leetcode-browser .lc-iconbtn {
   display: inline-flex;
   align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  margin-right: 4px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   background: var(--background-secondary);
   color: var(--text-muted);
   cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
 }
-.leetcode-browser .lc-chip.is-active {
+.leetcode-browser .lc-iconbtn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.leetcode-browser .lc-iconbtn__icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+.leetcode-browser .lc-iconbtn__badge {
+  display: none;
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
   background: var(--interactive-accent);
   color: var(--text-on-accent);
+  font-size: 10px;
+  font-weight: 600;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.leetcode-browser .lc-iconbtn__badge.is-visible { display: inline-flex; }
+
+/* Solved counter donut (right side of topbar) */
+.leetcode-browser .lc-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.leetcode-browser .lc-counter__donut-track {
+  fill: transparent;
+  stroke: var(--background-modifier-border);
+  stroke-width: 3;
+}
+.leetcode-browser .lc-counter__donut-arc {
+  fill: transparent;
+  stroke: var(--color-green);
+  stroke-width: 3;
+  transition: stroke-dasharray 200ms ease;
+}
+
+/* ── Rows: LeetCode-style card per problem ─────────────────────────────────── */
+.leetcode-browser .lc-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
 }
 .leetcode-browser .lc-row {
   display: flex;
   align-items: center;
-  min-height: 32px;
-  padding: 0 8px;
-  gap: 8px;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--background-secondary);
   cursor: pointer;
+  transition: background 100ms ease, transform 100ms ease;
 }
 .leetcode-browser .lc-row:hover {
-  background: var(--background-secondary);
+  background: var(--background-modifier-hover);
+}
+.leetcode-browser .lc-row--solved { /* subtle solved tint on the card itself */
+  background: color-mix(in srgb, var(--background-secondary) 92%, var(--color-green) 8%);
+}
+.leetcode-browser .lc-row__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.leetcode-browser .lc-row__status--solved     { color: var(--color-green); }
+.leetcode-browser .lc-row__status--attempted  { color: var(--color-yellow); }
+.leetcode-browser .lc-row__status--untouched  { color: var(--text-faint); }
+/* Paid/premium overrides the status color with LC's amber lock. */
+.leetcode-browser .lc-row__status--paid       { color: var(--color-orange, var(--color-yellow)); }
+.leetcode-browser .lc-row__titleblock {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;   /* allow title to ellipsize */
+  font-size: 14px;
 }
 .leetcode-browser .lc-row__id {
   color: var(--text-muted);
-  min-width: 40px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.leetcode-browser .lc-row__title {
+  color: var(--text-normal);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leetcode-browser .lc-row__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.leetcode-browser .lc-row__acrate {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 46px;
   text-align: right;
 }
-.leetcode-browser .lc-diff--easy {
-  color: var(--color-green);
-  background: color-mix(in srgb, var(--color-green) 15%, transparent);
+.leetcode-browser .lc-row__diff {
+  font-weight: 500;
+  min-width: 36px;
+  text-align: left;
 }
-.leetcode-browser .lc-diff--medium {
-  color: var(--color-yellow);
-  background: color-mix(in srgb, var(--color-yellow) 15%, transparent);
-}
-.leetcode-browser .lc-diff--hard {
-  color: var(--color-red);
-  background: color-mix(in srgb, var(--color-red) 15%, transparent);
-}
+.leetcode-browser .lc-diff--easy   { color: var(--color-green); }
+.leetcode-browser .lc-diff--medium { color: var(--color-yellow); }
+.leetcode-browser .lc-diff--hard   { color: var(--color-red); }
+
 .leetcode-browser .lc-footer {
   padding: 8px;
   font-size: 12px;
@@ -59,4 +194,318 @@
 .leetcode-settings .lc-cookie-input input {
   font-family: var(--font-monospace);
   font-size: 12px;
+}
+/* Progress bar — sticky at the top of the view so it stays visible while the
+   row list grows under it. Slim blue fill + muted label.
+   When `total` is unknown we flip to an indeterminate shimmer animation. */
+.leetcode-browser .lc-progress {
+  position: sticky;
+  top: -16px;          /* cancels .leetcode-browser padding so bar touches top edge */
+  z-index: 10;
+  margin: -16px -16px 8px -16px;   /* bleed to the view edges */
+  padding: 6px 16px 8px 16px;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.leetcode-browser .lc-progress__track {
+  height: 3px;
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+.leetcode-browser .lc-progress__fill {
+  height: 100%;
+  width: 0%;
+  background: var(--interactive-accent);
+  transition: width 200ms ease-out;
+}
+/* Indeterminate shimmer for the pre-total period (first page still in flight).
+   A narrow bar slides right-to-left across the track until a real total arrives. */
+.leetcode-browser .lc-progress.is-indeterminate .lc-progress__fill {
+  width: 30%;
+  animation: lc-progress-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes lc-progress-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.leetcode-browser .lc-progress__label {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+/* ── Filter modal ──────────────────────────────────────────────────────────── */
+/* Obsidian's .modal-container > .modal > .modal-content hierarchy all have
+ * their own overflow rules. For popovers to escape the content box without
+ * triggering scrollbars we need overflow: visible at every level AND the
+ * outermost modal itself must not grow past its natural height. */
+.lc-filter-modal.modal,
+.lc-filter-modal .modal-bg,
+.lc-filter-modal .modal-content {
+  overflow: visible;
+}
+.lc-filter-modal .modal-content {
+  padding: 16px;
+}
+.lc-filter-modal .lc-fm__match {
+  margin-bottom: 14px;
+  font-size: 14px;
+  color: var(--text-normal);
+}
+.lc-filter-modal .lc-fm__match-sel {
+  margin: 0 4px;
+}
+.lc-filter-modal .lc-fm__rules {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.lc-filter-modal .lc-fm__rule {
+  display: grid;
+  grid-template-columns: 140px 80px 1fr 28px;
+  align-items: center;
+  gap: 10px;
+}
+.lc-filter-modal .lc-fm__rule-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.lc-filter-modal .lc-fm__rule-ficon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+.lc-filter-modal .lc-fm__rule-op {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.lc-filter-modal .lc-fm__rule-op select { font-size: 13px; }
+.lc-filter-modal .lc-fm__rule-val {
+  font-size: 13px;
+}
+.lc-filter-modal .lc-fm__rule-rm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.lc-filter-modal .lc-fm__rule-rm:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Chevron picker (replaces native select for multi-value + premium +
+ * match-mode + operator). Block variant: full-width row in the value cell.
+ * Inline variant: small pill sized to its content, used in the header sentence
+ * "Match [All] of the following filters:" and the per-rule "is / is not". */
+.lc-filter-modal .lc-fm__picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 30px;
+  padding: 2px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: border-color 120ms ease;
+}
+.lc-filter-modal .lc-fm__picker:hover {
+  border-color: var(--text-muted);
+}
+.lc-filter-modal .lc-fm__picker--inline {
+  display: inline-flex;
+  min-height: 0;
+  padding: 2px 6px 2px 10px;
+  margin: 0 4px;
+  vertical-align: middle;
+  gap: 4px;
+}
+.lc-filter-modal .lc-fm__picker-val--inline {
+  color: var(--text-normal);
+  font-weight: 500;
+}
+.lc-filter-modal .lc-fm__picker-val {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.lc-filter-modal .lc-fm__picker-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: var(--background-modifier-border);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-normal);
+}
+.lc-filter-modal .lc-fm__picker-pill--more {
+  color: var(--text-muted);
+}
+.lc-filter-modal .lc-fm__picker-chev {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Disabled rule row — visible layout match for deferred fields (Language, etc.) */
+.lc-filter-modal .lc-fm__rule--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Checkbox popover for chevron picker.
+ * max-width caps it at the modal body width so long topic slugs never push
+ * the popover outside the modal and trigger horizontal scrolling.
+ * max-height + overflow-y keeps the Topics list (~50 items) scrollable
+ * inside the popover instead of the modal. */
+.lc-filter-modal .lc-fm__popover {
+  z-index: 30;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  max-height: 280px;
+  max-width: min(320px, calc(100% - 16px));
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.lc-filter-modal .lc-fm__popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.lc-filter-modal .lc-fm__popover-item:hover {
+  background: var(--background-modifier-hover);
+}
+.lc-filter-modal .lc-fm__popover-check {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: var(--interactive-accent);
+  flex-shrink: 0;
+}
+.lc-filter-modal .lc-fm__popover-label {
+  flex: 1 1 auto;
+}
+
+/* Range editor */
+.lc-filter-modal .lc-fm__range {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.lc-filter-modal .lc-fm__range input {
+  width: 72px;
+  font-size: 13px;
+}
+.lc-filter-modal .lc-fm__range-sep { color: var(--text-muted); }
+.lc-filter-modal .lc-fm__empty-hint {
+  color: var(--text-faint);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* Add-rule button + menu */
+.lc-filter-modal .lc-fm__add {
+  position: relative;
+  margin-bottom: 20px;
+}
+.lc-filter-modal .lc-fm__add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.lc-filter-modal .lc-fm__add-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.lc-filter-modal .lc-fm__add-menu {
+  z-index: 20;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  min-width: 180px;
+}
+.lc-filter-modal .lc-fm__add-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.lc-filter-modal .lc-fm__add-item:hover {
+  background: var(--background-modifier-hover);
+}
+.lc-filter-modal .lc-fm__add-item-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+/* Footer */
+.lc-filter-modal .lc-fm__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--background-modifier-border);
+  gap: 10px;
+}
+.lc-filter-modal .lc-fm__footer-right {
+  display: inline-flex;
+  gap: 8px;
+}
+.lc-filter-modal .lc-fm__save,
+.lc-filter-modal .lc-fm__reset,
+.lc-filter-modal .lc-fm__apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  padding: 6px 12px;
+}
+.lc-filter-modal .lc-fm__save[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.lc-filter-modal .lc-fm__save-icon,
+.lc-filter-modal .lc-fm__reset-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
 }

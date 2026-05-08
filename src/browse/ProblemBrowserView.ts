@@ -5,9 +5,11 @@
 import { ItemView, WorkspaceLeaf, Notice, setIcon } from 'obsidian';
 import type LeetCodePlugin from '../main';
 import type { IndexedProblem } from './types';
+import type { CompoundFilter, FilterRule } from '../settings/SettingsStore';
 import { isSessionExpired } from '../api/LeetCodeClient';
 import { getActiveThrottle } from '../api/requestUrlFetcher';
 import { RateLimitError } from '../shared/errors';
+import { FilterModal } from './FilterModal';
 // WR-02: route all timers through the popout-aware helpers used by Throttle
 // so that timers on a view hosted in an Obsidian popout bind to the popout's
 // event loop, not the main window's.
@@ -24,25 +26,17 @@ const THROTTLE_FOOTER_DELAY_MS = 2000;   // D-13: only surface indicator if queu
 const SESSION_EXPIRED_NOTICE_MS = 8000;  // UI-SPEC Notice table
 // NOTE: RATE_LIMIT_NOTICE_MS (6000 per UI-SPEC § Notice table / D-14) is inlined at the
 // Notice call site as a literal to satisfy the acceptance grep `, 6000)` in Plan 06.
-const DIFFICULTIES = ['Easy', 'Medium', 'Hard'] as const;
-type Diff = (typeof DIFFICULTIES)[number];
-
-// Status chip labels (UI-SPEC.md § Copywriting) + internal vocabulary
-// expected by ProblemListService.filter({ status }).
-const STATUS_CHIPS = [
-  { label: 'Solved',    value: 'solved' as const },
-  { label: 'Attempted', value: 'attempted' as const },
-  { label: 'Untouched', value: 'untouched' as const },
-];
-type StatusValue = typeof STATUS_CHIPS[number]['value'];
 
 export class ProblemBrowserView extends ItemView {
   private index: IndexedProblem[] = [];
   private searchTerm = '';
-  private activeDifficulties: Set<Diff> = new Set();
-  private activeStatuses: Set<StatusValue> = new Set();
   private searchDebounce: TimerHandle | null = null;
   private rowsContainer: HTMLElement | null = null;
+  private solvedCounterEl: HTMLElement | null = null;
+  private filterBadgeEl: HTMLElement | null = null;
+  /** The effective compound filter. Loaded from settings on open, edited via
+   *  FilterModal, persisted back via settings.setFilter() on each Apply. */
+  private filter: CompoundFilter | null = null;
 
   // Throttle footer indicator state (BLOCKER 3 / D-13).
   private throttleUnsub: (() => void) | null = null;
@@ -63,6 +57,18 @@ export class ProblemBrowserView extends ItemView {
     const root = this.containerEl.children[1] as HTMLElement;
     root.empty();
     root.addClass('leetcode-browser');
+
+    // Load persisted compound filter. If this is the user's first open and
+    // they're not a Premium subscriber, apply a sensible default ("hide
+    // Premium content") so the list isn't cluttered with locked problems.
+    this.filter = this.plugin.settings.getFilter();
+    if (this.filter === null && this.plugin.settings.getIsPremium() === false) {
+      this.filter = {
+        match: 'all',
+        rules: [{ field: 'premium', op: 'is', value: 'non-premium' }],
+      };
+      await this.plugin.settings.setFilter(this.filter);
+    }
 
     if (!this.plugin.auth.isLoggedIn()) {
       this.renderLoggedOutState(root, {
@@ -116,8 +122,61 @@ export class ProblemBrowserView extends ItemView {
   }
 
   private async refreshAndRender(root: HTMLElement): Promise<void> {
+    // Progressive rendering: paint the shell first, then append rows as each
+    // paginated batch lands. This replaces the prior "wait 30-60s staring at
+    // 'Loading problems…' then render all 3,300 at once" UX with an incremental
+    // load — rows show up every ~2s, with a progress bar pinned below the
+    // filter chips. When the cached index is fresh the onProgress callback
+    // still fires once with `done: true` so we can still take the same path.
+    root.empty();
+    // Progress bar is created BEFORE the shell so it sits at the top of the
+    // view — user never has to scroll to see loading state. Sticky-positioned
+    // via CSS so it stays pinned while rows grow under it.
+    const progressEl = this.createProgressBar(root);
+    // Reset the index before the shell is rendered so the solved-counter
+    // starts at `0 / 0` instead of displaying stale totals from a prior view.
+    this.index = [];
+    this.renderShell(root);
+    let renderedCount = 0;
+    const appendBatch = (rows: IndexedProblem[]): void => {
+      // Accumulate into this.index so the solved-counter (which reads it)
+      // grows as pages land. The final `this.index = await …` assignment
+      // replaces this with the canonical array; if that array is reference-
+      // identical to ours (ProblemListService returns the same `all` array it
+      // built up), the reassignment is a no-op.
+      this.index.push(...rows);
+      // Honor the user's current search + filter state even during initial
+      // load — if they start typing or editing the filter while paging, the
+      // new rows paint respecting their selection.
+      const filtered = this.plugin.list.search(
+        this.plugin.list.applyCompoundFilter(rows, this.filter),
+        this.searchTerm,
+      );
+      if (!this.rowsContainer) return;
+      // If the user is currently on an empty-filter-state placeholder, nuke it
+      // so the first matching row replaces the placeholder cleanly.
+      if (renderedCount === 0) this.rowsContainer.empty();
+      for (const p of filtered) this.renderRow(this.rowsContainer, p);
+      renderedCount += filtered.length;
+      this.updateSolvedCounter();
+    };
+
     try {
-      this.index = await this.plugin.list.refresh();
+      this.index = await this.plugin.list.refresh(false, (p) => {
+        appendBatch(p.rows);
+        this.updateProgressBar(progressEl, p.loaded, p.total);
+        if (p.done) this.removeProgressBar(progressEl);
+      });
+      // Final counter update covers the cached-index path (onProgress fires
+      // once with done:true and the cached array, but appendBatch hasn't run
+      // against an empty this.index yet so the counter still shows 0/0).
+      this.updateSolvedCounter();
+      // If the call used cached data and short-circuited before the callback
+      // could be scheduled, render everything now and remove the bar.
+      if (renderedCount === 0) {
+        this.removeProgressBar(progressEl);
+        this.renderRows();
+      }
     } catch (err) {
       // D-14: rate-limit path takes precedence. Fetcher (Plan 02) has already
       // honored retry-after. Our job is the one-shot Notice; copy + duration LOCKED
@@ -157,9 +216,43 @@ export class ProblemBrowserView extends ItemView {
       });
       return;
     }
-    root.empty();
-    this.renderShell(root);
-    this.renderRows();
+    // Shell + rows were already rendered progressively above. No trailing
+    // full rerender — it would flash the list and discard the user's current
+    // search/filter state at the exact moment the progress bar disappears.
+  }
+
+  /** Create the progress bar element pinned to the top of the view.
+   *  Starts in indeterminate (shimmer) mode; updateProgressBar flips to
+   *  determinate once LC returns a total. Cleared via removeProgressBar(). */
+  private createProgressBar(root: HTMLElement): HTMLElement {
+    const bar = root.createDiv({ cls: 'lc-progress is-indeterminate' });
+    bar.createDiv({ cls: 'lc-progress__track' }).createDiv({ cls: 'lc-progress__fill' });
+    bar.createDiv({ cls: 'lc-progress__label', text: 'Loading problems…' });
+    return bar;
+  }
+
+  private updateProgressBar(
+    bar: HTMLElement,
+    loaded: number,
+    total: number | null,
+  ): void {
+    const fill = bar.querySelector('.lc-progress__fill') as HTMLElement | null;
+    const label = bar.querySelector('.lc-progress__label') as HTMLElement | null;
+    if (total !== null && total > 0) {
+      // Flip out of indeterminate shimmer mode into determinate width animation.
+      bar.removeClass('is-indeterminate');
+      const pct = Math.min(100, Math.round((loaded / total) * 100));
+      if (fill) fill.style.width = `${String(pct)}%`;
+      if (label) label.setText(`Loading problems… ${String(loaded)} / ${String(total)} (${String(pct)}%)`);
+    } else {
+      // Total unknown (first page hasn't arrived yet, or LC didn't return one).
+      // Keep shimmer running; update only the label.
+      if (label) label.setText(`Loading problems… ${String(loaded)} loaded`);
+    }
+  }
+
+  private removeProgressBar(bar: HTMLElement): void {
+    bar.remove();
   }
 
   private renderEmptyState(
@@ -176,14 +269,17 @@ export class ProblemBrowserView extends ItemView {
   }
 
   private renderShell(root: HTMLElement): void {
-    // Search input
-    const searchWrap = root.createDiv({ cls: 'lc-search' });
+    // Top bar layout (matches LC): pill search | filter btn | spacer | solved donut | shuffle btn
+    const topbar = root.createDiv({ cls: 'lc-topbar' });
+
+    // 1. Pill-shaped search box (flex-grow to consume left portion)
+    const searchWrap = topbar.createDiv({ cls: 'lc-search' });
     const searchIcon = searchWrap.createSpan({ cls: 'lc-search__icon' });
     setIcon(searchIcon, 'search');
     const input = searchWrap.createEl('input', {
       attr: {
         type: 'search',
-        placeholder: 'Search by title or number',
+        placeholder: 'Search questions',
         'aria-label': 'Search by title or number',
       },
     });
@@ -202,45 +298,29 @@ export class ProblemBrowserView extends ItemView {
       }
     });
 
-    // Difficulty filter row
-    const filterRow = root.createDiv({ cls: 'lc-filters lc-filters--difficulty' });
-    for (const diff of DIFFICULTIES) {
-      const chip = filterRow.createDiv({ cls: 'lc-chip', text: diff });
-      chip.setAttribute('role', 'button');
-      chip.setAttribute('aria-pressed', 'false');
-      chip.addEventListener('click', () => {
-        if (this.activeDifficulties.has(diff)) {
-          this.activeDifficulties.delete(diff);
-          chip.removeClass('is-active');
-          chip.setAttribute('aria-pressed', 'false');
-        } else {
-          this.activeDifficulties.add(diff);
-          chip.addClass('is-active');
-          chip.setAttribute('aria-pressed', 'true');
-        }
-        this.renderRows();
-      });
-    }
+    // 2. Filter button — opens FilterModal. Shows a count badge when rules are active.
+    const filterBtn = topbar.createDiv({
+      cls: 'lc-iconbtn lc-iconbtn--filter',
+      attr: { 'aria-label': 'Filter problems', role: 'button', tabindex: '0' },
+    });
+    const filterIcon = filterBtn.createSpan({ cls: 'lc-iconbtn__icon' });
+    setIcon(filterIcon, 'filter');
+    this.filterBadgeEl = filterBtn.createSpan({ cls: 'lc-iconbtn__badge' });
+    this.updateFilterBadge();
+    filterBtn.addEventListener('click', () => { this.openFilterModal(); });
 
-    // Status filter row (BLOCKER 3)
-    const statusRow = root.createDiv({ cls: 'lc-filters lc-filters--status' });
-    for (const { label, value } of STATUS_CHIPS) {
-      const chip = statusRow.createDiv({ cls: 'lc-chip', text: label });
-      chip.setAttribute('role', 'button');
-      chip.setAttribute('aria-pressed', 'false');
-      chip.addEventListener('click', () => {
-        if (this.activeStatuses.has(value)) {
-          this.activeStatuses.delete(value);
-          chip.removeClass('is-active');
-          chip.setAttribute('aria-pressed', 'false');
-        } else {
-          this.activeStatuses.add(value);
-          chip.addClass('is-active');
-          chip.setAttribute('aria-pressed', 'true');
-        }
-        this.renderRows();
-      });
-    }
+    // 3. Solved counter donut (right side of bar)
+    this.solvedCounterEl = topbar.createDiv({ cls: 'lc-counter' });
+    this.updateSolvedCounter();
+
+    // 4. Shuffle button — picks a random problem from the current filter result.
+    const shuffleBtn = topbar.createDiv({
+      cls: 'lc-iconbtn lc-iconbtn--shuffle',
+      attr: { 'aria-label': 'Pick a random problem', role: 'button', tabindex: '0' },
+    });
+    const shuffleIcon = shuffleBtn.createSpan({ cls: 'lc-iconbtn__icon' });
+    setIcon(shuffleIcon, 'shuffle');
+    shuffleBtn.addEventListener('click', () => { this.pickRandom(); });
 
     // Rows container
     this.rowsContainer = root.createDiv({ cls: 'lc-rows', attr: { role: 'listbox' } });
@@ -249,6 +329,106 @@ export class ProblemBrowserView extends ItemView {
     // We DO NOT create the lc-footer element yet — it's lazy-created when the queue stays
     // non-empty for THROTTLE_FOOTER_DELAY_MS. `root` is captured so we can create/remove in-place.
     this.wireThrottleFooter(root);
+  }
+
+  /** Recompute the solved donut: SVG circle with an arc filled proportionally
+   *  to solved/total. Reads from `this.index` (updated progressively). */
+  private updateSolvedCounter(): void {
+    if (!this.solvedCounterEl) return;
+    const solved = this.index.filter((p) => p.status === 'solved').length;
+    const total = this.index.length;
+    const pct = total > 0 ? solved / total : 0;
+    this.solvedCounterEl.empty();
+
+    // SVG donut: 20x20 viewbox, radius 8, stroke-width 3, circumference 2πr.
+    const size = 20;
+    const r = 8;
+    const circumference = 2 * Math.PI * r;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'lc-counter__donut');
+    svg.setAttribute('width', String(size));
+    svg.setAttribute('height', String(size));
+    svg.setAttribute('viewBox', `0 0 ${String(size)} ${String(size)}`);
+    // Track circle (muted background)
+    const track = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    track.setAttribute('class', 'lc-counter__donut-track');
+    track.setAttribute('cx', String(size / 2));
+    track.setAttribute('cy', String(size / 2));
+    track.setAttribute('r', String(r));
+    svg.appendChild(track);
+    // Progress arc (green). dasharray = (solved portion, remainder). Rotated -90deg so 0 starts at top.
+    const arc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    arc.setAttribute('class', 'lc-counter__donut-arc');
+    arc.setAttribute('cx', String(size / 2));
+    arc.setAttribute('cy', String(size / 2));
+    arc.setAttribute('r', String(r));
+    arc.setAttribute('stroke-dasharray',
+      `${String(circumference * pct)} ${String(circumference * (1 - pct))}`);
+    arc.setAttribute('transform', `rotate(-90 ${String(size / 2)} ${String(size / 2)})`);
+    svg.appendChild(arc);
+    this.solvedCounterEl.appendChild(svg);
+
+    this.solvedCounterEl.createSpan({
+      cls: 'lc-counter__label',
+      text: `${String(solved)}/${String(total)} Solved`,
+    });
+  }
+
+  /** Refresh the small numeric badge on the filter button to reflect the
+   *  count of currently-active rules. Hidden when no rules. */
+  private updateFilterBadge(): void {
+    if (!this.filterBadgeEl) return;
+    const count = this.filter?.rules.length ?? 0;
+    if (count === 0) {
+      this.filterBadgeEl.removeClass('is-visible');
+      this.filterBadgeEl.setText('');
+    } else {
+      this.filterBadgeEl.addClass('is-visible');
+      this.filterBadgeEl.setText(String(count));
+    }
+  }
+
+  /** Open the compound-filter modal. On Apply, persist + re-render rows. */
+  private openFilterModal(): void {
+    // Collect all unique topic slugs from the current cached index so the
+    // Topics multi-select has real values to pick from.
+    const topics = new Set<string>();
+    for (const p of this.index) {
+      for (const t of p.topics ?? []) topics.add(t);
+    }
+    const modal = new FilterModal(
+      this.app,
+      this.filter,
+      Array.from(topics),
+      (f) => { void this.applyFilter(f); },
+    );
+    modal.open();
+  }
+
+  private async applyFilter(f: CompoundFilter | null): Promise<void> {
+    this.filter = f;
+    await this.plugin.settings.setFilter(f);
+    this.updateFilterBadge();
+    this.renderRows();
+  }
+
+  /** Pick a random problem from the currently-visible (filtered + searched)
+   *  list and fire the same row-click stub. Phase 2 replaces with note-open. */
+  private pickRandom(): void {
+    const visible = this.currentlyVisible();
+    if (visible.length === 0) {
+      new Notice('No problems match the current filter.', 3000);
+      return;
+    }
+    const pick = visible[Math.floor(Math.random() * visible.length)];
+    if (!pick) return;
+    new Notice(`Phase 1 stub: would open ${pick.slug}.`, 3000);
+  }
+
+  /** Compute the currently-visible row set: apply compound filter then search. */
+  private currentlyVisible(): IndexedProblem[] {
+    const filtered = this.plugin.list.applyCompoundFilter(this.index, this.filter);
+    return this.plugin.list.search(filtered, this.searchTerm);
   }
 
   /**
@@ -290,13 +470,7 @@ export class ProblemBrowserView extends ItemView {
   private renderRows(): void {
     if (!this.rowsContainer) return;
     this.rowsContainer.empty();
-    const filtered = this.plugin.list.filter(
-      this.plugin.list.search(this.index, this.searchTerm),
-      {
-        difficulty: Array.from(this.activeDifficulties),
-        status: Array.from(this.activeStatuses),
-      },
-    );
+    const filtered = this.currentlyVisible();
 
     if (filtered.length === 0) {
       this.renderEmptyState(this.rowsContainer, {
@@ -305,8 +479,7 @@ export class ProblemBrowserView extends ItemView {
         buttonText: 'Clear filters',
         onAction: () => {
           this.searchTerm = '';
-          this.activeDifficulties.clear();
-          this.activeStatuses.clear();
+          void this.applyFilter(null);
           const root = this.containerEl.children[1] as HTMLElement;
           root.empty();
           // Tear down prior throttle subscription before re-wiring in renderShell.
@@ -328,21 +501,49 @@ export class ProblemBrowserView extends ItemView {
   }
 
   private renderRow(container: HTMLElement, p: IndexedProblem): void {
-    const row = container.createDiv({ cls: 'lc-row', attr: { role: 'option' } });
-    row.setAttribute('aria-label', `${p.id}. ${p.title}, ${p.diff}`);
+    const status = p.status ?? 'untouched';
+    const row = container.createDiv({
+      cls: `lc-row lc-row--${status}`,
+      attr: { role: 'option' },
+    });
+    row.setAttribute('aria-label',
+      `${String(p.id)}. ${p.title}, ${p.diff}${p.paid ? ', premium' : ''}, ${status}`);
 
-    // Status icon slot (populated by Plan 05's status field — 'solved' / 'attempted' / 'untouched').
-    row.createDiv({ cls: `lc-row__status lc-row__status--${p.status ?? 'untouched'}` });
+    // 1. Leading icon slot — matches LeetCode's conventions:
+    //    - Premium (paid) problems: lock icon in amber, regardless of status
+    //    - Solved: green check
+    //    - Attempted: empty circle
+    //    - Todo (untouched): no icon at all, just an empty slot for alignment
+    const iconSlot = row.createDiv({ cls: `lc-row__status lc-row__status--${status}` });
+    if (p.paid) {
+      iconSlot.addClass('lc-row__status--paid');
+      setIcon(iconSlot, 'lock');
+      iconSlot.setAttribute('aria-label', 'Premium problem');
+    } else if (status === 'solved') {
+      setIcon(iconSlot, 'check');
+    } else if (status === 'attempted') {
+      setIcon(iconSlot, 'circle');
+    }
+    // Todo → leave the slot empty (intentional whitespace for column alignment).
 
-    // LC id (textContent via createSpan — NEVER raw HTML)
-    row.createSpan({ cls: 'lc-row__id', text: String(p.id) });
+    // 2. Title block — id + title on a single line (muted id prefix).
+    const titleBlock = row.createDiv({ cls: 'lc-row__titleblock' });
+    titleBlock.createSpan({ cls: 'lc-row__id', text: `${String(p.id)}. ` });
+    titleBlock.createSpan({ cls: 'lc-row__title', text: p.title });
 
-    // Title
-    row.createSpan({ cls: 'lc-row__title', text: p.title });
-
-    // Difficulty pill
-    const diffCls = `lc-diff--${p.diff.toLowerCase()}`;
-    row.createSpan({ cls: `lc-row__diff ${diffCls}`, text: p.diff });
+    // 3. Right-hand metadata: acceptance %, difficulty label.
+    const meta = row.createDiv({ cls: 'lc-row__meta' });
+    if (typeof p.acRate === 'number') {
+      meta.createSpan({
+        cls: 'lc-row__acrate',
+        text: `${p.acRate.toFixed(1)}%`,
+      });
+    }
+    const diffLabel = p.diff === 'Medium' ? 'Med.' : p.diff;
+    meta.createSpan({
+      cls: `lc-row__diff lc-diff--${p.diff.toLowerCase()}`,
+      text: diffLabel,
+    });
 
     row.addEventListener('click', () => {
       new Notice(`Phase 1 stub: would open ${p.slug}.`, 3000);
