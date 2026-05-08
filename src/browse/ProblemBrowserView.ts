@@ -422,7 +422,7 @@ export class ProblemBrowserView extends ItemView {
     }
     const pick = visible[Math.floor(Math.random() * visible.length)];
     if (!pick) return;
-    new Notice(`Phase 1 stub: would open ${pick.slug}.`, 3000);
+    void this.plugin.openProblem(pick.slug);
   }
 
   /** Compute the currently-visible row set: apply compound filter then search. */
@@ -546,7 +546,7 @@ export class ProblemBrowserView extends ItemView {
     });
 
     row.addEventListener('click', () => {
-      new Notice(`Phase 1 stub: would open ${p.slug}.`, 3000);
+      void this.plugin.openProblem(p.slug);
     });
   }
 }
