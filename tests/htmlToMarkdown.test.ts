@@ -29,58 +29,80 @@ describe('htmlToMarkdown (NOTE-02, D-20, D-21)', () => {
   });
 });
 
-describe('htmlToMarkdown — sup/sub (GAP-2c, NOTE-02)', () => {
-  it('converts <sup>2</sup> to $^{2}$ (caret form)', () => {
-    expect(htmlToMarkdown('<p>O(n<sup>2</sup>)</p>')).toBe('O(n$^{2}$)');
+describe('htmlToMarkdown — sup/sub (GAP-2c-3, NOTE-02)', () => {
+  // GAP-2c-3: <sup>/<sub> emit Unicode characters (U+00B2, U+2070..2079, etc.).
+  // Chosen over the prior `$^{X}$` math form because Unicode renders identically
+  // in edit view, reading view, and inside inline `<code>`/backticks —
+  // whereas math-mode `$^{X}$` does not render inside backticks.
+  it('converts <sup>2</sup> to Unicode superscript ²', () => {
+    expect(htmlToMarkdown('<p>O(n<sup>2</sup>)</p>')).toBe('O(n²)');
   });
 
   it('converts <sup>9</sup> in a constraint-style expression', () => {
-    expect(htmlToMarkdown('<p>10<sup>9</sup></p>')).toBe('10$^{9}$');
+    expect(htmlToMarkdown('<p>10<sup>9</sup></p>')).toBe('10⁹');
   });
 
-  it('handles arbitrary <sup> expressions (multi-char)', () => {
-    expect(htmlToMarkdown('<p>x<sup>i+1</sup></p>')).toBe('x$^{i+1}$');
+  it('converts multi-digit <sup>31</sup> to Unicode ³¹', () => {
+    expect(htmlToMarkdown('<p>2<sup>31</sup></p>')).toBe('2³¹');
   });
 
-  it('converts <sub>2</sub> to $_{2}$ (underscore form)', () => {
-    expect(htmlToMarkdown('<p>H<sub>2</sub>O</p>')).toBe('H$_{2}$O');
+  it('handles mappable multi-char <sup>i+1</sup> to Unicode ⁱ⁺¹', () => {
+    expect(htmlToMarkdown('<p>x<sup>i+1</sup></p>')).toBe('xⁱ⁺¹');
   });
 
-  it('handles arbitrary <sub> expressions (multi-char)', () => {
-    expect(htmlToMarkdown('<p>a<sub>n-1</sub></p>')).toBe('a$_{n-1}$');
+  it('falls back to ^{...} plain text when any character is unmappable', () => {
+    // `_` has no Unicode superscript glyph — entire string falls back.
+    expect(htmlToMarkdown('<p>x<sup>foo_bar</sup></p>')).toBe('x^{foo_bar}');
   });
 
-  it('drops empty <sup></sup> (Test 10 — readability default)', () => {
-    // Documented behavior: empty sup/sub is skipped rather than emitting `$^{}$`.
+  it('converts <sub>2</sub> to Unicode subscript ₂', () => {
+    expect(htmlToMarkdown('<p>H<sub>2</sub>O</p>')).toBe('H₂O');
+  });
+
+  it('converts <sub>i</sub> to Unicode ᵢ', () => {
+    expect(htmlToMarkdown('<p>a<sub>i</sub></p>')).toBe('aᵢ');
+  });
+
+  it('handles mappable multi-char <sub>n-1</sub> to Unicode ₙ₋₁', () => {
+    expect(htmlToMarkdown('<p>a<sub>n-1</sub></p>')).toBe('aₙ₋₁');
+  });
+
+  it('falls back to _{...} plain text when any subscript character is unmappable', () => {
+    // `b` has no Unicode subscript glyph — entire string falls back.
+    expect(htmlToMarkdown('<p>x<sub>b</sub></p>')).toBe('x_{b}');
+  });
+
+  it('drops empty <sup></sup> (readability default)', () => {
     expect(htmlToMarkdown('<p>x<sup></sup></p>')).toBe('x');
   });
-});
 
-describe('htmlToMarkdown — <code> with nested tags (GAP-2c-2, NOTE-02)', () => {
-  // GAP-2c-2: <code> containing nested tags (e.g., <sup>) is emitted as literal
-  // HTML so Obsidian reading view renders the superscript inside monospace
-  // styling. The previous GAP-2c fix alone left `$^{2}$` math leaking through
-  // backtick-wrapped code, where inline-code rules suppress all nested
-  // formatting.
-  it('lc-code-with-children: <code>O(n<sup>2</sup>)</code> → literal HTML passthrough', () => {
-    const out = htmlToMarkdown('<code>O(n<sup>2</sup>)</code>');
-    expect(out.trim()).toBe('<code>O(n<sup>2</sup>)</code>');
+  it('drops empty <sub></sub> (readability default)', () => {
+    expect(htmlToMarkdown('<p>x<sub></sub></p>')).toBe('x');
   });
 
-  it('lc-code-with-children: <code> with only text still uses backticks (no regression)', () => {
+  it('renders <code>O(n<sup>2</sup>)</code> as backtick-wrapped Unicode', () => {
+    // With Unicode sup/sub the backtick path works cleanly: the superscript is
+    // a literal character inside backticks, not a math-mode delimiter that
+    // would leak through.
+    const out = htmlToMarkdown('<code>O(n<sup>2</sup>)</code>');
+    expect(out.trim()).toBe('`O(n²)`');
+  });
+
+  it('renders <code>a<sub>i</sub></code> as backtick-wrapped Unicode', () => {
+    const out = htmlToMarkdown('<code>a<sub>i</sub></code>');
+    expect(out.trim()).toBe('`aᵢ`');
+  });
+
+  it('<code> with only text still uses backticks (no regression)', () => {
     const out = htmlToMarkdown('<code>nums[i]</code>');
     expect(out.trim()).toBe('`nums[i]`');
   });
 
-  it('lc-code-with-children: <code> with nested <sub>', () => {
-    const out = htmlToMarkdown('<code>a<sub>i</sub></code>');
-    expect(out.trim()).toBe('<code>a<sub>i</sub></code>');
-  });
-
-  it('lc-code-with-children: plain <sup> outside <code> still uses math form (no regression)', () => {
+  it('plain <sup> outside <code> still emits Unicode (no regression)', () => {
     const out = htmlToMarkdown('<p>complexity is O(n<sup>2</sup>)</p>');
-    expect(out).toContain('$^{2}$');
+    expect(out).toContain('²');
     expect(out).not.toContain('<sup>');
+    expect(out).not.toContain('$^{');
   });
 });
 

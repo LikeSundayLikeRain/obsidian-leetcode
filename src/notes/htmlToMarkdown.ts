@@ -13,16 +13,21 @@
 //     (assumption A2). LC content flows INTO a Markdown file, not INTO the DOM —
 //     there is no XSS vector, and turndown's default escapes mangle LaTeX `\(…\)`
 //     sequences that Obsidian would otherwise render correctly (D-20 LaTeX rule).
-//     The new `lc-sup` / `lc-sub` / `lc-example-block` rules emit math delimiters
-//     (`$...$`) and fence delimiters (```` ``` ````) that this identity escape
-//     preserves verbatim — REMOVING the identity would corrupt their output.
+//     The new `lc-sup` / `lc-sub` / `lc-example-block` rules emit Unicode
+//     superscript/subscript characters and fence delimiters (```` ``` ````)
+//     that this identity escape preserves verbatim.
 //   - Custom `lc-image` rule: emit `![alt](src)` for <img>. No download; LC CDN
 //     URLs are left as-is (offline-degrades — tracked as deferred for Phase 5).
-//   - Custom `lc-sup` / `lc-sub` rules (GAP-2c): convert `<sup>X</sup>` to
-//     `$^{X}$` and `<sub>X</sub>` to `$_{X}$` (Obsidian math-mode caret /
-//     underscore form). Replaces the prior `keep(['sub','sup'])` pass-through
-//     so exponents like `10<sup>9</sup>` render as true superscripts in
-//     Obsidian preview instead of leaking literal HTML into the source view.
+//   - Custom `lc-sup` / `lc-sub` rules (GAP-2c-3): convert `<sup>X</sup>` /
+//     `<sub>X</sub>` to Unicode superscript / subscript characters
+//     (U+00B2, U+2070..2079, U+2080..2089, etc.) via character-by-character
+//     mapping. If ANY character in the content is not in the map, the whole
+//     string falls back to a plain-text `^{X}` / `_{X}` form so readers still
+//     see the intent. Unicode form renders identically in Obsidian edit view,
+//     reading view, and inside inline `<code>`/`` ` `` — unlike the prior
+//     `$^{X}$` math form, which didn't render inside backticks, and unlike
+//     the prior `<code>…<sup>…</sup></code>` HTML passthrough, which Obsidian
+//     stripped in both edit and reading modes.
 //   - Custom `lc-example-block` rule (GAP-2b): detects LC's styled Input/Output
 //     example pattern (`<pre>` with <strong>-wrapped labels OR any <pre> NOT
 //     containing `<code class="language-*">`) and emits a fenced `text` block.
@@ -37,6 +42,66 @@
 // output per D-21.
 
 import TurndownService from 'turndown';
+
+/**
+ * GAP-2c-3: Unicode superscript mapping. Covers digits, arithmetic operators,
+ * parentheses, and the lowercase letters that have a defined Unicode
+ * superscript glyph. Letters without a glyph (notably 'q') fall off the edge
+ * and trigger the fallback branch in `mapScript`. Uppercase input is
+ * lowercased before lookup so `<sup>A</sup>` still maps to `ᴬ` via the
+ * lowercase `a` → `ᵃ` entry (LC never uses uppercase superscripts in
+ * practice; lowercase is safe).
+ */
+const SUP_MAP: Record<string, string> = {
+  '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+  '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+  '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
+  'a': 'ᵃ', 'b': 'ᵇ', 'c': 'ᶜ', 'd': 'ᵈ', 'e': 'ᵉ',
+  'f': 'ᶠ', 'g': 'ᵍ', 'h': 'ʰ', 'i': 'ⁱ', 'j': 'ʲ',
+  'k': 'ᵏ', 'l': 'ˡ', 'm': 'ᵐ', 'n': 'ⁿ', 'o': 'ᵒ',
+  'p': 'ᵖ', 'r': 'ʳ', 's': 'ˢ', 't': 'ᵗ', 'u': 'ᵘ',
+  'v': 'ᵛ', 'w': 'ʷ', 'x': 'ˣ', 'y': 'ʸ', 'z': 'ᶻ',
+};
+
+/**
+ * GAP-2c-3: Unicode subscript mapping. Smaller than SUP_MAP because several
+ * Latin letters (b, c, d, f, g, q, w, y, z) have no defined Unicode subscript
+ * glyph. Any unmappable character triggers the fallback branch.
+ */
+const SUB_MAP: Record<string, string> = {
+  '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+  '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+  '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎',
+  'a': 'ₐ', 'e': 'ₑ', 'h': 'ₕ', 'i': 'ᵢ', 'j': 'ⱼ',
+  'k': 'ₖ', 'l': 'ₗ', 'm': 'ₘ', 'n': 'ₙ', 'o': 'ₒ',
+  'p': 'ₚ', 'r': 'ᵣ', 's': 'ₛ', 't': 'ₜ', 'u': 'ᵤ',
+  'v': 'ᵥ', 'x': 'ₓ',
+};
+
+/**
+ * Map every character in `content` through `table`. If any character is
+ * missing from the table, return the plain-text fallback `{prefix}{content}`
+ * (e.g. `^{foo_bar}` or `_{q}`). All-or-nothing posture so a mixed string
+ * never half-renders: either all characters get their Unicode glyph, or the
+ * entire string is wrapped in the fallback braces.
+ *
+ * Determinism: pure function of `content` + `table` + `fallbackPrefix`; no
+ * shared state.
+ */
+function mapScript(
+  content: string,
+  table: Record<string, string>,
+  fallbackPrefix: string,
+): string {
+  const mapped: string[] = [];
+  for (const ch of content) {
+    const lower = ch.toLowerCase();
+    const m = table[lower] ?? table[ch];
+    if (m === undefined) return `${fallbackPrefix}{${content}}`;
+    mapped.push(m);
+  }
+  return mapped.join('');
+}
 
 let cachedService: TurndownService | null = null;
 
@@ -54,47 +119,8 @@ function getService(): TurndownService {
   });
 
   // Pass through LC's kbd/var inline HTML verbatim. `<sub>` / `<sup>` moved to
-  // the lc-sub / lc-sup custom rules below (GAP-2c).
+  // the lc-sub / lc-sup custom rules below (GAP-2c-3).
   service.keep(['kbd', 'var']);
-
-  // GAP-2c-2: <code> with nested element children (e.g., <code>O(n<sup>2</sup>)</code>)
-  // is emitted as literal HTML so Obsidian reading view applies <code> styling
-  // (monospace + gray background) AND renders the nested <sup>/<sub>/<strong>
-  // correctly. Normal backtick wrapping would make the `$^{2}$` math source leak
-  // through verbatim because Markdown's inline-code rule suppresses all nested
-  // formatting inside backticks.
-  //
-  // Ordered BEFORE lc-sup / lc-sub so this rule's `filter` has first chance to
-  // claim a <code> node. Turndown recurses into children anyway for unclaimed
-  // text, but we short-circuit by returning outerHTML and letting turndown
-  // skip descent for this replacement. When <code> contains only text, this
-  // filter returns false and the default backtick conversion applies (no
-  // regression for inline `<code>nums[i]</code>`).
-  //
-  // Determinism: reads only node.childNodes and node.outerHTML — both stable
-  // derived values of the input DOM with no shared state (D-20).
-  service.addRule('lc-code-with-children', {
-    filter: (node) => {
-      if (node.nodeName !== 'CODE') return false;
-      // Only apply when the <code> has at least one ELEMENT child (not just text).
-      // Pure-text <code> uses the default backtick conversion.
-      const hasElementChild = Array.from(node.childNodes).some(
-        (child) => child.nodeType === 1, // Node.ELEMENT_NODE
-      );
-      return hasElementChild;
-    },
-    replacement: (_content, node) => {
-      // Emit the <code> element verbatim as HTML. Obsidian reading view
-      // will apply normal <code> styling (monospace + background) AND will
-      // render any nested <sup>/<sub>/<strong> etc. correctly.
-      //
-      // `node` is a DOM Node; use outerHTML to preserve the full element
-      // including its attributes. Cast via `unknown` since turndown's types
-      // expose Node not HTMLElement.
-      const el = node as unknown as { outerHTML: string };
-      return el.outerHTML;
-    },
-  });
 
   // Custom <img> handler — LC content includes diagram images with CDN URLs.
   // Emit `![alt](src)` and skip <img> entirely if src is empty.
@@ -112,27 +138,33 @@ function getService(): TurndownService {
     },
   });
 
-  // GAP-2c: <sup>X</sup> → $^{X}$ (Obsidian math-mode caret form).
-  // D-20 posture: consistent with LaTeX preservation — caret form renders as
-  // true superscript inside Obsidian's $...$ delimiters. Handles arbitrary
-  // expressions (digits, letters, multi-char like `i+1`). Empty <sup></sup>
-  // collapses to empty string for readability (Test 10 default).
+  // GAP-2c-3: <sup>X</sup> → Unicode superscript characters (e.g. `²`, `ⁱ⁺¹`).
+  // Empty <sup></sup> collapses to empty string for readability. Unmappable
+  // content (e.g. `<sup>foo_bar</sup>` — `_` has no superscript glyph) falls
+  // back to `^{foo_bar}` plain text.
+  //
+  // Why Unicode over the prior `$^{X}$` math form: Obsidian renders `$^{2}$`
+  // as superscript ONLY outside inline code. Inside `` `O(n<sup>2</sup>)` ``
+  // the math source would leak through verbatim because Markdown's inline-code
+  // rule suppresses nested formatting. Unicode characters are plain text — no
+  // delimiters, no rendering mode, same visual in edit view, reading view, and
+  // inside backticks.
   service.addRule('lc-sup', {
     filter: 'sup',
     replacement: (content) => {
       const inner = content.trim();
       if (!inner) return '';
-      return `$^{${inner}}$`;
+      return mapScript(inner, SUP_MAP, '^');
     },
   });
 
-  // GAP-2c: <sub>X</sub> → $_{X}$ (Obsidian math-mode underscore form).
+  // GAP-2c-3: <sub>X</sub> → Unicode subscript characters (e.g. `₂`, `ᵢ`).
   service.addRule('lc-sub', {
     filter: 'sub',
     replacement: (content) => {
       const inner = content.trim();
       if (!inner) return '';
-      return `$_{${inner}}$`;
+      return mapScript(inner, SUB_MAP, '_');
     },
   });
 

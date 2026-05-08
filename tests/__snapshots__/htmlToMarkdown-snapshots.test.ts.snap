@@ -69,8 +69,8 @@ Output: [1,2]
 
 **Constraints:**
 
--   <code>2 &lt;= nums.length &lt;= 10<sup>4</sup></code>
--   <code>-10<sup>9</sup> &lt;= nums[i] &lt;= 10<sup>9</sup></code>
--   <code>-10<sup>9</sup> &lt;= target &lt;= 10<sup>9</sup></code>
+-   \`2 <= nums.length <= 10⁴\`
+-   \`-10⁹ <= nums[i] <= 10⁹\`
+-   \`-10⁹ <= target <= 10⁹\`
 -   **Only one valid answer exists.**"
 `;
