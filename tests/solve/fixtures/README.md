@@ -239,16 +239,34 @@ finding drives `src/solve/leetcodeRest.ts`'s `isSessionExpired()` dispatch
 
 ### Observed behavior
 
-- **Status code observed:** _(fill in: 302 / 200-with-login-HTML / 401 / 403)_
-- **Response text head (first 200 chars):** _(fill in)_
-- **`res.headers['location']` present?** _(fill in: yes/no + value if yes)_
+- **Status code observed:** _(DEFERRED — see Status below)_
+- **Response text head (first 200 chars):** _(DEFERRED)_
+- **`res.headers['location']` present?** _(DEFERRED)_
 
 ### Status
 
 - [ ] Spike run against live LC (expired session) — documented above.
-- [ ] **SPIKE DEFERRED TO PLAN 04** — Plan 04 must implement both a
-  status-code check AND an HTML body sniff as defense in depth. (Choose this
-  box only if running the spike is infeasible during Wave 0.)
+- [x] **SPIKE DEFERRED TO PLAN 04** — The GSD executor agent that
+  stubbed Wave 0 has no live LC session access and cannot drive Obsidian's
+  devtools console. Plan 04 MUST implement BOTH a status-code check (302 /
+  401 / 403) AND an HTML body sniff (`<title>Log In - LeetCode</title>` in
+  `res.text`) as defense in depth, so `isSessionExpired()` returns true
+  regardless of which branch `requestUrl` takes on the redirect.
+
+### Action required in Plan 04
+
+When Plan 04 implements `src/solve/leetcodeRest.ts`:
+
+1. Run the reproduction recipe below against a live LC session that has
+   been invalidated (either log out of LC in the browser first, or pass
+   `LEETCODE_SESSION=INVALID`).
+2. Update the "Observed behavior" block above with the actual values.
+3. Flip the checkbox: "Spike run against live LC" → `[x]`, "SPIKE DEFERRED
+   TO PLAN 04" → `[ ]`.
+4. Adjust `isSessionExpired()` if the live behavior differs from the
+   defense-in-depth assumption (e.g., if `requestUrl` transparently
+   follows to 200+login-HTML, the status check is a no-op and the HTML
+   sniff is the only signal).
 
 ### Reproduction recipe
 
