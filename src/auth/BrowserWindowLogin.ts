@@ -94,6 +94,23 @@ export function openLogin(): Promise<AuthCookies | null> {
     });
     let resolved = false;
 
+    const safeClose = (): void => {
+      // The window may already have been destroyed by the OS, a prior close(),
+      // or a loadURL failure. Swallow so we never hand a rejected promise
+      // back to the auth flow (CR-05).
+      try { win.close(); } catch { /* already destroyed — closed event handles state */ }
+    };
+
+    // Register the 'closed' handler BEFORE loadURL. If loadURL synchronously
+    // tears the window down before returning (rare but possible on invalid
+    // URLs in some Electron builds), the silent-cancel path still fires.
+    win.on('closed', () => {
+      if (!resolved) {
+        resolved = true;
+        resolve(null); // D-04 silent-cancel
+      }
+    });
+
     const tryCapture = async (): Promise<void> => {
       try {
         const cookies = await win.webContents.session.cookies.get({
@@ -103,7 +120,7 @@ export function openLogin(): Promise<AuthCookies | null> {
         if (extracted && !resolved) {
           resolved = true;
           resolve(extracted);
-          win.close();
+          safeClose();
         }
       } catch {
         // Ignore transient cookie-get errors; next event will retry.
@@ -118,10 +135,16 @@ export function openLogin(): Promise<AuthCookies | null> {
       void tryCapture();
     }); // SPA route change (Pitfall 2)
 
-    win.on('closed', () => {
-      if (!resolved) resolve(null); // D-04 silent-cancel
+    // If loadURL rejects (network down, DNS failure, ERR_CERT_*, etc.) and
+    // the window never emits 'closed' on its own, the caller's await would
+    // hang forever. Catch, resolve null, and force-close so the auth flow
+    // always settles (CR-05).
+    win.loadURL('https://leetcode.com/accounts/login/').catch(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve(null);
+      }
+      safeClose();
     });
-
-    void win.loadURL('https://leetcode.com/accounts/login/');
   });
 }
