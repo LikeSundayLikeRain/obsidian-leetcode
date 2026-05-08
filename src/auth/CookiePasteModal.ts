@@ -7,7 +7,7 @@
 // Color rule (W1, UI-SPEC.md § Color): the Save button is NEUTRAL — the call-to-action
 // styling (Obsidian's accent modifier) is NOT applied here. Accent color is reserved for
 // the primary Log-in button in the Settings tab ONLY.
-import { App, Modal, Setting } from 'obsidian';
+import { App, Modal, Notice, Setting } from 'obsidian';
 import type { AuthCookies } from './types';
 
 export class CookiePasteModal extends Modal {
@@ -59,10 +59,21 @@ export class CookiePasteModal extends Modal {
         // for the primary Log-in button (UI-SPEC.md § Color; W1). Save-cookies is
         // a neutral action. Do NOT add .set-Cta here.
         .onClick(async () => {
-          if (!this.sessionValue || !this.csrfValue) return;
+          // WR-06: a truthy-but-all-whitespace paste (trailing newline from
+          // copy-paste, a run of spaces) would pass the old `!x` guard, be
+          // persisted verbatim, and silently fail every subsequent API call
+          // while the user sees a misleading "Cookies saved." confirmation.
+          // Trim BEFORE validating, and surface an explicit Notice if either
+          // field is empty after trimming.
+          const session = this.sessionValue.trim();
+          const csrf = this.csrfValue.trim();
+          if (!session || !csrf) {
+            new Notice('Both fields are required.', 3000);
+            return;
+          }
           await this.onSave({
-            LEETCODE_SESSION: this.sessionValue,
-            csrftoken: this.csrfValue,
+            LEETCODE_SESSION: session,
+            csrftoken: csrf,
           });
           this.close();
         }),

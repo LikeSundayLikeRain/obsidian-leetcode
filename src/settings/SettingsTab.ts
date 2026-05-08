@@ -106,13 +106,19 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       .addButton((b) => b
         .setButtonText('Save cookies')
         .onClick(async () => {
-          if (!sessionVal || !csrfVal) {
+          // WR-06: trim BEFORE validating so a whitespace-only paste (trailing
+          // newline or spaces from copy-paste) is rejected instead of being
+          // persisted verbatim and silently failing every subsequent API call
+          // while the user sees a misleading "Logged in." confirmation.
+          const session = sessionVal.trim();
+          const csrf = csrfVal.trim();
+          if (!session || !csrf) {
             new Notice('Both fields are required.', 3000);
             return;
           }
           const cookies: AuthCookies = {
-            LEETCODE_SESSION: sessionVal,
-            csrftoken: csrfVal,
+            LEETCODE_SESSION: session,
+            csrftoken: csrf,
           };
           await this.plugin.auth.loginManual(cookies);
           this.display();
