@@ -7,6 +7,8 @@ import type { AuthCookies } from '../auth/types';
 import type { IndexedProblem, ProblemIndex } from '../browse/types';
 import { logger } from '../shared/logger';
 
+export type { AuthCookies } from '../auth/types';
+
 // CF-03 compliance: contentHtml is LC public problem content — non-sensitive. Only
 // auth.LEETCODE_SESSION (a sibling in PluginData) is a secret; logger.ts redaction
 // patterns target that field. contentHtml is safely persisted in data.json without redaction.
