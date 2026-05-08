@@ -20,7 +20,10 @@ describe('ProblemListService search + filter (BROWSE-03, BROWSE-04 difficulty)',
 
   it('search matches title substring case-insensitively', () => {
     const r = svc.search(FIXTURE, 'two');
-    expect(r.map((p) => p.id)).toEqual([1, 2]);
+    // "Two Sum" (id=1), "Add Two Numbers" (id=2), and "Median of Two Sorted Arrays" (id=4)
+    // all contain the substring "two" — substring match (not word-boundary) is the
+    // documented semantics (Plan 05 <behavior>, BROWSE-03 in RESEARCH.md).
+    expect(r.map((p) => p.id).sort((a, b) => a - b)).toEqual([1, 2, 4]);
   });
 
   it('search matches id prefix', () => {
