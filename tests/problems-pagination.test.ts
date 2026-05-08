@@ -116,4 +116,27 @@ describe('ProblemListService.refresh (BROWSE-02)', () => {
     expect(client.lc.problems).toHaveBeenCalledTimes(1);
     expect(result).toHaveLength(3);
   });
+
+  it('single-flight: concurrent refresh() calls share one paginate pass (WR-03)', async () => {
+    const client = makeMockClient([50, 50, 7]);
+    const settings = makeMockSettings(null);
+    const svc = new ProblemListService(client as never, settings as never);
+    // Kick off two concurrent refreshes WITHOUT awaiting between them.
+    // Without the single-flight guard, both would race and issue ~6 total
+    // fetches (3 pages each). With the guard, only 3 fetches total fire.
+    const [a, b] = await Promise.all([svc.refresh(true), svc.refresh(true)]);
+    expect(client.lc.problems).toHaveBeenCalledTimes(3);
+    expect(a).toBe(b); // same resolved array reference
+    expect(a).toHaveLength(107);
+  });
+
+  it('single-flight: a second refresh after the first settles does fetch again', async () => {
+    const client = makeMockClient([3]);
+    const settings = makeMockSettings(null);
+    const svc = new ProblemListService(client as never, settings as never);
+    await svc.refresh(true);
+    await svc.refresh(true);
+    // Two sequential (awaited) calls → two paginate passes (1 page each).
+    expect(client.lc.problems).toHaveBeenCalledTimes(2);
+  });
 });

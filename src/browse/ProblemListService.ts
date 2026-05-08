@@ -34,6 +34,15 @@ function mapStatus(s: LcQuestion['status']): NonNullable<IndexedProblem['status'
 }
 
 export class ProblemListService {
+  // WR-03: single-flight guard. If refresh() is called while a prior call is
+  // still in flight (two views opened back-to-back, retry fires before the
+  // first paginate loop finishes), return the SAME promise rather than
+  // starting a duplicate paginate pass. Without this, both calls would see
+  // a stale/null cache, each would issue ~66 paginated fetches for the full
+  // 3,300-problem list, and whichever finished last would win the
+  // setProblemIndex write — possibly persisting an incomplete index.
+  private refreshPromise: Promise<IndexedProblem[]> | null = null;
+
   constructor(
     private readonly client: LeetCodeClient,
     private readonly settings: SettingsStore,
@@ -44,9 +53,18 @@ export class ProblemListService {
    * populate each row's `status` from q.status, persist to data.json, and return.
    *
    * BROWSE-02: never bulk-downloads — always paginated with `limit: PAGE_SIZE (50)`.
+   * WR-03: concurrent calls share the same in-flight promise.
    * @param force When true, bypass the TTL check and always re-fetch.
    */
   async refresh(force = false): Promise<IndexedProblem[]> {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = this._doRefresh(force).finally(() => {
+      this.refreshPromise = null;
+    });
+    return this.refreshPromise;
+  }
+
+  private async _doRefresh(force: boolean): Promise<IndexedProblem[]> {
     const cached = this.settings.getProblemIndex();
     if (!force && cached && Date.now() - cached.fetchedAt < INDEX_TTL_MS) {
       return cached.problems;
