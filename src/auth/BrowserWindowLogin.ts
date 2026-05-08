@@ -60,8 +60,20 @@ interface BrowserWindowOptions {
   };
 }
 type BrowserWindowCtor = new (opts: BrowserWindowOptions) => ElectronBrowserWindow;
-interface ElectronModule {
+interface ElectronSessionModule {
+  fromPartition(partition: string): { clearStorageData(opts?: { storages?: string[] }): Promise<void> };
+}
+interface ElectronRemote {
   BrowserWindow: BrowserWindowCtor;
+  session?: ElectronSessionModule;
+}
+interface ElectronModule {
+  // Main-process entry (available when Obsidian runs the plugin in main context)
+  BrowserWindow?: BrowserWindowCtor;
+  session?: ElectronSessionModule;
+  // Renderer-process entry — Obsidian's Electron exposes the main-process API
+  // via `remote` for plugins running in renderer context.
+  remote?: ElectronRemote;
 }
 
 /**
@@ -77,11 +89,34 @@ interface ElectronModule {
  *   cookies from other plugins.
  */
 export function openLogin(): Promise<AuthCookies | null> {
+  // Obsidian runs plugins in the renderer process. `require('electron')` from
+  // renderer context exposes a different surface than main process — the
+  // `BrowserWindow` constructor lives under `.remote` (shimmed by Obsidian's
+  // host via @electron/remote) or must be loaded via @electron/remote directly.
+  // Probe both paths so the plugin works across Obsidian versions.
   const electron = require('electron') as ElectronModule;
-  const { BrowserWindow } = electron;
+  let BrowserWindow: BrowserWindowCtor | undefined = electron.BrowserWindow;
+  if (!BrowserWindow && electron.remote) {
+    BrowserWindow = electron.remote.BrowserWindow;
+  }
+  if (!BrowserWindow) {
+    try {
+      BrowserWindow = (require('@electron/remote') as ElectronRemote).BrowserWindow;
+    } catch {
+      // @electron/remote not available in this Electron build — fall through
+    }
+  }
+  if (!BrowserWindow) {
+    return Promise.reject(
+      new Error(
+        'BrowserWindow unavailable — renderer-process Electron did not expose it via electron.remote or @electron/remote. Use the cookie-paste fallback in Settings.',
+      ),
+    );
+  }
+  const BrowserWindowCtor = BrowserWindow;
 
   return new Promise((resolve) => {
-    const win = new BrowserWindow({
+    const win = new BrowserWindowCtor({
       width: 980,
       height: 720,
       show: true,
@@ -147,4 +182,40 @@ export function openLogin(): Promise<AuthCookies | null> {
       safeClose();
     });
   });
+}
+
+/**
+ * Clear the `persist:leetcode` Electron session partition so the next embedded
+ * login actually prompts for credentials instead of auto-signing-in from the
+ * cached cookie jar. Called from AuthService.logout().
+ *
+ * Swallows all errors: clearing is best-effort (user already sees "Logged out"
+ * Notice and data.json is clean; a stale partition just means the next login
+ * auto-completes, which is recoverable).
+ */
+export async function clearLeetCodePartitionCookies(): Promise<void> {
+  try {
+    const electron = require('electron') as ElectronModule;
+    const session = electron.session ?? electron.remote?.session;
+    if (!session) {
+      // Try @electron/remote as a last resort (Obsidian ships with it loaded).
+      try {
+        const remote = require('@electron/remote') as { session?: ElectronSessionModule };
+        if (remote.session) {
+          await remote.session.fromPartition('persist:leetcode').clearStorageData({
+            storages: ['cookies'],
+          });
+        }
+      } catch {
+        // No remote available; accept stale partition state. The data.json
+        // cookies were already cleared so API calls will still fail-then-prompt.
+      }
+      return;
+    }
+    await session.fromPartition('persist:leetcode').clearStorageData({
+      storages: ['cookies'],
+    });
+  } catch {
+    // Intentionally silent — see contract above.
+  }
 }

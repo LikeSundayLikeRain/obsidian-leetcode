@@ -9,7 +9,7 @@
 import { Notice } from 'obsidian';
 import type { SettingsStore } from '../settings/SettingsStore';
 import type { LeetCodeClient } from '../api/LeetCodeClient';
-import { openLogin } from './BrowserWindowLogin';
+import { openLogin, clearLeetCodePartitionCookies } from './BrowserWindowLogin';
 import type { AuthCookies } from './types';
 
 export class AuthService {
@@ -34,6 +34,12 @@ export class AuthService {
     }
     await this.settings.setAuthCookies(cookies);
     await this.client.reauthenticate();
+    // Fetch and persist username for settings tab display (previously left null,
+    // showing "Logged in as …" forever). whoami is a lightweight GraphQL query;
+    // if it fails we persist null so the UI falls back to the placeholder.
+    const who = await this.client.fetchWhoami();
+    await this.settings.setUsername(who?.username ?? null);
+    await this.settings.setIsPremium(who?.isPremium ?? null);
     // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages LOCKED
     new Notice('Logged in to LeetCode.', 4000);
     return true;
@@ -43,18 +49,27 @@ export class AuthService {
   async loginManual(cookies: AuthCookies): Promise<void> {
     await this.settings.setAuthCookies(cookies);
     await this.client.reauthenticate();
+    const who = await this.client.fetchWhoami();
+    await this.settings.setUsername(who?.username ?? null);
+    await this.settings.setIsPremium(who?.isPremium ?? null);
     new Notice('Cookies saved.', 3000);
   }
 
   /**
-   * Clear cookies from data.json (AUTH-05). Does NOT clear the Electron
-   * persist:leetcode partition — that cleanup is deferred to Phase 5 polish
-   * (RESEARCH.md Open Question 2).
+   * Clear cookies from data.json AND the Electron persist:leetcode partition
+   * cookie jar (AUTH-05). Without the partition clear, the next BrowserWindow
+   * login auto-signs-in using cached partition cookies — user sees a blank
+   * LC page briefly and gets re-logged-in as the same account with no password
+   * prompt. RESEARCH.md Open Question 2 was resolved to "Phase 1 clears
+   * data.json only" for the initial ship; promoted to full clear here because
+   * users testing in a real vault hit this immediately and it looks like a bug.
    */
   async logout(): Promise<void> {
     await this.settings.setAuthCookies(null);
     await this.settings.setUsername(null);
+    await this.settings.setIsPremium(null);
     await this.client.reauthenticate();
+    await clearLeetCodePartitionCookies();
     // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages LOCKED
     new Notice('Logged out of LeetCode.', 4000);
   }

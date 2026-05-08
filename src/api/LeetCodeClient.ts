@@ -38,6 +38,40 @@ export class LeetCodeClient {
     await cred.init(cookies.LEETCODE_SESSION);
     this.lc = new LeetCode(cred);
   }
+
+  /** Fetch the signed-in user's username via LC's `whoami` GraphQL query.
+   *  Returns null if not signed in or if the call fails. Never throws — callers
+   *  use the result for UI display only (settings tab Status line). */
+  async fetchUsername(): Promise<string | null> {
+    try {
+      const resp = await (this.lc as unknown as {
+        whoami: () => Promise<{ username?: string; isSignedIn?: boolean } | null>;
+      }).whoami();
+      if (!resp || !resp.isSignedIn || !resp.username) return null;
+      return resp.username;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch the signed-in user's username + premium status in a single whoami
+   *  round-trip. Returns null if not signed in or on error. */
+  async fetchWhoami(): Promise<{ username: string; isPremium: boolean | null } | null> {
+    try {
+      const resp = await (this.lc as unknown as {
+        whoami: () => Promise<
+          { username?: string; isSignedIn?: boolean; isPremium?: boolean | null } | null
+        >;
+      }).whoami();
+      if (!resp || !resp.isSignedIn || !resp.username) return null;
+      return {
+        username: resp.username,
+        isPremium: typeof resp.isPremium === 'boolean' ? resp.isPremium : null,
+      };
+    } catch {
+      return null;
+    }
+  }
 }
 
 /**
