@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { isLegacyLeetcodeBaseV010, leetcodeBaseYaml } from '../src/notes/BaseFile';
+import { runLegacyBaseCheck } from '../src/main';
 
 // Exact v0.1.0 YAML string that shipped before GAP-6 was closed. The detector
 // probes for its two unique substrings (`file.inFolder("` + `lc-id != null`).
@@ -90,5 +91,87 @@ describe('isLegacyLeetcodeBaseV010 (GAP-6 migration detector)', () => {
     expect(isLegacyLeetcodeBaseV010(null as unknown as string)).toBe(false);
     expect(isLegacyLeetcodeBaseV010(undefined as unknown as string)).toBe(false);
     expect(isLegacyLeetcodeBaseV010(42 as unknown as string)).toBe(false);
+  });
+});
+
+function makeSettingsStub(initial: { flagShown?: boolean; folder?: string } = {}) {
+  let flag = initial.flagShown === true;
+  return {
+    hasShownLegacyBaseNotice: () => flag,
+    markLegacyBaseNoticeShown: vi.fn(async () => { flag = true; }),
+    getProblemsFolder: () => initial.folder ?? 'LeetCode',
+    /** Test-only: peek at the flag's current value. */
+    _peekFlag: () => flag,
+  };
+}
+
+describe('runLegacyBaseCheck (GAP-6 one-time Notice gate)', () => {
+  it('fires Notice AND marks the flag when all three conditions are met (v0.1.0 contents, file exists, flag unset)', async () => {
+    const settings = makeSettingsStub({ flagShown: false, folder: 'LeetCode' });
+    const readBaseFile = vi.fn(async (p: string) => {
+      expect(p).toBe('LeetCode/LeetCode.base');
+      return LEGACY_V010_YAML;
+    });
+    const showNotice = vi.fn();
+    await runLegacyBaseCheck({ settings, readBaseFile, showNotice });
+    expect(showNotice).toHaveBeenCalledTimes(1);
+    expect(showNotice).toHaveBeenCalledWith(
+      'LeetCode.base may need to be regenerated. Delete it to get the updated view.',
+      8000,
+    );
+    expect(settings.markLegacyBaseNoticeShown).toHaveBeenCalledTimes(1);
+    expect(settings._peekFlag()).toBe(true);
+  });
+
+  it('is idempotent: a second invocation after the flag is set does NOT fire a Notice', async () => {
+    const settings = makeSettingsStub({ flagShown: false, folder: 'LeetCode' });
+    const readBaseFile = vi.fn(async () => LEGACY_V010_YAML);
+    const showNotice = vi.fn();
+    // First run — fires.
+    await runLegacyBaseCheck({ settings, readBaseFile, showNotice });
+    expect(showNotice).toHaveBeenCalledTimes(1);
+    // Second run — short-circuits because flag is now true.
+    await runLegacyBaseCheck({ settings, readBaseFile, showNotice });
+    expect(showNotice).toHaveBeenCalledTimes(1); // still 1, not 2
+    expect(settings.markLegacyBaseNoticeShown).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fire when the flag is ALREADY set (user has seen the Notice previously)', async () => {
+    const settings = makeSettingsStub({ flagShown: true, folder: 'LeetCode' });
+    const readBaseFile = vi.fn(async () => LEGACY_V010_YAML);
+    const showNotice = vi.fn();
+    await runLegacyBaseCheck({ settings, readBaseFile, showNotice });
+    expect(showNotice).not.toHaveBeenCalled();
+    expect(settings.markLegacyBaseNoticeShown).not.toHaveBeenCalled();
+    // Read-base should NOT even be attempted if the flag short-circuits first.
+    expect(readBaseFile).not.toHaveBeenCalled();
+  });
+
+  it('does not fire when the .base file does not exist (readBaseFile returns null)', async () => {
+    const settings = makeSettingsStub({ flagShown: false, folder: 'LeetCode' });
+    const readBaseFile = vi.fn(async () => null);
+    const showNotice = vi.fn();
+    await runLegacyBaseCheck({ settings, readBaseFile, showNotice });
+    expect(showNotice).not.toHaveBeenCalled();
+    expect(settings.markLegacyBaseNoticeShown).not.toHaveBeenCalled();
+  });
+
+  it('does not fire when .base exists but contents match the NEW schema (already-migrated user)', async () => {
+    const settings = makeSettingsStub({ flagShown: false, folder: 'LeetCode' });
+    const readBaseFile = vi.fn(async () => leetcodeBaseYaml('LeetCode'));
+    const showNotice = vi.fn();
+    await runLegacyBaseCheck({ settings, readBaseFile, showNotice });
+    expect(showNotice).not.toHaveBeenCalled();
+    expect(settings.markLegacyBaseNoticeShown).not.toHaveBeenCalled();
+  });
+
+  it('honours custom problemsFolder — reads from the configured path', async () => {
+    const settings = makeSettingsStub({ flagShown: false, folder: 'Custom/Problems/' });
+    const readBaseFile = vi.fn(async () => LEGACY_V010_YAML);
+    const showNotice = vi.fn();
+    await runLegacyBaseCheck({ settings, readBaseFile, showNotice });
+    // Trailing slash stripped before path composition (matches ensureLeetcodeBase behaviour).
+    expect(readBaseFile).toHaveBeenCalledWith('Custom/Problems/LeetCode.base');
+    expect(showNotice).toHaveBeenCalledTimes(1);
   });
 });

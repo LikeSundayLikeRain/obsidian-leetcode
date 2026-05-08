@@ -8,7 +8,7 @@
 //   5. Construct ProblemListService (depends on client + settings)
 //   5.5. Construct NoteWriter (Phase 2 — row-click orchestrator; depends on app + client + settings)
 //   6. Register view, ribbon, command, settings tab
-import { Plugin, WorkspaceLeaf } from 'obsidian';
+import { Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import { SettingsStore } from './settings/SettingsStore';
 import { installRequestUrlFetcher } from './api/requestUrlFetcher';
 import { LeetCodeClient } from './api/LeetCodeClient';
@@ -16,6 +16,7 @@ import { AuthService } from './auth/AuthService';
 import { ProblemListService } from './browse/ProblemListService';
 import { ProblemBrowserView, BROWSER_VIEW_TYPE } from './browse/ProblemBrowserView';
 import { NoteWriter } from './notes/NoteWriter';
+import { isLegacyLeetcodeBaseV010 } from './notes/BaseFile';
 import { LeetCodeSettingTab } from './settings/SettingsTab';
 
 export default class LeetCodePlugin extends Plugin {
@@ -81,6 +82,34 @@ export default class LeetCodePlugin extends Plugin {
 
     // Step 6d — settings tab.
     this.addSettingTab(new LeetCodeSettingTab(this.app, this));
+
+    // GAP-6: fire-and-forget one-time migration Notice for users on the
+    // v0.1.0 broken LeetCode.base schema. Non-blocking; never throws into
+    // plugin activation (D-18 never-overwrite — user must delete manually).
+    void this.checkLegacyLeetcodeBase().catch(() => undefined);
+  }
+
+  /**
+   * GAP-6: one-time migration Notice for users on the v0.1.0 broken
+   * LeetCode.base schema. Shows once per install; user must manually delete
+   * the file to regenerate — we never auto-delete or auto-overwrite (D-18).
+   */
+  private async checkLegacyLeetcodeBase(): Promise<void> {
+    await runLegacyBaseCheck({
+      settings: this.settings,
+      readBaseFile: async (path) => {
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile)) return null;
+        try {
+          return await this.app.vault.read(file);
+        } catch {
+          return null;
+        }
+      },
+      showNotice: (msg, ms) => {
+        new Notice(msg, ms);
+      },
+    });
   }
 
   onunload(): void {
@@ -122,4 +151,40 @@ export default class LeetCodePlugin extends Plugin {
     // eslint-disable-next-line obsidianmd/no-unsupported-api -- see above: smoke test covers 1.5+
     await workspace.revealLeaf(leaf);
   }
+}
+
+/**
+ * GAP-6 pure helper extracted for testability.
+ *
+ * Three-condition gate — all must be TRUE for the Notice to fire:
+ *   1. `hasShownLegacyBaseNotice()` is false (one-time-per-install)
+ *   2. `{folder}/LeetCode.base` exists in the vault
+ *   3. Its contents match the v0.1.0 signature (`isLegacyLeetcodeBaseV010`)
+ *
+ * On success: fires the Notice and marks the flag so it never fires again.
+ * Never auto-modifies the .base file (D-18 preservation).
+ *
+ * Consumes a minimal `deps` interface so tests can drive it without a real
+ * Plugin / Vault / Notice. Exported for tests in tests/base-file-detect-stale.test.ts.
+ */
+export async function runLegacyBaseCheck(deps: {
+  settings: {
+    hasShownLegacyBaseNotice(): boolean;
+    markLegacyBaseNoticeShown(): Promise<void>;
+    getProblemsFolder(): string;
+  };
+  readBaseFile: (path: string) => Promise<string | null>;
+  showNotice: (message: string, timeoutMs: number) => void;
+}): Promise<void> {
+  if (deps.settings.hasShownLegacyBaseNotice()) return;
+  const folder = deps.settings.getProblemsFolder().replace(/[\\/]+$/, '');
+  const path = `${folder}/LeetCode.base`;
+  const contents = await deps.readBaseFile(path);
+  if (contents == null) return;   // no .base yet — nothing to migrate
+  if (!isLegacyLeetcodeBaseV010(contents)) return;
+  deps.showNotice(
+    'LeetCode.base may need to be regenerated. Delete it to get the updated view.',
+    8000,
+  );
+  await deps.settings.markLegacyBaseNoticeShown();
 }
