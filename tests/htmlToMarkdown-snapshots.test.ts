@@ -19,4 +19,22 @@ describe('htmlToMarkdown fixture snapshots (NOTE-02)', () => {
     expect(md).toMatchSnapshot();
     expect(md).toContain('```python');
   });
+
+  // GAP-2b smoke check — a future refactor that silently reverts the
+  // lc-example-block rule would leave **Input:** / **Output:** flat
+  // paragraphs in the two-sum output. This guard fails loudly in that case
+  // without requiring snapshot inspection.
+  it('two-sum snapshot contains a ```text fence block (GAP-2b smoke check)', () => {
+    const md = htmlToMarkdown(fx('lc-two-sum.html'));
+    expect(md).toContain('```text');
+    expect(md).not.toContain('**Input:**');
+  });
+
+  // GAP-2c smoke check — catches silent reversion of the lc-sup rule.
+  it('two-sum snapshot renders <sup> as $^{...}$ math (GAP-2c smoke check)', () => {
+    const md = htmlToMarkdown(fx('lc-two-sum.html'));
+    expect(md).toContain('10$^{4}$');
+    expect(md).toContain('10$^{9}$');
+    expect(md).not.toMatch(/<sup>|<\/sup>/);
+  });
 });
