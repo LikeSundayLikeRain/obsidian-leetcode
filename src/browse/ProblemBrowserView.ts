@@ -65,14 +65,9 @@ export class ProblemBrowserView extends ItemView {
     root.addClass('leetcode-browser');
 
     if (!this.plugin.auth.isLoggedIn()) {
-      this.renderEmptyState(root, {
+      this.renderLoggedOutState(root, {
         heading: 'Log in to browse problems',
         body: 'Sign in to LeetCode to load the problem list.',
-        buttonText: 'Log in',
-        onAction: async () => {
-          const ok = await this.plugin.auth.login();
-          if (ok) void this.refreshAndRender(root);
-        },
       });
       return;
     }
@@ -82,6 +77,28 @@ export class ProblemBrowserView extends ItemView {
       body: 'Fetching the problem list. This happens once.',
     });
     await this.refreshAndRender(root);
+  }
+
+  /**
+   * Render the logged-out empty state with a Log-in button.
+   * WR-05: extracted so the session-expiry path can call this directly
+   * instead of recursing into onOpen() (which re-enters refreshAndRender
+   * if isLoggedIn() still returns true — possible if logout's saveData
+   * throws — causing unbounded recursion to stack overflow).
+   */
+  private renderLoggedOutState(
+    root: HTMLElement,
+    opts: { heading: string; body: string },
+  ): void {
+    this.renderEmptyState(root, {
+      heading: opts.heading,
+      body: opts.body,
+      buttonText: 'Log in',
+      onAction: async () => {
+        const ok = await this.plugin.auth.login();
+        if (ok) void this.refreshAndRender(root);
+      },
+    });
   }
 
   async onClose(): Promise<void> {
@@ -120,7 +137,15 @@ export class ProblemBrowserView extends ItemView {
         new Notice('LeetCode session expired. Log in again.', SESSION_EXPIRED_NOTICE_MS);
         // Swallow logout errors — we always want to re-render the logged-out state.
         await this.plugin.auth.logout().catch(() => undefined);
-        await this.onOpen();
+        // WR-05: render the logged-out state directly. Previously we called
+        // this.onOpen(), which re-enters refreshAndRender if isLoggedIn()
+        // still returns true (possible when logout's saveData throws and the
+        // cookie persists), causing unbounded recursion → stack overflow.
+        root.empty();
+        this.renderLoggedOutState(root, {
+          heading: 'Log in to browse problems',
+          body: 'Your session expired. Sign in again to continue.',
+        });
         return;
       }
       root.empty();
