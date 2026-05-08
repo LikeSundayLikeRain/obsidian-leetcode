@@ -30,11 +30,23 @@ describe('htmlToMarkdown fixture snapshots (NOTE-02)', () => {
     expect(md).not.toContain('**Input:**');
   });
 
-  // GAP-2c smoke check — catches silent reversion of the lc-sup rule.
-  it('two-sum snapshot renders <sup> as $^{...}$ math (GAP-2c smoke check)', () => {
+  // GAP-2c / GAP-2c-2 smoke check — the two-sum fixture wraps every constraint
+  // expression in <code>...<sup>...</sup>...</code>, so after GAP-2c-2 those
+  // reach the snapshot as literal HTML passthrough (<code>...10<sup>4</sup>...</code>)
+  // rather than backtick-wrapped `10$^{4}$` math. Both paths preserve the
+  // superscript — passthrough renders it in Obsidian reading view; the old
+  // backtick path suppressed it. This guard catches silent reversion of
+  // EITHER the lc-code-with-children rule (would lose the literal <code>)
+  // or the lc-sup rule (would leave bare <sup> elsewhere).
+  it('two-sum snapshot preserves <sup> inside <code> as literal HTML (GAP-2c-2 smoke check)', () => {
     const md = htmlToMarkdown(fx('lc-two-sum.html'));
-    expect(md).toContain('10$^{4}$');
-    expect(md).toContain('10$^{9}$');
-    expect(md).not.toMatch(/<sup>|<\/sup>/);
+    // Constraints are all wrapped in <code>...<sup>...</sup>...</code>, so
+    // they stay as literal HTML passthrough (GAP-2c-2).
+    expect(md).toContain('<code>2 &lt;= nums.length &lt;= 10<sup>4</sup></code>');
+    expect(md).toContain('<sup>9</sup>');
+    // Final output must not contain any lc-sup-generated math *outside* a
+    // <code> passthrough — there are no bare <sup> elements in two-sum.
+    expect(md).not.toContain('10$^{4}$');
+    expect(md).not.toContain('10$^{9}$');
   });
 });

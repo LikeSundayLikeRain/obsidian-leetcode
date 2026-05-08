@@ -57,6 +57,45 @@ function getService(): TurndownService {
   // the lc-sub / lc-sup custom rules below (GAP-2c).
   service.keep(['kbd', 'var']);
 
+  // GAP-2c-2: <code> with nested element children (e.g., <code>O(n<sup>2</sup>)</code>)
+  // is emitted as literal HTML so Obsidian reading view applies <code> styling
+  // (monospace + gray background) AND renders the nested <sup>/<sub>/<strong>
+  // correctly. Normal backtick wrapping would make the `$^{2}$` math source leak
+  // through verbatim because Markdown's inline-code rule suppresses all nested
+  // formatting inside backticks.
+  //
+  // Ordered BEFORE lc-sup / lc-sub so this rule's `filter` has first chance to
+  // claim a <code> node. Turndown recurses into children anyway for unclaimed
+  // text, but we short-circuit by returning outerHTML and letting turndown
+  // skip descent for this replacement. When <code> contains only text, this
+  // filter returns false and the default backtick conversion applies (no
+  // regression for inline `<code>nums[i]</code>`).
+  //
+  // Determinism: reads only node.childNodes and node.outerHTML — both stable
+  // derived values of the input DOM with no shared state (D-20).
+  service.addRule('lc-code-with-children', {
+    filter: (node) => {
+      if (node.nodeName !== 'CODE') return false;
+      // Only apply when the <code> has at least one ELEMENT child (not just text).
+      // Pure-text <code> uses the default backtick conversion.
+      const hasElementChild = Array.from(node.childNodes).some(
+        (child) => child.nodeType === 1, // Node.ELEMENT_NODE
+      );
+      return hasElementChild;
+    },
+    replacement: (_content, node) => {
+      // Emit the <code> element verbatim as HTML. Obsidian reading view
+      // will apply normal <code> styling (monospace + background) AND will
+      // render any nested <sup>/<sub>/<strong> etc. correctly.
+      //
+      // `node` is a DOM Node; use outerHTML to preserve the full element
+      // including its attributes. Cast via `unknown` since turndown's types
+      // expose Node not HTMLElement.
+      const el = node as unknown as { outerHTML: string };
+      return el.outerHTML;
+    },
+  });
+
   // Custom <img> handler — LC content includes diagram images with CDN URLs.
   // Emit `![alt](src)` and skip <img> entirely if src is empty.
   service.addRule('lc-image', {

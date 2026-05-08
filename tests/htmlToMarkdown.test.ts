@@ -56,6 +56,34 @@ describe('htmlToMarkdown — sup/sub (GAP-2c, NOTE-02)', () => {
   });
 });
 
+describe('htmlToMarkdown — <code> with nested tags (GAP-2c-2, NOTE-02)', () => {
+  // GAP-2c-2: <code> containing nested tags (e.g., <sup>) is emitted as literal
+  // HTML so Obsidian reading view renders the superscript inside monospace
+  // styling. The previous GAP-2c fix alone left `$^{2}$` math leaking through
+  // backtick-wrapped code, where inline-code rules suppress all nested
+  // formatting.
+  it('lc-code-with-children: <code>O(n<sup>2</sup>)</code> → literal HTML passthrough', () => {
+    const out = htmlToMarkdown('<code>O(n<sup>2</sup>)</code>');
+    expect(out.trim()).toBe('<code>O(n<sup>2</sup>)</code>');
+  });
+
+  it('lc-code-with-children: <code> with only text still uses backticks (no regression)', () => {
+    const out = htmlToMarkdown('<code>nums[i]</code>');
+    expect(out.trim()).toBe('`nums[i]`');
+  });
+
+  it('lc-code-with-children: <code> with nested <sub>', () => {
+    const out = htmlToMarkdown('<code>a<sub>i</sub></code>');
+    expect(out.trim()).toBe('<code>a<sub>i</sub></code>');
+  });
+
+  it('lc-code-with-children: plain <sup> outside <code> still uses math form (no regression)', () => {
+    const out = htmlToMarkdown('<p>complexity is O(n<sup>2</sup>)</p>');
+    expect(out).toContain('$^{2}$');
+    expect(out).not.toContain('<sup>');
+  });
+});
+
 describe('htmlToMarkdown — example blocks (GAP-2b, NOTE-02)', () => {
   it('emits an LC Input/Output <pre> block as a ```text-fenced code block', () => {
     const html =
