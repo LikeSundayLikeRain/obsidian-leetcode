@@ -38,7 +38,7 @@ import { readCasesFromVault } from './solve/customTestStore';
 import { forceInjectCodeSection } from './solve/starterCodeInjector';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
-import { interpretSolution } from './solve/leetcodeRest';
+import { interpretSolution, authHeaders } from './solve/leetcodeRest';
 import {
   pollSubmission,
   AbortError as PollAbortError,
@@ -544,6 +544,7 @@ export default class LeetCodePlugin extends Plugin {
         slug: ctx.slug,
         registerInterval: (fn, ms) => setWindowTimeout(fn, ms),
         abortSignal: abort,
+        headers: authHeaders(ctx.slug, cookies),
       });
       modal.renderVerdict(terminal as RunCheckResponse, ctx.title);
     } catch (err) {

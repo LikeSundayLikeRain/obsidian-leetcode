@@ -38,7 +38,7 @@ const USER_AGENT = 'Mozilla/5.0 (compatible; obsidian-leetcode-plugin)';
  *  lib/plugins/leetcode.js. Cookie and CSRF are read per-call from args.cookies
  *  (NOT captured at module-load) so fresh SettingsStore values propagate after
  *  re-login without a plugin reload (Pitfall 2 mitigation). */
-function authHeaders(slug: string, cookies: AuthCookies): Record<string, string> {
+export function authHeaders(slug: string, cookies: AuthCookies): Record<string, string> {
   return {
     'content-type': 'application/json',
     'origin': BASE_URL,

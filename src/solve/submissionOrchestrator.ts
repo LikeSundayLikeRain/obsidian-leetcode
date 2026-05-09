@@ -251,6 +251,7 @@ export class SubmissionOrchestrator {
               // under vi.useFakeTimers() without touching a real Plugin.
               registerInterval: (fn, ms) => setWindowTimeout(fn, ms),
               abortSignal: abortFlag,
+              headers: authHeaders(slug, cookies),
             });
             // For Wave 0 the terminal payload is handled silently — Plan 06
             // wires the verdict modal. Wave 1 tests only assert that the

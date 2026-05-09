@@ -46,6 +46,9 @@ export interface PollSubmissionArgs {
   slug: string;
   registerInterval: RegisterIntervalFn;
   abortSignal: AbortLike;
+  /** Optional request headers applied to each poll GET. Required in production
+   *  so LC accepts the /check/ request (cookie + csrf + referer); tests omit. */
+  headers?: Record<string, string>;
 }
 
 /** Terminal judge response. LC returns `state: 'SUCCESS'` along with
@@ -88,7 +91,7 @@ export class JudgeTimeoutError extends Error {
  * 2xx response (even if the body is still PENDING). 3 in a row → JudgeTimeoutError.
  */
 export function pollSubmission(args: PollSubmissionArgs): Promise<TerminalCheckResponse> {
-  const { fetcher, submissionId, slug, registerInterval, abortSignal } = args;
+  const { fetcher, submissionId, slug, registerInterval, abortSignal, headers } = args;
   const startedAt = Date.now();
 
   const p = createPollPromise();
@@ -163,6 +166,7 @@ export function pollSubmission(args: PollSubmissionArgs): Promise<TerminalCheckR
               url: `${BASE_URL}/submissions/detail/${submissionId}/check/`,
               method: 'GET',
               throw: false,
+              ...(headers ? { headers } : {}),
             });
             // Abort check #3 — after await (critical per Pitfall 4: a stale
             // check response should never drive the modal forward after the

@@ -73,4 +73,40 @@ describe('extractFirstFencedBlock (SOLVE-01, SOLVE-09)', () => {
     expect(result?.lang).toBe('python3');
     expect(result?.code).toBe('x = 1');
   });
+
+  it('scopes to ## Code section — ignores fences inside ## Problem (Phase 3 UAT regression)', () => {
+    const body = [
+      '## Problem',
+      '',
+      'Example 1:',
+      '```',
+      'Input: nums = [2,7,11,15], target = 9',
+      'Output: [0,1]',
+      '```',
+      '',
+      '## Code',
+      '',
+      '```java',
+      'class Solution {',
+      '    public int[] twoSum(int[] nums, int target) {',
+      '        return new int[]{0, 1};',
+      '    }',
+      '}',
+      '```',
+      '',
+      '## Notes',
+      '',
+    ].join('\n');
+    const result = extractFirstFencedBlock(body);
+    expect(result?.lang).toBe('java');
+    expect(result?.code).toContain('class Solution');
+    expect(result?.code).not.toContain('Input:');
+  });
+
+  it('falls back to body-first fence when no ## Code heading exists', () => {
+    const body = '```python3\nx = 1\n```';
+    const result = extractFirstFencedBlock(body);
+    expect(result?.lang).toBe('python3');
+    expect(result?.code).toBe('x = 1');
+  });
 });
