@@ -131,13 +131,50 @@ export class LeetCodeClient {
 }
 
 /**
- * Detect LC session expiry from a GraphQL response. (AUTH-04 - Plan 02 OWNS this helper.)
- * Primary signal (most reliable): `data === null`.
- * Secondary signal: error-message pattern.
+ * Detect LC session expiry from a LeetCode response. (AUTH-04 - Plan 02 OWNS this helper.)
+ *
+ * Overloads:
+ *
+ *   1. `isSessionExpired(resp)` — Phase 1/3 shape. Inspects a GraphQL-shaped
+ *      body where `data === null` is the primary signal and an `errors[]`
+ *      message matching /logged in|authentication|CSRF|unauthori[sz]ed/i is
+ *      the secondary signal. Kept backward-compatible for NoteWriter,
+ *      leetcodeRest assertNotSessionExpired, AuthService.
+ *
+ *   2. `isSessionExpired(body, status)` — Phase 4 D-30 extension. Widens the
+ *      signal set for the submission-history GraphQL client:
+ *        (a) HTTP 401 — true (LC's JSON 401 shape for unauthenticated REST,
+ *            and GraphQL returns 401 on token-revoked requests)
+ *        (b) HTTP 403 — true (bare 403 seen on expired csrftoken against
+ *            GraphQL; there's no body shape to inspect)
+ *        (c) HTTP 200 + body.errors[] matching an auth-ish message — true
+ *            (GraphQL returns 200 on most auth failures, reports via errors[])
+ *        (d) Otherwise — falls through to the Phase 1/3 body-only signal
+ *            (helps when LC happens to return a 200 + `data: null` shape).
+ *
+ *  Both overloads are pure: no I/O, no throws. Callers decide whether to
+ *  raise SessionExpiredError or surface a different notice.
  */
-export function isSessionExpired(resp: unknown): boolean {
-  if (!resp || typeof resp !== 'object') return false;
-  const r = resp as { data?: unknown; errors?: Array<{ message?: string }> };
+export function isSessionExpired(resp: unknown): boolean;
+export function isSessionExpired(body: unknown, status: number): boolean;
+export function isSessionExpired(respOrBody: unknown, status?: number): boolean {
+  // Phase 4 D-30 overload — status-aware signals first.
+  if (typeof status === 'number') {
+    // (a) HTTP 401 — always session-expired for LC. Applies to both REST
+    //     (`{"detail": "Authentication credentials were not provided."}`) and
+    //     GraphQL (some auth failures return 401 directly).
+    if (status === 401) return true;
+    // (b) HTTP 403 — GraphQL path's expired-csrftoken shape.
+    if (status === 403) return true;
+    // (c) HTTP 200 with auth-ish errors[] entries — fall through to the
+    //     body-only signal below (which already covers this case).
+    // (d) Any other status → inspect body.
+  }
+
+  // Phase 1/3 body-only signal (primary: data === null; secondary: auth-ish
+  // errors[] message). Shared by both overloads for shape-level detection.
+  if (!respOrBody || typeof respOrBody !== 'object') return false;
+  const r = respOrBody as { data?: unknown; errors?: Array<{ message?: string }> };
   if (r.data === null) return true;
   if (!Array.isArray(r.errors)) return false;
   return r.errors.some((e) =>
