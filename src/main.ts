@@ -39,8 +39,19 @@ import { forceInjectCodeSection } from './solve/starterCodeInjector';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
 import { interpretSolution, authHeaders } from './solve/leetcodeRest';
-import { RateLimitError, UnknownVerdictError } from './shared/errors';
+import { RateLimitError, SessionExpiredError, UnknownVerdictError } from './shared/errors';
 import { classifyStatus } from './solve/statusMap';
+// Phase 4 Plan 05 — knowledge-graph wiring.
+import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
+import { SubmissionHistoryStore } from './graph/SubmissionHistoryStore';
+import {
+  listSubmissionsForSlug,
+  detailForSubmission,
+  type SubmissionRow,
+} from './graph/submissionHistoryClient';
+import { SubmissionPickerModal } from './graph/SubmissionPickerModal';
+import { SubmissionDetailModal } from './graph/SubmissionDetailModal';
+import { toIsoLocalTz } from './graph/dateFormat';
 // T-03-04-05 mitigation — classify-and-throw helper extracted for testability.
 import { assertKnownVerdictOrThrow } from './solve/verdictGuard';
 
@@ -77,6 +88,13 @@ export default class LeetCodePlugin extends Plugin {
   auth!: AuthService;
   list!: ProblemListService;
   notes!: NoteWriter;
+  // Phase 4 Plan 05 — knowledge-graph singletons. Constructed after notes in
+  // onload(); knowledgeGraph.onAccepted is invoked from submitFromActive after
+  // the verdict classification (D-08 / D-23 gate). SubmissionHistoryStore is
+  // the NoteWriter on-open-hook target (D-02) and the picker's data source
+  // (D-03).
+  knowledgeGraph!: KnowledgeGraphWriter;
+  submissionHistory!: SubmissionHistoryStore;
 
   // Phase 3 solve-path state.
   //   activeSolve: currently-in-flight submission/run orchestrator-wrapper.
@@ -117,6 +135,44 @@ export default class LeetCodePlugin extends Plugin {
     this.notes = new NoteWriter(this.app, this.client, this.settings);
 
     // Step 5.6 — Phase 3 solve-path state already nulled; commands wired in 6c.
+
+    // Step 5.7 — Phase 4 knowledge-graph singletons.
+    //
+    // SubmissionHistoryStore: shared in-memory cache between NoteWriter's
+    // on-open prefetch (D-02) and the picker's fetch (D-03). fetchHistory is
+    // a thin lambda that reads the current auth cookies at call time so
+    // logout → re-login doesn't leave the store pointing at stale credentials.
+    // D-07 compliance: no data.json persistence — the store lives only for
+    // this plugin session.
+    this.submissionHistory = new SubmissionHistoryStore({
+      fetchHistory: async (slug: string) => {
+        const cookies = this.settings.getAuthCookies();
+        if (!cookies) throw new SessionExpiredError();
+        return listSubmissionsForSlug(slug, cookies);
+      },
+    });
+
+    // KnowledgeGraphWriter: on-AC orchestrator for frontmatter + ## Techniques
+    // + stub notes (D-08, D-09). Structural settings-facade — passes through
+    // only the three methods the writer needs.
+    this.knowledgeGraph = new KnowledgeGraphWriter({
+      app: this.app,
+      settings: {
+        getProblemDetail: (slug: string) => this.settings.getProblemDetail(slug),
+        getAutoBacklinksEnabled: () => this.settings.getAutoBacklinksEnabled(),
+        getTechniquesFolder: () => this.settings.getTechniquesFolder(),
+      },
+    });
+
+    // D-02 — install the on-open hook so every problem-note reveal fires a
+    // background submission-history prefetch. Fire-and-forget; the store's
+    // own rejection path (SessionExpiredError + HTTP errors) is swallowed here
+    // so a picker opened later sees the fresh list OR a live retry.
+    this.notes.setOnNoteOpen((slug) => {
+      void this.submissionHistory.prefetch(slug).catch((err) => {
+        logger.debug('graph.prefetch: non-fatal (silent-offline per D-02/D-12)', err);
+      });
+    });
 
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
@@ -240,6 +296,25 @@ export default class LeetCodePlugin extends Plugin {
         const slug = fm?.['lc-slug'];
         if (!isValidSlug(slug)) return false;
         if (!checking) { void this.insertStarterCodeForced(file, slug); }
+        return true;
+      },
+    });
+
+    // Phase 4 Plan 05 (D-03) — View past submissions.
+    // Opens SubmissionPickerModal against the active problem note; the picker
+    // reads through this.submissionHistory (prefetched on open per D-02 via
+    // the NoteWriter hook). Row click hands off to SubmissionDetailModal
+    // which lazy-fetches the full detail via detailForSubmission (D-04).
+    this.addCommand({
+      id: 'view-past-submissions',
+      // Name per 04-CONTEXT §D-03 — sentence-case, no plugin-id prefix.
+      name: 'View past submissions',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+        if (!isValidSlug(fm?.['lc-slug'])) return false;
+        if (!checking) { void this.openSubmissionPickerFromActive(); }
         return true;
       },
     });
@@ -480,6 +555,23 @@ export default class LeetCodePlugin extends Plugin {
         const terminalTyped = terminal as SubmitCheckResponse;
         assertKnownVerdictOrThrow(terminalTyped);
         modal.renderVerdict(terminalTyped, ctx.title);
+        // Phase 4 Plan 05 (D-08, D-23) — on-AC knowledge-graph write. Fires
+        // only when classifyStatus confirms Accepted; KnowledgeGraphWriter's
+        // own gate double-checks (defense-in-depth). Silent on failure per
+        // CF-19 — VerdictModal already shows "Accepted"; a graph-write toast
+        // would be noise. Also invalidate the submission history cache so a
+        // picker opened after AC sees the latest submission.
+        if (classifyStatus(terminalTyped.status_code, terminalTyped.status_msg).kind === 'ac') {
+          try {
+            await this.knowledgeGraph.onAccepted(
+              { file: ctx.file, slug: ctx.slug, title: ctx.title },
+              terminalTyped,
+            );
+          } catch (err) {
+            logger.debug('graph.onAccepted: non-fatal (invisible-by-design)', err);
+          }
+          this.submissionHistory.invalidate(ctx.slug);
+        }
       } else {
         // Gate failure (Notice already fired) or orchestrator resolved
         // silently — close the pending modal.
@@ -647,6 +739,78 @@ export default class LeetCodePlugin extends Plugin {
     }).open();
   }
 
+  /**
+   * Phase 4 Plan 05 (D-03) — open SubmissionPickerModal against the active
+   * problem note. Delegates to `this.submissionHistory` as the data source so
+   * a prefetch fired by the NoteWriter on-open hook (D-02) is reused when
+   * fresh. Row click opens SubmissionDetailModal which lazy-fetches the full
+   * detail via detailForSubmission (D-04).
+   */
+  private async openSubmissionPickerFromActive(): Promise<void> {
+    const ctx = this.getActiveProblemContext();
+    if (!ctx) {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const picker = new SubmissionPickerModal(this.app, {
+      file: ctx.file,
+      slug: ctx.slug,
+      title: ctx.title,
+      submissionHistoryStore: this.submissionHistory,
+      openDetailModal: (row: SubmissionRow) => {
+        void this.openSubmissionDetailFromRow(ctx.file, ctx.title, row);
+      },
+    });
+    picker.open();
+  }
+
+  /**
+   * Phase 4 Plan 05 (D-04) — open SubmissionDetailModal for a picker row.
+   * Lazy-fetches the full submission detail via detailForSubmission (which
+   * enforces the T-04-03-02 numeric-id guard + D-30 session-expiry signals
+   * before the network call). Errors surface as inline feedback — a 403 or
+   * missing-detail response closes the picker+detail flow silently beyond the
+   * one debug log; a SessionExpiredError fires the locked CF-04 Notice.
+   */
+  private async openSubmissionDetailFromRow(
+    file: TFile,
+    title: string,
+    row: SubmissionRow,
+  ): Promise<void> {
+    const cookies = this.settings.getAuthCookies();
+    if (!cookies) {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+      new Notice('LeetCode session expired. Log in again.', 8000);
+      return;
+    }
+    let detail;
+    try {
+      detail = await detailForSubmission(row.id, cookies);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+        new Notice('LeetCode session expired. Log in again.', 8000);
+        return;
+      }
+      logger.debug('graph.openSubmissionDetail: fetch failed', err);
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+      new Notice("Couldn't load submission. Check your connection.", 4000);
+      return;
+    }
+    const verdictDisplay = classifyStatus(detail.statusCode).displayName;
+    new SubmissionDetailModal(this.app, {
+      file,
+      problemTitle: title,
+      verdictDisplay,
+      code: detail.code,
+      lang: detail.lang?.name ?? row.lang,
+      runtimeDisplay: detail.runtimeDisplay,
+      memoryDisplay: detail.memoryDisplay,
+      submittedAt: formatLocalTz(detail.timestamp),
+    }).open();
+  }
+
   /** Unconditionally replace the first recognized fenced block under
    *  `## Code` with the fresh starter snippet for the user's default
    *  language (D-07 forced variant). Uses Plan 02 Task 4's
@@ -661,6 +825,17 @@ export default class LeetCodePlugin extends Plugin {
     // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
     new Notice('Starter code inserted.', 3000);
   }
+}
+
+/**
+ * Phase 4 Plan 05 — render LC's unix-seconds timestamp as ISO-8601 local-tz
+ * for SubmissionDetailModal's "Submitted:" metadata line. Reuses the D-10
+ * toIsoLocalTz helper; returns an empty string on non-finite / zero / negative
+ * inputs so the detail-modal renderer omits the field.
+ */
+function formatLocalTz(unixSeconds: number): string {
+  if (!Number.isFinite(unixSeconds) || unixSeconds <= 0) return '';
+  return toIsoLocalTz(new Date(unixSeconds * 1000));
 }
 
 /** Tracks the currently-in-flight solve operation. orchestrator is non-null

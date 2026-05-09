@@ -107,12 +107,48 @@ function isFileLike(v: unknown): v is FileLike {
   );
 }
 
+/** Phase 4 Plan 05 (D-02) — optional on-open hook. NoteWriter fires this after
+ *  the note is revealed so consumers (SubmissionHistoryStore.prefetch) can
+ *  refetch submission history in the background. Separate from the 7-day
+ *  problem-detail TTL — submission history has NO TTL per D-02 / D-07.
+ *
+ *  Contract: callback is fire-and-forget; NoteWriter does not await. The
+ *  callback implementation is expected to swallow its own errors (the D-02
+ *  "silent-offline" posture). */
+export type NoteOpenHook = (slug: string) => void;
+
 export class NoteWriter {
+  /** Phase 4 Plan 05 — optional on-open hook; installed by main.ts after
+   *  the SubmissionHistoryStore is constructed. Injected via setter rather
+   *  than constructor arg so the NoteWriter → KnowledgeGraph wiring isn't
+   *  a hard dependency (tests that don't care about the graph layer don't
+   *  need to wire the hook). */
+  private onNoteOpen: NoteOpenHook | null = null;
+
   constructor(
     private readonly app: App,
     private readonly client: NoteWriterClient,
     private readonly settings: NoteWriterSettings,
   ) {}
+
+  /** Phase 4 Plan 05 — install the on-open hook. Main.ts calls this once after
+   *  constructing SubmissionHistoryStore. Only one hook at a time — the
+   *  latest setter wins. Passing null detaches. */
+  setOnNoteOpen(hook: NoteOpenHook | null): void {
+    this.onNoteOpen = hook;
+  }
+
+  /** Fire the on-open hook if installed. Swallows synchronous throws so a
+   *  faulty hook never breaks the reveal path. The hook itself is responsible
+   *  for its async error handling (D-12 silent-offline). */
+  private fireOnNoteOpen(slug: string): void {
+    if (!this.onNoteOpen) return;
+    try {
+      this.onNoteOpen(slug);
+    } catch (err) {
+      logger.debug('notes.onNoteOpen: hook threw synchronously', err);
+    }
+  }
 
   /**
    * Phase 3 Plan 07 — retrofit wrapper with D-09 pre-guards.
@@ -154,6 +190,10 @@ export class NoteWriter {
     if (existingFile && isFileLike(existingFile)) {
       // Reveal immediately — no await on any network (D-11).
       await this.app.workspace.openLinkText(existingFile.path, '', false);
+      // Phase 4 Plan 05 (D-02) — fire the on-open hook after reveal so the
+      // submission history prefetch runs in parallel with the rest of the
+      // reveal chain. Fire-and-forget; hook owns its own error handling.
+      this.fireOnNoteOpen(slug);
       // D-18: opportunistic ship of LeetCode.base if missing (no throw on failure).
       await ensureLeetcodeBase(this.app, folder).catch((err) => {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
@@ -222,6 +262,8 @@ export class NoteWriter {
     if (existingAtCanonical && isFileLike(existingAtCanonical)) {
       // Treat as re-open: reveal + retrofit + refresh frontmatter.
       await this.app.workspace.openLinkText(existingAtCanonical.path, '', false);
+      // Phase 4 Plan 05 (D-02) — fire on-open hook after recovered reveal.
+      this.fireOnNoteOpen(slug);
       await ensureLeetcodeBase(this.app, folder).catch((err) => {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
       });
@@ -303,6 +345,8 @@ export class NoteWriter {
 
     // Reveal the newly-created note.
     await this.app.workspace.openLinkText((file as unknown as FileLike).path, '', false);
+    // Phase 4 Plan 05 (D-02) — fire on-open hook after new-note reveal.
+    this.fireOnNoteOpen(slug);
   }
 
   /**

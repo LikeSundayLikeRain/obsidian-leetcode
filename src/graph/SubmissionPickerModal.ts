@@ -32,17 +32,33 @@ import { Modal, Notice, type App, type TFile } from 'obsidian';
 import { SessionExpiredError } from '../shared/errors';
 import { classifyStatus } from '../solve/statusMap';
 import type { SubmissionRow } from './submissionHistoryClient';
+import type { SubmissionHistoryStore } from './SubmissionHistoryStore';
 
 /** Row passed to the detail-modal-open callback. The picker opens the detail
  *  modal without needing to understand its construction — the caller (main.ts)
  *  provides a factory lambda that knows how to build SubmissionDetailModal
- *  from a picker row (fetching the full detail via detailForSubmission). */
+ *  from a picker row (fetching the full detail via detailForSubmission).
+ *
+ *  Phase 4 Plan 05 — `submissionHistoryStore` is the preferred data source when
+ *  supplied. The store coordinates the D-02 on-open prefetch with the picker
+ *  so repeat opens don't round-trip to LC unnecessarily (and still respect
+ *  D-07: no persistence, just ephemeral in-session memoisation). When BOTH
+ *  `submissionHistoryStore` and `fetchHistory` are provided, the store wins.
+ *  When only `fetchHistory` is provided, the picker falls back to it directly
+ *  (preserves the Wave 2 test contract — existing tests pass `fetchHistory`
+ *  without knowing about the store). */
 export interface SubmissionPickerDeps {
   file: TFile;
   slug: string;
   title: string;
-  /** Async fetcher — returns the picker's display rows. Errors propagate. */
-  fetchHistory: (slug: string) => Promise<SubmissionRow[]>;
+  /** Async fetcher — returns the picker's display rows. Errors propagate.
+   *  Either this OR `submissionHistoryStore` must be set; if both, the store
+   *  wins. Kept for backward-compat with existing Wave 2 tests. */
+  fetchHistory?: (slug: string) => Promise<SubmissionRow[]>;
+  /** Preferred data source — coordinator between on-open prefetch and picker
+   *  open. Production wiring in main.ts passes a singleton store; tests can
+   *  pass either this or `fetchHistory`. */
+  submissionHistoryStore?: SubmissionHistoryStore;
   /** Open the detail modal for a given row. Production wires through
    *  detailForSubmission → SubmissionDetailModal; tests pass a spy. */
   openDetailModal: (row: SubmissionRow) => void;
@@ -93,7 +109,7 @@ export class SubmissionPickerModal extends Modal {
     this.renderLoading();
     let rows: SubmissionRow[];
     try {
-      rows = await this.deps.fetchHistory(this.deps.slug);
+      rows = await this.resolveRows();
     } catch (err) {
       if (err instanceof SessionExpiredError) {
         // CF-04, CF-19, D-06 — locked copy, immediate close.
@@ -111,6 +127,25 @@ export class SubmissionPickerModal extends Modal {
     }
 
     this.renderRows(rows);
+  }
+
+  /**
+   * Resolve submission rows from whichever data source was injected. The store
+   * wins when present (Plan 05 wiring); otherwise fall through to fetchHistory
+   * (Wave 2 test contract). Throws if neither is set — loud, not silent, so a
+   * wiring bug in main.ts surfaces immediately rather than rendering "No
+   * submissions yet." forever.
+   */
+  private async resolveRows(): Promise<SubmissionRow[]> {
+    if (this.deps.submissionHistoryStore) {
+      return this.deps.submissionHistoryStore.get(this.deps.slug);
+    }
+    if (this.deps.fetchHistory) {
+      return this.deps.fetchHistory(this.deps.slug);
+    }
+    throw new Error(
+      'SubmissionPickerModal: neither submissionHistoryStore nor fetchHistory was provided',
+    );
   }
 
   // ── Render states ─────────────────────────────────────────────────────
