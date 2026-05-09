@@ -39,6 +39,7 @@ import { forceInjectCodeSection } from './solve/starterCodeInjector';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
 import { interpretSolution, authHeaders } from './solve/leetcodeRest';
+import { RateLimitError } from './shared/errors';
 import {
   pollSubmission,
   AbortError as PollAbortError,
@@ -472,17 +473,19 @@ export default class LeetCodePlugin extends Plugin {
       }
     } catch (err) {
       if ((err as Error).name === 'AbortError' || err instanceof PollAbortError) {
-        // User cancelled — silent close (cancelActiveSolve already closed it).
         try { modal.close(); } catch { /* headless */ }
       } else if ((err as Error).name === 'JudgeTimeoutError' || err instanceof JudgeTimeoutError) {
         modal.renderTimeout();
+      } else if (err instanceof RateLimitError) {
+        const seconds = Math.ceil(err.retryAfterMs / 1000);
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
+        new Notice(`LeetCode rate limit reached. Wait ${String(seconds)}s before retrying.`, 6000);
+        try { modal.close(); } catch { /* headless */ }
       } else {
         logger.debug('solve.submit: unexpected error', err);
         try { modal.close(); } catch { /* headless */ }
       }
     } finally {
-      // Clear activeSolve only if it's still us (cancelActiveSolve might
-      // have nulled it earlier).
       if (this.activeSolve && this.activeSolve.orchestrator === orch) {
         this.activeSolve = null;
       }
@@ -569,6 +572,11 @@ export default class LeetCodePlugin extends Plugin {
       } else if ((err as Error).name === 'SessionExpiredError') {
         // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
         new Notice('LeetCode session expired. Log in again.', 8000);
+        try { modal.close(); } catch { /* headless */ }
+      } else if (err instanceof RateLimitError) {
+        const seconds = Math.ceil(err.retryAfterMs / 1000);
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
+        new Notice(`LeetCode rate limit reached. Wait ${String(seconds)}s before retrying.`, 6000);
         try { modal.close(); } catch { /* headless */ }
       } else {
         logger.debug('solve.run: unexpected error', err);
