@@ -30,6 +30,13 @@ export interface DetailCacheEntry {
    *  body field by Plan 04's leetcodeRest.ts. Optional: Phase 2 cache entries
    *  written before this field existed remain valid. */
   internalQuestionId?: string;
+  /** Phase 4 D-12 — LC topic-tag display names + slugs cached alongside the
+   *  existing topicSlugs. Used by KnowledgeGraphWriter (Plan 03) to build
+   *  `[[Name]]` wikilinks in the ## Techniques section and to create stub
+   *  technique notes (GRAPH-03, GRAPH-04). Optional for backward-compat with
+   *  Phase 2-era cache entries (Pitfall 10): undefined = pre-Phase-4 entry;
+   *  KnowledgeGraphWriter skips the ## Techniques write when absent. */
+  topicTags?: Array<{ name: string; slug: string }>;
 }
 
 export interface PluginData {
@@ -54,6 +61,14 @@ export interface PluginData {
    *  not spam the user. Checked against the v0.1.0 broken signature in
    *  src/notes/BaseFile.ts. */
   legacyBaseNoticeShown: boolean;
+  /** Phase 4 GRAPH-05, D-21 — master toggle for on-AC auto-backlink creation.
+   *  When false, KnowledgeGraphWriter.onAccepted still writes the 5 lc-* solve
+   *  frontmatter fields (D-10) and the `lc/{topic-slug}` frontmatter tags
+   *  (D-20 opt-out scope), but skips the ## Techniques body write + stub note
+   *  creation. Default true (D-21: the headline plugin value is "notes become
+   *  a graph"; off-by-default hides the differentiator). Settings UI control
+   *  ships in Phase 5 POLISH-01; Phase 4 only ships the persistence field. */
+  autoBacklinksEnabled: boolean;
 }
 
 /** Compound filter matching LC's "Match All/Any of the following" UI. Each
@@ -83,6 +98,7 @@ const DEFAULT_DATA: PluginData = {
   filter: null,
   problemDetails: {},
   legacyBaseNoticeShown: false,
+  autoBacklinksEnabled: true,  // D-21 default ON
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -194,6 +210,20 @@ function isValidDetailCacheEntry(v: unknown): v is DetailCacheEntry {
   // the field remain valid (Phase 2 backward compat); malformed non-string
   // rejects the whole entry (T-03-03-03 threat mitigation).
   if (d.internalQuestionId !== undefined && typeof d.internalQuestionId !== 'string') return false;
+  // Phase 4 D-12 + Pitfall 10 — topicTags optional array of {name, slug}
+  // pairs. Old Phase 2 cache entries without the field remain valid (undefined
+  // is accepted); malformed entries (non-array, or array elements missing
+  // name/slug string fields) REJECT the whole entry so a fresh fetch
+  // repopulates a clean shape (T-04-02-03 threat mitigation).
+  if (d.topicTags !== undefined) {
+    if (!Array.isArray(d.topicTags)) return false;
+    const allValid = d.topicTags.every((t) => {
+      if (!t || typeof t !== 'object') return false;
+      const rec = t as { name?: unknown; slug?: unknown };
+      return typeof rec.name === 'string' && typeof rec.slug === 'string';
+    });
+    if (!allValid) return false;
+  }
   return true;
 }
 
@@ -233,6 +263,13 @@ export class SettingsStore {
       filter: isValidCompoundFilter(raw.filter) ? raw.filter : DEFAULT_DATA.filter,
       problemDetails: sanitizeProblemDetails(raw.problemDetails),
       legacyBaseNoticeShown: raw.legacyBaseNoticeShown === true,
+      // Phase 4 D-21 + Pitfall 9 — autoBacklinksEnabled shape-guard. Malicious
+      // or malformed data.json (e.g. `"yes"`) falls back to the default
+      // (`true`). Old Phase 1/2/3-era data.json files with no field fall
+      // back to `true` (T-04-02-02 threat mitigation).
+      autoBacklinksEnabled: typeof raw.autoBacklinksEnabled === 'boolean'
+        ? raw.autoBacklinksEnabled
+        : DEFAULT_DATA.autoBacklinksEnabled,
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -298,6 +335,28 @@ export class SettingsStore {
   async setFilter(f: CompoundFilter | null): Promise<void> {
     this.data.filter = f;
     await this.persist();
+  }
+
+  /** Phase 4 D-21 — read the auto-backlink opt-out flag. When false,
+   *  KnowledgeGraphWriter skips the ## Techniques body write + stub creation
+   *  on AC (frontmatter writes still fire — D-20). */
+  getAutoBacklinksEnabled(): boolean { return this.data.autoBacklinksEnabled; }
+
+  /** Phase 4 D-21 — persist the auto-backlink opt-out flag. Setter ships in
+   *  Phase 4; the Settings UI control lands in Phase 5 POLISH-01. */
+  async setAutoBacklinksEnabled(v: boolean): Promise<void> {
+    this.data.autoBacklinksEnabled = v;
+    await this.persist();
+  }
+
+  /** Phase 4 D-15 — derived Techniques folder path (no new settings field).
+   *  Returns `{problemsFolder}/Techniques`, respecting sanitizeFolder's
+   *  no-trailing-slash invariant from Phase 1 D-10. If the user changes
+   *  `problemsFolder` in Phase 5 Settings, the Techniques folder moves with
+   *  it — which is the right semantic (techniques are part of the LeetCode
+   *  knowledge graph). */
+  getTechniquesFolder(): string {
+    return `${this.getProblemsFolder()}/Techniques`;
   }
 
   /** Read the cached detail for a slug. D-15. Returns null if missing. */

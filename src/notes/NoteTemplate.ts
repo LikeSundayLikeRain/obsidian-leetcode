@@ -35,7 +35,9 @@ export const PLUGIN_LC_KEYS = [
 /** Canonical tag namespace prefix. All LC-derived tags begin with this. */
 export const LC_TAG_PREFIX = 'lc/' as const;
 
-// Schema SSoT for every plugin-owned H2 heading across Phases 2 and 3.
+// Schema SSoT for every plugin-owned H2 heading across Phases 2, 3, and 4.
+// Canonical anchor order in problem notes (Phase 4 D-14):
+//   ## Problem → ## Code → ## Notes → ## Techniques → ## Custom Tests
 // Phase 2 canonical headings:
 /** Plugin-owned H2 where the problem markdown lives (rewriteProblemSection target). */
 export const PROBLEM_HEADING_LINE = '## Problem' as const;
@@ -48,6 +50,11 @@ export const CODE_HEADING_LINE = '## Code' as const;
 export const CUSTOM_TESTS_HEADING_LINE = '## Custom Tests' as const;
 /** Prefix for each custom-test subheading. Trailing space matches `### Case 1` (D-18). */
 export const CASE_HEADING_PREFIX = '### Case ' as const;
+// Phase 4 heading extension (Plan 04-02, D-14).
+/** Plugin-owned H2 housing `[[Technique]]` wikilinks, union-merged with user
+ *  additions on every Accepted submission (D-13). Inserted immediately after
+ *  `## Notes` when absent (D-14). */
+export const TECHNIQUES_HEADING_LINE = '## Techniques' as const;
 
 /**
  * Renders a fenced code block with the given langSlug tag + starter code.
@@ -245,4 +252,69 @@ export async function applyFrontmatter(
     // 4. Non-lc-* user keys: untouched. The callback does not mutate anything
     //    else on fm; Obsidian preserves them verbatim.
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 4 Plan 02 extensions (GRAPH-03, GRAPH-04, D-12, D-16, D-17)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// All three helpers are pure string builders with ZERO new imports:
+//  - buildTechniquesBlock → `## Techniques` body content (D-12)
+//  - buildTechniqueStubBody → frontmatter-only stub note body (D-16)
+//  - buildTechniqueFilename → vault-safe filename (D-17)
+//
+// SSoT invariant preserved: heading literals come from TECHNIQUES_HEADING_LINE;
+// no other module hardcodes `## Techniques`.
+
+/**
+ * Emits the plugin's canonical `## Techniques` block body (D-12). Format:
+ *   "## Techniques\n\n- [[Name1]]\n- [[Name2]]\n..."
+ *
+ * Ordering follows LC's natural `topicTags` order (D-12) — caller passes the
+ * tags in the desired order (no sort here). Empty tag array returns just the
+ * heading + blank line (callers should skip the write when topicTags is empty
+ * per D-25; see KnowledgeGraphWriter Plan 03 guard).
+ */
+export function buildTechniquesBlock(
+  topicTags: ReadonlyArray<{ name: string }>,
+): string {
+  const bullets = topicTags.map((t) => `- [[${t.name}]]`).join('\n');
+  return `${TECHNIQUES_HEADING_LINE}\n\n${bullets}`;
+}
+
+/**
+ * Emits the frontmatter-only stub technique note body (D-16). Exactly three
+ * frontmatter fields, empty body after the closing fence:
+ *   ---
+ *   lc-technique: <slug>
+ *   aliases:
+ *     - <name>
+ *   tags:
+ *     - lc/technique/<slug>
+ *   ---
+ *   <empty body — cursor lands here when user opens the note>
+ *
+ * Caller is responsible for never-overwrite discipline (D-18) — see
+ * StubNoteCreator.createStubIfMissing in src/graph/StubNoteCreator.ts.
+ */
+export function buildTechniqueStubBody(slug: string, name: string): string {
+  return `---\nlc-technique: ${slug}\naliases:\n  - ${name}\ntags:\n  - lc/technique/${slug}\n---\n\n`;
+}
+
+/**
+ * Normalize a LC topic-tag name into a vault-safe filename (D-17).
+ * Replaces vault-forbidden chars (`/`, `\\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`)
+ * with `-`. Preserves `+` for the C++ case (RESEARCH §A1 — filesystem-legal
+ * on all target OSes). Appends the `.md` extension. Does NOT path-join —
+ * caller provides the folder.
+ *
+ * Defensive posture: LC's real topic-tag names are alphanumeric + spaces +
+ * hyphens in practice (checked against live LC 2026-05), but this helper
+ * protects against future drift and against malicious `name` values that
+ * could trigger path-traversal (T-04-02-01 — e.g. `'../evil'` collapses to
+ * `'-.-.-evil.md'` which stays inside the Techniques folder).
+ */
+export function buildTechniqueFilename(name: string): string {
+  const safe = name.replace(/[/\\:*?"<>|]/g, '-');
+  return `${safe}.md`;
 }
