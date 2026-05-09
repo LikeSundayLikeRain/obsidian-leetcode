@@ -598,6 +598,7 @@ export default class LeetCodePlugin extends Plugin {
     new CustomTestModal(this.app, {
       file,
       initialCases,
+      initialActiveTab: initialCases.length - 1,
       onRun: (input: string) => {
         const ctx = this.getActiveProblemContext();
         if (ctx) void this.runInterpretedInput(ctx, input);

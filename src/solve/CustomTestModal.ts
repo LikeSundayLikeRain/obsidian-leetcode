@@ -26,6 +26,10 @@ export interface CustomTestModalArgs {
   file: TFile;
   /** Pre-populated cases (first-open seed is the caller's responsibility). */
   initialCases: string[];
+  /** Which tab starts active. Clamped to `[0, initialCases.length - 1]`.
+   *  Defaults to 0. Use when a caller seeds a new tab at the end (e.g.,
+   *  "Copy failing testcase" appends and wants the new tab visible). */
+  initialActiveTab?: number;
   /** Called with the active tab's input when Run is clicked. */
   onRun: (input: string) => void;
 }
@@ -46,6 +50,12 @@ export class CustomTestModal extends Modal {
     this.cases = args.initialCases.length > 0
       ? args.initialCases.map((input) => ({ input }))
       : [{ input: '' }];
+    if (typeof args.initialActiveTab === 'number') {
+      this.activeTab = Math.max(
+        0,
+        Math.min(args.initialActiveTab, this.cases.length - 1),
+      );
+    }
   }
 
   onOpen(): void {
