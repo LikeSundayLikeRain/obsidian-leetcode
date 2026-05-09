@@ -1,0 +1,40 @@
+{
+  "data": {
+    "submissionDetails": {
+      "runtime": 0,
+      "runtimeDisplay": "N/A",
+      "runtimePercentile": null,
+      "memory": 20440000,
+      "memoryDisplay": "N/A",
+      "memoryPercentile": null,
+      "code": "class Solution:\n      def twoSum(self, nums: List[int], target: int) -> List[int]:\n          seen = {}\n          for i, n in enumerate(nums):\n              complement = target - n\n              if complement in seen:\n                  return [0, 0]\n                  # return [seen[complement], i]\n              seen[n] = i\n          return []",
+      "timestamp": 1778293679,
+      "statusCode": 11,
+      "user": {
+        "username": "testuser",
+        "profile": {
+          "realName": "Test User",
+          "userAvatar": "https://assets.leetcode.com/users/testuser/avatar_REDACTED.png"
+        }
+      },
+      "lang": {
+        "name": "python3",
+        "verboseName": "Python3"
+      },
+      "question": {
+        "questionId": "1",
+        "titleSlug": "two-sum",
+        "hasFrontendPreview": false
+      },
+      "notes": "",
+      "flagType": "WHITE",
+      "topicTags": [],
+      "runtimeError": null,
+      "compileError": null,
+      "fullCodeOutput": null,
+      "testDescriptions": null,
+      "testBodies": null,
+      "testInfo": null
+    }
+  }
+}
