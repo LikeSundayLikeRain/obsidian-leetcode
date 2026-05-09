@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: paused
-stopped_at: Phase 4 Wave 0 checkpoint — RESEARCH §Pattern B drift discovered
-last_updated: "2026-05-09T21:40:00.000Z"
-last_activity: 2026-05-09 -- Phase 04 paused at Wave 0; submission-detail wire shape drifted to GraphQL
+stopped_at: Phase 4 context revised for GraphQL drift
+last_updated: "2026-05-09T21:45:01.814Z"
+last_activity: 2026-05-09 -- RESEARCH.md §Pattern B drift discovered during fixture capture
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 27
-  completed_plans: 24
-  percent: 89
+  completed_plans: 25
+  percent: 93
 ---
 
 # Project State
@@ -44,6 +44,7 @@ for the full finding + remediation path.
 
 1. `/gsd-discuss-phase 4` OR `/gsd-plan-phase 4 --gaps` — update RESEARCH §Pattern B
    and 04-CONTEXT.md D-27/D-28/D-29 against the GraphQL shape.
+
 2. Regenerate the 04-01 `submissionHistoryClient.test.ts detail` subtest to reflect GraphQL.
 3. Rewrite 04-03 tasks to POST /graphql/ instead of scrape HTML.
 4. Re-enter `/gsd-execute-phase 4` — Task 3 (grep gate, one-liner) can ship standalone first.
@@ -101,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-09T18:47:15.968Z
-Stopped at: Phase 4 UI-SPEC approved
-Resume file: .planning/phases/04-knowledge-graph-wiring/04-UI-SPEC.md
+Last session: 2026-05-09T21:45:01.795Z
+Stopped at: Phase 4 context revised for GraphQL drift
+Resume file: .planning/phases/04-knowledge-graph-wiring/04-CONTEXT.md
