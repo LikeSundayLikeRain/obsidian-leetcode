@@ -673,3 +673,158 @@
   justify-content: flex-end;
   margin-top: 12px;
 }
+
+/* ── Phase 4 — Submission Picker + Detail + Confirm modals (UI-SPEC) ───── */
+/* All colors via Obsidian CSS variables — no raw hex, no rgba literals.    */
+/* Scope: .leetcode-submissions, with *-picker / *-detail / *-confirm       */
+/* modifiers distinguishing the three modals' chrome.                       */
+
+/* Common body container — shared across picker / detail / confirm. */
+.leetcode-submissions .leetcode-submissions-body {
+  color: var(--text-normal);
+}
+.leetcode-submissions .leetcode-submissions-loading,
+.leetcode-submissions .leetcode-submissions-empty,
+.leetcode-submissions .leetcode-submissions-error {
+  text-align: center;
+  padding: 16px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.leetcode-submissions .leetcode-submissions-error {
+  color: var(--text-error);
+}
+
+/* Shared footer / action row (mirrors verdict-modal shape). */
+.leetcode-submissions .leetcode-submissions-action-row,
+.leetcode-submissions .leetcode-submissions-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ── Picker: row list ─────────────────────────────────────────────────── */
+.leetcode-submissions-picker .leetcode-submissions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.leetcode-submissions-picker .leetcode-submissions-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.leetcode-submissions-picker .leetcode-submissions-row:hover,
+.leetcode-submissions-picker .leetcode-submissions-row:focus {
+  background: var(--background-modifier-hover);
+  outline: none;
+}
+
+/* Verdict chip — coloured pill. Kind modifiers mirror Phase 3's palette. */
+.leetcode-submissions .leetcode-submissions-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.leetcode-submissions .leetcode-submissions-chip--ac {
+  background: var(--background-modifier-success);
+  color: var(--text-success);
+}
+.leetcode-submissions .leetcode-submissions-chip--wa,
+.leetcode-submissions .leetcode-submissions-chip--tle,
+.leetcode-submissions .leetcode-submissions-chip--mle,
+.leetcode-submissions .leetcode-submissions-chip--ole,
+.leetcode-submissions .leetcode-submissions-chip--re,
+.leetcode-submissions .leetcode-submissions-chip--ce {
+  background: var(--background-modifier-error);
+  color: var(--text-error);
+}
+.leetcode-submissions .leetcode-submissions-chip--ie,
+.leetcode-submissions .leetcode-submissions-chip--unknown-lc,
+.leetcode-submissions .leetcode-submissions-chip--unknown {
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.leetcode-submissions-picker .leetcode-submissions-metrics {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leetcode-submissions-picker .leetcode-submissions-when {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  white-space: nowrap;
+}
+.leetcode-submissions-picker .leetcode-submissions-lang {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* ── Detail: code + metadata ──────────────────────────────────────────── */
+.leetcode-submissions-detail .leetcode-submissions-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  font-family: var(--font-monospace);
+}
+.leetcode-submissions-detail .leetcode-submissions-code {
+  margin: 0;
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre;
+  word-break: normal;
+  color: var(--text-normal);
+}
+.leetcode-submissions-detail .leetcode-submissions-code code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  white-space: inherit;
+}
+
+/* ── Confirm modal: centered warning copy ─────────────────────────────── */
+.leetcode-submissions-confirm .leetcode-submissions-confirm-body {
+  color: var(--text-normal);
+  padding: 8px 0;
+}
+.leetcode-submissions-confirm .leetcode-submissions-confirm-body p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
