@@ -1,26 +1,12 @@
 // tests/graph/mocks/fakeSubmissionHistoryFetcher.ts
 //
-// Phase 4 Wave 0 — FIFO-queue fake for the LC submission-history surface.
-// Mirrors tests/solve/mocks/fakeFetcher.ts (Phase 3 pattern) verbatim and adds
-// two fixture-loader helpers that read from tests/fixtures/lc-submissions/.
-//
-// Scripted shape (per URL regex or exact string) — copy-paste compatible with
-// Phase 3's makeFakeFetcher so tests reading submissions are ergonomically
-// indistinguishable from tests reading /submit/ or /check/:
-//
-//   const { fetcher, queue, spy } = makeFakeSubmissionHistoryFetcher();
-//   queue(/api\/submissions\/two-sum/, [
-//     { status: 200, json: loadListFixture('list-many') },
-//   ]);
-//   queue(/submissions\/detail\/123/, [
-//     { status: 200, text: loadDetailFixture('detail-ac') },
-//   ]);
-//   // ... drive submissionHistoryClient; assert on spy.mock.calls
-//
-// Fixture loader helpers read live-captured JSON/HTML from
-// tests/fixtures/lc-submissions/ — the files are captured by the plugin
-// author against their own LC account in Task 2 of Plan 04-01 and scrubbed
-// of PII before commit.
+// Phase 4 Wave 0 — FIFO-queue fake for the LC submission-history GraphQL surface.
+// Mirrors tests/solve/mocks/fakeFetcher.ts (Phase 3 pattern) and exposes fixture
+// loaders that read from tests/fixtures/lc-submissions/. Post-2026-05-09 GraphQL
+// drift: LC's list + detail surfaces both use POST /graphql/ — operations
+// `submissionList` (questionSubmissionList) and `submissionDetails`. Legacy REST
+// JSON fixtures (list-many.json, list-empty.json, list-session-expired.json)
+// remain accessible for the D-30 JSON-401 session-expiry subtest.
 
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { readFileSync } from 'node:fs';
@@ -121,21 +107,25 @@ export function makeFakeSubmissionHistoryFetcher(): FakeSubmissionHistoryFetcher
 
 const FIXTURE_DIR = resolve(process.cwd(), 'tests/fixtures/lc-submissions');
 
-export type ListFixtureName = 'list-many' | 'list-empty';
-export type DetailFixtureName = 'detail-ac' | 'detail-wa' | 'list-session-expired';
+export type FixtureName =
+  | 'list-many'
+  | 'list-empty'
+  | 'list-session-expired'
+  | 'list-many.graphql'
+  | 'detail-ac.graphql'
+  | 'detail-wa.graphql';
 
-/** Load a list-shaped JSON fixture. Returns the parsed JSON body LC serves
- *  at GET /api/submissions/{slug}. */
-export function loadListFixture(name: ListFixtureName): unknown {
+export type ListFixtureName = FixtureName;
+export type DetailFixtureName = FixtureName;
+
+/** Load a JSON fixture. All fixtures on disk are JSON (post-2026-05-09 drift).
+ *  Caller casts the returned `unknown` to the appropriate shape. */
+export function loadListFixture(name: FixtureName): unknown {
   const path = resolve(FIXTURE_DIR, `${name}.json`);
   return JSON.parse(readFileSync(path, 'utf-8'));
 }
 
-/** Load a detail-shaped HTML fixture. Returns the raw HTML LC serves at
- *  GET /submissions/detail/{id}/ — contains the `var pageData = {...};`
- *  block the production scraper parses. `list-session-expired` returns
- *  the login-redirect HTML body. */
-export function loadDetailFixture(name: DetailFixtureName): string {
-  const path = resolve(FIXTURE_DIR, `${name}.html`);
-  return readFileSync(path, 'utf-8');
+/** Alias for `loadListFixture` — kept for ergonomic symmetry in detail tests. */
+export function loadDetailFixture(name: FixtureName): unknown {
+  return loadListFixture(name);
 }

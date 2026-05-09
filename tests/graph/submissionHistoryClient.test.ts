@@ -46,20 +46,23 @@ const COOKIES = {
   csrftoken: 'csrf-xyz-789',
 };
 
-describe('submissionHistoryClient (D-27, D-28, D-29)', () => {
+describe('submissionHistoryClient (D-27, D-28, D-29, D-30)', () => {
   beforeEach(() => {
     mockThrottledRequestUrl.mockClear();
     mockIsSessionExpired.mockClear();
     mockIsSessionExpired.mockReturnValue(false);
   });
 
-  it('list maps wire shape', async () => {
-    // Drive listSubmissionsForSlug against the live-captured list-many fixture.
-    // The mapper must normalise LC's submissions_dump rows → SubmissionRow[].
-    const fixtureJson = loadListFixture('list-many');
+  it('list calls questionSubmissionList GraphQL', async () => {
+    // Drive listSubmissionsForSlug against the live-captured GraphQL list
+    // fixture. The mapper must normalise `questionSubmissionList.submissions`
+    // into SubmissionRow[]. Transport: POST /graphql/ with JSON body containing
+    // operationName='submissionList', query (questionSubmissionList), and
+    // variables {offset, limit, lastKey, questionSlug}.
+    const fixtureJson = loadListFixture('list-many.graphql');
     mockThrottledRequestUrl.mockResolvedValueOnce({
       status: 200,
-      headers: {},
+      headers: { 'content-type': 'application/json' },
       text: JSON.stringify(fixtureJson),
       json: fixtureJson,
     });
@@ -67,18 +70,29 @@ describe('submissionHistoryClient (D-27, D-28, D-29)', () => {
     const { listSubmissionsForSlug } = await import('../../src/graph/submissionHistoryClient');
     const rows = await listSubmissionsForSlug('two-sum', COOKIES);
 
-    // Request shape — /api/submissions/{slug}, GET, auth headers.
+    // Request shape — POST /graphql/, JSON body, D-29 revised headers.
     const call = mockThrottledRequestUrl.mock.calls[0]?.[0] as {
       url: string;
       method: string;
       headers: Record<string, string>;
+      body: string;
       throw: boolean;
     };
-    expect(call.url).toBe('https://leetcode.com/api/submissions/two-sum');
-    expect(call.method).toBe('GET');
+    expect(call.url).toBe('https://leetcode.com/graphql/');
+    expect(call.method).toBe('POST');
     expect(call.throw).toBe(false);
+    expect(call.headers['content-type']).toBe('application/json');
+    expect(call.headers['x-csrftoken']).toBe('csrf-xyz-789');
     expect(call.headers['cookie']).toContain('LEETCODE_SESSION=sess-abc-123');
-    expect(call.headers['referer']).toBe('https://leetcode.com/problems/two-sum/description/');
+
+    const body = JSON.parse(call.body) as {
+      operationName: string;
+      query: string;
+      variables: { questionSlug: string };
+    };
+    expect(body.operationName).toBe('submissionList');
+    expect(body.query).toContain('questionSubmissionList');
+    expect(body.variables.questionSlug).toBe('two-sum');
 
     // Response shape — at least one row, each with the normalised mapper fields.
     expect(Array.isArray(rows)).toBe(true);
@@ -91,88 +105,116 @@ describe('submissionHistoryClient (D-27, D-28, D-29)', () => {
     }
   });
 
-  it('detail scrapes pageData', async () => {
-    // Drive detailForSubmission against the live-captured detail-ac HTML; the
-    // scraper must locate the `var pageData = {...}` block and JSON-parse it.
-    const html = loadDetailFixture('detail-ac');
+  it('detail calls submissionDetails GraphQL', async () => {
+    // Drive detailForSubmission against the live-captured GraphQL detail
+    // fixture. Transport: POST /graphql/ with operationName='submissionDetails',
+    // query submissionDetails($submissionId: Int!). The submissionId variable
+    // MUST be an Int (LC enforces) — client parses the id string and passes
+    // a number. Referer MUST be /submissions/detail/{id}/ per D-29 revised.
+    const fixtureJson = loadDetailFixture('detail-ac.graphql');
     mockThrottledRequestUrl.mockResolvedValueOnce({
       status: 200,
-      headers: { 'content-type': 'text/html' },
-      text: html,
-      json: {},
+      headers: { 'content-type': 'application/json' },
+      text: JSON.stringify(fixtureJson),
+      json: fixtureJson,
     });
 
     const { detailForSubmission } = await import('../../src/graph/submissionHistoryClient');
-    const detail = await detailForSubmission('123456789', 'two-sum', COOKIES);
+    const detail = await detailForSubmission('123456789', COOKIES);
 
-    const call = mockThrottledRequestUrl.mock.calls[0]?.[0] as { url: string; method: string };
-    expect(call.url).toBe('https://leetcode.com/submissions/detail/123456789/');
-    expect(call.method).toBe('GET');
+    const call = mockThrottledRequestUrl.mock.calls[0]?.[0] as {
+      url: string;
+      method: string;
+      headers: Record<string, string>;
+      body: string;
+    };
+    expect(call.url).toBe('https://leetcode.com/graphql/');
+    expect(call.method).toBe('POST');
+    expect(call.headers['referer']).toBe('https://leetcode.com/submissions/detail/123456789/');
 
-    // pageData shape (normalised to JSON) should include submission identifiers.
+    const body = JSON.parse(call.body) as {
+      operationName: string;
+      query: string;
+      variables: { submissionId: number };
+    };
+    expect(body.operationName).toBe('submissionDetails');
+    expect(body.query).toContain('submissionDetails($submissionId: Int!)');
+    expect(body.variables.submissionId).toBe(123456789);
+    expect(typeof body.variables.submissionId).toBe('number');
+
+    // Response shape — parsed submissionDetails object with expected keys.
     expect(detail).toBeDefined();
     expect(detail).toEqual(expect.any(Object));
   });
 
-  it('list fires SessionExpiredError on 302/401/403/login-HTML', async () => {
-    const { listSubmissionsForSlug } = await import('../../src/graph/submissionHistoryClient');
+  it('detail rejects non-numeric submission id', async () => {
+    // T-04-03-02 — the client MUST guard against non-numeric ids before any
+    // network call. `submissionId` is typed Int! on LC's schema, but the
+    // guard also blocks path-injection attempts like '../../admin' from
+    // reaching requestUrl.
+    const { detailForSubmission } = await import('../../src/graph/submissionHistoryClient');
+    await expect(detailForSubmission('not-a-number', COOKIES)).rejects.toBeInstanceOf(Error);
+    await expect(detailForSubmission('../../admin', COOKIES)).rejects.toBeInstanceOf(Error);
+    await expect(detailForSubmission('', COOKIES)).rejects.toBeInstanceOf(Error);
+    // No network call should have been attempted.
+    expect(mockThrottledRequestUrl).not.toHaveBeenCalled();
+  });
 
-    // 302 redirect → session expired
-    mockThrottledRequestUrl.mockResolvedValueOnce({
-      status: 302,
-      headers: { location: '/accounts/login/' },
-      text: '',
-      json: null,
-    });
-    await expect(listSubmissionsForSlug('two-sum', COOKIES)).rejects.toBeInstanceOf(
-      SessionExpiredError,
-    );
-
-    // 401 Unauthorized
+  it('list fires SessionExpiredError on JSON 401', async () => {
+    // D-30 signal (a) — HTTP 401 with JSON body
+    // `{detail: 'Authentication credentials were not provided.'}`.
+    const expiredJson = loadListFixture('list-session-expired');
     mockThrottledRequestUrl.mockResolvedValueOnce({
       status: 401,
-      headers: {},
-      text: '',
-      json: null,
+      headers: { 'content-type': 'application/json' },
+      text: JSON.stringify(expiredJson),
+      json: expiredJson,
     });
+    mockIsSessionExpired.mockReturnValue(true);
+
+    const { listSubmissionsForSlug } = await import('../../src/graph/submissionHistoryClient');
     await expect(listSubmissionsForSlug('two-sum', COOKIES)).rejects.toBeInstanceOf(
       SessionExpiredError,
     );
+  });
 
-    // 403 Forbidden
+  it('list fires SessionExpiredError on 403 bare', async () => {
+    // D-30 signal (b) — HTTP 403 with no body (LC's GraphQL auth-failure
+    // status-only shape, seen on expired csrftoken).
     mockThrottledRequestUrl.mockResolvedValueOnce({
       status: 403,
       headers: {},
       text: '',
       json: null,
     });
-    await expect(listSubmissionsForSlug('two-sum', COOKIES)).rejects.toBeInstanceOf(
-      SessionExpiredError,
-    );
+    mockIsSessionExpired.mockReturnValue(true);
 
-    // 200 with login-redirect HTML body
-    const loginHtml = loadDetailFixture('list-session-expired');
-    mockThrottledRequestUrl.mockResolvedValueOnce({
-      status: 200,
-      headers: { 'content-type': 'text/html' },
-      text: loginHtml,
-      json: {},
-    });
+    const { listSubmissionsForSlug } = await import('../../src/graph/submissionHistoryClient');
     await expect(listSubmissionsForSlug('two-sum', COOKIES)).rejects.toBeInstanceOf(
       SessionExpiredError,
     );
   });
 
-  it('detail fires SessionExpiredError on login-redirect', async () => {
-    const { detailForSubmission } = await import('../../src/graph/submissionHistoryClient');
-    const loginHtml = loadDetailFixture('list-session-expired');
+  it('detail fires SessionExpiredError on 200 with errors[] auth message', async () => {
+    // D-30 signal (c) — HTTP 200 with GraphQL `errors[]` containing an
+    // auth-ish message. GraphQL returns 200 on most auth failures with the
+    // error reported in the body, so status-only detection misses it.
+    const authErrorBody = {
+      data: null,
+      errors: [
+        { message: 'Authentication credentials were not provided.', path: ['submissionDetails'] },
+      ],
+    };
     mockThrottledRequestUrl.mockResolvedValueOnce({
       status: 200,
-      headers: { 'content-type': 'text/html' },
-      text: loginHtml,
-      json: {},
+      headers: { 'content-type': 'application/json' },
+      text: JSON.stringify(authErrorBody),
+      json: authErrorBody,
     });
-    await expect(detailForSubmission('123', 'two-sum', COOKIES)).rejects.toBeInstanceOf(
+    mockIsSessionExpired.mockReturnValue(true);
+
+    const { detailForSubmission } = await import('../../src/graph/submissionHistoryClient');
+    await expect(detailForSubmission('123456789', COOKIES)).rejects.toBeInstanceOf(
       SessionExpiredError,
     );
   });
