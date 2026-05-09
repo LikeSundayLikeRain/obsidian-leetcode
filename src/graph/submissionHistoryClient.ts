@@ -297,8 +297,16 @@ function mapListRow(raw: Record<string, unknown>): SubmissionRow {
     })
     .filter((t): t is { name: string; slug: string } => t !== null);
 
+  // id — LC returns a numeric-string. Narrow to primitive before String()
+  // to avoid '[object Object]' from the typescript-eslint/no-base-to-string
+  // rule (malformed LC response defensive mitigation).
+  const idPrimitive =
+    typeof raw.id === 'string' || typeof raw.id === 'number'
+      ? raw.id
+      : '';
+
   return {
-    id: String(raw.id ?? ''),
+    id: String(idPrimitive),
     title: typeof raw.title === 'string' ? raw.title : '',
     titleSlug: typeof raw.titleSlug === 'string' ? raw.titleSlug : '',
     status: typeof raw.status === 'number' ? raw.status : 0,

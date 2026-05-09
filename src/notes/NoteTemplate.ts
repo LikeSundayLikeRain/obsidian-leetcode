@@ -255,6 +255,127 @@ export async function applyFrontmatter(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Phase 4 Plan 03 — solve-time frontmatter writer (GRAPH-02, D-10, D-11, D-20)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// On an Accepted submission, KnowledgeGraphWriter.onAccepted flips five
+// lc-* frontmatter fields (lc-status='accepted', lc-solved-date ISO-8601,
+// lc-runtime-ms, lc-memory-mb, lc-language) and union-merges `lc/{topic-slug}`
+// tags (D-11). `applyFrontmatter` above drives the open/refresh path; this
+// solve-time variant is intentionally separate because:
+//   - It writes FIVE lc-* keys, not seven (aliases + problem-identity fields
+//     are already persisted on note creation).
+//   - It has a non-downgrade contract in the OPPOSITE direction from D-04:
+//     here we ALWAYS upgrade to 'accepted', never preserve an existing
+//     'attempted' status.
+//   - Runtime/memory parse may return undefined — the writer must still
+//     flip status + date + language in that case (T-04-03-01 threat mitigation).
+//
+// Purity contract: same as applyFrontmatter — all mutations happen INSIDE
+// the processFrontMatter callback. `solvedAt` is captured by the caller
+// (KnowledgeGraphWriter) so the helper is safe to retry.
+//
+// Tag union-merge: any `lc/{topic-slug}` tag present on disk is preserved.
+// Plugin-contributed tags are `currentPassTags` (the solve-time union of
+// problem-detail topicSlugs + any other tags the caller wants to contribute).
+// Non-lc tags ('revisit', 'todo-review', etc.) are preserved.
+
+/** Input for the solve-time frontmatter writer. */
+export interface SolveTimeFrontmatterInput {
+  /** Solve timestamp as a captured Date (caller owns the clock for retry-safety). */
+  solvedAt: Date;
+  /** Parsed runtime in milliseconds. Undefined when LC returns "N/A". */
+  runtimeMs: number | undefined;
+  /** Parsed memory in MB. Undefined when LC returns "N/A". */
+  memoryMb: number | undefined;
+  /** LC langSlug the submission used (python3, java, cpp, …). */
+  language: string;
+  /** Plugin-derived tags to union into the frontmatter's tags array — e.g.
+   *  ['lc/hash-table', 'lc/array']. Caller maps topic slugs → `lc/{slug}`. */
+  currentPassTags: string[];
+}
+
+/** ISO-8601 local-tz formatter. Matches src/graph/dateFormat.ts (Plan 04-02).
+ *  Duplicated here as a private local rather than creating a new import —
+ *  keeps NoteTemplate.ts's import surface unchanged (SSoT module already owns
+ *  formatting concerns; Plan 04-02's exported helper is available to
+ *  KnowledgeGraphWriter for non-frontmatter paths). */
+function formatIsoLocalTz(d: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const offsetMin = -d.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  const oh = Math.floor(abs / 60);
+  const om = abs % 60;
+  return (
+    d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+    'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) +
+    sign + pad(oh) + ':' + pad(om)
+  );
+}
+
+/**
+ * Solve-time frontmatter writer (GRAPH-02, Phase 2 D-05 carry).
+ *
+ * Called from KnowledgeGraphWriter.onAccepted step 1 (D-09). Semantics:
+ *
+ *   lc-status: 'accepted' — overwrites any existing status including
+ *              'accepted' itself (re-AC case; D-24 keeps frontmatter reflective
+ *              of the latest submission).
+ *   lc-solved-date — ISO-8601 local-tz (D-10). Always written.
+ *   lc-runtime-ms — written only when input.runtimeMs is a finite number.
+ *                   When undefined (LC returned "N/A"), the key is left
+ *                   untouched if previously set, or absent if never set.
+ *                   We do NOT explicitly write `undefined` — YAML serializers
+ *                   differ on how they handle undefined keys, and the test
+ *                   contract accepts "undefined or absent".
+ *   lc-memory-mb — same posture as runtime.
+ *   lc-language — overwrites with the submission's language (D-24: reflect
+ *                 latest, not best; the user may have switched languages).
+ *   tags — union-merge input.currentPassTags with existing tags. Preserves
+ *          user tags ('revisit') and existing `lc/{slug}` tags.
+ *
+ * Non-lc-* user keys: untouched.
+ */
+export async function applySolveTimeFrontmatter(
+  app: App,
+  file: TFile,
+  input: SolveTimeFrontmatterInput,
+): Promise<void> {
+  await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    // Status — always 'accepted' on AC. D-24: re-AC still fires this.
+    fm['lc-status'] = 'accepted';
+    // Solved date — ISO-8601 local-tz (D-10). Always written.
+    fm['lc-solved-date'] = formatIsoLocalTz(input.solvedAt);
+    // Runtime — D-24 semantic: frontmatter reflects the LATEST AC, not
+    // best-ever. When LC returns "N/A" (parse failure → undefined input),
+    // explicitly clear the field so the frontmatter doesn't carry stale
+    // data from a prior AC. Test contract accepts undefined || absent || null
+    // — Obsidian's processFrontMatter serializes `undefined` as an erased key.
+    if (typeof input.runtimeMs === 'number' && Number.isFinite(input.runtimeMs)) {
+      fm['lc-runtime-ms'] = input.runtimeMs;
+    } else {
+      fm['lc-runtime-ms'] = undefined;
+    }
+    if (typeof input.memoryMb === 'number' && Number.isFinite(input.memoryMb)) {
+      fm['lc-memory-mb'] = input.memoryMb;
+    } else {
+      fm['lc-memory-mb'] = undefined;
+    }
+    // Language — overwrites (D-24).
+    fm['lc-language'] = input.language;
+
+    // Tags union-merge. Phase 2 D-10 semantics: preserve existing + add
+    // plugin-contributed. Dedup via Set.
+    const priorTags = Array.isArray(fm.tags)
+      ? (fm.tags as unknown[]).filter((t): t is string => typeof t === 'string')
+      : [];
+    const merged = Array.from(new Set<string>([...priorTags, ...input.currentPassTags]));
+    fm.tags = merged;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Phase 4 Plan 02 extensions (GRAPH-03, GRAPH-04, D-12, D-16, D-17)
 // ─────────────────────────────────────────────────────────────────────────
 //
