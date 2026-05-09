@@ -39,7 +39,17 @@ import { forceInjectCodeSection } from './solve/starterCodeInjector';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
 import { interpretSolution, authHeaders } from './solve/leetcodeRest';
-import { RateLimitError } from './shared/errors';
+import { RateLimitError, UnknownVerdictError } from './shared/errors';
+import { classifyStatus } from './solve/statusMap';
+
+// LC problem slugs are lowercase kebab-case: [a-z0-9-]+. Frontmatter is user-
+// editable so an attacker with vault-write access could place arbitrary
+// strings in `lc-slug`; we enforce the LC shape before any slug reaches
+// URL paths or fetcher calls (T-03-05-01 mitigation).
+const SLUG_RE = /^[a-z0-9-]+$/;
+function isValidSlug(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && SLUG_RE.test(v);
+}
 import {
   pollSubmission,
   AbortError as PollAbortError,
@@ -155,7 +165,7 @@ export default class LeetCodePlugin extends Plugin {
         const cache = this.app.metadataCache.getFileCache(file);
         const fm: Record<string, unknown> | undefined = cache?.frontmatter;
         const slug = fm?.['lc-slug'];
-        if (typeof slug !== 'string' || !slug) return false;
+        if (!isValidSlug(slug)) return false;
         if (!checking) {
           void this.refreshProblem(slug);
         }
@@ -179,7 +189,7 @@ export default class LeetCodePlugin extends Plugin {
         const file = view.file;
         if (!file) return false;
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
-        if (typeof fm?.['lc-slug'] !== 'string') return false;
+        if (!isValidSlug(fm?.['lc-slug'])) return false;
         if (!checking) { void this.runSampleFromActive(); }
         return true;
       },
@@ -196,7 +206,7 @@ export default class LeetCodePlugin extends Plugin {
         const file = view.file;
         if (!file) return false;
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
-        if (typeof fm?.['lc-slug'] !== 'string') return false;
+        if (!isValidSlug(fm?.['lc-slug'])) return false;
         if (!checking) { void this.openCustomTestModalFromActive(file); }
         return true;
       },
@@ -212,7 +222,7 @@ export default class LeetCodePlugin extends Plugin {
         const file = view.file;
         if (!file) return false;
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
-        if (typeof fm?.['lc-slug'] !== 'string') return false;
+        if (!isValidSlug(fm?.['lc-slug'])) return false;
         if (!checking) { void this.submitFromActive(); }
         return true;
       },
@@ -230,7 +240,7 @@ export default class LeetCodePlugin extends Plugin {
         if (!file) return false;
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
         const slug = fm?.['lc-slug'];
-        if (typeof slug !== 'string') return false;
+        if (!isValidSlug(slug)) return false;
         if (!checking) { void this.insertStarterCodeForced(file, slug); }
         return true;
       },
@@ -361,7 +371,7 @@ export default class LeetCodePlugin extends Plugin {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
     const slug = fm?.['lc-slug'];
     const title = fm?.['lc-title'];
-    if (typeof slug !== 'string' || slug.length === 0) return null;
+    if (!isValidSlug(slug)) return null;
     return {
       view,
       file,
@@ -465,7 +475,18 @@ export default class LeetCodePlugin extends Plugin {
     try {
       await orch.submit();
       if (terminal) {
-        modal.renderVerdict(terminal as SubmitCheckResponse, ctx.title);
+        // T-03-04-05 mitigation — D-15 unknown-verdict path. When LC returns
+        // a status_code outside the KNOWN map, surface an explicit
+        // UnknownVerdictError carrying the raw payload for the copy-payload
+        // view. This gives the orchestrator error-path a signal the plan
+        // required; the catch branch below routes it to the same modal
+        // renderer that handles the kind==='unknown' classification.
+        const terminalTyped = terminal as SubmitCheckResponse;
+        const info = classifyStatus(terminalTyped.status_code, terminalTyped.status_msg);
+        if (info.kind === 'unknown') {
+          throw new UnknownVerdictError(terminalTyped);
+        }
+        modal.renderVerdict(terminalTyped, ctx.title);
       } else {
         // Gate failure (Notice already fired) or orchestrator resolved
         // silently — close the pending modal.
@@ -476,6 +497,11 @@ export default class LeetCodePlugin extends Plugin {
         try { modal.close(); } catch { /* headless */ }
       } else if ((err as Error).name === 'JudgeTimeoutError' || err instanceof JudgeTimeoutError) {
         modal.renderTimeout();
+      } else if (err instanceof UnknownVerdictError) {
+        // D-15 — hand the raw payload to the modal; its internal classifier
+        // routes kind==='unknown' through renderUnknownVerdict which exposes
+        // the copy-payload affordance (redacted via logger.redact).
+        modal.renderVerdict(err.payload as SubmitCheckResponse, ctx.title);
       } else if (err instanceof RateLimitError) {
         const seconds = Math.ceil(err.retryAfterMs / 1000);
         // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
