@@ -41,15 +41,13 @@ import { resolveLangSlug } from './solve/languages';
 import { interpretSolution, authHeaders } from './solve/leetcodeRest';
 import { RateLimitError, UnknownVerdictError } from './shared/errors';
 import { classifyStatus } from './solve/statusMap';
+// T-03-04-05 mitigation — classify-and-throw helper extracted for testability.
+import { assertKnownVerdictOrThrow } from './solve/verdictGuard';
 
-// LC problem slugs are lowercase kebab-case: [a-z0-9-]+. Frontmatter is user-
-// editable so an attacker with vault-write access could place arbitrary
-// strings in `lc-slug`; we enforce the LC shape before any slug reaches
-// URL paths or fetcher calls (T-03-05-01 mitigation).
-const SLUG_RE = /^[a-z0-9-]+$/;
-function isValidSlug(v: unknown): v is string {
-  return typeof v === 'string' && v.length > 0 && SLUG_RE.test(v);
-}
+// T-03-05-01 mitigation — slug guard extracted to src/solve/slugGuard.ts for
+// independent testability. main.ts imports and re-uses the same guard at all
+// 5 editorCheckCallback sites + getActiveProblemContext().
+import { isValidSlug } from './solve/slugGuard';
 import {
   pollSubmission,
   AbortError as PollAbortError,
@@ -475,17 +473,12 @@ export default class LeetCodePlugin extends Plugin {
     try {
       await orch.submit();
       if (terminal) {
-        // T-03-04-05 mitigation — D-15 unknown-verdict path. When LC returns
-        // a status_code outside the KNOWN map, surface an explicit
-        // UnknownVerdictError carrying the raw payload for the copy-payload
-        // view. This gives the orchestrator error-path a signal the plan
-        // required; the catch branch below routes it to the same modal
-        // renderer that handles the kind==='unknown' classification.
+        // T-03-04-05 mitigation — D-15 unknown-verdict path. Delegates to
+        // assertKnownVerdictOrThrow (src/solve/verdictGuard.ts): throws
+        // UnknownVerdictError when status_code is outside the KNOWN map; is a
+        // no-op for all known codes so renderVerdict proceeds normally.
         const terminalTyped = terminal as SubmitCheckResponse;
-        const info = classifyStatus(terminalTyped.status_code, terminalTyped.status_msg);
-        if (info.kind === 'unknown') {
-          throw new UnknownVerdictError(terminalTyped);
-        }
+        assertKnownVerdictOrThrow(terminalTyped);
         modal.renderVerdict(terminalTyped, ctx.title);
       } else {
         // Gate failure (Notice already fired) or orchestrator resolved
