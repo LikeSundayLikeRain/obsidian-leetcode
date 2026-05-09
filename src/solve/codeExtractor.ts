@@ -35,11 +35,13 @@ export interface ExtractedCode {
  *
  * Preference order:
  *   1. If a `## Code` heading exists, extract the first fenced block between
- *      that heading and the next `## ` section heading (or EOF). This scopes
- *      extraction to the user's solution, not to fenced examples inside the
- *      `## Problem` description (Phase 3 UAT fix).
- *   2. Fall back to the first fenced block anywhere in the body, preserving
- *      compatibility with notes that don't have a `## Code` heading yet.
+ *      that heading and the next `## ` section heading (or EOF). If no fence
+ *      is found in that section, return null — the `## Code` heading declares
+ *      intent, and we must NOT fall back to fences inside other sections
+ *      (e.g., ```text example blocks in `## Problem`).
+ *   2. If no `## Code` heading exists, fall back to the first fence anywhere
+ *      in the body — preserves compatibility with notes that don't use the
+ *      standard schema.
  */
 export function extractFirstFencedBlock(noteBody: string): ExtractedCode | null {
   const lines = noteBody.split('\n');
@@ -52,8 +54,7 @@ export function extractFirstFencedBlock(noteBody: string): ExtractedCode | null 
         break;
       }
     }
-    const scoped = extractFromRange(lines, codeHeadingIdx + 1, sectionEnd);
-    if (scoped) return scoped;
+    return extractFromRange(lines, codeHeadingIdx + 1, sectionEnd);
   }
   return extractFromRange(lines, 0, lines.length);
 }

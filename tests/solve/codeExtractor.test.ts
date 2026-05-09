@@ -109,4 +109,26 @@ describe('extractFirstFencedBlock (SOLVE-01, SOLVE-09)', () => {
     expect(result?.lang).toBe('python3');
     expect(result?.code).toBe('x = 1');
   });
+
+  it('returns null when ## Code heading exists but section has no fence (Phase 3 UAT regression)', () => {
+    // User has a `## Code` heading declaring intent but hasn't pasted code yet.
+    // Must NOT fall back to example fences inside ## Problem — silent wrong-
+    // answer submits to LC are worse than a clear "no code block" Notice.
+    const body = [
+      '## Problem',
+      '',
+      'Example:',
+      '```',
+      'Input: l1 = [2,4,3], l2 = [5,6,4]',
+      'Output: [7,0,8]',
+      '```',
+      '',
+      '## Code',
+      '',
+      '## Notes',
+      '',
+    ].join('\n');
+    const result = extractFirstFencedBlock(body);
+    expect(result).toBeNull();
+  });
 });
