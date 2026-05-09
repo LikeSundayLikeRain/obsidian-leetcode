@@ -118,16 +118,22 @@ export class KnowledgeGraphWriter {
     }
 
     const detail = this.settings.getProblemDetail(ctx.slug);
-    // topicTags presence drives both the tags contribution AND the
-    // ## Techniques block. Pre-Phase-4 cache entries have topicSlugs but
-    // no topicTags (Pitfall 10) — we still fire step 1 but fall back to an
-    // empty tag contribution.
-    const topicTags = Array.isArray(detail?.topicTags) ? detail.topicTags : [];
     // Tag contribution: use topicSlugs (always present post-Phase-2) for the
     // `lc/{slug}` frontmatter tags. When detail is absent entirely, contribute
     // nothing — step 1 still updates the 5 solve-time fields.
     const topicSlugs = Array.isArray(detail?.topicSlugs) ? detail.topicSlugs : [];
     const tagContribution = topicSlugs.map((slug) => `lc/${slug}`);
+    // topicTags drives both ## Techniques body AND stub creation. Pre-Phase-4
+    // cache entries have topicSlugs but no topicTags. Rather than skip steps
+    // 2+3 for every existing user's problem cache (Pitfall 10 original rule),
+    // derive {name, slug} from topicSlugs when topicTags is absent/empty —
+    // slug→Title-Case mirrors LC's own display convention ('hash-table' →
+    // 'Hash Table'). Fresh Phase-4 caches still use the authoritative LC
+    // topicTags (with LC's canonical name string) when present.
+    const cachedTopicTags = Array.isArray(detail?.topicTags) ? detail.topicTags : [];
+    const topicTags = cachedTopicTags.length > 0
+      ? cachedTopicTags
+      : topicSlugs.map((slug) => ({ slug, name: slugToTagName(slug) }));
 
     // Step 1 — frontmatter write (GRAPH-02, D-09, D-11). Always fires on AC.
     try {
@@ -235,4 +241,15 @@ function parseMemoryMb(raw: unknown): number | undefined {
   if (!match) return undefined;
   const n = Number(match[1]);
   return Number.isFinite(n) ? n : undefined;
+}
+
+/** Turn an LC topic slug into a display name that matches LC's own convention
+ *  ('hash-table' → 'Hash Table'). Used as a fallback for pre-Phase-4 cache
+ *  entries that have topicSlugs but no topicTags. Kept local to avoid a
+ *  cross-module dependency on FilterModal's formatter. */
+function slugToTagName(slug: string): string {
+  return slug
+    .split('-')
+    .map((w) => (w.length === 0 ? '' : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
 }

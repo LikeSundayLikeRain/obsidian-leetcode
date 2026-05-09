@@ -154,7 +154,10 @@ const LIST_QUERY = `query submissionList($offset: Int!, $limit: Int!, $lastKey: 
       notes
       flagType
       frontendId
-      topicTags
+      topicTags {
+        name
+        slug
+      }
     }
   }
 }`;

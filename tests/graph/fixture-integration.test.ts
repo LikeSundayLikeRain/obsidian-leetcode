@@ -143,6 +143,8 @@ describe('Integration: AC pipeline (section A — detail-ac fixture)', () => {
 
     // ── Assertion 1: frontmatter fields written (GRAPH-02) ────────────────
     const fm = deps.vault.getFrontmatter('LeetCode/1-two-sum.md');
+    expect(fm).toBeDefined();
+    if (!fm) throw new Error('frontmatter missing');
     expect(fm['lc-status']).toBe('accepted');
     expect(fm['lc-runtime-ms']).toBe(2); // from detail-ac runtimeDisplay "2 ms"
     expect(fm['lc-memory-mb']).toBeCloseTo(47.1, 1); // from detail-ac "47.1 MB"
