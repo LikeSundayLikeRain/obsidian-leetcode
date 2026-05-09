@@ -96,16 +96,32 @@ Plans:
 - [x] 03-07-PLAN.md — main.ts 5-command registration + NoteWriter retrofit hook + ProblemBrowserView confirm + human smoke test against live LC (33 checks)
 
 ### Phase 4: Knowledge Graph Wiring
-**Goal**: An Accepted submission atomically updates the problem note with the solution, metadata, and `[[Technique]]` backlinks — turning every solve into a knowledge-graph citizen — without overwriting any user edits
+**Goal**: An Accepted submission atomically updates the problem note with solve-time frontmatter, `[[Technique]]` backlinks, and stub technique notes — turning every solve into a knowledge-graph citizen — without overwriting any user edits; `LeetCode: View past submissions` exposes LC's submission history with a read-only detail viewer and opt-in Copy-to-Code
 **Depends on**: Phase 3
 **Requirements**: GRAPH-01, GRAPH-02, GRAPH-03, GRAPH-04, GRAPH-05
 **Success Criteria** (what must be TRUE):
-  1. After an Accepted submission, the accepted code appears under `## Solution` in the problem note, appended atomically via `vault.process()` — no user edits are lost even if the user typed during polling
-  2. Frontmatter fields `lc-status`, `lc-solved-date`, `lc-runtime-ms`, `lc-memory-mb`, and `lc-language` are updated via `processFrontMatter()` and visible in the note immediately after acceptance
+  1. GRAPH-01 (revised per CONTEXT D-01): NO `## Solution` heading is created. The user's code always lives in the Phase 3 `## Code` fenced block. Past-submission history lives on LC's servers, surfaced via the new `LeetCode: View past submissions` command (picker modal + read-only detail viewer with a Copy-to-Code affordance that writes to `## Code` via `vault.process()` after a confirm gate on non-empty blocks)
+  2. Frontmatter fields `lc-status`, `lc-solved-date` (ISO-8601 local-tz), `lc-runtime-ms`, `lc-memory-mb`, and `lc-language` are updated via `fileManager.processFrontMatter()` and visible in the note immediately after acceptance
   3. `## Techniques` section contains `[[Two Pointers]]`-style wikilinks (one per LC topic tag); the graph view shows edges from the problem note to technique notes
-  4. Stub technique notes are created in the configured `Techniques/` folder on first reference and are never overwritten once created
-  5. User can disable auto-backlink creation in settings; solution append and frontmatter update still occur when backlinks are off
-**Plans**: TBD
+  4. Stub technique notes are created in the configured `{problemsFolder}/Techniques/` folder on first reference and are never overwritten once created
+  5. User can disable auto-backlink creation (`autoBacklinksEnabled` flag in data.json; Phase 5 ships the Settings UI toggle); frontmatter fields + `lc/{topic-slug}` tags still write when opt-out is engaged (D-20)
+**Plans**: 6 plans
+Plans:
+**Wave 0**
+- [x] 04-01-PLAN.md — Wave 0 test infrastructure (15 vitest stubs + 2 mocks + 5 live-captured LC submission fixtures + grep-gate extension to src/graph/)
+
+**Wave 1** *(blocked on Wave 0)*
+- [x] 04-02-PLAN.md — Pure utilities: dateFormat.ts (ISO-8601 local-tz), mergeTechniquesSection.ts (list-item union-merge), StubNoteCreator.ts + NoteTemplate extensions (TECHNIQUES_HEADING_LINE, buildTechniquesBlock, buildTechniqueStubBody, buildTechniqueFilename) + SettingsStore extensions (autoBacklinksEnabled, topicTags cache, getTechniquesFolder)
+
+**Wave 2** *(blocked on Wave 1 — Plan 03 extends NoteTemplate after Plan 02 locks the SSoT, sequential file ownership)*
+- [x] 04-03-PLAN.md — REST client + orchestrator: submissionHistoryClient.ts (D-27..D-29) + KnowledgeGraphWriter.ts (D-08 single-entry + D-09 3-step pipeline + D-23 AC gate + D-24 re-AC + D-19 non-atomic stubs + D-20 opt-out) + applyFrontmatter solve-time extension
+
+**Wave 3** *(blocked on Wave 2)*
+- [x] 04-04-PLAN.md — Modals + Copy-to-Code: SubmissionPickerModal, SubmissionDetailModal (MarkdownRenderer + Component lifecycle, Pitfall 7), ConfirmOverwriteModal (Cancel default-focus), copyToCode.ts (reuses forceInjectCodeSection) + styles.css .leetcode-submissions-* scopes
+
+**Wave 4** *(blocked on Wave 3)*
+- [x] 04-05-PLAN.md — Wiring: main.ts KnowledgeGraphWriter singleton + `view-past-submissions` command registration + on-AC hook inside submitFromActive
+- [ ] 04-06-PLAN.md — Human smoke test against live LC (49 checks across 8 sections: AC graph write, picker, Copy-to-Code, opt-out, session-expiry, non-AC skip, visual/a11y, Phase 1-3 regression)
 **UI hint**: yes
 
 ### Phase 5: Polish & Ship
