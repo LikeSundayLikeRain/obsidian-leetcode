@@ -39,11 +39,21 @@ export class VerdictModal extends Modal {
     this.args = args;
   }
 
+  private isPending = false;
+
   onOpen(): void {
+    this.isPending = true;
     this.renderPending();
   }
 
   onClose(): void {
+    // If the user dismisses the modal (ESC, overlay click, or X) while the
+    // submission is still in flight, treat it as Cancel so the orchestrator
+    // flips the abort flag instead of leaving the poll loop running.
+    if (this.isPending) {
+      this.isPending = false;
+      try { this.args.onCancel(); } catch { /* ignore — cleanup */ }
+    }
     const { contentEl } = this;
     if (contentEl && typeof (contentEl as unknown as { empty?: () => void }).empty === 'function') {
       (contentEl as unknown as { empty: () => void }).empty();
@@ -136,6 +146,7 @@ export class VerdictModal extends Modal {
   // ── Internal ───────────────────────────────────────────────────────────
 
   private clearPendingStateClass(): void {
+    this.isPending = false;
     const el = this.contentEl;
     if (el && typeof (el as unknown as { removeClass?: (c: string) => void }).removeClass === 'function') {
       (el as unknown as { removeClass: (c: string) => void }).removeClass('leetcode-verdict-pending');
