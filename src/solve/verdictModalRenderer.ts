@@ -132,6 +132,7 @@ function renderRunResult(
   const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
   const closeBtn = appendEl(footer, 'button', 'mod-cta');
   setText(closeBtn, 'Close');
+  closeBtn.setAttribute('data-lc-role', 'close');
 }
 
 // ── Render state: Submit verdicts ────────────────────────────────────────

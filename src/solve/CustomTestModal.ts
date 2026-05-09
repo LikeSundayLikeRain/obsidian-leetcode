@@ -75,7 +75,12 @@ export class CustomTestModal extends Modal {
     runBtn.textContent = 'Run';
     runBtn.addEventListener('click', () => {
       this.syncActiveFromTextarea();
-      const input = this.cases[this.activeTab]?.input ?? '';
+      // Send all non-empty cases as a single newline-joined data_input blob —
+      // matches LC's web UI, which runs every case in one interpret call.
+      const input = this.cases
+        .map((c) => c.input.trim())
+        .filter((s) => s.length > 0)
+        .join('\n');
       // Persist first — if onRun throws, cases are already safe in the note.
       void this.persist();
       try {

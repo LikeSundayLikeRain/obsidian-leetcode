@@ -146,9 +146,15 @@ export class VerdictModal extends Modal {
   }
 
   private focusCloseButton(): void {
-    const btn = this.contentEl?.querySelector('button[data-lc-role="close"]') as HTMLElement | null;
-    if (btn && typeof btn.focus === 'function') {
-      try { btn.focus(); } catch { /* headless */ }
+    const buttons = Array.from(
+      this.contentEl?.querySelectorAll('button[data-lc-role="close"]') ?? [],
+    ) as HTMLButtonElement[];
+    for (const btn of buttons) {
+      btn.addEventListener('click', () => { this.close(); });
+    }
+    const first = buttons[0];
+    if (first && typeof first.focus === 'function') {
+      try { first.focus(); } catch { /* headless */ }
     }
   }
 
