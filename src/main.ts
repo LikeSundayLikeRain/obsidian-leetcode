@@ -244,7 +244,13 @@ export default class LeetCodePlugin extends Plugin {
       name: 'Cancel running submission',
       checkCallback: (checking) => {
         if (!this.activeSolve) return false;
-        if (!checking) { this.cancelActiveSolve(); }
+        if (!checking) {
+          const modal = this.activeSolve.modal;
+          this.cancelActiveSolve();
+          // Palette cancel: close the modal directly. The modal's own
+          // onClose guard no-ops because we just nulled activeSolve.
+          try { modal.close(); } catch { /* headless */ }
+        }
         return true;
       },
     });
@@ -383,9 +389,17 @@ export default class LeetCodePlugin extends Plugin {
   private cancelActiveSolve(): void {
     if (!this.activeSolve) return;
     this.activeSolve.abort.aborted = true;
-    // Proactively close the modal so the user sees the UI respond to their
-    // click even before the polling rejection settles.
-    try { this.activeSolve.modal.close(); } catch { /* headless */ }
+    // NOTE: do NOT close the modal here. Callers are expected to be either:
+    //   (a) the Cancel button inside the modal — Obsidian closes via
+    //       the button's own `this.close()` after onCancel returns;
+    //   (b) VerdictModal.onClose's pending-state guard — modal is already
+    //       closing when onCancel runs here, so calling `modal.close()`
+    //       would either no-op or, worse, race against a NEW modal if
+    //       the user has re-submitted between close and the orchestrator's
+    //       poll-reject settling (#UAT-flash).
+    // Clearing activeSolve here is safe because the orchestrator's finally
+    // block also clears it when the poll rejection settles; whichever gets
+    // there first wins.
     this.activeSolve = null;
   }
 
