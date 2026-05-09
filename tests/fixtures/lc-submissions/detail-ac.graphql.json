@@ -1,0 +1,40 @@
+{
+  "data": {
+    "submissionDetails": {
+      "runtime": 2,
+      "runtimeDisplay": "2 ms",
+      "runtimePercentile": 99.354,
+      "memory": 47120000,
+      "memoryDisplay": "47.1 MB",
+      "memoryPercentile": 40.362600000000015,
+      "code": "class Solution {\n      public int[] twoSum(int[] nums, int target) {\n          Map<Integer, Integer> map = new HashMap<>();\n          int n = nums.length;\n          for (int i = 0; i < n; i++) {\n              if (map.containsKey(target - nums[i])) {\n                  return new int[]{map.get(target - nums[i]), i};\n              }\n              map.put(nums[i], i);\n          }\n          return null;\n      }\n  }",
+      "timestamp": 1778296594,
+      "statusCode": 10,
+      "user": {
+        "username": "testuser",
+        "profile": {
+          "realName": "Test User",
+          "userAvatar": "https://assets.leetcode.com/users/testuser/avatar_REDACTED.png"
+        }
+      },
+      "lang": {
+        "name": "java",
+        "verboseName": "Java"
+      },
+      "question": {
+        "questionId": "1",
+        "titleSlug": "two-sum",
+        "hasFrontendPreview": false
+      },
+      "notes": "",
+      "flagType": "WHITE",
+      "topicTags": [],
+      "runtimeError": null,
+      "compileError": null,
+      "fullCodeOutput": null,
+      "testDescriptions": null,
+      "testBodies": null,
+      "testInfo": null
+    }
+  }
+}
