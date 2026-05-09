@@ -150,3 +150,120 @@ describe('SettingsStore.load — untrusted-disk validation (CR-02 / WR-04)', () 
     expect(s.getProblemsFolder()).toBe('LeetCode');
   });
 });
+
+describe('SettingsStore — Phase 4 backward-compat (GRAPH-05, D-12, D-15, D-21)', () => {
+  it('autoBacklinksEnabled defaults true when absent from data.json', async () => {
+    // Pitfall 9: pre-Phase-4 data.json has no `autoBacklinksEnabled` key.
+    // Must fall back to default `true` (D-21 — headline value is on).
+    const plugin = makeMockPlugin({
+      version: 1,
+      auth: { LEETCODE_SESSION: 'X', csrftoken: 'Y' },
+      problemsFolder: 'LeetCode',
+    });
+    const s = await SettingsStore.load(plugin as never);
+    expect(s.getAutoBacklinksEnabled()).toBe(true);
+  });
+
+  it('autoBacklinksEnabled shape-guard rejects non-boolean', async () => {
+    // T-04-02-02 threat mitigation: malicious non-boolean → default true.
+    const plugin = makeMockPlugin({
+      version: 1,
+      autoBacklinksEnabled: 'yes',  // malformed
+    });
+    const s = await SettingsStore.load(plugin as never);
+    expect(s.getAutoBacklinksEnabled()).toBe(true);
+  });
+
+  it('autoBacklinksEnabled round-trip: setter persists false', async () => {
+    const plugin = makeMockPlugin(null);
+    const s = await SettingsStore.load(plugin as never);
+    expect(s.getAutoBacklinksEnabled()).toBe(true);
+    await s.setAutoBacklinksEnabled(false);
+    expect(s.getAutoBacklinksEnabled()).toBe(false);
+    expect(plugin.saveData).toHaveBeenCalled();
+  });
+
+  it('DetailCacheEntry.topicTags optional on old entries', async () => {
+    // Pitfall 10: Phase 2-era entries with topicSlugs but no topicTags
+    // remain VALID; the field is optional/undefined post-load.
+    const oldEntry = {
+      fetchedAt: 1,
+      id: 1,
+      title: 'Two Sum',
+      difficulty: 'Easy',
+      url: 'https://leetcode.com/problems/two-sum/',
+      contentHtml: '<p>x</p>',
+      topicSlugs: ['hash-table'],
+      // no topicTags
+    };
+    const plugin = makeMockPlugin({
+      version: 1,
+      problemDetails: { 'two-sum': oldEntry },
+    });
+    const s = await SettingsStore.load(plugin as never);
+    const detail = s.getProblemDetail('two-sum');
+    expect(detail).not.toBeNull();
+    expect(detail?.topicTags).toBeUndefined();
+  });
+
+  it('DetailCacheEntry.topicTags malformed entries dropped', async () => {
+    // T-04-02-03 threat mitigation: topicTags present but elements missing
+    // required `name`/`slug` string fields → reject whole entry (cache miss
+    // triggers fresh fetch).
+    const badEntry = {
+      fetchedAt: 1,
+      id: 1,
+      title: 'Two Sum',
+      difficulty: 'Easy',
+      url: 'https://leetcode.com/problems/two-sum/',
+      contentHtml: '<p>x</p>',
+      topicSlugs: ['hash-table'],
+      topicTags: [{ foo: 'bar' }],  // missing name/slug
+    };
+    const plugin = makeMockPlugin({
+      version: 1,
+      problemDetails: { 'two-sum': badEntry },
+    });
+    const s = await SettingsStore.load(plugin as never);
+    expect(s.getProblemDetail('two-sum')).toBeNull();
+  });
+
+  it('DetailCacheEntry.topicTags well-formed pairs accepted', async () => {
+    const goodEntry = {
+      fetchedAt: 1,
+      id: 1,
+      title: 'Two Sum',
+      difficulty: 'Easy',
+      url: 'https://leetcode.com/problems/two-sum/',
+      contentHtml: '<p>x</p>',
+      topicSlugs: ['hash-table', 'array'],
+      topicTags: [
+        { name: 'Hash Table', slug: 'hash-table' },
+        { name: 'Array', slug: 'array' },
+      ],
+    };
+    const plugin = makeMockPlugin({
+      version: 1,
+      problemDetails: { 'two-sum': goodEntry },
+    });
+    const s = await SettingsStore.load(plugin as never);
+    const detail = s.getProblemDetail('two-sum');
+    expect(detail).not.toBeNull();
+    expect(detail?.topicTags).toEqual([
+      { name: 'Hash Table', slug: 'hash-table' },
+      { name: 'Array', slug: 'array' },
+    ]);
+  });
+
+  it('getTechniquesFolder derives from problemsFolder', async () => {
+    // D-15 derived getter — no new settings field. Respects the
+    // sanitizeFolder no-trailing-slash invariant (Phase 1 D-10).
+    const plugin = makeMockPlugin({ version: 1, problemsFolder: 'LeetCode' });
+    const s = await SettingsStore.load(plugin as never);
+    expect(s.getTechniquesFolder()).toBe('LeetCode/Techniques');
+
+    const plugin2 = makeMockPlugin({ version: 1, problemsFolder: 'my notes/leetcode' });
+    const s2 = await SettingsStore.load(plugin2 as never);
+    expect(s2.getTechniquesFolder()).toBe('my notes/leetcode/Techniques');
+  });
+});
