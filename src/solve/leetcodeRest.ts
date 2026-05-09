@@ -37,12 +37,24 @@ const USER_AGENT = 'Mozilla/5.0 (compatible; obsidian-leetcode-plugin)';
  *  node_modules/@leetnotion/leetcode-api/lib/index.js:1786 and skygragon/leetcode-cli
  *  lib/plugins/leetcode.js. Cookie and CSRF are read per-call from args.cookies
  *  (NOT captured at module-load) so fresh SettingsStore values propagate after
- *  re-login without a plugin reload (Pitfall 2 mitigation). */
-export function authHeaders(slug: string, cookies: AuthCookies): Record<string, string> {
+ *  re-login without a plugin reload (Pitfall 2 mitigation).
+ *
+ *  Phase 4 D-29 revision: accepts an optional `refererOverride`. When omitted,
+ *  defaults to the Phase 3 problem-description URL (`/problems/{slug}/description/`)
+ *  so existing Phase 3 callers keep their exact header shape. When supplied,
+ *  the override wins — Phase 4's submission-detail GraphQL call sets it to
+ *  `/submissions/detail/{id}/` because LC returns 403 if the referer points at
+ *  the problem URL on a submissionDetails query.
+ */
+export function authHeaders(
+  slug: string,
+  cookies: AuthCookies,
+  refererOverride?: string,
+): Record<string, string> {
   return {
     'content-type': 'application/json',
     'origin': BASE_URL,
-    'referer': `${BASE_URL}/problems/${slug}/description/`,
+    'referer': refererOverride ?? `${BASE_URL}/problems/${slug}/description/`,
     'cookie': `csrftoken=${cookies.csrftoken}; LEETCODE_SESSION=${cookies.LEETCODE_SESSION};`,
     'x-csrftoken': cookies.csrftoken,
     'x-requested-with': 'XMLHttpRequest',
@@ -62,7 +74,7 @@ export function authHeaders(slug: string, cookies: AuthCookies): Record<string, 
  * If it resolved silent-follow-to-200-HTML: the HTML sniff path is primary.
  * BOTH run unconditionally — no code change needed regardless of spike outcome.
  */
-function assertNotSessionExpired(status: number, text: string, body: unknown): void {
+export function assertNotSessionExpired(status: number, text: string, body: unknown): void {
   if (status === 302 || status === 303 || status === 401 || status === 403) {
     throw new SessionExpiredError();
   }
