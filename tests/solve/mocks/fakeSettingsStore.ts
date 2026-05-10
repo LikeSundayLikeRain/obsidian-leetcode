@@ -13,7 +13,13 @@ import type { DetailCacheEntry } from '../../../src/settings/SettingsStore';
 
 /** Minimal facade used by Phase 3 (run / submit / polling). A subset of the
  *  real SettingsStore surface — enough for tests to drive the solve path
- *  without building a full Plugin + data.json round-trip. */
+ *  without building a full Plugin + data.json round-trip.
+ *
+ *  Phase 5 Wave 0 additions:
+ *  - `techniquesFolderOverride` + round-trip getter/setter (D-15).
+ *  - `getAutoBacklinksEnabled` + setter (D-16 consumption in Settings UI tests).
+ *  - `getTechniquesFolder()` now honors override: empty string → derived
+ *    default, non-empty string → override verbatim. */
 export interface FakeSettings {
   getAuthCookies(): AuthCookies | null;
   getDefaultLanguage(): string;
@@ -21,6 +27,13 @@ export interface FakeSettings {
   getProblemDetail(slug: string): DetailCacheEntry | null;
   setProblemDetail(slug: string, entry: DetailCacheEntry): Promise<void>;
   pruneProblemDetails(maxAgeMs?: number): Promise<number>;
+  // Phase 5 POLISH-01 D-15 — technique folder override round-trip.
+  getTechniquesFolderOverride(): string;
+  setTechniquesFolderOverride(v: string): Promise<void>;
+  getTechniquesFolder(): string;
+  // Phase 5 POLISH-01 D-16 — auto-backlink toggle round-trip (Settings UI).
+  getAutoBacklinksEnabled(): boolean;
+  setAutoBacklinksEnabled(v: boolean): Promise<void>;
 }
 
 /** Optional seed values for `makeFakeSettingsStore`. Any field left undefined
@@ -32,6 +45,12 @@ export interface FakeSettingsOverrides {
   defaultLanguage?: string;
   problemsFolder?: string;
   problemDetails?: Record<string, DetailCacheEntry>;
+  /** Phase 5 D-15 — seed the technique folder override. Empty string = no
+   *  override (use derived default). */
+  techniquesFolderOverride?: string;
+  /** Phase 5 D-16 — seed the auto-backlink toggle. Default matches production
+   *  default (`true`). */
+  autoBacklinksEnabled?: boolean;
 }
 
 const DEFAULT_COOKIES: AuthCookies = {
@@ -63,6 +82,11 @@ export function makeFakeSettingsStore(overrides: FakeSettingsOverrides = {}): Fa
   const details = new Map<string, DetailCacheEntry>(
     Object.entries(overrides.problemDetails ?? {})
   );
+  // Phase 5 POLISH-01 — mutable state for override + toggle round-trips.
+  let techniquesFolderOverride = overrides.techniquesFolderOverride ?? '';
+  let autoBacklinksEnabled = overrides.autoBacklinksEnabled ?? true;
+
+  const getProblemsFolder = (): string => problemsFolder;
 
   return {
     getAuthCookies() {
@@ -71,9 +95,7 @@ export function makeFakeSettingsStore(overrides: FakeSettingsOverrides = {}): Fa
     getDefaultLanguage() {
       return defaultLanguage;
     },
-    getProblemsFolder() {
-      return problemsFolder;
-    },
+    getProblemsFolder,
     getProblemDetail(slug: string) {
       return details.get(slug) ?? null;
     },
@@ -82,6 +104,28 @@ export function makeFakeSettingsStore(overrides: FakeSettingsOverrides = {}): Fa
     },
     async pruneProblemDetails(_maxAgeMs?: number) {
       return 0;
+    },
+    // Phase 5 D-15 — techniquesFolderOverride round-trip.
+    getTechniquesFolderOverride() {
+      return techniquesFolderOverride;
+    },
+    async setTechniquesFolderOverride(v: string) {
+      techniquesFolderOverride = v;
+    },
+    // Phase 5 D-15 — override-honoring getTechniquesFolder.
+    // Empty override → derived default; non-empty → override verbatim.
+    getTechniquesFolder() {
+      const override = techniquesFolderOverride;
+      return override && override.length > 0
+        ? override
+        : `${getProblemsFolder()}/Techniques`;
+    },
+    // Phase 5 D-16 — autoBacklinksEnabled round-trip.
+    getAutoBacklinksEnabled() {
+      return autoBacklinksEnabled;
+    },
+    async setAutoBacklinksEnabled(v: boolean) {
+      autoBacklinksEnabled = v;
     },
   };
 }
