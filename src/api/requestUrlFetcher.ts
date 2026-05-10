@@ -23,7 +23,19 @@ import { fetcher as externalFetcher } from '@fetch-impl/fetcher';
 // a different object post-bundling.
 import { fetcher as leetcodeFetcher } from '@leetnotion/leetcode-api';
 import { Throttle } from './throttle';
-import { RateLimitError } from '../shared/errors';
+import { RateLimitError, TimeoutError } from '../shared/errors';
+
+// Phase 5 Wave 2 (D-18) — 429 single-retry cooldown. Locked to 5_000ms so the
+// user perceives "slight hiccup" rather than a hang; orchestrator-level retry
+// is forbidden (Pitfall 8 / T-05-03-02) — this is the single retry ceiling.
+const RATE_LIMIT_RETRY_MS = 5_000;
+
+// Phase 5 Wave 2 (D-20) — default 10s Promise.race timeout for every
+// non-polling requestUrl call. Corrected per RESEARCH §Pitfall 3 —
+// RequestUrlParam.timeout does not exist, so we implement the cap ourselves.
+// Callers on the polling path override with opts.timeoutMs: 20_000 (Pitfall 13
+// carve-out — the outer 30s wall-clock cap governs the whole poll sequence).
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 let activeThrottle: Throttle | null = null;
 
@@ -107,18 +119,62 @@ export function getActiveThrottle(): Throttle | null {
  *   - Releases the throttle on every exit path (success, 429, thrown network
  *     error) — no leaked token on exception.
  *
+ * Phase 5 Wave 2 (POLISH-02) additions:
+ *   - D-18: on the FIRST 429 we wait RATE_LIMIT_RETRY_MS (5s) and redrive the
+ *     raw request ONCE. A second 429 re-throws RateLimitError (no third
+ *     attempt — Pitfall 8 forbids orchestrator-level retry composition).
+ *   - D-20: the whole (acquire → raw request → 429-retry) chain races against
+ *     a Promise.race timeout. Default 10s; callers may override via
+ *     opts.timeoutMs (polling carve-out passes 20_000 so the outer 30s
+ *     wall-clock cap governs the full poll sequence — Pitfall 13).
+ *
  * Throws:
  *   - Error('throttledRequestUrl: fetcher not installed') if the throttle has
  *     not been wired yet (plugin startup race — Plan 05 guards this).
- *   - RateLimitError on 429 responses; caller's catch can retry or surface.
+ *   - RateLimitError on 429 responses that survived the single retry.
+ *   - TimeoutError when the request exceeds opts.timeoutMs (default 10_000ms).
  */
 export async function throttledRequestUrl(
-  params: RequestUrlParam,
+  params: RequestUrlParam & { timeoutMs?: number },
+  opts: { timeoutMs?: number } = {},
 ): Promise<RequestUrlResponse> {
   const throttle = activeThrottle;
   if (!throttle) {
     throw new Error('throttledRequestUrl: fetcher not installed');
   }
+  // Accept timeoutMs from either the opts arg (plan-canonical) or inline on
+  // params (Wave 0 RED test convenience). The opts arg wins when both are set.
+  const { timeoutMs: inlineTimeoutMs, ...cleanParams } = params;
+  const timeoutMs = opts.timeoutMs ?? inlineTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return raceWithTimeout(runWith429Retry(throttle, cleanParams as RequestUrlParam), timeoutMs);
+}
+
+// --- Internal helpers (Phase 5 Wave 2) --------------------------------------
+
+/** Delay without blocking the event loop. Uses global setTimeout so
+ *  vi.useFakeTimers() + vi.advanceTimersByTimeAsync() drives it in tests. */
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => { setTimeout(r, ms); });
+}
+
+/** Race a promise against a TimeoutError. Clears the pending timer in `finally`
+ *  so the event loop doesn't stay alive after the race settles. */
+function raceWithTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => { reject(new TimeoutError()); }, ms);
+  });
+  return Promise.race<T>([p, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
+/** Core throttle-acquire + raw requestUrl + 429 parse. Throws RateLimitError
+ *  on 429; all other status codes pass through as a normal RequestUrlResponse. */
+async function doRawRequest(
+  throttle: Throttle,
+  params: RequestUrlParam,
+): Promise<RequestUrlResponse> {
   await throttle.acquire();
   try {
     const res = await requestUrl({ ...params, throw: false });
@@ -132,5 +188,24 @@ export async function throttledRequestUrl(
     return res;
   } finally {
     throttle.release();
+  }
+}
+
+/** D-18 — single-retry wrapper around `doRawRequest`. On RateLimitError, wait
+ *  RATE_LIMIT_RETRY_MS and retry ONCE. The second failure re-throws (no third
+ *  attempt). Any non-RateLimitError propagates immediately. */
+async function runWith429Retry(
+  throttle: Throttle,
+  params: RequestUrlParam,
+): Promise<RequestUrlResponse> {
+  try {
+    return await doRawRequest(throttle, params);
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      await delay(RATE_LIMIT_RETRY_MS);
+      // Second failure: propagate the second RateLimitError (no third attempt).
+      return await doRawRequest(throttle, params);
+    }
+    throw err;
   }
 }
