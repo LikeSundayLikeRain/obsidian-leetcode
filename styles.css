@@ -838,3 +838,32 @@
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* ── Phase 5 — Reading-mode code-block action buttons (D-13) ───────── */
+/* Neutral Run + Submit buttons appended below <pre> on lc-slug notes.      */
+/* Accent reserved for primary auth button (UI-SPEC color rule) — NO        */
+/* .mod-cta here. All colors via Obsidian CSS variables.                    */
+.leetcode-code-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+.leetcode-code-actions .leetcode-code-action-run,
+.leetcode-code-actions .leetcode-code-action-submit {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  transition: background 100ms ease, color 100ms ease;
+}
+.leetcode-code-actions .leetcode-code-action-run:hover,
+.leetcode-code-actions .leetcode-code-action-submit:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}

@@ -53,6 +53,8 @@ import {
 } from './shared/errors';
 import { showSessionExpiredNotice } from './solve/SessionExpiredNotice';
 import { classifyStatus } from './solve/statusMap';
+// Phase 5 Plan 05 (D-11) — reading-mode Run/Submit buttons below fenced code blocks.
+import { registerCodeBlockActionProcessor } from './main/codeActionsPostProcessor';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { SubmissionHistoryStore } from './graph/SubmissionHistoryStore';
@@ -342,6 +344,13 @@ export default class LeetCodePlugin extends Plugin {
 
     // Step 6d — settings tab.
     this.addSettingTab(new LeetCodeSettingTab(this.app, this));
+
+    // Step 6e — Phase 5 Plan 05 (D-11) reading-mode Run/Submit buttons.
+    // Registers a MarkdownPostProcessor that appends neutral Run + Submit
+    // buttons below each <pre><code> inside notes with `lc-slug` frontmatter.
+    // Click handlers dispatch `${manifest.id}:run` / `:submit` via
+    // executeCommandById (Pitfall 14); idempotent per Pitfall 3.
+    registerCodeBlockActionProcessor(this);
 
     // GAP-6: fire-and-forget one-time migration Notice for users on the
     // v0.1.0 broken LeetCode.base schema. Non-blocking; never throws into
