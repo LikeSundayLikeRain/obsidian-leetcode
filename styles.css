@@ -733,10 +733,16 @@
   cursor: pointer;
   transition: background 120ms ease;
 }
-.leetcode-submissions-picker .leetcode-submissions-row:hover,
+/* ── Phase 5 — Picker row focus ring for light-mode contrast (D-30) ── */
+/* Split :hover and :focus: hover stays background-only, focus adds an     */
+/* outline so light-theme vaults get a visible keyboard-focus indicator.  */
+.leetcode-submissions-picker .leetcode-submissions-row:hover {
+  background: var(--background-modifier-hover);
+}
 .leetcode-submissions-picker .leetcode-submissions-row:focus {
   background: var(--background-modifier-hover);
-  outline: none;
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
 }
 
 /* Verdict chip — coloured pill. Kind modifiers mirror Phase 3's palette. */
@@ -764,6 +770,13 @@
 .leetcode-submissions .leetcode-submissions-chip--ce {
   background: var(--background-modifier-error);
   color: var(--text-error);
+}
+/* ── Phase 5 — CE verdict chip orange override (D-29) ──────────────── */
+/* Must appear AFTER the shared --wa/--tle/--mle/--ole/--re/--ce error  */
+/* rule above so the cascade wins.                                      */
+.leetcode-submissions .leetcode-submissions-chip--ce {
+  background: color-mix(in srgb, var(--background-secondary) 80%, var(--color-orange, #e67e22) 20%);
+  color: var(--color-orange, #e67e22);
 }
 .leetcode-submissions .leetcode-submissions-chip--ie,
 .leetcode-submissions .leetcode-submissions-chip--unknown-lc,
@@ -837,4 +850,33 @@
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* ── Phase 5 — Reading-mode code-block action buttons (D-13) ───────── */
+/* Neutral Run + Submit buttons appended below <pre> on lc-slug notes.      */
+/* Accent reserved for primary auth button (UI-SPEC color rule) — NO        */
+/* .mod-cta here. All colors via Obsidian CSS variables.                    */
+.leetcode-code-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+.leetcode-code-actions .leetcode-code-action-run,
+.leetcode-code-actions .leetcode-code-action-submit {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  transition: background 100ms ease, color 100ms ease;
+}
+.leetcode-code-actions .leetcode-code-action-run:hover,
+.leetcode-code-actions .leetcode-code-action-submit:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
 }

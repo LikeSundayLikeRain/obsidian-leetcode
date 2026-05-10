@@ -1,6 +1,11 @@
 // src/graph/SubmissionDetailModal.ts
 //
 // Phase 4 Plan 04 — Read-only submission detail modal (D-04).
+// Phase 5 Plan 05 (D-31) — code body now renders via MarkdownRenderer.render
+// with a Component lifecycle so Obsidian's CM6 syntax highlighter lights up.
+// Pitfall 6: `this.component.load()` MUST be called BEFORE the first
+// MarkdownRenderer.render invocation; `this.component.unload()` is called
+// from onClose() to dispose CM6 child components.
 //
 // Renders a single past submission's code + metadata. Two user actions:
 //   - Copy to ## Code (primary) — confirms overwrite if ## Code currently has
@@ -10,11 +15,9 @@
 //   - Close (secondary) — dismisses the modal.
 //
 // DOM discipline (CF-07): createElement + textContent only; no innerHTML, no
-// HTML-string sinks. Code body is rendered inside a <pre><code> element with
-// the `language-{slug}` class so Obsidian's reading-mode code styling applies
-// when the modal's content root is treated as markdown — no MarkdownRenderer
-// dependency at test time (keeps the unit test deterministic) and no raw HTML
-// injection.
+// HTML-string sinks. The code body is wrapped in a fenced Markdown block and
+// handed to MarkdownRenderer.render, which emits CM6-highlighted DOM into the
+// container element.
 //
 // Confirm-overwrite gate: when ## Code currently has a non-empty fenced block
 // the modal opens `ConfirmOverwriteModal` (Task 2 in this plan). Tests pass
@@ -25,7 +28,13 @@
 // opens the detail modal via an injected factory callback (see
 // SubmissionPickerDeps.openDetailModal) so the two modules stay decoupled.
 
-import { Modal, type App, type TFile } from 'obsidian';
+import {
+  Component,
+  MarkdownRenderer,
+  Modal,
+  type App,
+  type TFile,
+} from 'obsidian';
 import { copyToCode, hasExistingCodeBlock } from './copyToCode';
 
 export interface SubmissionDetailDeps {
@@ -48,6 +57,10 @@ export interface SubmissionDetailDeps {
 
 export class SubmissionDetailModal extends Modal {
   private readonly deps: SubmissionDetailDeps;
+  /** D-31 Pitfall 6 — owns the CM6 render lifecycle. `load()` is called in
+   *  onOpen BEFORE the first MarkdownRenderer.render; `unload()` fires in
+   *  onClose so child components (CM6 editors, token streams) dispose. */
+  private readonly component: Component = new Component();
   /** Obsidian's real Modal stores the app on `this.app` from its constructor.
    *  The test stub (class Modal {}) does not — we store an explicit ref so
    *  both contexts work. */
@@ -62,18 +75,23 @@ export class SubmissionDetailModal extends Modal {
     this.ensureDomContainers();
   }
 
-  onOpen(): void {
+  async onOpen(): Promise<void> {
+    // D-31 Pitfall 6 — Component.load() MUST be called before any
+    // MarkdownRenderer.render invocation or child components will leak.
+    this.component.load();
     this.ensureDomContainers();
     addClass(this.contentEl, 'leetcode-submissions');
     addClass(this.contentEl, 'leetcode-submissions-detail');
-    this.render();
+    await this.render();
   }
 
   onClose(): void {
+    // Dispose CM6 child components owned by the markdown renderer.
+    this.component.unload();
     clear(this.contentEl);
   }
 
-  private render(): void {
+  private async render(): Promise<void> {
     clear(this.contentEl);
     if (this.titleEl) {
       setText(this.titleEl,
@@ -96,14 +114,25 @@ export class SubmissionDetailModal extends Modal {
     }
     setText(meta, metaParts.join(' · '));
 
-    // Code body. We render a <pre><code class="language-{lang}"> node and
-    // textContent the code onto it — Obsidian's reading-mode CSS will pick up
-    // the language-* class and apply syntax highlighting when the modal's
-    // parent applies markdown styling. Tests only assert textContent / classes.
-    const pre = appendEl(this.contentEl, 'pre', 'leetcode-submissions-code');
-    const code = appendEl(pre, 'code',
-      `language-${this.deps.lang || 'text'}`);
-    setText(code, this.deps.code);
+    // D-31 — Code body rendered via MarkdownRenderer.render so Obsidian's
+    // CM6 syntax highlighter lights up the fenced block. The container is a
+    // <div> wrapper styled under .leetcode-submissions-code (NOT a raw <pre>)
+    // so Obsidian's rendered <pre><code> sits inside our scoped block.
+    // Pitfall 6: component.load() was called in onOpen before this runs.
+    const codeContainer = appendEl(
+      this.contentEl,
+      'div',
+      'leetcode-submissions-code',
+    );
+    const fenced =
+      '```' + (this.deps.lang || 'text') + '\n' + this.deps.code + '\n```\n';
+    await MarkdownRenderer.render(
+      this.app,
+      fenced,
+      codeContainer,
+      this.deps.file.path,
+      this.component,
+    );
 
     // Footer — primary Copy, secondary Close.
     const footer = appendEl(this.contentEl, 'div',
