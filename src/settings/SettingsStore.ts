@@ -69,6 +69,14 @@ export interface PluginData {
    *  a graph"; off-by-default hides the differentiator). Settings UI control
    *  ships in Phase 5 POLISH-01; Phase 4 only ships the persistence field. */
   autoBacklinksEnabled: boolean;
+  /** Phase 5 POLISH-01 D-15 — user-visible override for the technique folder.
+   *  Empty string '' means "use the derived default"
+   *  (`{problemsFolder}/Techniques`), preserving Phase 4 behavior for users
+   *  who never touch this setting. A non-empty value takes precedence
+   *  verbatim. Shape-guard coerces non-string raw data.json values to ''
+   *  (T-05-02-01 mitigation). UI layer trims trailing slashes before set;
+   *  setter accepts raw. */
+  techniquesFolderOverride: string;
 }
 
 /** Compound filter matching LC's "Match All/Any of the following" UI. Each
@@ -99,6 +107,7 @@ const DEFAULT_DATA: PluginData = {
   problemDetails: {},
   legacyBaseNoticeShown: false,
   autoBacklinksEnabled: true,  // D-21 default ON
+  techniquesFolderOverride: '',  // D-15 '' = use derived default
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -270,6 +279,15 @@ export class SettingsStore {
       autoBacklinksEnabled: typeof raw.autoBacklinksEnabled === 'boolean'
         ? raw.autoBacklinksEnabled
         : DEFAULT_DATA.autoBacklinksEnabled,
+      // Phase 5 POLISH-01 D-15 — techniquesFolderOverride shape-guard.
+      // Non-string raw (object / number / null) falls back to '' (= derived
+      // default). NOTE: do NOT invoke sanitizeFolder here — its empty-string
+      // fallback is `'LeetCode'`, which would break the "empty = use derived
+      // default" contract (CF-08 + D-15). UI layer trims trailing slashes
+      // before set; raw pass-through on load keeps the contract clean.
+      techniquesFolderOverride: typeof raw.techniquesFolderOverride === 'string'
+        ? raw.techniquesFolderOverride
+        : DEFAULT_DATA.techniquesFolderOverride,
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -349,14 +367,32 @@ export class SettingsStore {
     await this.persist();
   }
 
-  /** Phase 4 D-15 — derived Techniques folder path (no new settings field).
-   *  Returns `{problemsFolder}/Techniques`, respecting sanitizeFolder's
-   *  no-trailing-slash invariant from Phase 1 D-10. If the user changes
-   *  `problemsFolder` in Phase 5 Settings, the Techniques folder moves with
-   *  it — which is the right semantic (techniques are part of the LeetCode
-   *  knowledge graph). */
+  /** Phase 5 POLISH-01 D-15 — read the user-visible technique folder override.
+   *  Empty string '' = no override (use derived default in
+   *  `getTechniquesFolder`). Any non-empty value is an explicit override. */
+  getTechniquesFolderOverride(): string {
+    return this.data.techniquesFolderOverride;
+  }
+
+  /** Phase 5 POLISH-01 D-15 — persist the technique folder override. Setter
+   *  accepts raw input; the UI layer is responsible for trimming trailing
+   *  slashes before calling this (Phase 4 convention keeps sanitization in
+   *  the UI + shape-guard on load). */
+  async setTechniquesFolderOverride(v: string): Promise<void> {
+    this.data.techniquesFolderOverride = v;
+    await this.persist();
+  }
+
+  /** Phase 5 POLISH-01 D-15 — override-aware Techniques folder path. Returns
+   *  the user's override verbatim when non-empty; otherwise derives from
+   *  `{problemsFolder}/Techniques` (Phase 4 D-15 behavior preserved for users
+   *  who never touch the new setting). Respects sanitizeFolder's
+   *  no-trailing-slash invariant from Phase 1 D-10. */
   getTechniquesFolder(): string {
-    return `${this.getProblemsFolder()}/Techniques`;
+    const override = this.data.techniquesFolderOverride;
+    return override && override.length > 0
+      ? override
+      : `${this.getProblemsFolder()}/Techniques`;
   }
 
   /** Read the cached detail for a slug. D-15. Returns null if missing. */

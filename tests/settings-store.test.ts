@@ -267,3 +267,83 @@ describe('SettingsStore — Phase 4 backward-compat (GRAPH-05, D-12, D-15, D-21)
     expect(s2.getTechniquesFolder()).toBe('my notes/leetcode/Techniques');
   });
 });
+
+describe('SettingsStore — techniquesFolderOverride round-trip (Phase 5 POLISH-01 D-15)', () => {
+  it('defaults to empty string when field absent (pre-Phase-5 data.json)', async () => {
+    // A pre-Phase-5 data.json has no `techniquesFolderOverride` key. Must fall
+    // back to '' so getTechniquesFolder() uses the derived default and Phase 4
+    // users see no behavior change.
+    const plugin = makeMockPlugin({ version: 1, problemsFolder: 'LeetCode' });
+    const s = await SettingsStore.load(plugin as never);
+    expect(s.getTechniquesFolderOverride()).toBe('');
+  });
+
+  it('shape-guard coerces non-string raw to empty string', async () => {
+    // T-05-02-01 threat mitigation — malicious data.json with non-string
+    // override (object, number, null) reverts to '' (= derived default).
+    const pluginObj = makeMockPlugin({
+      version: 1,
+      problemsFolder: 'LeetCode',
+      techniquesFolderOverride: { evil: 'obj' } as unknown,
+    });
+    const sObj = await SettingsStore.load(pluginObj as never);
+    expect(sObj.getTechniquesFolderOverride()).toBe('');
+
+    const pluginNum = makeMockPlugin({
+      version: 1,
+      problemsFolder: 'LeetCode',
+      techniquesFolderOverride: 42 as unknown,
+    });
+    const sNum = await SettingsStore.load(pluginNum as never);
+    expect(sNum.getTechniquesFolderOverride()).toBe('');
+
+    const pluginNull = makeMockPlugin({
+      version: 1,
+      problemsFolder: 'LeetCode',
+      techniquesFolderOverride: null as unknown,
+    });
+    const sNull = await SettingsStore.load(pluginNull as never);
+    expect(sNull.getTechniquesFolderOverride()).toBe('');
+  });
+
+  it('setTechniquesFolderOverride persists via saveData round-trip', async () => {
+    const plugin = makeMockPlugin(null);
+    const s = await SettingsStore.load(plugin as never);
+    expect(s.getTechniquesFolderOverride()).toBe('');
+    await s.setTechniquesFolderOverride('Library/LC Techniques');
+    expect(s.getTechniquesFolderOverride()).toBe('Library/LC Techniques');
+    expect(plugin.saveData).toHaveBeenCalled();
+  });
+
+  it('getTechniquesFolder returns override verbatim when non-empty', async () => {
+    // D-15 — override takes precedence over the derived default.
+    const plugin = makeMockPlugin({
+      version: 1,
+      problemsFolder: 'LeetCode',
+      techniquesFolderOverride: 'Library/LC Techniques',
+    });
+    const s = await SettingsStore.load(plugin as never);
+    expect(s.getTechniquesFolder()).toBe('Library/LC Techniques');
+  });
+
+  it('getTechniquesFolder returns derived default when override is empty', async () => {
+    // D-15 — empty override string = use `{problemsFolder}/Techniques`.
+    const plugin = makeMockPlugin({
+      version: 1,
+      problemsFolder: 'LeetCode',
+      techniquesFolderOverride: '',
+    });
+    const s = await SettingsStore.load(plugin as never);
+    expect(s.getTechniquesFolder()).toBe('LeetCode/Techniques');
+  });
+
+  it('setter accepts raw input without stripping (UI layer owns sanitization)', async () => {
+    // Phase 4 convention: sanitization lives in the UI onChange handler.
+    // Setter round-trips raw input verbatim so the UI can evolve without
+    // double-stripping in the store.
+    const plugin = makeMockPlugin(null);
+    const s = await SettingsStore.load(plugin as never);
+    await s.setTechniquesFolderOverride('custom/path');
+    expect(s.getTechniquesFolderOverride()).toBe('custom/path');
+  });
+});
