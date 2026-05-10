@@ -33,8 +33,13 @@ import { LeetCodeSettingTab } from './settings/SettingsTab';
 // Phase 3 Plan 07 imports — orchestrator + modals + REST + pure utilities.
 import { SubmissionOrchestrator } from './solve/submissionOrchestrator';
 import { VerdictModal } from './solve/VerdictModal';
-import { CustomTestModal } from './solve/CustomTestModal';
-import { readCasesFromVault } from './solve/customTestStore';
+// Phase 5 Plan 04 — unified Run modal (D-01 / D-10) replaces the Phase 3
+// modal + case-region persistence path entirely. In-memory tab state lives
+// in EphemeralTabStore; the plugin NEVER writes to `## Custom Tests`
+// (D-08 ignore-legacy).
+import { RunModal } from './solve/RunModal';
+import { EphemeralTabStore } from './solve/ephemeralTabStore';
+import { registerRunCommand } from './solve/runCommandRegistration';
 import { forceInjectCodeSection } from './solve/starterCodeInjector';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
@@ -78,9 +83,9 @@ import { logger } from './shared/logger';
 import type { SubmitCheckResponse, RunCheckResponse } from './solve/types';
 
 /** Shape returned by getActiveProblemContext — the minimum info every Phase 3
- *  command needs: the TFile (for readCasesFromVault etc.), the slug (from
- *  lc-slug frontmatter), and a live `currentBody()` getter that re-reads at
- *  invocation time (SOLVE-09). */
+ *  command needs: the TFile (used by RunModal / submit / starter-code paths),
+ *  the slug (from lc-slug frontmatter), and a live `currentBody()` getter that
+ *  re-reads at invocation time (SOLVE-09). */
 interface ProblemContext {
   view: MarkdownView;
   file: TFile;
@@ -103,11 +108,16 @@ export default class LeetCodePlugin extends Plugin {
   knowledgeGraph!: KnowledgeGraphWriter;
   submissionHistory!: SubmissionHistoryStore;
 
-  // Phase 3 solve-path state.
+  // Phase 5 Plan 04 (D-09) — ephemeral Run-modal tab store. In-memory only;
+  // layout-change + active-leaf-change reconcile wipes slugs with no open
+  // markdown leaf. Constructed in onload Step 5.8; disposed in onunload.
+  ephemeralTabs!: EphemeralTabStore;
+
+  // Phase 3 solve-path state (Phase 5 D-01 consolidated Run commands).
   //   activeSolve: currently-in-flight submission/run orchestrator-wrapper.
-  //     Tracks the single-flight state across ALL phase-3 commands (submit,
-  //     run-sample, run-custom) so the Cancel command can abort whichever is
-  //     running and the guard fires for any attempted concurrent kick-off.
+  //     Tracks the single-flight state across the unified `run` command +
+  //     `submit` so the Cancel command can abort whichever is running and
+  //     the guard fires for any attempted concurrent kick-off.
   private activeSolve: ActiveSolve | null = null;
 
   async onload(): Promise<void> {
@@ -183,6 +193,12 @@ export default class LeetCodePlugin extends Plugin {
       });
     });
 
+    // Step 5.8 — Phase 5 Plan 04 (D-09) — ephemeral tab store for the unified
+    // Run modal. Registers `layout-change` + `active-leaf-change` via
+    // `plugin.registerEvent` so it auto-detaches on unload; dispose() is still
+    // called in onunload() for a deterministic wipe.
+    this.ephemeralTabs = new EphemeralTabStore(this);
+
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
       new ProblemBrowserView(leaf, this));
@@ -242,37 +258,13 @@ export default class LeetCodePlugin extends Plugin {
     // notes via editorCheckCallback returning false). Cancel is the
     // exception — it is enabled whenever an activeSolve is present.
 
-    // Run code (sample) — invokes LC's /interpret_solution/ endpoint with the
-    // problem's exampleTestcases. Opens a VerdictModal in pending state, polls
-    // via pollSubmission, then renders the terminal verdict (RunCheckResponse).
-    this.addCommand({
-      id: 'run-sample',
-      name: 'Run code (sample)',
-      editorCheckCallback: (checking, _editor, view) => {
-        const file = view.file;
-        if (!file) return false;
-        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
-        if (!isValidSlug(fm?.['lc-slug'])) return false;
-        if (!checking) { void this.runSampleFromActive(); }
-        return true;
-      },
-    });
-
-    // Run code (custom input) — opens CustomTestModal seeded from the note's
-    // `## Custom Tests` section (readCasesFromVault). On Run, invokes LC's
-    // /interpret_solution/ with the active tab's dataInput and renders the
-    // VerdictModal. Persist-on-close is owned by CustomTestModal itself (D-17).
-    this.addCommand({
-      id: 'run-custom',
-      name: 'Run code (custom input)',
-      editorCheckCallback: (checking, _editor, view) => {
-        const file = view.file;
-        if (!file) return false;
-        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
-        if (!isValidSlug(fm?.['lc-slug'])) return false;
-        if (!checking) { void this.openCustomTestModalFromActive(file); }
-        return true;
-      },
+    // Phase 5 Plan 04 (D-01) — single unified `Run` command replaces Phase 3's
+    // `run-sample` + `run-custom` pair. Opens RunModal seeded from the
+    // EphemeralTabStore; the modal's Run button drives
+    // `runInterpretedInput` with the active tab's input (D-07).
+    registerRunCommand(this, {
+      settings: this.settings,
+      openRun: () => { void this.runFromActive(); },
     });
 
     // Submit — full judge run. Delegates to SubmissionOrchestrator (Plan 05)
@@ -392,6 +384,10 @@ export default class LeetCodePlugin extends Plugin {
       this.activeSolve.abort.aborted = true;
       this.activeSolve = null;
     }
+    // Phase 5 Plan 04 — deterministic wipe of the ephemeral tab store. The
+    // registerEvent subscriptions also auto-detach here, but dispose() keeps
+    // the in-memory Maps clean for test runs that re-instantiate the plugin.
+    this.ephemeralTabs?.dispose();
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
@@ -511,7 +507,7 @@ export default class LeetCodePlugin extends Plugin {
       problemTitle: ctx.title,
       onCancel: () => { this.cancelActiveSolve(); },
       onCopyFailingInput: (input: string) => {
-        void this.openCustomTestModalWithSeeded(input);
+        void this.openRunModalWithSeedAppended(input);
       },
     });
     modal.open();
@@ -628,10 +624,12 @@ export default class LeetCodePlugin extends Plugin {
     }
   }
 
-  /** Run sample (exampleTestcases) or custom input via LC's
-   *  /interpret_solution/ endpoint. Opens a VerdictModal + drives the same
-   *  pending/terminal/abort/timeout state machine as submit. */
-  private async runSampleFromActive(): Promise<void> {
+  /** Phase 5 Plan 04 (D-01, D-03, D-07) — open the unified RunModal seeded
+   *  from the ephemeral tab store. The modal's Run button calls onRun with
+   *  ONLY the active tab's input (D-07 single-active-tab semantics) and we
+   *  forward it to `runInterpretedInput` which drives the same pending /
+   *  terminal / abort / timeout state machine as submit. */
+  private async runFromActive(): Promise<void> {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
@@ -639,11 +637,51 @@ export default class LeetCodePlugin extends Plugin {
       return;
     }
     const detail = this.settings.getProblemDetail(ctx.slug);
-    const sample = detail?.exampleTestcases ?? '';
-    await this.runInterpretedInput(ctx, sample);
+    const exampleTestcases = detail?.exampleTestcases ?? '';
+    new RunModal(this.app, {
+      slug: ctx.slug,
+      exampleTestcases,
+      store: this.ephemeralTabs,
+      onRun: (input: string) => {
+        // Re-resolve context at run time (the modal is asynchronous; the user
+        // may have closed + reopened the note in between).
+        const current = this.getActiveProblemContext();
+        if (current) void this.runInterpretedInput(current, input);
+      },
+    }).open();
   }
 
-  /** Shared helper — used by both runSample and CustomTestModal's onRun. */
+  /** D-25 — "Copy failing testcase" affordance from VerdictModal. Appends the
+   *  seed input as a new tab in the ephemeral store, then opens RunModal with
+   *  that tab active. The in-memory store is the single source of truth; no
+   *  vault write, no `## Custom Tests` interaction (D-08). */
+  private openRunModalWithSeedAppended(seedInput: string): void {
+    const ctx = this.getActiveProblemContext();
+    if (!ctx) {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const detail = this.settings.getProblemDetail(ctx.slug);
+    const exampleTestcases = detail?.exampleTestcases ?? '';
+    // Pre-seed via getOrSeed + append — RunModal's onOpen will read what
+    // we just set. setTabs overwrites; we want to preserve existing tabs so
+    // the user's in-progress edits from an earlier Run are not clobbered.
+    const existing = this.ephemeralTabs.getOrSeed(ctx.slug, exampleTestcases);
+    this.ephemeralTabs.setTabs(ctx.slug, [...existing, seedInput]);
+    new RunModal(this.app, {
+      slug: ctx.slug,
+      exampleTestcases,
+      store: this.ephemeralTabs,
+      onRun: (input: string) => {
+        const current = this.getActiveProblemContext();
+        if (current) void this.runInterpretedInput(current, input);
+      },
+    }).open();
+  }
+
+  /** Shared helper — used by RunModal's onRun. Drives the interpret-solution
+   *  pipeline + VerdictModal + error routing. */
   private async runInterpretedInput(ctx: ProblemContext, dataInput: string): Promise<void> {
     if (!this.guardSingleFlight()) return;
 
@@ -674,7 +712,7 @@ export default class LeetCodePlugin extends Plugin {
       problemTitle: ctx.title,
       onCancel: () => { this.cancelActiveSolve(); },
       onCopyFailingInput: (input: string) => {
-        void this.openCustomTestModalWithSeeded(input);
+        void this.openRunModalWithSeedAppended(input);
       },
     });
     modal.open();
@@ -733,45 +771,6 @@ export default class LeetCodePlugin extends Plugin {
         this.activeSolve = null;
       }
     }
-  }
-
-  /** Open CustomTestModal seeded from `## Custom Tests` section of the given
-   *  problem note. On Run, invokes runInterpretedInput. */
-  private async openCustomTestModalFromActive(file: TFile): Promise<void> {
-    const existing = await readCasesFromVault(this.app, file);
-    const initialCases = existing.map((c) => c.input);
-    new CustomTestModal(this.app, {
-      file,
-      initialCases,
-      onRun: (input: string) => {
-        const ctx = this.getActiveProblemContext();
-        if (ctx) void this.runInterpretedInput(ctx, input);
-      },
-    }).open();
-  }
-
-  /** Open CustomTestModal pre-seeded with an additional failing-input tab —
-   *  invoked from VerdictModal's "Copy failing testcase to custom input"
-   *  affordance (D-25). Appends the failing input to existing cases. */
-  private async openCustomTestModalWithSeeded(seedInput: string): Promise<void> {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view || !view.file) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
-      new Notice('Open a LeetCode problem note first.', 4000);
-      return;
-    }
-    const file = view.file;
-    const existing = await readCasesFromVault(this.app, file);
-    const initialCases = [...existing.map((c) => c.input), seedInput];
-    new CustomTestModal(this.app, {
-      file,
-      initialCases,
-      initialActiveTab: initialCases.length - 1,
-      onRun: (input: string) => {
-        const ctx = this.getActiveProblemContext();
-        if (ctx) void this.runInterpretedInput(ctx, input);
-      },
-    }).open();
   }
 
   /**

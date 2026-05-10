@@ -1,9 +1,9 @@
 // src/solve/RunModal.ts
 //
 // Phase 5 POLISH-07 (D-03..D-10) — the unified Run modal. Replaces Phase 3's
-// CustomTestModal + customTestStore / CaseRegion persistence layer entirely.
-// IN-MEMORY ONLY: state lives in EphemeralTabStore; the plugin NEVER writes
-// to `## Custom Tests` (D-08 — legacy section is ignored on read and write).
+// custom-test modal + case-region persistence layer entirely. IN-MEMORY ONLY:
+// state lives in EphemeralTabStore; the plugin NEVER writes to
+// `## Custom Tests` (D-08 — legacy section is ignored on read and write).
 //
 // Behavior contract (UI-SPEC §2 RunModal + D-03..D-07):
 //   - Title `Run`
@@ -14,8 +14,8 @@
 //   - `×` delete is hidden when only one tab remains (D-06 single-tab min)
 //   - `+` add-tab appends an empty tab and focuses it
 //   - onClose pushes current tab state back via `store.setTabs` (no I/O,
-//     no vault calls — contrast with Phase 3 CustomTestModal which wrote
-//     to the note via writeCasesToVault)
+//     no vault calls — contrast with the removed Phase 3 modal which wrote
+//     cases to the note via the deprecated custom-test store)
 //
 // CSS classes (tests/solve/RunModal.test.ts drives these exact selectors):
 //   - `.leetcode-run-tab`           each tab button
@@ -126,7 +126,7 @@ export class RunModal extends Modal {
   onClose(): void {
     // D-08: in-memory-only. Push current tab state to the store so the
     // next Run in this note-open session restores the user's edits.
-    // NEVER writeCasesToVault here.
+    // NEVER persist cases to the vault from here.
     try {
       if (this.textareaEl) {
         this.cases[this.activeTab] = this.textareaEl.value;
