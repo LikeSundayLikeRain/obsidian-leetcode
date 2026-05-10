@@ -57,3 +57,33 @@ export class ItemView {}
 export class FileManager {}
 export class Vault {}
 export class Workspace {}
+
+// Phase 5 Plan 05 (D-31) — SubmissionDetailModal uses Component + MarkdownRenderer
+// to render the code fence with Obsidian's CM6 syntax highlighting. Tests that
+// care about the render args override MarkdownRenderer.render via vi.mock;
+// the stub class shape keeps module resolution and `new Component()` calls
+// working for tests that only care about lifecycle side-effects (load / unload).
+export class Component {
+  load(): void {
+    /* no-op stub; tests that care replace via vi.mock */
+  }
+  unload(): void {
+    /* no-op stub */
+  }
+  addChild<T extends Component>(child: T): T {
+    return child;
+  }
+}
+
+export const MarkdownRenderer = {
+  // Signature matches Obsidian 1.x: render(app, markdown, el, sourcePath, component)
+  async render(
+    _app: unknown,
+    _markdown: string,
+    _el: unknown,
+    _sourcePath: string,
+    _component: Component,
+  ): Promise<void> {
+    // Test stub — tests that assert on call args override via vi.mock.
+  },
+};
