@@ -39,7 +39,14 @@ import { forceInjectCodeSection } from './solve/starterCodeInjector';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
 import { interpretSolution, authHeaders } from './solve/leetcodeRest';
-import { RateLimitError, SessionExpiredError, UnknownVerdictError } from './shared/errors';
+import {
+  RateLimitError,
+  SessionExpiredError,
+  UnknownVerdictError,
+  isNetworkError,
+  TimeoutError,
+} from './shared/errors';
+import { showSessionExpiredNotice } from './solve/SessionExpiredNotice';
 import { classifyStatus } from './solve/statusMap';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
@@ -133,6 +140,8 @@ export default class LeetCodePlugin extends Plugin {
     // Row-click in ProblemBrowserView delegates to plugin.openProblem(slug)
     // which in turn delegates to this.notes.openProblem(slug).
     this.notes = new NoteWriter(this.app, this.client, this.settings);
+    // Phase 5 D-21 — wire the sticky session-expired Notice's Log in action.
+    this.notes.setLogin(() => { void this.auth.login(); });
 
     // Step 5.6 — Phase 3 solve-path state already nulled; commands wired in 6c.
 
@@ -542,6 +551,8 @@ export default class LeetCodePlugin extends Plugin {
       },
       slug: ctx.slug,
       getCurrentBody: ctx.currentBody,
+      // D-21 — login wiring for the sticky session-expired Notice's button.
+      login: () => { void this.auth.login(); },
     });
     this.activeSolve = { modal, abort, orchestrator: orch };
 
@@ -587,6 +598,20 @@ export default class LeetCodePlugin extends Plugin {
         // routes kind==='unknown' through renderUnknownVerdict which exposes
         // the copy-payload affordance (redacted via logger.redact).
         modal.renderVerdict(err.payload as SubmitCheckResponse, ctx.title);
+      } else if (err instanceof SessionExpiredError || (err as Error).name === 'SessionExpiredError') {
+        // D-21: sticky Notice + Log in button.
+        showSessionExpiredNotice(() => { void this.auth.login(); });
+        try { modal.close(); } catch { /* headless */ }
+      } else if (isNetworkError(err)) {
+        // D-19 LOCKED copy + D-22 command-palette Notice surface.
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+        new Notice("Couldn't reach LeetCode. Check your connection.", 8000);
+        try { modal.close(); } catch { /* headless */ }
+      } else if (err instanceof TimeoutError || (err as Error).name === 'TimeoutError') {
+        // D-20 LOCKED copy + D-22 command-palette Notice surface.
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+        new Notice('LeetCode is slow to respond. Try again.', 8000);
+        try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof RateLimitError) {
         const seconds = Math.ceil(err.retryAfterMs / 1000);
         // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
@@ -636,8 +661,8 @@ export default class LeetCodePlugin extends Plugin {
     // Gate: auth cookies.
     const cookies = this.settings.getAuthCookies();
     if (!cookies) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
-      new Notice('LeetCode session expired. Log in again.', 8000);
+      // D-21: sticky Notice + Log in button (CF-04 LOCKED copy is in the helper).
+      showSessionExpiredNotice(() => { void this.auth.login(); });
       return;
     }
 
@@ -681,8 +706,18 @@ export default class LeetCodePlugin extends Plugin {
       } else if ((err as Error).name === 'JudgeTimeoutError' || err instanceof JudgeTimeoutError) {
         modal.renderTimeout();
       } else if ((err as Error).name === 'SessionExpiredError') {
+        // D-21: sticky Notice + Log in button.
+        showSessionExpiredNotice(() => { void this.auth.login(); });
+        try { modal.close(); } catch { /* headless */ }
+      } else if (isNetworkError(err)) {
+        // D-19 LOCKED copy + D-22 command-palette Notice surface.
         // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
-        new Notice('LeetCode session expired. Log in again.', 8000);
+        new Notice("Couldn't reach LeetCode. Check your connection.", 8000);
+        try { modal.close(); } catch { /* headless */ }
+      } else if (err instanceof TimeoutError || (err as Error).name === 'TimeoutError') {
+        // D-20 LOCKED copy + D-22 command-palette Notice surface.
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+        new Notice('LeetCode is slow to respond. Try again.', 8000);
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof RateLimitError) {
         const seconds = Math.ceil(err.retryAfterMs / 1000);
@@ -761,6 +796,8 @@ export default class LeetCodePlugin extends Plugin {
       openDetailModal: (row: SubmissionRow) => {
         void this.openSubmissionDetailFromRow(ctx.file, ctx.title, row);
       },
+      // D-21 — login wiring for the sticky session-expired Notice's button.
+      login: () => { void this.auth.login(); },
     });
     picker.open();
   }
@@ -780,8 +817,8 @@ export default class LeetCodePlugin extends Plugin {
   ): Promise<void> {
     const cookies = this.settings.getAuthCookies();
     if (!cookies) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
-      new Notice('LeetCode session expired. Log in again.', 8000);
+      // D-21: sticky Notice + Log in button.
+      showSessionExpiredNotice(() => { void this.auth.login(); });
       return;
     }
     let detail;
@@ -789,8 +826,20 @@ export default class LeetCodePlugin extends Plugin {
       detail = await detailForSubmission(row.id, cookies);
     } catch (err) {
       if (err instanceof SessionExpiredError) {
+        // D-21: sticky Notice + Log in button.
+        showSessionExpiredNotice(() => { void this.auth.login(); });
+        return;
+      }
+      if (isNetworkError(err)) {
+        // D-19 LOCKED copy + D-22 command-palette Notice surface.
         // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
-        new Notice('LeetCode session expired. Log in again.', 8000);
+        new Notice("Couldn't reach LeetCode. Check your connection.", 8000);
+        return;
+      }
+      if (err instanceof TimeoutError || (err as Error).name === 'TimeoutError') {
+        // D-20 LOCKED copy + D-22 command-palette Notice surface.
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+        new Notice('LeetCode is slow to respond. Try again.', 8000);
         return;
       }
       logger.debug('graph.openSubmissionDetail: fetch failed', err);

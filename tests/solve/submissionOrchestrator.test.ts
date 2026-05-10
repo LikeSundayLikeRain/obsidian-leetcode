@@ -125,6 +125,11 @@ describe('submissionOrchestrator (D-24, D-04, D-27, SOLVE-09)', () => {
   });
 
   it('D-27: session-expiry (401) → Notice "LeetCode session expired. Log in again."', async () => {
+    // Phase 5 Plan 03 D-21 migrated session-expired Notices to a
+    // DocumentFragment-based helper (showSessionExpiredNotice). The CF-04
+    // LOCKED copy still appears verbatim inside the fragment — this test
+    // accepts either the legacy string form or the new DocumentFragment form
+    // and asserts the copy appears in either.
     noticeSpy.mockClear();
     const ff = makeFakeFetcher();
     const settings = makeFakeSettingsStore({
@@ -138,9 +143,17 @@ describe('submissionOrchestrator (D-24, D-04, D-27, SOLVE-09)', () => {
       getCurrentBody: () => '## Code\n\n```python3\npass\n```\n',
     });
     await orch.submit();
-    const matched = noticeSpy.mock.calls.find(([msg]) =>
-      String(msg).includes('LeetCode session expired. Log in again.')
-    );
+    const matched = noticeSpy.mock.calls.find(([msg]) => {
+      if (typeof msg === 'string') {
+        return msg.includes('LeetCode session expired. Log in again.');
+      }
+      if (msg instanceof DocumentFragment) {
+        const host = document.createElement('div');
+        host.appendChild(msg.cloneNode(true));
+        return host.textContent?.includes('LeetCode session expired. Log in again.') === true;
+      }
+      return false;
+    });
     expect(matched).toBeDefined();
   });
 

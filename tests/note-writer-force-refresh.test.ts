@@ -170,6 +170,9 @@ describe('NoteWriter.forceRefresh (GAP-11)', () => {
   });
 
   it('session expired → fires session-expired Notice instead of generic network Notice', async () => {
+    // Phase 5 Plan 03 D-21 migrated session-expired Notices to a
+    // DocumentFragment-based helper. Accept either legacy string or new
+    // fragment; both carry the CF-04 copy verbatim.
     noticeSpy.mockClear();
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': '## Problem\nold\n\n## Notes\n' });
     const settings = makeSettingsWithCache(STALE_ENTRY);
@@ -178,7 +181,15 @@ describe('NoteWriter.forceRefresh (GAP-11)', () => {
     const writer = new NoteWriter(m.app as never, client as never, settings as never);
     await writer.forceRefresh('two-sum');
 
-    const matched = noticeSpy.mock.calls.find(([msg]) => /session expired/i.test(String(msg)));
+    const matched = noticeSpy.mock.calls.find(([msg]) => {
+      if (typeof msg === 'string') return /session expired/i.test(msg);
+      if (msg instanceof DocumentFragment) {
+        const host = document.createElement('div');
+        host.appendChild(msg.cloneNode(true));
+        return /session expired/i.test(host.textContent ?? '');
+      }
+      return false;
+    });
     expect(matched).toBeDefined();
     expect(m.spies.processFrontMatter).not.toHaveBeenCalled();
   });

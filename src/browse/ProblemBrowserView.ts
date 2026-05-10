@@ -9,6 +9,7 @@ import type { CompoundFilter, FilterRule } from '../settings/SettingsStore';
 import { isSessionExpired } from '../api/LeetCodeClient';
 import { getActiveThrottle } from '../api/requestUrlFetcher';
 import { RateLimitError } from '../shared/errors';
+import { showSessionExpiredNotice } from '../solve/SessionExpiredNotice';
 import { FilterModal } from './FilterModal';
 // WR-02: route all timers through the popout-aware helpers used by Throttle
 // so that timers on a view hosted in an Obsidian popout bind to the popout's
@@ -192,8 +193,8 @@ export class ProblemBrowserView extends ItemView {
         ? (err as { response?: unknown }).response
         : undefined;
       if (isSessionExpired(err) || isSessionExpired(maybeResp)) {
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages LOCKED
-        new Notice('LeetCode session expired. Log in again.', SESSION_EXPIRED_NOTICE_MS);
+        // D-21: sticky Notice + Log in button.
+        showSessionExpiredNotice(() => { void this.plugin.auth.login(); });
         // Swallow logout errors — we always want to re-render the logged-out state.
         await this.plugin.auth.logout().catch(() => undefined);
         // WR-05: render the logged-out state directly. Previously we called
