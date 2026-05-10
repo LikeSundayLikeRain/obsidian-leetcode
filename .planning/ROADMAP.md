@@ -125,17 +125,38 @@ Plans:
 **UI hint**: yes
 
 ### Phase 5: Polish & Ship
-**Goal**: The plugin is ready for the Obsidian community plugin store: complete settings UI, all error states surface meaningful messages, README and LICENSE are present, the submission checklist passes, and the Run UX is reworked into a single ephemeral+pin flow
+**Goal**: The plugin is ready for the Obsidian community plugin store: complete settings UI, all error states surface meaningful messages, README and LICENSE are present, the submission checklist passes, and the Run UX is reworked into a single ephemeral flow (pin-to-note affordance rejected by user during discussion — tabs are ephemeral-only)
 **Depends on**: Phase 4
 **Requirements**: POLISH-01, POLISH-02, POLISH-03, POLISH-04, POLISH-05, POLISH-06, POLISH-07
 **Success Criteria** (what must be TRUE):
-  1. Settings tab exposes all required controls: auth status/login/logout, vault folder, technique folder, default language, auto-backlink toggle, and manual cookie paste field
+  1. Settings tab exposes all required controls: auth status/login/logout, vault folder, technique folder override, default language, auto-backlink toggle, and manual cookie paste field
   2. All error conditions — LC offline, 429 rate-limited, expired session, and network timeout — surface a user-readable `Notice` message rather than a silent failure or unhandled rejection
   3. `npm run lint` passes with zero Required violations; the bundle contains no telemetry, no remote code evaluation, and no `innerHTML` with untrusted content
   4. README includes install instructions, usage walkthrough, screenshots, and a network usage disclosure ("This plugin communicates with leetcode.com to fetch problems and submit solutions")
   5. Repository has a LICENSE file and a GitHub release with `main.js` + `manifest.json` attached; a PR is opened to `obsidianmd/obsidian-releases` following community plugin guidelines
-  6. Run UX rework (POLISH-07): replace the two `Run code (sample)` + `Run code (custom input)` commands with a single unified `Run` command. Its modal pre-fills tabs from the problem's `exampleTestcases`, uses ephemeral in-memory cases by default (nothing written to the note), and exposes a `Pin to note` affordance that persists the current tab under `## Custom Tests` on demand. Phase 3 UAT Tests 14/15 (closed as stale) are replaced by new Phase 5 UAT covering (a) sample tabs auto-populated, (b) custom tabs do NOT persist on close by default, (c) `Pin to note` writes a single `### Case N` block without disturbing inter-case text, (d) existing `## Custom Tests` sections load as pinned tabs on modal re-open
-**Plans**: TBD
+  6. Run UX rework (POLISH-07): replace the two `Run code (sample)` + `Run code (custom input)` commands with a single unified `Run` command. Its modal pre-fills tabs from the problem's `exampleTestcases` on first open, preserves in-memory edits across re-opens while any leaf shows the note, and wipes state when every leaf closes. Reset button re-seeds from examples. No persistence to `## Custom Tests`; legacy sections ignored. Clicking Run sends only the active tab's input.
+**Plans**: 7 plans
+Plans:
+**Wave 0 — Test scaffolding** *(precondition for Waves 1-5)*
+- [ ] 05-01-PLAN.md — Wave 0 test infrastructure (10 failing vitest stubs + fakeSettingsStore extension + fakeWorkspace mock helper; Nyquist-compliant verify targets for every Waves 1-5 task)
+
+**Wave 1 — Settings UI completeness** *(blocked on Wave 0)*
+- [ ] 05-02-PLAN.md — SettingsStore `techniquesFolderOverride` field + override-aware `getTechniquesFolder()` + SettingsTab `Knowledge Graph` section (override text field + auto-backlink toggle) — D-14, D-15, D-16, D-17, D-32
+
+**Wave 2 — Error handling UX** *(blocked on Wave 0; parallel with Wave 1 via disjoint files)*
+- [ ] 05-03-PLAN.md — `isNetworkError` + `TimeoutError` helpers; throttle layer 429 single-retry + 10s Promise.race timeout (polling carve-out via `{ timeoutMs: 20_000 }`); `SessionExpiredNotice` DocumentFragment helper + 9-call-site migration; D-22 command-palette error routing in main.ts — D-18, D-19, D-20, D-21, D-22
+
+**Wave 3 — Run UX rewrite** *(blocked on Waves 0, 1, 2)*
+- [ ] 05-04-PLAN.md — `ephemeralTabStore.ts` (layout-change + active-leaf-change reconcile; Pitfall 2 corrected from `file-close`) + `RunModal.ts` (rewrite of CustomTestModal) + main.ts delete `run-sample` + `run-custom` and add single `run` command; delete `customTestStore.ts` + `CaseRegion.ts` + `CustomTestModal.ts` — D-01..D-10
+
+**Wave 4 — Reading-mode buttons + Phase 4 cosmetic polish** *(blocked on Waves 0, 4)*
+- [ ] 05-05-PLAN.md — `CodeBlockActionProcessor.ts` (MarkdownPostProcessor with lc-slug gate + idempotent button injection) + SubmissionDetailModal MarkdownRenderer.render + Component lifecycle rewrite + CSS for `.leetcode-code-actions` + CE chip orange override + light-mode focus ring — D-11, D-12, D-13, D-29, D-30, D-31
+
+**Wave 5a — README + LICENSE + prerelease script** *(blocked on Waves 2, 3, 4, 5)*
+- [ ] 05-06-PLAN.md — LICENSE (MIT) + `scripts/prerelease-check.sh` (12 mechanical gates) + README with 10 D-25 sections + 4 screenshot checkpoint (human-verify) + `versions.json` correction to `1.10.0` — D-23, D-24, D-25, D-26, D-27
+
+**Wave 5b — Community-store submission** *(blocked on Plan 06)*
+- [ ] 05-07-PLAN.md — Version-triple consistency verify + production build + prerelease re-run + `0.1.0` tag push + GitHub release checkpoint (main.js + manifest.json + styles.css assets) + community-plugin PR checkpoint (`Add plugin: LeetCode` PR to `obsidianmd/obsidian-releases`) — D-23, D-28, POLISH-06
 **UI hint**: yes
 
 ## Progress
@@ -149,4 +170,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Problems as Notes | 5/5 | Complete   | 2026-05-08 |
 | 3. Run & Submit | 0/7 | Planned — Wave 0/1/2/3 | - |
 | 4. Knowledge Graph Wiring | 0/TBD | Not started | - |
-| 5. Polish & Ship | 0/TBD | Not started | - |
+| 5. Polish & Ship | 0/7 | Planned — Wave 0/1/2/3/4/5a/5b | - |
