@@ -153,5 +153,46 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           await this.plugin.settings.setDefaultLanguage(v);
         }),
       );
+
+    // =============================
+    //   Knowledge Graph section (Phase 5 POLISH-01 D-14)
+    // =============================
+    // D-17: no Advanced / collapsible section — always visible.
+    // Accent-modifier grep-gate preserved: no call-to-action modifier in
+    // this block (the single accent invocation is the Authentication login
+    // button above — see the top-of-file grep gate).
+    new Setting(containerEl).setName('Knowledge Graph').setHeading();
+
+    // D-15: technique folder visible override with derived default. Placeholder
+    // is computed LIVE from the current `problemsFolder` setting so users see
+    // e.g. `LeetCode/Techniques` when no override is set, their typed value
+    // otherwise. Empty value preserves Phase 4 derived-default behavior.
+    new Setting(containerEl)
+      .setName('Technique folder override')
+      .setDesc('Vault folder for technique stub notes. Leave empty to use {Problems folder}/Techniques.')
+      .addText((t) => t
+        .setPlaceholder(`${this.plugin.settings.getProblemsFolder()}/Techniques`)
+        .setValue(this.plugin.settings.getTechniquesFolderOverride())
+        .onChange(async (v) => {
+          // Phase 4 convention — UI layer owns trailing-slash sanitization.
+          await this.plugin.settings.setTechniquesFolderOverride(
+            v.trim().replace(/[\\/]+$/, ''),
+          );
+        }),
+      );
+
+    // D-16 / D-32: auto-backlink toggle (behavior-first copy LOCKED).
+    // Bound to the Phase 4 D-21 persistence field.
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "Accepted" is an LC verdict proper noun
+      .setName('Auto-create technique backlinks on Accepted')
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "Accepted", "Techniques", and "LC" are proper-noun references
+      .setDesc('When enabled, an Accepted submission writes a ## Techniques section and creates stub notes for each LC topic tag. When disabled, only frontmatter tags (lc/{slug}) are written; no ## Techniques heading, no stubs.')
+      .addToggle((t) => t
+        .setValue(this.plugin.settings.getAutoBacklinksEnabled())
+        .onChange(async (v) => {
+          await this.plugin.settings.setAutoBacklinksEnabled(v);
+        }),
+      );
   }
 }
