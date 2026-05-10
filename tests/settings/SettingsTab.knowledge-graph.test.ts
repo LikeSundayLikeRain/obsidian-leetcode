@@ -7,6 +7,49 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeFakeSettingsStore } from '../solve/mocks/fakeSettingsStore';
 
+// Obsidian monkey-patches HTMLElement.prototype with `empty()`, `addClass()`,
+// and `createEl()` at plugin load time. The `obsidian` npm package ships types
+// only, so these helpers are absent under Vitest/happy-dom. Install the
+// minimum subset the mock Setting / PluginSettingTab chain and production
+// SettingsTab.display() depend on, scoped to this test file so the rest of
+// the suite is untouched.
+type CreateElOpts = { cls?: string | string[]; text?: string; type?: string };
+const proto = HTMLElement.prototype as HTMLElement & Record<string, unknown>;
+if (typeof proto.empty !== 'function') {
+  proto.empty = function (this: HTMLElement) {
+    while (this.firstChild) this.removeChild(this.firstChild);
+  };
+}
+if (typeof proto.addClass !== 'function') {
+  proto.addClass = function (this: HTMLElement, ...cls: string[]) {
+    this.classList.add(...cls);
+    return this;
+  };
+}
+if (typeof proto.removeClass !== 'function') {
+  proto.removeClass = function (this: HTMLElement, ...cls: string[]) {
+    this.classList.remove(...cls);
+    return this;
+  };
+}
+if (typeof proto.createEl !== 'function') {
+  proto.createEl = function <K extends keyof HTMLElementTagNameMap>(
+    this: HTMLElement,
+    tag: K,
+    opts?: CreateElOpts,
+  ): HTMLElementTagNameMap[K] {
+    const el = this.ownerDocument.createElement(tag);
+    if (opts?.cls) {
+      const classes = Array.isArray(opts.cls) ? opts.cls : [opts.cls];
+      el.classList.add(...classes);
+    }
+    if (opts?.text !== undefined) el.textContent = opts.text;
+    if (opts?.type !== undefined) el.setAttribute('type', opts.type);
+    this.appendChild(el);
+    return el;
+  };
+}
+
 // The real Setting / PluginSettingTab classes from Obsidian need a DOM-backed
 // `createEl()` chain. Replace them with a lightweight stub that mirrors the
 // fluent chain on a real HTMLElement so `tab.display()` against happy-dom
@@ -110,9 +153,23 @@ interface KnowledgeGraphCapableStore {
 }
 
 function makeFakePluginForSettingsTab(settings: KnowledgeGraphCapableStore) {
+  // Production SettingsTab.display() also reads getUsername() + the manual-
+  // cookie path via loginManual(). The fake settings store from solve/mocks
+  // is Phase 3-scoped and does not expose these; wrap it here with the
+  // extra surface the UI path needs so this test focuses on the new
+  // Knowledge Graph section.
+  const wrappedSettings = {
+    ...settings,
+    getUsername: () => null,
+  } as unknown as KnowledgeGraphCapableStore & { getUsername(): string | null };
   return {
-    auth: { isLoggedIn: () => false, login: vi.fn() },
-    settings,
+    auth: {
+      isLoggedIn: () => false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      loginManual: vi.fn(),
+    },
+    settings: wrappedSettings,
   };
 }
 
