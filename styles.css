@@ -618,15 +618,21 @@
   word-break: break-word;
 }
 
-/* ── Phase 3 — Custom Test Modal (UI-SPEC §CSS skeleton) ───────────────── */
-.leetcode-custom-test .leetcode-custom-test-tabs {
+/* ── Phase 5 — Run Modal (POLISH-07 / D-03..D-10) ────────────────────── */
+/* Replaces the Phase 3 .leetcode-custom-test rules (removed with         */
+/* CustomTestModal.ts). Tabs, textarea, and footer layout for the         */
+/* unified Run modal (RunModal.ts). D-06 single-tab-minimum → `×` is      */
+/* hidden when only one tab remains (the tab never renders the span at    */
+/* that point; no CSS hide needed — kept display:none fallback anyway).  */
+.leetcode-run .leetcode-run-tabs {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-bottom: 8px;
   flex-wrap: wrap;
 }
-.leetcode-custom-test .leetcode-custom-test-tab {
+.leetcode-run .leetcode-run-tab,
+.leetcode-run .leetcode-run-tab-add {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -638,24 +644,24 @@
   color: var(--text-muted);
   cursor: pointer;
 }
-.leetcode-custom-test .leetcode-custom-test-tab.is-active {
+.leetcode-run .leetcode-run-tab.is-active {
   background: var(--background-modifier-border);
   color: var(--text-normal);
   font-weight: 600;
 }
-.leetcode-custom-test .leetcode-custom-test-tab-remove {
+.leetcode-run .leetcode-run-tab-delete {
   display: none;
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1;
 }
-.leetcode-custom-test .leetcode-custom-test-tab:hover .leetcode-custom-test-tab-remove {
+.leetcode-run .leetcode-run-tab:hover .leetcode-run-tab-delete {
   display: inline;
 }
-.leetcode-custom-test .leetcode-custom-test-tab-remove:hover {
+.leetcode-run .leetcode-run-tab-delete:hover {
   color: var(--text-normal);
 }
-.leetcode-custom-test .leetcode-custom-test-textarea {
+.leetcode-run .leetcode-run-textarea {
   width: 100%;
   min-height: 120px;
   resize: vertical;
@@ -668,10 +674,14 @@
   color: var(--text-normal);
   border: 1px solid var(--background-modifier-border);
 }
-.leetcode-custom-test .leetcode-custom-test-footer {
+/* D-10 footer layout: Reset (left) + Run (right). */
+.leetcode-run-modal .leetcode-run-footer,
+.leetcode-run .leetcode-run-footer {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   margin-top: 12px;
+  gap: 8px;
 }
 
 /* ── Phase 4 — Submission Picker + Detail + Confirm modals (UI-SPEC) ───── */

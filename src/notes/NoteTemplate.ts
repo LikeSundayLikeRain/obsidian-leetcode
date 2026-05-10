@@ -133,7 +133,7 @@ export function mapStatusDisplay(
 /**
  * Phase 3 D-06: Body layout is `## Problem` → `## Code` → `## Notes`.
  * `## Solution` and `## Techniques` are added by Phase 4 on first Accepted submission.
- * `## Custom Tests` is lazy-created by CaseRegion.writeCases when the user first saves a case (D-18).
+ * `## Custom Tests` is a legacy Phase 3 section; Phase 5 ignores it on read and write (POLISH-07 D-08).
  *
  * Backward-compat: `langSlug` is optional and defaults to `'python3'` so Phase 2
  * callers that pass only `{ problemMarkdown }` continue to compile and render

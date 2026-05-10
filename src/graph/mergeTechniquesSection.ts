@@ -1,8 +1,8 @@
 // src/graph/mergeTechniquesSection.ts
 //
 // Phase 4 Plan 02 — pure union-merge transform for the ## Techniques region
-// (GRAPH-03, D-13). Analogous to src/solve/CaseRegion.ts but operating on
-// list-item granularity (single lines) rather than fenced case blocks.
+// (GRAPH-03, D-13). Operates on list-item granularity (single lines) rather
+// than fenced case blocks.
 //
 // Purity contract (D-13 + CF-06):
 //   - Only imports heading SSoT constants from NoteTemplate
@@ -24,8 +24,7 @@
 //   - No-op (D-25): when topicTags is empty AND section is absent, body is
 //     returned unchanged.
 //
-// Design mirrors src/solve/CaseRegion.ts — see that file for the analogous
-// parse-items / splice pattern. What differs here:
+// Design uses a parse-items / splice pattern:
 //   - Items are `link` (a `- [[Target]]` line) or `free` (everything else)
 //   - New section is inserted AFTER ## Notes rather than APPENDED at EOF
 //
@@ -172,8 +171,8 @@ function renderSection(items: Item[]): string {
 
 /**
  * Splice the rendered section back into `lines` between `start` (the heading
- * line index) and `end` (exclusive; first line after the region). Copy of
- * CaseRegion.ts's splice shape, tuned for the Techniques region.
+ * line index) and `end` (exclusive; first line after the region). Standard
+ * splice shape tuned for the Techniques region.
  */
 function spliceRegion(lines: string[], start: number, end: number, rendered: string): string {
   const before = lines.slice(0, start).join('\n').replace(/\n+$/, '');
