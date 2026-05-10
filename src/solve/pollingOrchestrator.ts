@@ -38,7 +38,17 @@ export interface AbortLike {
  *  polls on plugin unload (Warning 7). Signature: `(fn, ms) => handle`. */
 export type RegisterIntervalFn = (fn: () => void, ms: number) => unknown;
 
-export type Fetcher = (params: RequestUrlParam) => Promise<RequestUrlResponse>;
+// Phase 5 Wave 2 (D-20 carve-out / Pitfall 13) — poll-step request timeout.
+// Each /check/ GET is capped at 20s so the outer 30s wall-clock cap in the
+// orchestrator (MAX_WALLCLOCK_MS below) governs the full poll sequence.
+// If we used the default 10s requestUrlFetcher timeout, legitimate slow
+// verdicts would false-positive as TimeoutErrors mid-sequence.
+export const POLL_STEP_TIMEOUT_MS = 20_000;
+
+export type Fetcher = (
+  params: RequestUrlParam,
+  opts?: { timeoutMs?: number },
+) => Promise<RequestUrlResponse>;
 
 export interface PollSubmissionArgs {
   fetcher: Fetcher;
@@ -162,12 +172,19 @@ export function pollSubmission(args: PollSubmissionArgs): Promise<TerminalCheckR
         }
         void (async () => {
           try {
-            const res = await fetcher({
-              url: `${BASE_URL}/submissions/detail/${submissionId}/check/`,
-              method: 'GET',
-              throw: false,
-              ...(headers ? { headers } : {}),
-            });
+            // D-20 carve-out: per-poll-step 20s so outer 30s wall-clock cap
+            // governs (Pitfall 13). The default 10s fetcher timeout would
+            // mis-classify slow-verdict polls as TimeoutErrors.
+            // timeoutMs: 20_000
+            const res = await fetcher(
+              {
+                url: `${BASE_URL}/submissions/detail/${submissionId}/check/`,
+                method: 'GET',
+                throw: false,
+                ...(headers ? { headers } : {}),
+              },
+              { timeoutMs: POLL_STEP_TIMEOUT_MS },
+            );
             // Abort check #3 — after await (critical per Pitfall 4: a stale
             // check response should never drive the modal forward after the
             // user clicked Cancel).

@@ -35,6 +35,7 @@ import { Notice } from 'obsidian';
 import type { App, TFile } from 'obsidian';
 import { isSessionExpired } from '../api/LeetCodeClient';
 import { logger } from '../shared/logger';
+import { showSessionExpiredNotice } from '../solve/SessionExpiredNotice';
 import {
   applyFrontmatter,
   buildFrontmatterInput,
@@ -125,6 +126,13 @@ export class NoteWriter {
    *  need to wire the hook). */
   private onNoteOpen: NoteOpenHook | null = null;
 
+  /** Phase 5 D-21 — login callback wired to the D-21 sticky session-expired
+   *  Notice's Log in button. Injected via setter (same rationale as
+   *  onNoteOpen above) so existing NoteWriter tests that use the 3-arg
+   *  constructor don't need to change. When null (the default), the Notice
+   *  still renders with a Log in button but the click is a no-op. */
+  private login: (() => void | Promise<void>) | null = null;
+
   constructor(
     private readonly app: App,
     private readonly client: NoteWriterClient,
@@ -136,6 +144,14 @@ export class NoteWriter {
    *  latest setter wins. Passing null detaches. */
   setOnNoteOpen(hook: NoteOpenHook | null): void {
     this.onNoteOpen = hook;
+  }
+
+  /** Phase 5 D-21 — install the login callback for the sticky session-expired
+   *  Notice. Production wiring in main.ts passes `() => { void this.auth.login(); }`.
+   *  Tests can omit this — the Notice's Log in button will still render but
+   *  click-through will be silent. */
+  setLogin(login: (() => void | Promise<void>) | null): void {
+    this.login = login;
   }
 
   /** Fire the on-open hook if installed. Swallows synchronous throws so a
@@ -223,8 +239,8 @@ export class NoteWriter {
         ? (err as { response?: unknown }).response
         : undefined;
       if (isSessionExpired(err) || isSessionExpired(maybeResp)) {
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "LeetCode" is a proper-noun brand name
-        new Notice('LeetCode session expired. Log in again.', 8000);
+        // D-21: sticky Notice + Log in button.
+        showSessionExpiredNotice(this.login ?? (() => undefined));
         return;
       }
       // Generic network failure (D-13): Notice + abort, no partial file.
@@ -432,8 +448,8 @@ export class NoteWriter {
         ? (err as { response?: unknown }).response
         : undefined;
       if (isSessionExpired(err) || isSessionExpired(maybeResp)) {
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "LeetCode" is a proper-noun brand name
-        new Notice('LeetCode session expired. Log in again.', 8000);
+        // D-21: sticky Notice + Log in button.
+        showSessionExpiredNotice(this.login ?? (() => undefined));
         return;
       }
       const displayTitle = cached?.title ?? slug;

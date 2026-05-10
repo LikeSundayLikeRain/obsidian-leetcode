@@ -27,6 +27,7 @@ import type { DetailCacheEntry } from '../settings/SettingsStore';
 import { setWindowTimeout } from '../shared/timers';
 import { extractFirstFencedBlock } from './codeExtractor';
 import { resolveLangSlug } from './languages';
+import { showSessionExpiredNotice } from './SessionExpiredNotice';
 import {
   pollSubmission,
   AbortError as PollAbortError,
@@ -62,6 +63,14 @@ export interface SubmissionOrchestratorDeps {
    *  NOT at orchestrator construction — so the code sent to LC is the
    *  current content at invocation per SOLVE-09. */
   getCurrentBody: () => string;
+  /** Phase 5 D-21 — login callback wired to the D-21 sticky session-expired
+   *  Notice. Optional to preserve backward compatibility with Wave 0 tests
+   *  that instantiate the orchestrator without a login callback — in that
+   *  case the Notice still renders with the Log in button, but the click
+   *  silently no-ops (tests that need to assert the login path pass a spy).
+   *  Production wiring in main.ts always supplies
+   *  `() => { void this.auth.login(); }`. */
+  login?: () => void | Promise<void>;
 }
 
 /** Build the LC-CLI-verbatim header set. Mirrors src/solve/leetcodeRest.ts so
@@ -182,8 +191,10 @@ export class SubmissionOrchestrator {
     // Gate 4 — auth cookies.
     const cookies = this.deps.settings.getAuthCookies();
     if (!cookies) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
-      new Notice('LeetCode session expired. Log in again.', 8000);
+      // D-21: sticky Notice + Log in button. deps.login is optional for
+      // back-compat with Wave 0 tests; fall back to a no-op callback.
+      const login = this.deps.login ?? (() => undefined);
+      showSessionExpiredNotice(login);
       return;
     }
 
@@ -221,8 +232,9 @@ export class SubmissionOrchestrator {
           try {
             const res = await this.deps.fetcher(submitParams);
             if (isSessionExpiredResponse(res)) {
-              // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
-              new Notice('LeetCode session expired. Log in again.', 8000);
+              // D-21: sticky Notice + Log in button.
+              const login = this.deps.login ?? (() => undefined);
+              showSessionExpiredNotice(login);
               resolve();
               return;
             }

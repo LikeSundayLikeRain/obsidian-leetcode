@@ -31,6 +31,7 @@
 import { Modal, Notice, type App, type TFile } from 'obsidian';
 import { SessionExpiredError } from '../shared/errors';
 import { classifyStatus } from '../solve/statusMap';
+import { showSessionExpiredNotice } from '../solve/SessionExpiredNotice';
 import type { SubmissionRow } from './submissionHistoryClient';
 import type { SubmissionHistoryStore } from './SubmissionHistoryStore';
 
@@ -62,6 +63,11 @@ export interface SubmissionPickerDeps {
   /** Open the detail modal for a given row. Production wires through
    *  detailForSubmission → SubmissionDetailModal; tests pass a spy. */
   openDetailModal: (row: SubmissionRow) => void;
+  /** Phase 5 D-21 — optional login callback for the sticky session-expired
+   *  Notice's Log in button. Production wiring in main.ts passes
+   *  `() => { void this.auth.login(); }`; existing Wave 2 tests that omit
+   *  this still work — the button renders but click-through is a no-op. */
+  login?: () => void | Promise<void>;
 }
 
 // Notice timeout — matches Phase 1 / Phase 3 session-expired Notice convention.
@@ -112,8 +118,8 @@ export class SubmissionPickerModal extends Modal {
       rows = await this.resolveRows();
     } catch (err) {
       if (err instanceof SessionExpiredError) {
-        // CF-04, CF-19, D-06 — locked copy, immediate close.
-        fireSessionExpiredNotice();
+        // CF-04, CF-19, D-06 + Phase 5 D-21 — sticky Notice with Log in button.
+        fireSessionExpiredNotice(this.deps.login ?? (() => undefined));
         this.safeClose();
         return;
       }
@@ -334,33 +340,49 @@ function pad2(n: number): string {
   return n < 10 ? `0${String(n)}` : String(n);
 }
 
-/** Fire the CF-04/CF-19 session-expired Notice. Copy is LOCKED per UI-SPEC
- *  §Notice strings — sentence case, terminal period. */
-function fireSessionExpiredNotice(): void {
-  // Accept both the real `Notice` class (from `obsidian`) and any Notice
-  // constructor the test suite wires onto globalThis. Production: `new Notice`
-  // from the obsidian module. Tests: globalThis.Notice spy.
+/** Fire the CF-04/CF-19/D-21 session-expired Notice. Phase 5 Plan 03 migrated
+ *  the call site to `showSessionExpiredNotice(login)` — the Notice is sticky
+ *  (timeout 0) and carries a `Log in` button (DocumentFragment form).
+ *
+ *  To preserve Phase 4 Wave 2's test-spy pattern (`globalThis.Notice` spy),
+ *  this helper delegates to `showSessionExpiredNotice` which imports `Notice`
+ *  from `'obsidian'`. Tests that previously set `globalThis.Notice = spy` now
+ *  need to intercept via the obsidian mock (the Phase 5 test reshape in
+ *  tests/solve/SessionExpiredNotice.test.ts + tests/graph/SubmissionPickerModal.test.ts
+ *  already does this). The Notice copy stays LOCKED to CF-04. */
+function fireSessionExpiredNotice(login: () => void | Promise<void> = () => undefined): void {
+  // First honor any test-spy wired onto globalThis.Notice — older tests still
+  // assert on the plain-string form. If that path throws (not a spy, or is
+  // the obsidian-mock class which doesn't match the globalThis shape) we fall
+  // back to the D-21 helper.
   // eslint-disable-next-line obsidianmd/prefer-active-doc -- test-suite spy hook
   const NoticeGlobal = (globalThis as { Notice?: unknown }).Notice;
   if (typeof NoticeGlobal === 'function') {
     try {
-      const Ctor = NoticeGlobal as unknown as new (msg: string, timeout: number) => unknown;
-      new Ctor('LeetCode session expired. Log in again.', SESSION_EXPIRED_NOTICE_MS);
+      const Ctor = NoticeGlobal as unknown as new (msg: unknown, timeout: number) => unknown;
+      // Hand the same DocumentFragment the D-21 helper would build so the
+      // spy receives a frame identical to the production helper's. Tests can
+      // introspect the fragment via the captured arg. See
+      // src/solve/SessionExpiredNotice.ts for the matching production shape.
+      // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createFragment polyfill
+      const frag = document.createDocumentFragment();
+      // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createEl polyfill on fragments
+      const copy = document.createElement('span');
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
+      copy.textContent = 'LeetCode session expired. Log in again.';
+      frag.appendChild(copy);
+      // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createEl polyfill on fragments
+      const btn = document.createElement('button');
+      btn.className = 'leetcode-notice-action mod-cta';
+      btn.textContent = 'Log in';
+      btn.addEventListener('click', () => { void Promise.resolve(login()).catch(() => undefined); });
+      frag.appendChild(btn);
+      new Ctor(frag, SESSION_EXPIRED_NOTICE_MS);
       return;
     } catch {
-      // Some test spies are plain functions (not constructors). Try calling it
-      // directly before falling through to the module-level Notice.
-      try {
-        (NoticeGlobal as (msg: string, timeout: number) => unknown)(
-          'LeetCode session expired. Log in again.',
-          SESSION_EXPIRED_NOTICE_MS,
-        );
-        return;
-      } catch {
-        /* fall through to the module-level Notice */
-      }
+      /* fall through to the module-level helper */
     }
   }
-  // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC locked copy
-  new Notice('LeetCode session expired. Log in again.', SESSION_EXPIRED_NOTICE_MS);
+  // Production path — D-21 sticky Notice with Log in button.
+  showSessionExpiredNotice(login);
 }

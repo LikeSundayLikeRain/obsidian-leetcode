@@ -51,45 +51,78 @@ describe('Phase 3 throttledRequestUrl (D-25, D-28)', () => {
     expect(res.json).toEqual({ interpret_id: 'abc' });
   });
 
-  it('throws RateLimitError with retry-after seconds on 429', async () => {
-    const { installRequestUrlFetcher, throttledRequestUrl } = await import(
-      '../../src/api/requestUrlFetcher'
-    );
-    const { RateLimitError } = await import('../../src/shared/errors');
-    installRequestUrlFetcher();
-    requestUrlMock.mockResolvedValue({
-      status: 429,
-      text: '',
-      json: null,
-      headers: { 'retry-after': '7' },
-    });
-    await expect(
-      throttledRequestUrl({ url: 'https://leetcode.com/submit/', method: 'POST' } as never),
-    ).rejects.toBeInstanceOf(RateLimitError);
+  it('throws RateLimitError with retry-after seconds on 429 (after D-18 single retry)', async () => {
+    // Phase 5 D-18 shifted semantics: the wrapper now retries ONCE after a 5s
+    // cooldown on 429, then re-throws RateLimitError on the second failure.
+    // Use fake timers so the 5s delay does not blow the 5s test timeout, and
+    // assert the second-attempt retryAfterMs matches the retry-after header.
+    vi.useFakeTimers();
     try {
-      await throttledRequestUrl({ url: 'https://leetcode.com/submit/', method: 'POST' } as never);
-    } catch (err) {
-      if (err instanceof RateLimitError) {
-        expect(err.retryAfterMs).toBe(7000);
+      const { installRequestUrlFetcher, throttledRequestUrl } = await import(
+        '../../src/api/requestUrlFetcher'
+      );
+      const { RateLimitError } = await import('../../src/shared/errors');
+      installRequestUrlFetcher();
+      requestUrlMock.mockResolvedValue({
+        status: 429,
+        text: '',
+        json: null,
+        headers: { 'retry-after': '7' },
+      });
+      const pending = throttledRequestUrl(
+        { url: 'https://leetcode.com/submit/', method: 'POST' } as never,
+      ).then(
+        (v) => ({ ok: true as const, value: v }),
+        (e: unknown) => ({ ok: false as const, error: e as Error }),
+      );
+      // Advance past the 5s D-18 retry cooldown so the wrapper issues the
+      // second attempt, still 429 → RateLimitError.
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await pending;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(RateLimitError);
+        if (result.error instanceof RateLimitError) {
+          expect(result.error.retryAfterMs).toBe(7000);
+        }
       }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
-  it('falls back to 10_000 ms if retry-after missing', async () => {
-    const { installRequestUrlFetcher, throttledRequestUrl } = await import(
-      '../../src/api/requestUrlFetcher'
-    );
-    const { RateLimitError } = await import('../../src/shared/errors');
-    installRequestUrlFetcher();
-    requestUrlMock.mockResolvedValue({
-      status: 429,
-      text: '',
-      json: null,
-      headers: {},
-    });
-    await expect(
-      throttledRequestUrl({ url: 'https://leetcode.com/submit/', method: 'POST' } as never),
-    ).rejects.toMatchObject({ retryAfterMs: 10_000 });
+  it('falls back to 10_000 ms if retry-after missing (after D-18 single retry)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { installRequestUrlFetcher, throttledRequestUrl } = await import(
+        '../../src/api/requestUrlFetcher'
+      );
+      const { RateLimitError } = await import('../../src/shared/errors');
+      installRequestUrlFetcher();
+      requestUrlMock.mockResolvedValue({
+        status: 429,
+        text: '',
+        json: null,
+        headers: {},
+      });
+      const pending = throttledRequestUrl(
+        { url: 'https://leetcode.com/submit/', method: 'POST' } as never,
+      ).then(
+        (v) => ({ ok: true as const, value: v }),
+        (e: unknown) => ({ ok: false as const, error: e as Error }),
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await pending;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(RateLimitError);
+        if (result.error instanceof RateLimitError) {
+          expect(result.error.retryAfterMs).toBe(10_000);
+        }
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('passes throw:false to requestUrl (caller sees all status codes)', async () => {
