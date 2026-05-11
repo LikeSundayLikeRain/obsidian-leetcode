@@ -203,7 +203,8 @@ export class ProblemListService {
    *   i.e., row is rejected only if all its topics are in `values` — intersection
    *   is empty. Matches LC's "problems tagged with anything other than X".)
    * - question-id / acceptance range: inclusive on both ends; null = unbounded
-   * - premium: single value 'premium' / 'non-premium' / null (null = no filter)
+   * - premium: multi-value ['premium', 'non-premium', …] (Phase 5.2 D-03);
+   *   empty values = no filter, both values selected = effectively no-op
    */
   applyCompoundFilter(idx: IndexedProblem[], f: CompoundFilter | null): IndexedProblem[] {
     if (!f || f.rules.length === 0) return idx;
@@ -257,9 +258,19 @@ function evaluateRule(p: IndexedProblem, r: FilterRule): boolean | undefined {
       return true;
     }
     case 'premium': {
-      if (r.value === null) return undefined;
-      const wantPaid = r.value === 'premium';
-      return p.paid === wantPaid;
+      // Phase 5.2 D-03 — multi-value semantics, mirrors status/difficulty/topics.
+      // values=[] is a no-op (returns undefined → skip rule).
+      // values=['premium'] → only paid rows pass.
+      // values=['non-premium'] → only free rows pass.
+      // values=['premium','non-premium'] → both match (effectively a no-op
+      // from the user's perspective; evaluator still returns true per row).
+      if (r.values.length === 0) return undefined;
+      const rowVal = p.paid ? 'premium' : 'non-premium';
+      return r.values.includes(rowVal);
     }
   }
 }
+// Phase 5.2 D-03 — exported so tests can exercise the evaluator directly
+// without constructing a full CompoundFilter. See
+// tests/browse/ProblemListService.premium.test.ts Wave 0 shell.
+export { evaluateRule };

@@ -22,6 +22,20 @@ import {
 
 export const BROWSER_VIEW_TYPE = 'leetcode-browser';
 
+/** Phase 5.2 D-04 — compute the user-visible filter-badge count from a
+ *  compound filter. Rules carrying the `__autoDefault: true` marker (stamped
+ *  on the first-open premium default for non-Premium users) are excluded, so
+ *  a fresh install shows no badge even though a filter is technically active.
+ *  Exported so unit tests can assert the contract directly without
+ *  instantiating the full ItemView (see
+ *  tests/browse/ProblemBrowserView.badge.test.ts Wave 0 shell). */
+export function computeFilterBadgeCount(f: CompoundFilter | null): number {
+  if (!f) return 0;
+  return f.rules.filter(
+    (r) => !(r as FilterRule & { __autoDefault?: boolean }).__autoDefault,
+  ).length;
+}
+
 const SEARCH_DEBOUNCE_MS = 150;
 const THROTTLE_FOOTER_DELAY_MS = 2000;   // D-13: only surface indicator if queue > 0 for > 2s
 const SESSION_EXPIRED_NOTICE_MS = 8000;  // UI-SPEC Notice table
@@ -64,9 +78,22 @@ export class ProblemBrowserView extends ItemView {
     // Premium content") so the list isn't cluttered with locked problems.
     this.filter = this.plugin.settings.getFilter();
     if (this.filter === null && this.plugin.settings.getIsPremium() === false) {
+      // Phase 5.2 D-03 + D-04 — multi-value premium shape (values: ['non-premium'])
+      // plus the `__autoDefault: true` marker so updateFilterBadge excludes
+      // this rule from the user-visible count on fresh install. The marker is
+      // an extra property on the rule object; isValidFilterRule ignores
+      // unknown fields so it survives JSON round-trip through data.json. Once
+      // the user opens the filter modal and hits Apply, stripAutoDefaults
+      // (FilterModal.ts) removes the marker and subsequent loads count the
+      // rule normally.
       this.filter = {
         match: 'all',
-        rules: [{ field: 'premium', op: 'is', value: 'non-premium' }],
+        rules: [{
+          field: 'premium',
+          op: 'is',
+          values: ['non-premium'],
+          __autoDefault: true,
+        } as FilterRule & { __autoDefault?: boolean }],
       };
       await this.plugin.settings.setFilter(this.filter);
     }
@@ -382,10 +409,15 @@ export class ProblemBrowserView extends ItemView {
   }
 
   /** Refresh the small numeric badge on the filter button to reflect the
-   *  count of currently-active rules. Hidden when no rules. */
+   *  count of currently-active user rules. Hidden when no user rules.
+   *
+   *  Phase 5.2 D-04 — auto-applied default rules (e.g. the `premium: non-premium`
+   *  rule stamped on first open for non-Premium users) carry a
+   *  `__autoDefault: true` marker and are excluded from the count, so a fresh
+   *  install shows no badge even though a filter is technically active. */
   private updateFilterBadge(): void {
     if (!this.filterBadgeEl) return;
-    const count = this.filter?.rules.length ?? 0;
+    const count = computeFilterBadgeCount(this.filter);
     if (count === 0) {
       this.filterBadgeEl.removeClass('is-visible');
       this.filterBadgeEl.setText('');
