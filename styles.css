@@ -745,7 +745,10 @@
   outline-offset: -2px;
 }
 
-/* Verdict chip — coloured pill. Kind modifiers mirror Phase 3's palette. */
+/* Verdict chip — coloured pill. Kind modifiers mirror Phase 3's palette.   */
+/* Phase 5.2 D-09 — base rule bump for contrast: weight 600→700,            */
+/* min-width 60px, center-justified so full labels render without           */
+/* truncation across light + dark themes.                                   */
 .leetcode-submissions .leetcode-submissions-chip {
   display: inline-flex;
   align-items: center;
@@ -753,27 +756,34 @@
   padding: 0 8px;
   border-radius: 10px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   background: var(--background-modifier-border);
   color: var(--text-muted);
   white-space: nowrap;
+  min-width: 60px;
+  justify-content: center;
 }
+
+/* Phase 5.2 D-09 — AC contrast fix: darker green pill, text-on-accent text. */
 .leetcode-submissions .leetcode-submissions-chip--ac {
-  background: var(--background-modifier-success);
-  color: var(--text-success);
+  background: color-mix(in srgb, var(--background-modifier-success) 80%, var(--color-green, #22c55e) 20%);
+  color: var(--text-on-accent, #fff);
 }
+
+/* Phase 5.2 D-09 — WA/TLE/MLE/OLE/RE contrast fix: darker red pill, white  */
+/* text. CE deliberately excluded here — its Phase 5 D-29 orange override   */
+/* MUST appear AFTER this rule so the cascade resolves CE to orange.        */
 .leetcode-submissions .leetcode-submissions-chip--wa,
 .leetcode-submissions .leetcode-submissions-chip--tle,
 .leetcode-submissions .leetcode-submissions-chip--mle,
 .leetcode-submissions .leetcode-submissions-chip--ole,
-.leetcode-submissions .leetcode-submissions-chip--re,
-.leetcode-submissions .leetcode-submissions-chip--ce {
-  background: var(--background-modifier-error);
-  color: var(--text-error);
+.leetcode-submissions .leetcode-submissions-chip--re {
+  background: color-mix(in srgb, var(--background-modifier-error) 80%, var(--color-red, #ef4444) 20%);
+  color: var(--text-on-accent, #fff);
 }
 /* ── Phase 5 — CE verdict chip orange override (D-29) ──────────────── */
-/* Must appear AFTER the shared --wa/--tle/--mle/--ole/--re/--ce error  */
-/* rule above so the cascade wins.                                      */
+/* Must appear AFTER the shared --wa/--tle/--mle/--ole/--re error rule  */
+/* above so the cascade wins. UNCHANGED by Phase 5.2 D-09.              */
 .leetcode-submissions .leetcode-submissions-chip--ce {
   background: color-mix(in srgb, var(--background-secondary) 80%, var(--color-orange, #e67e22) 20%);
   color: var(--color-orange, #e67e22);
