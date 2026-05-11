@@ -197,10 +197,11 @@ export function buildCodeFenceLanguageExtension(plugin: Plugin): Extension {
       constructor(private readonly view: EditorView) {
         // First-render: if the caret is already inside a fence on mount
         // (e.g. user reopens a note with the cursor saved inside the fence),
-        // kick a swap so the language pack installs immediately. async via
-        // void — never inline-dispatch from a view-plugin lifecycle method.
+        // kick a swap so the language pack installs immediately. swap()
+        // self-defers via setTimeout(0); never inline-dispatch from a
+        // view-plugin lifecycle method.
         const s = view.state.field(fenceStateField);
-        if (s.desiredPack !== 'none') void this.swap(s);
+        if (s.desiredPack !== 'none') this.swap(s);
       }
 
       update(vu: ViewUpdate): void {
@@ -212,31 +213,40 @@ export function buildCodeFenceLanguageExtension(plugin: Plugin): Extension {
         // no-op" prevents redundant compartment reconfigures that would
         // otherwise re-highlight the entire fence on every keystroke.
         if (prev.desiredPack !== next.desiredPack) {
-          void this.swap(next);
+          this.swap(next);
         }
       }
 
-      private async swap(target: FenceState): Promise<void> {
-        let ext: Extension = [];
-        if (target.desiredPack === 'fallback') {
-          ext = whitespaceCopyIndentExtension;
-        } else if (target.desiredPack !== 'none') {
-          try {
-            ext = await getLanguagePack(target.desiredPack);
-          } catch {
-            // CF-19 silent posture: pack-load failures fall back to
-            // whitespace-copy without a Notice. Same discipline as 5.2's
-            // python3Highlighter Prism alias.
+      private swap(target: FenceState): void {
+        // RESEARCH Pitfall 5 — `view.dispatch()` from inside `update()` (or any
+        // tick still flagged "update in progress") throws
+        // "Calls to EditorView.update are not allowed while an update is in
+        // progress". `setTimeout(..., 0)` defers the resolve+dispatch chain
+        // to the next macrotask, escaping the current update tick. This is
+        // the canonical CM6 pattern for compartment swaps driven from a
+        // ViewPlugin lifecycle.
+        setTimeout(async () => {
+          let ext: Extension = [];
+          if (target.desiredPack === 'fallback') {
             ext = whitespaceCopyIndentExtension;
+          } else if (target.desiredPack !== 'none') {
+            try {
+              ext = await getLanguagePack(target.desiredPack);
+            } catch {
+              // CF-19 silent posture: pack-load failures fall back to
+              // whitespace-copy without a Notice. Same discipline as 5.2's
+              // python3Highlighter Prism alias.
+              ext = whitespaceCopyIndentExtension;
+            }
           }
-        }
-        // RESEARCH Pitfall 3 — view may have been destroyed during async
-        // pack load (user closed the note). Dispatching on a destroyed
-        // view throws; guard before dispatch.
-        if ((this.view as EditorView & { destroyed?: boolean }).destroyed) return;
-        this.view.dispatch({
-          effects: languageCompartment.reconfigure(ext),
-        });
+          // RESEARCH Pitfall 3 — view may have been destroyed during the
+          // deferred chain (user closed the note). Dispatching on a
+          // destroyed view throws; guard before dispatch.
+          if ((this.view as EditorView & { destroyed?: boolean }).destroyed) return;
+          this.view.dispatch({
+            effects: languageCompartment.reconfigure(ext),
+          });
+        }, 0);
       }
     },
   );
