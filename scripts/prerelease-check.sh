@@ -26,7 +26,7 @@
 #   9. README.md present; contains "leetcode.com"; >=4 image links
 #  10. npm run lint exit 0
 #  11. npm test -- --run exit 0
-#  12. main.js <= 200 kB (warn at 100 kB)
+#  12. main.js <= 700 kB (Phase 5.3 D-09; delegated to scripts/check-bundle-size.sh; warn at 600 kB)
 #
 set -eo pipefail
 
@@ -235,22 +235,13 @@ fi
 ok "gate 11 — npm test clean"
 
 # ---------------------------------------------------------------------------
-# Gate 12: main.js <= 200 kB (warn at 100 kB)
+# Gate 12: main.js <= 700 kB (Phase 5.3 D-09 bundle cap; delegated to
+# scripts/check-bundle-size.sh so the ceiling is a single source of truth).
 # ---------------------------------------------------------------------------
-if [ ! -f main.js ]; then
-  fail "main.js missing — run 'npm run build' before release"
+if ! bash scripts/check-bundle-size.sh; then
+  fail "check-bundle-size.sh failed (see output above)"
 fi
-MAIN_BYTES=$(wc -c < main.js | tr -d ' ')
-MAIN_KB=$((MAIN_BYTES / 1024))
-LIMIT_BYTES=$((200 * 1024))
-WARN_BYTES=$((100 * 1024))
-if [ "$MAIN_BYTES" -gt "$LIMIT_BYTES" ]; then
-  fail "main.js is ${MAIN_KB} kB (>200 kB ceiling)"
-fi
-if [ "$MAIN_BYTES" -gt "$WARN_BYTES" ]; then
-  echo "WARN: main.js is ${MAIN_KB} kB (>100 kB soft warning; ceiling 200 kB)"
-fi
-ok "gate 12 — main.js ${MAIN_KB} kB within budget"
+ok "gate 12 — main.js within 700 KB budget"
 
 echo ""
 echo "PRERELEASE OK: all 12 gates passed."
