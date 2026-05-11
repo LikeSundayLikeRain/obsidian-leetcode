@@ -17,6 +17,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { makeFileOpenHandler } from '../../src/main/fileOpenHook';
+import type { DetailCacheEntry } from '../../src/settings/SettingsStore';
 
 interface FakeFile {
   path: string;
@@ -34,10 +35,16 @@ function makeApp(fmMap: Record<string, Record<string, unknown>> = {}) {
   } as unknown as import('obsidian').App;
 }
 
-function makeSettings(detail: unknown = null, defaultLang = 'python3') {
+function makeSettings(
+  detail: Partial<DetailCacheEntry> | null = null,
+  defaultLang = 'python3',
+) {
   return {
-    getProblemDetail: vi.fn((_slug: string) => detail),
-    getDefaultLanguage: vi.fn(() => defaultLang),
+    getProblemDetail: vi.fn(
+      (_slug: string): DetailCacheEntry | null =>
+        detail as DetailCacheEntry | null,
+    ),
+    getDefaultLanguage: vi.fn((): string => defaultLang),
   };
 }
 
@@ -138,7 +145,7 @@ describe('file-open retrofit hook (D-06)', () => {
   it('passes cached detail from settings.getProblemDetail through to retrofit', async () => {
     const retrofit = vi.fn(async () => undefined);
     const cached = {
-      codeSnippets: [{ langSlug: 'python3', code: 'starter' }],
+      codeSnippets: [{ lang: "Python3", langSlug: "python3", code: "starter" }],
     };
     const app = makeApp({
       'LeetCode/1-two-sum.md': { 'lc-slug': 'two-sum' },
@@ -150,7 +157,7 @@ describe('file-open retrofit hook (D-06)', () => {
     await Promise.resolve();
 
     expect(settings.getProblemDetail).toHaveBeenCalledWith('two-sum');
-    const call = retrofit.mock.calls[0]!;
+    const call = retrofit.mock.calls[0] as unknown as [unknown, unknown, unknown, unknown];
     expect(call[2]).toBe(cached);
   });
 });

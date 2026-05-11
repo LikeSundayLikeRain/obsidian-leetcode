@@ -20,15 +20,22 @@
 import { describe, it, expect, vi } from 'vitest';
 import { makeMockVaultApp } from '../helpers/mock-vault';
 import { resetCodeWithConfirm } from '../../src/solve/resetCodeWithConfirm';
+import type { DetailCacheEntry } from '../../src/settings/SettingsStore';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const REPO_ROOT = process.cwd();
 
-function makeSettings(detail: unknown = null, defaultLang = 'python3') {
+function makeSettings(
+  detail: Partial<DetailCacheEntry> | null = null,
+  defaultLang = 'python3',
+) {
   return {
-    getProblemDetail: vi.fn((_slug: string) => detail),
-    getDefaultLanguage: vi.fn(() => defaultLang),
+    getProblemDetail: vi.fn(
+      (_slug: string): DetailCacheEntry | null =>
+        detail as DetailCacheEntry | null,
+    ),
+    getDefaultLanguage: vi.fn((): string => defaultLang),
   };
 }
 
@@ -38,7 +45,7 @@ describe('resetCodeWithConfirm helper (D-07)', () => {
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
     const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
     const settings = makeSettings({
-      codeSnippets: [{ langSlug: 'python3', code: 'class S: pass' }],
+      codeSnippets: [{ lang: "Python3", langSlug: "python3", code: "class S: pass" }],
     });
     const confirm = vi.fn(async () => false); // user cancels
 
@@ -65,7 +72,7 @@ describe('resetCodeWithConfirm helper (D-07)', () => {
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
     const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
     const settings = makeSettings({
-      codeSnippets: [{ langSlug: 'python3', code: 'class S: pass' }],
+      codeSnippets: [{ lang: "Python3", langSlug: "python3", code: "class S: pass" }],
     });
     const confirm = vi.fn(async () => true);
 
@@ -92,7 +99,7 @@ describe('resetCodeWithConfirm helper (D-07)', () => {
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
     const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
     const settings = makeSettings({
-      codeSnippets: [{ langSlug: 'python3', code: 'class S: pass' }],
+      codeSnippets: [{ lang: "Python3", langSlug: "python3", code: "class S: pass" }],
     });
     const confirm = vi.fn(async () => true);
 
