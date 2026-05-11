@@ -30,7 +30,7 @@ const PYTHON3_HIGHLIGHTER_PATH = '../../src/main/python3Highlighter';
 
 describe('registerPython3Highlighter (RED until 05.2-05)', () => {
   // D-13 — rewriting `code.language-python3` to `code.language-python`.
-  it.skip('D-13: rewrites language-python3 → language-python on rendered code (TODO(05.2-05))', async () => {
+  it('D-13: rewrites language-python3 → language-python on rendered code', async () => {
     const mod = (await import(/* @vite-ignore */ PYTHON3_HIGHLIGHTER_PATH)) as unknown as {
       registerPython3Highlighter: (plugin: unknown) => void;
     };
@@ -58,7 +58,7 @@ describe('registerPython3Highlighter (RED until 05.2-05)', () => {
   });
 
   // D-13 — java / cpp untouched. Only `language-python3` should be rewritten.
-  it.skip('D-13: leaves language-java / language-cpp untouched (TODO(05.2-05))', async () => {
+  it('D-13: leaves language-java / language-cpp untouched', async () => {
     const mod = (await import(/* @vite-ignore */ PYTHON3_HIGHLIGHTER_PATH)) as unknown as {
       registerPython3Highlighter: (plugin: unknown) => void;
     };
