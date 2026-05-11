@@ -11,13 +11,32 @@ import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type LeetCodePlugin from '../main';
 import type { AuthCookies } from '../auth/types';
 
-// D-10: dropdown map. Key = LC language slug (used in submissions later). Value = UI label.
-const LANGUAGE_OPTIONS: Record<string, string> = {
-  python3: 'Python',
-  java: 'Java',
-  cpp: 'C++',
+// Phase 5.2 D-12 — mirrors LC's submission-language dropdown as of 2026-05-11.
+// Keys = LC langSlug (the value LC accepts in /interpret_solution/ + /submit/ bodies);
+// values = UI display labels. SQL dialects excluded — v1 scope is algorithm problems.
+// Insertion order matches LC's own dropdown order and drives the rendered order
+// because `Object.entries` preserves insertion order for string keys.
+// Exported so tests/settings/SettingsTab.test.ts can pin the exact key set.
+export const LANGUAGE_OPTIONS: Record<string, string> = {
+  python3:    'Python3',
+  python:     'Python',
+  java:       'Java',
+  cpp:        'C++',
+  c:          'C',
+  csharp:     'C#',
   javascript: 'JavaScript',
   typescript: 'TypeScript',
+  php:        'PHP',
+  swift:      'Swift',
+  kotlin:     'Kotlin',
+  dart:       'Dart',
+  golang:     'Go',
+  ruby:       'Ruby',
+  scala:      'Scala',
+  rust:       'Rust',
+  racket:     'Racket',
+  erlang:     'Erlang',
+  elixir:     'Elixir',
 };
 
 export class LeetCodeSettingTab extends PluginSettingTab {
