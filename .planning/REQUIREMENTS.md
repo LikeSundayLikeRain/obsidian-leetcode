@@ -73,6 +73,8 @@ v1 scope targets desktop Obsidian (macOS/Windows/Linux) with leetcode.com only. 
 - [ ] **POLISH-05**: Repository has a LICENSE file (MIT or similar OSS license)
 - [ ] **POLISH-06**: Plugin submitted as a PR to `obsidianmd/obsidian-releases` following community plugin guidelines
 - [x] **POLISH-07**: Run UX rework — replace `Run code (sample)` + `Run code (custom input)` with a single unified `Run` command. Tabs pre-fill from `exampleTestcases`; custom cases are ephemeral in-memory by default; `Pin to note` is an opt-in affordance that persists a single case under `## Custom Tests` without disturbing inter-case text. Existing persisted cases load as pinned tabs on modal re-open. Replaces deferred Phase 3 UAT Tests 14/15
+- [ ] **POLISH-08**: Pre-ship UX polish batch — settings layout (merge status + logout row), filter UX (remove language field, multi-value premium, fix badge zero-count bug), starter-code auto-insert + Reset command (replaces Insert starter code), Past Submissions chip labels for AC/WA, remove Copy-to-Code overwrite confirmation, default language list mirrors LC, python3 syntax highlighting
+- [ ] **POLISH-09**: Language-aware editor — IDE-grade auto-indentation + bracket handling in `## Code` fences via CM6 language packs. Supports LC's core language set (Python/python3, Java, C++, JS, TS, Go, Rust, C, C#). Scoped to `lc-slug` notes in Live Preview; unsupported languages fall back to whitespace-copy
 
 ## v2 Requirements
 
@@ -165,11 +167,13 @@ Populated during roadmap creation.
 | POLISH-04 | Phase 5 | Pending |
 | POLISH-05 | Phase 5 | Pending |
 | POLISH-06 | Phase 5 | Pending |
-| POLISH-07 | Phase 5 | Complete |
+| POLISH-07 | Phase 5.1 | Complete |
+| POLISH-08 | Phase 5.2 | Pending |
+| POLISH-09 | Phase 5.3 | Pending |
 
 **Coverage:**
-- v1 requirements: 45 total
-- Mapped to phases: 45 (Phase 1: 16, Phase 2: 9, Phase 3: 9, Phase 4: 5, Phase 5: 7)
+- v1 requirements: 47 total
+- Mapped to phases: 47 (Phase 1: 16, Phase 2: 9, Phase 3: 9, Phase 4: 5, Phase 5: 6, Phase 5.1: 1, Phase 5.2: 1, Phase 5.3: 1)
 - Unmapped: 0
 
 ---

@@ -193,3 +193,39 @@ Plans:
 
 **Wave 2 — D-10 LOCKED live-smoke checkpoint** *(blocked on Wave 1; autonomous: false)*
 - [x] 05.1-03-PLAN.md — Human-verified live-smoke in dev vault: 12-item checklist covering Live Preview + Source Mode + Reading-Mode regression + light/dark themes + gate correctness + idempotency + click dispatch. Contingent `styles.css` tweak (`.cm-editor .leetcode-code-actions { margin-top: 8px }`) runs ONLY if live smoke surfaces misalignment — D-10, D-11, D-12
+
+### Phase 5.2: Pre-ship UX Polish (INSERTED)
+**Goal**: Ship a batch of small UX fixes and polish items surfaced during Phase 5.1 live smoke, so the 0.1.0 release presents a coherent, self-consistent user experience out of the box
+**Depends on**: Phase 5.1 (inherits the shipped Edit-mode affordance + Reading-mode buttons)
+**Requirements**: POLISH-08 (INSERTED — batch UX polish pre-release)
+**Success Criteria** (what must be TRUE):
+  1. Settings: Status row and Login/Logout button merged into one row — button sits on the right side of the status block
+  2. Problem filter: `language` field removed from FilterModal field options (not applicable yet — filter UI stays, language filtering deferred to a future phase)
+  3. Problem filter: `premium` field accepts multiple values (`non-premium`, `premium`, or both) instead of a single-value toggle
+  4. Filter badge on ProblemBrowserView reflects actual rule count (0 for auto-populated defaults that shouldn't count; today it incorrectly shows "3")
+  5. `## Code` fence auto-insertion: when a user opens an `lc-slug` note without a `## Code` section, the plugin auto-inserts the starter template silently. The existing "Insert starter code" command is replaced by a "Reset code" command that restores the starter template on demand
+  6. Past Submissions picker: AC chip shows "Accepted" text label; WA chip shows "Wrong Answer" label — both currently render as empty pills
+  7. Copy-to-Code: overwrite confirmation modal removed — Copy overwrites the `## Code` fence silently (matches reading-mode Run/Submit buttons which already operate silently)
+  8. Default language list in Settings matches LeetCode's official language list (add/remove languages to exactly mirror LC's submission language dropdown)
+  9. `python3` language tag in code fences produces proper syntax highlighting (currently python3-tagged blocks show unhighlighted plain text)
+**Plans**: TBD (run /gsd-plan-phase 5.2 to break down)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 5.2 to break down)
+
+### Phase 5.3: Language-Aware Editor (INSERTED)
+**Goal**: Fenced `## Code` blocks in Edit Mode get IDE-grade auto-indentation, bracket/paren handling, and language-aware editing behavior, so typing a multi-line solution feels like a real editor instead of a raw text field
+**Depends on**: Phase 5.1 (CM6 editor extension infrastructure), Phase 5.2 (python3 highlighting support — language-pack wiring is the foundation 5.3 builds on)
+**Requirements**: POLISH-09 (INSERTED — auto-indentation + language support for code fences)
+**Success Criteria** (what must be TRUE):
+  1. Pressing Enter inside a `## Code` fence on an `lc-slug` note triggers language-aware indentation: new line inherits the previous line's leading whitespace and adds/removes a level based on the language's grammar rules (Java/C++/JS: `{` bumps in, `}` dedents; Python: `:` bumps in, `else`/`elif`/`except`/`finally` dedent)
+  2. Supported languages match LC's core set: Python (and python3), Java, C++, JavaScript, TypeScript, Go, Rust, C, C# (exact list locked during discuss-phase)
+  3. Unsupported languages fall back cleanly to whitespace-copy (no crash, no disabled editor, just matches previous line's indentation without grammar awareness)
+  4. Auto-indentation only fires inside the `## Code` fence on `lc-slug` notes — never in prose, never in other fences (parity with Phase 5.1's scoping)
+  5. Reading Mode + Source Mode behavior unchanged — indentation applies only in Live Preview where the CM6 editor is active (same surface as Phase 5.1)
+  6. Bundle size impact documented and accepted; language packs are lazy-loaded or conditionally bundled to keep the baseline install under a reasonable cap (exact number locked during discuss-phase)
+  7. No regression in Phase 5.1 edit-mode Run/Submit buttons or Phase 5 reading-mode buttons
+**Plans**: TBD (run /gsd-plan-phase 5.3 to break down)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 5.3 to break down)
