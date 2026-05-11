@@ -72,7 +72,7 @@ v1 scope targets desktop Obsidian (macOS/Windows/Linux) with leetcode.com only. 
 - [ ] **POLISH-04**: README includes install instructions, screenshots, usage walkthrough, and network usage disclosure
 - [ ] **POLISH-05**: Repository has a LICENSE file (MIT or similar OSS license)
 - [ ] **POLISH-06**: Plugin submitted as a PR to `obsidianmd/obsidian-releases` following community plugin guidelines
-- [ ] **POLISH-07**: Run UX rework — replace `Run code (sample)` + `Run code (custom input)` with a single unified `Run` command. Tabs pre-fill from `exampleTestcases`; custom cases are ephemeral in-memory by default; `Pin to note` is an opt-in affordance that persists a single case under `## Custom Tests` without disturbing inter-case text. Existing persisted cases load as pinned tabs on modal re-open. Replaces deferred Phase 3 UAT Tests 14/15
+- [x] **POLISH-07**: Run UX rework — replace `Run code (sample)` + `Run code (custom input)` with a single unified `Run` command. Tabs pre-fill from `exampleTestcases`; custom cases are ephemeral in-memory by default; `Pin to note` is an opt-in affordance that persists a single case under `## Custom Tests` without disturbing inter-case text. Existing persisted cases load as pinned tabs on modal re-open. Replaces deferred Phase 3 UAT Tests 14/15
 
 ## v2 Requirements
 
@@ -165,7 +165,7 @@ Populated during roadmap creation.
 | POLISH-04 | Phase 5 | Pending |
 | POLISH-05 | Phase 5 | Pending |
 | POLISH-06 | Phase 5 | Pending |
-| POLISH-07 | Phase 5 | Pending |
+| POLISH-07 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 45 total
