@@ -95,6 +95,11 @@ export const MarkdownRenderer = {
 // resolution doesn't fail when the implementation file is imported under vi.mock.
 // Actual field behavior is exercised only in integration tests that construct a real
 // EditorView; pure unit tests of findCodeFence stub state.doc directly.
+// @codemirror/state is a transitive peer of `obsidian@1.12.3` (resolvable at runtime
+// via node_modules); we don't declare it in package.json because esbuild marks it
+// external and Obsidian supplies it at runtime. The lint rule reports this as a
+// false-positive for the transitive-peer case.
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { StateField } from '@codemirror/state';
 
 export const editorInfoField = StateField.define<{ file: { path: string } | null }>({
