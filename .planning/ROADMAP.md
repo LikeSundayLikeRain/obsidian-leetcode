@@ -183,7 +183,13 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
   4. No layout corruption in either edit mode: no inserted whitespace, no duplicate widgets, no shifted heading positions, no large blank rectangles between existing blocks
   5. Reading Mode buttons from 05-05 continue to work unchanged — no regression
   6. Renders correctly in both light and dark themes
-**Plans**: TBD (run /gsd-plan-phase 5.1 to break down)
-
+**Plans**: 3 plans
 Plans:
-- [ ] TBD (run /gsd-plan-phase 5.1 to break down)
+**Wave 0 — Test scaffolding** *(RED-state unit tests; precondition for Wave 1)*
+- [ ] 05.1-01-PLAN.md — `tests/main/codeActionsEditorExtension.test.ts` (≥10 RED unit tests: findCodeFence pure-function cases, buildDecorations lc-slug gate + fence targeting, CodeActionsWidget.eq() idempotency, click-dispatch to runFromActive/submitFromActive) + `tests/helpers/obsidian-stub.ts` CM6 additions (`editorInfoField`, `editorLivePreviewField`)
+
+**Wave 1 — Implementation** *(blocked on Wave 0)*
+- [ ] 05.1-02-PLAN.md — `src/main/codeActionsEditorExtension.ts` (CM6 `StateField<DecorationSet>` with `Decoration.widget({ side: 1 })` — NEVER `block: true`; regex-over-`state.doc` fence detection; `editorInfoField` + `metadataCache` frontmatter gate; `WidgetType.eq()` idempotency; reuses `buildCodeBlockButtonRow` helper verbatim) + `main.ts` onload Step 6f registration — D-01..D-09
+
+**Wave 2 — D-10 LOCKED live-smoke checkpoint** *(blocked on Wave 1; autonomous: false)*
+- [ ] 05.1-03-PLAN.md — Human-verified live-smoke in dev vault: 12-item checklist covering Live Preview + Source Mode + Reading-Mode regression + light/dark themes + gate correctness + idempotency + click dispatch. Contingent `styles.css` tweak (`.cm-editor .leetcode-code-actions { margin-top: 8px }`) runs ONLY if live smoke surfaces misalignment — D-10, D-11, D-12
