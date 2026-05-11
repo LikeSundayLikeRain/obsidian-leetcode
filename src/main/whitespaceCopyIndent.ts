@@ -16,7 +16,6 @@
 // peer dep. Marked external in esbuild.config.mjs (D-08).
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { indentService } from '@codemirror/language';
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import type { Extension } from '@codemirror/state';
 
 /**
