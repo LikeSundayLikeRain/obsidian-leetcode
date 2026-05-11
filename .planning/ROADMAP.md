@@ -153,7 +153,7 @@ Plans:
 - [x] 05-05-PLAN.md — `CodeBlockActionProcessor.ts` (MarkdownPostProcessor with lc-slug gate + idempotent button injection) + SubmissionDetailModal MarkdownRenderer.render + Component lifecycle rewrite + CSS for `.leetcode-code-actions` + CE chip orange override + light-mode focus ring — D-11, D-12, D-13, D-29, D-30, D-31
 
 **Wave 5a — README + LICENSE + prerelease script** *(blocked on Waves 2, 3, 4, 5)*
-- [ ] 05-06-PLAN.md — LICENSE (MIT) + `scripts/prerelease-check.sh` (12 mechanical gates) + README with 10 D-25 sections + 4 screenshot checkpoint (human-verify) + `versions.json` correction to `1.10.0` — D-23, D-24, D-25, D-26, D-27
+- [x] 05-06-PLAN.md — LICENSE (MIT) + `scripts/prerelease-check.sh` (12 mechanical gates) + README with 10 D-25 sections + 4 screenshot checkpoint (human-verify) + `versions.json` correction to `1.10.0` — D-23, D-24, D-25, D-26, D-27
 
 **Wave 5b — Community-store submission** *(blocked on Plan 06)*
 - [ ] 05-07-PLAN.md — Version-triple consistency verify + production build + prerelease re-run + `0.1.0` tag push + GitHub release checkpoint (main.js + manifest.json + styles.css assets) + community-plugin PR checkpoint (`Add plugin: LeetCode` PR to `obsidianmd/obsidian-releases`) — D-23, D-28, POLISH-06
