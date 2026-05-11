@@ -23,17 +23,28 @@ import {
 export const BROWSER_VIEW_TYPE = 'leetcode-browser';
 
 /** Phase 5.2 D-04 — compute the user-visible filter-badge count from a
- *  compound filter. Rules carrying the `__autoDefault: true` marker (stamped
- *  on the first-open premium default for non-Premium users) are excluded, so
- *  a fresh install shows no badge even though a filter is technically active.
+ *  compound filter. A rule counts toward the badge only when it is both:
+ *   1. NOT carrying the `__autoDefault: true` marker (stamped on the
+ *      first-open premium default for non-Premium users), AND
+ *   2. has at least one value selected (`values.length > 0`).
+ *
+ *  The second condition is important after Reset: FilterModal.onOpen()
+ *  pre-populates Status / Difficulty / Topics as blank rules (`values: []`)
+ *  so the UI always shows those rows. Those no-op rules shouldn't inflate
+ *  the badge — the user hasn't actually filtered anything.
+ *
  *  Exported so unit tests can assert the contract directly without
  *  instantiating the full ItemView (see
  *  tests/browse/ProblemBrowserView.badge.test.ts Wave 0 shell). */
 export function computeFilterBadgeCount(f: CompoundFilter | null): number {
   if (!f) return 0;
-  return f.rules.filter(
-    (r) => !(r as FilterRule & { __autoDefault?: boolean }).__autoDefault,
-  ).length;
+  return f.rules.filter((r) => {
+    const marked = (r as FilterRule & { __autoDefault?: boolean }).__autoDefault;
+    if (marked) return false;
+    // A rule with an empty values array is a no-op (matches everything /
+    // filters nothing), so shouldn't count toward the "active filter" badge.
+    return Array.isArray(r.values) && r.values.length > 0;
+  }).length;
 }
 
 const SEARCH_DEBOUNCE_MS = 150;

@@ -132,6 +132,7 @@ export interface FakePlugin {
   };
   registerEvent: ReturnType<typeof vi.fn>;
   registerMarkdownPostProcessor: ReturnType<typeof vi.fn>;
+  registerMarkdownCodeBlockProcessor: ReturnType<typeof vi.fn>;
   addCommand: ReturnType<typeof vi.fn>;
   manifest: { id: string };
 }
@@ -151,6 +152,7 @@ export function createFakePlugin(overrides: FakePluginOverrides = {}): FakePlugi
     app: { workspace, metadataCache, commands },
     registerEvent: vi.fn((_ref: FakeEventRef) => undefined),
     registerMarkdownPostProcessor: vi.fn(),
+    registerMarkdownCodeBlockProcessor: vi.fn(),
     addCommand: vi.fn(),
     manifest: { id: overrides.manifestId ?? 'leetcode' },
   };
