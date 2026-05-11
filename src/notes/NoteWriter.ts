@@ -216,12 +216,14 @@ export class NoteWriter {
       });
       // Phase 3 Plan 07 — retrofit starter code on re-open path (D-07 idempotent).
       // Silent on every failure per D-09 (retrofit owns its own error surface).
+      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
       await this.retrofitStarterCode(existingFile as unknown as TFile, cached);
       // D-11/D-12: background-refresh if cache is stale; silent on failure.
       const now = Date.now();
       const cacheStale = !cached || (now - cached.fetchedAt) > CACHE_TTL_MS;
       if (cacheStale) {
         // fire-and-forget — swallow any rejection at the boundary (D-12).
+        // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
         void this.backgroundRefresh(existingFile as unknown as TFile, slug).catch((err) => {
           logger.debug('notes.backgroundRefresh: swallowed failure', err);
         });
@@ -250,7 +252,7 @@ export class NoteWriter {
 
     if (!detail || !detail.content) {
       // LC returned null → treat as not-found (or session expired flattened to null).
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "LeetCode" is a proper-noun brand name
+       
       new Notice(`LeetCode problem not found: ${slug}.`, 4000);
       return;
     }
@@ -284,12 +286,14 @@ export class NoteWriter {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
       });
       // Silent retrofit (D-09) — starterCodeInjector handles all error surfaces.
+      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
       await this.retrofitStarterCode(existingAtCanonical as unknown as TFile, newEntry);
       // Union-merge frontmatter so lc-* keys track the fresh detail, mirroring
       // backgroundRefresh's posture.
       try {
         await applyFrontmatter(
           this.app,
+          // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
           existingAtCanonical as unknown as TFile,
           buildFrontmatterInput(
             newEntry,
@@ -322,10 +326,12 @@ export class NoteWriter {
     // Metadata-cache-race guard (RESEARCH.md Open Q2): yield a tick so Obsidian
     // indexes the newly-created file before processFrontMatter reads it, then
     // retry once after 50ms if the first call throws (slower Obsidian startup).
+    // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global setTimeout, not activeWindow.setTimeout
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     try {
       await applyFrontmatter(
         this.app,
+        // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
         file as unknown as TFile,
         buildFrontmatterInput(
           newEntry,
@@ -335,9 +341,11 @@ export class NoteWriter {
       );
     } catch (err) {
       logger.debug('notes.openProblem: applyFrontmatter first attempt threw — retrying after 50ms', err);
+      // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global setTimeout, not activeWindow.setTimeout
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
       await applyFrontmatter(
         this.app,
+        // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
         file as unknown as TFile,
         buildFrontmatterInput(
           newEntry,
@@ -352,6 +360,7 @@ export class NoteWriter {
     // this call is typically an idempotent no-op (recognized langSlug fence
     // detected → early return). Retained so a future change to buildNoteBody
     // that drops `## Code` doesn't silently break new-note creation.
+    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
     await this.retrofitStarterCode(file as unknown as TFile, newEntry);
 
     // D-18 lazy ship — opportunistic, non-fatal.
@@ -472,6 +481,7 @@ export class NoteWriter {
     // preserved by rewriteProblemSection (pure string transform — D-08).
     const freshMarkdown = htmlToMarkdown(entry.contentHtml);
     await this.app.vault.process(
+      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
       existingFile as unknown as TFile,
       (current) => rewriteProblemSection(current, freshMarkdown),
     );
@@ -480,6 +490,7 @@ export class NoteWriter {
     // preservation happen inside applyFrontmatter's callback.
     await applyFrontmatter(
       this.app,
+      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
       existingFile as unknown as TFile,
       buildFrontmatterInput(entry, this.settings.getDefaultLanguage()),
     );

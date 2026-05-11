@@ -433,14 +433,14 @@ export default class LeetCodePlugin extends Plugin {
     if (existing[0]) {
       // revealLeaf is a Promise<void> in Obsidian 1.7.2+; we await it. For older Obsidian it
       // returns void (Promise semantics still safe to await via microtask).
-      // eslint-disable-next-line obsidianmd/no-unsupported-api -- FND-05 tested against desktop 1.5+ per smoke plan; revealLeaf works in 1.5.x at runtime with harmless return-type drift
+       
       await workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = workspace.getRightLeaf(false);
     if (!leaf) return;
     await leaf.setViewState({ type: BROWSER_VIEW_TYPE, active: true });
-    // eslint-disable-next-line obsidianmd/no-unsupported-api -- see above: smoke test covers 1.5+
+     
     await workspace.revealLeaf(leaf);
   }
 
@@ -472,7 +472,7 @@ export default class LeetCodePlugin extends Plugin {
    *  Fires the locked Notice and returns false when an in-flight op exists. */
   private guardSingleFlight(): boolean {
     if (!this.activeSolve) return true;
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+     
     new Notice(
       'A submission is already in progress. Cancel it first or wait for the verdict.',
       6000,
@@ -619,7 +619,7 @@ export default class LeetCodePlugin extends Plugin {
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof RateLimitError) {
         const seconds = Math.ceil(err.retryAfterMs / 1000);
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
+         
         new Notice(`LeetCode rate limit reached. Wait ${String(seconds)}s before retrying.`, 6000);
         try { modal.close(); } catch { /* headless */ }
       } else {
@@ -698,7 +698,7 @@ export default class LeetCodePlugin extends Plugin {
     const body = ctx.currentBody();
     const extracted = extractFirstFencedBlock(body);
     if (!extracted) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+       
       new Notice(
         'No code block found. Add a fenced block with your solution.',
         6000,
@@ -768,7 +768,7 @@ export default class LeetCodePlugin extends Plugin {
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof RateLimitError) {
         const seconds = Math.ceil(err.retryAfterMs / 1000);
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
+         
         new Notice(`LeetCode rate limit reached. Wait ${String(seconds)}s before retrying.`, 6000);
         try { modal.close(); } catch { /* headless */ }
       } else {
@@ -851,7 +851,7 @@ export default class LeetCodePlugin extends Plugin {
         return;
       }
       logger.debug('graph.openSubmissionDetail: fetch failed', err);
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+       
       new Notice("Couldn't load submission. Check your connection.", 4000);
       return;
     }
@@ -879,7 +879,7 @@ export default class LeetCodePlugin extends Plugin {
     await this.app.vault.process(file, (current) =>
       forceInjectCodeSection(current, { starterCode: starter, langSlug }),
     );
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+     
     new Notice('Starter code inserted.', 3000);
   }
 }

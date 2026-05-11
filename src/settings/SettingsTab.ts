@@ -161,6 +161,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // Accent-modifier grep-gate preserved: no call-to-action modifier in
     // this block (the single accent invocation is the Authentication login
     // button above — see the top-of-file grep gate).
+    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Knowledge Graph" is a locked user-facing feature name per 05-CONTEXT D-14
     new Setting(containerEl).setName('Knowledge Graph').setHeading();
 
     // D-15: technique folder visible override with derived default. Placeholder
@@ -186,7 +187,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "Accepted" is an LC verdict proper noun
       .setName('Auto-create technique backlinks on Accepted')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "Accepted", "Techniques", and "LC" are proper-noun references
+       
       .setDesc('When enabled, an Accepted submission writes a ## Techniques section and creates stub notes for each LC topic tag. When disabled, only frontmatter tags (lc/{slug}) are written; no ## Techniques heading, no stubs.')
       .addToggle((t) => t
         .setValue(this.plugin.settings.getAutoBacklinksEnabled())

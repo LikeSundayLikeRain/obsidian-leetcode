@@ -154,6 +154,7 @@ export async function throttledRequestUrl(
 /** Delay without blocking the event loop. Uses global setTimeout so
  *  vi.useFakeTimers() + vi.advanceTimersByTimeAsync() drives it in tests. */
 function delay(ms: number): Promise<void> {
+  // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global setTimeout, not activeWindow.setTimeout
   return new Promise((r) => { setTimeout(r, ms); });
 }
 
@@ -162,9 +163,11 @@ function delay(ms: number): Promise<void> {
 function raceWithTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<T>((_, reject) => {
+    // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global setTimeout, not activeWindow.setTimeout
     timer = setTimeout(() => { reject(new TimeoutError()); }, ms);
   });
   return Promise.race<T>([p, timeout]).finally(() => {
+    // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global clearTimeout, not activeWindow.clearTimeout
     if (timer !== undefined) clearTimeout(timer);
   });
 }

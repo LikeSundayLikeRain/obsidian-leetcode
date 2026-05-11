@@ -167,7 +167,7 @@ export class SubmissionOrchestrator {
 
     // Gate 2 — single-flight (D-24).
     if (this.inFlight) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
+       
       new Notice(
         'A submission is already in progress. Cancel it first or wait for the verdict.',
         6000,
@@ -180,7 +180,7 @@ export class SubmissionOrchestrator {
     const body = this.deps.getCurrentBody();
     const extracted = extractFirstFencedBlock(body);
     if (!extracted) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
+       
       new Notice(
         'No code block found. Add a fenced block with your solution.',
         6000,

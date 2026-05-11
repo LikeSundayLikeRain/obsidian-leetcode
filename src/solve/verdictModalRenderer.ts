@@ -315,7 +315,7 @@ function clear(el: HTMLElement): void {
 }
 
 function appendEl(parent: HTMLElement, tag: string, cls?: string): HTMLElement {
-  const el = (parent.ownerDocument ?? document).createElement(tag);
+  const el = (parent.ownerDocument ?? activeDocument).createElement(tag);
   if (cls) el.className = cls;
   parent.appendChild(el);
   return el;
@@ -396,7 +396,7 @@ function safeStringify(v: unknown): string {
 function writeClipboard(text: string): Promise<void> {
   // Best-effort — renderer is environment-agnostic; the clipboard API may
   // be absent under test. The Modal class does the real wiring + Notice.
-  const clip = (globalThis as { navigator?: { clipboard?: { writeText: (s: string) => Promise<void> } } }).navigator?.clipboard;
+  const clip = activeWindow.navigator?.clipboard;
   if (clip?.writeText) return clip.writeText(text);
   return Promise.resolve();
 }

@@ -237,13 +237,13 @@ export class ProblemBrowserView extends ItemView {
     loaded: number,
     total: number | null,
   ): void {
-    const fill = bar.querySelector('.lc-progress__fill') as HTMLElement | null;
-    const label = bar.querySelector('.lc-progress__label') as HTMLElement | null;
+    const fill = bar.querySelector<HTMLElement>('.lc-progress__fill');
+    const label = bar.querySelector('.lc-progress__label');
     if (total !== null && total > 0) {
       // Flip out of indeterminate shimmer mode into determinate width animation.
       bar.removeClass('is-indeterminate');
       const pct = Math.min(100, Math.round((loaded / total) * 100));
-      if (fill) fill.style.width = `${String(pct)}%`;
+      if (fill) fill.setCssStyles({ width: `${String(pct)}%` });
       if (label) label.setText(`Loading problems… ${String(loaded)} / ${String(total)} (${String(pct)}%)`);
     } else {
       // Total unknown (first page hasn't arrived yet, or LC didn't return one).
@@ -345,20 +345,20 @@ export class ProblemBrowserView extends ItemView {
     const size = 20;
     const r = 8;
     const circumference = 2 * Math.PI * r;
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const svg = activeDocument.createSvg('svg');
     svg.setAttribute('class', 'lc-counter__donut');
     svg.setAttribute('width', String(size));
     svg.setAttribute('height', String(size));
     svg.setAttribute('viewBox', `0 0 ${String(size)} ${String(size)}`);
     // Track circle (muted background)
-    const track = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    const track = activeDocument.createSvg('circle');
     track.setAttribute('class', 'lc-counter__donut-track');
     track.setAttribute('cx', String(size / 2));
     track.setAttribute('cy', String(size / 2));
     track.setAttribute('r', String(r));
     svg.appendChild(track);
     // Progress arc (green). dasharray = (solved portion, remainder). Rotated -90deg so 0 starts at top.
-    const arc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    const arc = activeDocument.createSvg('circle');
     arc.setAttribute('class', 'lc-counter__donut-arc');
     arc.setAttribute('cx', String(size / 2));
     arc.setAttribute('cy', String(size / 2));

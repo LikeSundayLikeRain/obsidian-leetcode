@@ -81,6 +81,7 @@ export class VerdictModal extends Modal {
     setIcon(spinnerWrap, 'loader');
 
     const primary = appendEl(body, 'p');
+    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "LeetCode" is the product name, not a sentence-initial word
     primary.textContent = 'Polling LeetCode for verdict…';
     const subtitle = appendEl(body, 'p', 'leetcode-verdict-subtitle');
     subtitle.textContent = 'Backoff: 1s → 2s → 4s → 8s';
@@ -94,7 +95,7 @@ export class VerdictModal extends Modal {
     });
     // Default-focus the Cancel button per UI-SPEC §Accessibility.
     if (typeof (cancelBtn as unknown as { focus?: () => void }).focus === 'function') {
-      try { (cancelBtn as HTMLElement).focus(); } catch { /* headless */ }
+      try { (cancelBtn).focus(); } catch { /* headless */ }
     }
   }
 
@@ -158,8 +159,8 @@ export class VerdictModal extends Modal {
 
   private focusCloseButton(): void {
     const buttons = Array.from(
-      this.contentEl?.querySelectorAll('button[data-lc-role="close"]') ?? [],
-    ) as HTMLButtonElement[];
+      this.contentEl?.querySelectorAll<HTMLButtonElement>('button[data-lc-role="close"]') ?? [],
+    );
     for (const btn of buttons) {
       btn.addEventListener('click', () => { this.close(); });
     }
@@ -172,7 +173,7 @@ export class VerdictModal extends Modal {
   private rewireCopyPayloadButton(payload: unknown): void {
     const buttons = Array.from(
       this.contentEl.querySelectorAll('button'),
-    ) as HTMLButtonElement[];
+    );
     const copyBtn = buttons.find((b) => /copy payload/i.test(b.textContent ?? ''));
     if (!copyBtn) return;
     // Replace the button to drop the renderer's best-effort listener, then
@@ -187,11 +188,11 @@ export class VerdictModal extends Modal {
       // JSON round-trip through the logger's exported shape when possible.
       const text = safeStringify(payload);
       try {
-        const clip = (globalThis as { navigator?: { clipboard?: { writeText: (s: string) => Promise<void> } } }).navigator?.clipboard;
+        const clip = activeWindow.navigator?.clipboard;
         if (clip?.writeText) {
           void clip.writeText(text);
         }
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC locked copy
+         
         new Notice('Payload copied.', 2000);
       } catch (err) {
         logger.debug('solve.verdict.copyPayload: clipboard unavailable', err);
@@ -208,8 +209,8 @@ function clear(el: HTMLElement | null | undefined): void {
 }
 
 function appendEl(parent: HTMLElement, tag: string, cls?: string): HTMLElement {
-  const doc = parent.ownerDocument ?? (globalThis as { document?: Document }).document;
-  const el = (doc ?? document).createElement(tag);
+  const doc = parent.ownerDocument ?? activeDocument;
+  const el = doc.createElement(tag);
   if (cls) el.className = cls;
   parent.appendChild(el);
   return el;

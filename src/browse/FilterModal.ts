@@ -170,10 +170,12 @@ export class FilterModal extends Modal {
       const menu = this.contentEl.createDiv({ cls: 'lc-fm__popover' });
       const rect = picker.getBoundingClientRect();
       const parentRect = this.contentEl.getBoundingClientRect();
-      menu.style.position = 'absolute';
-      menu.style.top = `${String(rect.bottom - parentRect.top + 4)}px`;
-      menu.style.left = `${String(rect.left - parentRect.left)}px`;
-      menu.style.minWidth = `${String(Math.max(120, rect.width))}px`;
+      menu.setCssStyles({
+        position: 'absolute',
+        top: `${String(rect.bottom - parentRect.top + 4)}px`,
+        left: `${String(rect.left - parentRect.left)}px`,
+        minWidth: `${String(Math.max(120, rect.width))}px`,
+      });
       for (const o of options) {
         const item = menu.createDiv({ cls: 'lc-fm__popover-item' });
         const check = item.createSpan({ cls: 'lc-fm__popover-check' });
@@ -185,16 +187,16 @@ export class FilterModal extends Modal {
           renderValue();
           onChange(selected);
           menu.remove();
-          document.removeEventListener('click', close, true);
+          activeDocument.removeEventListener('click', close, true);
         });
       }
       const close = (e: MouseEvent): void => {
         if (!menu.contains(e.target as Node) && !picker.contains(e.target as Node)) {
           menu.remove();
-          document.removeEventListener('click', close, true);
+          activeDocument.removeEventListener('click', close, true);
         }
       };
-      setTimeout(() => document.addEventListener('click', close, true), 0);
+      activeWindow.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
     });
     return picker;
   }
@@ -266,6 +268,7 @@ export class FilterModal extends Modal {
       return;
     }
     if (rule.field === 'premium') {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'is' is a filter operator label (not a sentence); keep lowercase to match LeetCode's filter UI convention
       cell.setText('is');
       return;
     }
@@ -360,10 +363,12 @@ export class FilterModal extends Modal {
     const menu = this.contentEl.createDiv({ cls: 'lc-fm__popover' });
     const rect = anchor.getBoundingClientRect();
     const parentRect = this.contentEl.getBoundingClientRect();
-    menu.style.position = 'absolute';
-    menu.style.top = `${String(rect.bottom - parentRect.top + 4)}px`;
-    menu.style.left = `${String(rect.left - parentRect.left)}px`;
-    menu.style.minWidth = `${String(Math.max(160, rect.width))}px`;
+    menu.setCssStyles({
+      position: 'absolute',
+      top: `${String(rect.bottom - parentRect.top + 4)}px`,
+      left: `${String(rect.left - parentRect.left)}px`,
+      minWidth: `${String(Math.max(160, rect.width))}px`,
+    });
 
     const current = new Set(selected);
     for (const o of options) {
@@ -386,10 +391,10 @@ export class FilterModal extends Modal {
     const close = (e: MouseEvent): void => {
       if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
         menu.remove();
-        document.removeEventListener('click', close, true);
+        activeDocument.removeEventListener('click', close, true);
       }
     };
-    setTimeout(() => document.addEventListener('click', close, true), 0);
+    activeWindow.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
   }
 
   private renderRangeEditor(
@@ -441,10 +446,12 @@ export class FilterModal extends Modal {
       const menu = this.contentEl.createDiv({ cls: 'lc-fm__popover' });
       const rect = picker.getBoundingClientRect();
       const parentRect = this.contentEl.getBoundingClientRect();
-      menu.style.position = 'absolute';
-      menu.style.top = `${String(rect.bottom - parentRect.top + 4)}px`;
-      menu.style.left = `${String(rect.left - parentRect.left)}px`;
-      menu.style.minWidth = `${String(Math.max(160, rect.width))}px`;
+      menu.setCssStyles({
+        position: 'absolute',
+        top: `${String(rect.bottom - parentRect.top + 4)}px`,
+        left: `${String(rect.left - parentRect.left)}px`,
+        minWidth: `${String(Math.max(160, rect.width))}px`,
+      });
       for (const o of PREMIUM_OPTIONS) {
         const item = menu.createDiv({ cls: 'lc-fm__popover-item' });
         const check = item.createSpan({ cls: 'lc-fm__popover-check' });
@@ -455,16 +462,16 @@ export class FilterModal extends Modal {
           rule.value = rule.value === o.value ? null : o.value;
           renderValue();
           menu.remove();
-          document.removeEventListener('click', close, true);
+          activeDocument.removeEventListener('click', close, true);
         });
       }
       const close = (e: MouseEvent): void => {
         if (!menu.contains(e.target as Node) && !picker.contains(e.target as Node)) {
           menu.remove();
-          document.removeEventListener('click', close, true);
+          activeDocument.removeEventListener('click', close, true);
         }
       };
-      setTimeout(() => document.addEventListener('click', close, true), 0);
+      activeWindow.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
     });
   }
 
@@ -491,9 +498,11 @@ export class FilterModal extends Modal {
     const menu = this.contentEl.createDiv({ cls: 'lc-fm__add-menu' });
     const rect = anchor.getBoundingClientRect();
     const parentRect = this.contentEl.getBoundingClientRect();
-    menu.style.position = 'absolute';
-    menu.style.top = `${String(rect.bottom - parentRect.top + 4)}px`;
-    menu.style.left = `${String(rect.left - parentRect.left)}px`;
+    menu.setCssStyles({
+      position: 'absolute',
+      top: `${String(rect.bottom - parentRect.top + 4)}px`,
+      left: `${String(rect.left - parentRect.left)}px`,
+    });
     for (const f of fields) {
       const item = menu.createDiv({ cls: 'lc-fm__add-item' });
       const ic = item.createSpan({ cls: 'lc-fm__add-item-icon' });
@@ -510,11 +519,11 @@ export class FilterModal extends Modal {
     const close = (e: MouseEvent): void => {
       if (!menu.contains(e.target as Node)) {
         menu.remove();
-        document.removeEventListener('click', close, true);
+        activeDocument.removeEventListener('click', close, true);
       }
     };
     // Defer so the current click that opened the menu doesn't also close it.
-    setTimeout(() => document.addEventListener('click', close, true), 0);
+    activeWindow.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
   }
 
   private renderFooter(parent: HTMLElement): void {
@@ -523,7 +532,7 @@ export class FilterModal extends Modal {
     // Save as Smart List — stubbed; disabled with tooltip.
     const saveBtn = footer.createEl('button', {
       cls: 'lc-fm__save',
-      attr: { disabled: 'true', title: 'Smart Lists coming in a future release' },
+      attr: { disabled: 'true', title: 'Smart lists coming in a future release' },
     });
     const saveIc = saveBtn.createSpan({ cls: 'lc-fm__save-icon' });
     setIcon(saveIc, 'bookmark-plus');
