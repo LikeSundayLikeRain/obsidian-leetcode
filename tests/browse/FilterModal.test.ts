@@ -33,7 +33,7 @@ describe('FilterModal Wave 0 shells (RED until 05.2-03)', () => {
   // rendered as a disabled stub row. Wave 1 deletes the array entirely (or
   // empties it) AND removes the render loop call site. This test asserts the
   // end state: either no export at all, OR an empty array.
-  it.skip('D-02: field selector menu does not list Language option (TODO(05.2-03): export DEFERRED_STUB_FIELDS + empty it)', async () => {
+  it('D-02: field selector menu does not list Language option (TODO(05.2-03): export DEFERRED_STUB_FIELDS + empty it)', async () => {
     const mod = (await import('../../src/browse/FilterModal')) as unknown as {
       DEFERRED_STUB_FIELDS?: unknown[];
     };
@@ -52,7 +52,7 @@ describe('FilterModal Wave 0 shells (RED until 05.2-03)', () => {
   // Wave 1 deletes that method so `renderValueEditor` falls through to
   // `renderMultiSelect` (the same path Status / Difficulty use today). We
   // assert the method is absent post-refactor.
-  it.skip('D-03: renderPremiumEditor deleted — premium uses multi-select (TODO(05.2-03): delete renderPremiumEditor in FilterModal.ts)', async () => {
+  it('D-03: renderPremiumEditor deleted — premium uses multi-select (TODO(05.2-03): delete renderPremiumEditor in FilterModal.ts)', async () => {
     const mod = (await import('../../src/browse/FilterModal')) as unknown as {
       FilterModal: new (...args: unknown[]) => unknown;
     };
@@ -69,7 +69,7 @@ describe('FilterModal Wave 0 shells (RED until 05.2-03)', () => {
   // `__autoDefault: true` so `updateFilterBadge` can exclude it from the count.
   // On Apply the marker is stripped before passing to `onApply` so the
   // persisted filter only contains user-intent rules.
-  it.skip('D-04: Apply strips __autoDefault markers from draft rules (TODO(05.2-03): add marker stripping in applyBtn click)', async () => {
+  it('D-04: Apply strips __autoDefault markers from draft rules (TODO(05.2-03): add marker stripping in applyBtn click)', async () => {
     // Target invariant (Wave 1): applyBtn click → the rule passed to onApply
     // does NOT carry a `__autoDefault` property even if the draft rule did.
     // Wave 1 plan will expose a pure helper `stripAutoDefaults(rules)` that
