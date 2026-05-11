@@ -136,8 +136,10 @@ describe('file-open retrofit hook (D-06)', () => {
     expect(() => handler({ path: 'LeetCode/1-two-sum.md' } as never)).not.toThrow();
     // Let the rejected promise settle — if .catch was missing, this would
     // surface as an unhandled rejection (vitest converts some of these to
-    // test failures depending on config).
-    await new Promise((r) => setTimeout(r, 0));
+    // test failures depending on config). Two microtask ticks suffice
+    // because the handler chain is: `retrofit()` (rejected) → `.catch()`.
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(retrofit).toHaveBeenCalledTimes(1);
   });

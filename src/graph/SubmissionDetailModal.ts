@@ -6,10 +6,14 @@
 // Pitfall 6: `this.component.load()` MUST be called BEFORE the first
 // MarkdownRenderer.render invocation; `this.component.unload()` is called
 // from onClose() to dispose CM6 child components.
+// Phase 5.2 Plan 04 (D-10): the confirm-overwrite gate is REMOVED from the
+// Copy-to-Code path. The modal overwrites the existing ## Code fence silently,
+// matching the Run/Submit click-through precedent shipped in Phase 5 Plan 05.
+// Confirm-on-destructive now lives exclusively on the Reset code command
+// (src/solve/resetCodeWithConfirm.ts).
 //
 // Renders a single past submission's code + metadata. Two user actions:
-//   - Copy to ## Code (primary) — confirms overwrite if ## Code currently has
-//     a non-empty fenced block, then rewrites via vault.process. The
+//   - Copy to ## Code (primary) — silently rewrites via vault.process. The
 //     replacement fence's language tag = submitted language (not the existing
 //     fence's tag). NEVER creates a ## Solution heading (D-01, GRAPH-01 revised).
 //   - Close (secondary) — dismisses the modal.
@@ -18,11 +22,6 @@
 // HTML-string sinks. The code body is wrapped in a fenced Markdown block and
 // handed to MarkdownRenderer.render, which emits CM6-highlighted DOM into the
 // container element.
-//
-// Confirm-overwrite gate: when ## Code currently has a non-empty fenced block
-// the modal opens `ConfirmOverwriteModal` (Task 2 in this plan). Tests pass
-// `confirmOverwriteForTest` so they exercise the overwrite path without
-// stubbing the confirm modal.
 //
 // This module MUST NOT import from `./SubmissionPickerModal` — the picker
 // opens the detail modal via an injected factory callback (see
@@ -35,7 +34,7 @@ import {
   type App,
   type TFile,
 } from 'obsidian';
-import { copyToCode, hasExistingCodeBlock } from './copyToCode';
+import { copyToCode } from './copyToCode';
 
 export interface SubmissionDetailDeps {
   file: TFile;
@@ -48,11 +47,6 @@ export interface SubmissionDetailDeps {
   runtimeDisplay?: string;
   memoryDisplay?: string;
   submittedAt?: string;
-  /** Test hook — short-circuits the ConfirmOverwriteModal. Production callers
-   *  omit this and the modal delegates to the real confirm dialog.
-   *
-   *  Returns `true` to proceed with the overwrite, `false` to cancel. */
-  confirmOverwriteForTest?: () => Promise<boolean>;
 }
 
 export class SubmissionDetailModal extends Modal {
@@ -160,51 +154,23 @@ export class SubmissionDetailModal extends Modal {
   }
 
   /**
-   * Copy-to-code entry point. Consults the confirm gate when there's an
-   * existing non-empty fenced block; no-op on user cancel; otherwise delegates
-   * to `performCopy`. This is the method the copy-button calls, and the one
-   * the tests exercise through `handleCopyToCode`.
+   * Copy-to-code entry point. Phase 5.2 D-10: silent overwrite — the
+   * previous confirm gate is removed to match the Run/Submit click-through
+   * precedent. Users who need a deliberate destructive reset use the
+   * Reset code command (src/solve/resetCodeWithConfirm.ts).
    */
   async handleCopyToCode(): Promise<void> {
-    // Read current body to decide whether we need to confirm. Both the mock
-    // vault and production Obsidian expose `vault.read(file)` → Promise<string>.
-    const current = await readCurrentBody(this.app, this.deps.file);
-    if (hasExistingCodeBlock(current)) {
-      const proceed = await this.askConfirm();
-      if (!proceed) return;
-    }
     await this.performCopy();
   }
 
   /**
    * Writes the submitted code into the ## Code fenced block. Called by
-   * handleCopyToCode after the confirm gate (if any) has passed, and directly
-   * by the `copy does not create ## Solution` test.
+   * handleCopyToCode and directly by the `copy does not create ## Solution`
+   * test.
    */
   async performCopy(): Promise<void> {
     await copyToCode(this.app, this.deps.file, this.deps.code, this.deps.lang);
     this.safeClose();
-  }
-
-  /**
-   * Delegate to the test hook when provided; otherwise construct the real
-   * ConfirmOverwriteModal and return whatever the user clicks. Production
-   * path uses the modal; tests inject `confirmOverwriteForTest` so the gate
-   * resolves deterministically.
-   */
-  private async askConfirm(): Promise<boolean> {
-    if (this.deps.confirmOverwriteForTest) {
-      return this.deps.confirmOverwriteForTest();
-    }
-    // Deferred require — the test suite doesn't exercise this path, and
-    // importing ConfirmOverwriteModal at module load would pull the real
-    // Obsidian Modal chrome into the test runner. Safe because this branch is
-    // reached only under production use.
-    const { ConfirmOverwriteModal } = await import('./ConfirmOverwriteModal');
-    return new Promise<boolean>((resolve) => {
-      const modal = new ConfirmOverwriteModal(this.app, resolve);
-      modal.open();
-    });
   }
 
   private ensureDomContainers(): void {
@@ -261,16 +227,4 @@ function addClass(el: HTMLElement | null | undefined, cls: string): void {
   } else {
     el.classList.add(cls);
   }
-}
-
-/**
- * Read the current body of a TFile via `app.vault.read(file)`. Both the mock
- * vault's and production Obsidian's vault expose this method.
- */
-async function readCurrentBody(app: App, file: TFile): Promise<string> {
-  const vault = (app as unknown as { vault?: { read?: (f: TFile) => Promise<string> } }).vault;
-  if (vault?.read) {
-    return vault.read(file);
-  }
-  return '';
 }

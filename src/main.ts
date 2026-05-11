@@ -917,7 +917,6 @@ export default class LeetCodePlugin extends Plugin {
           );
         }),
       notify: (message) => {
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
         new Notice(message, 3000);
       },
     });

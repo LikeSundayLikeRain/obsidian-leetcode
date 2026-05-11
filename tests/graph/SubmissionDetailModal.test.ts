@@ -53,6 +53,7 @@ describe('SubmissionDetailModal (D-04 + D-31)', () => {
   it('copy to code does not create ## Solution', async () => {
     // GRAPH-01 revised (D-01): Copy-to-Code writes the submitted code into
     // ## Code via vault.process. NEVER creates a ## Solution heading.
+    // Phase 5.2 D-10: silent overwrite — no confirm hook.
     const initial =
       '---\nlc-id: 1\nlc-slug: two-sum\n---\n\n## Problem\nfoo\n\n## Code\n```python3\nstarter\n```\n\n## Notes\nbar\n';
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
@@ -64,9 +65,6 @@ describe('SubmissionDetailModal (D-04 + D-31)', () => {
       verdictDisplay: 'Accepted',
       code: 'class Solution:\n    def twoSum(self, nums, target): return [0, 1]\n',
       lang: 'python3',
-      // Test-only hook — auto-confirm the overwrite dialog so we exercise
-      // the final vault write deterministically.
-      confirmOverwriteForTest: async () => true,
     });
 
     await (modal as unknown as { performCopy(): Promise<void> }).performCopy();
@@ -77,36 +75,35 @@ describe('SubmissionDetailModal (D-04 + D-31)', () => {
     expect(body).toContain('class Solution:');
   });
 
-  it('copy-to-code confirms overwrite', async () => {
-    // When ## Code currently has a non-empty fenced block, the detail modal
-    // must gate the vault.process on a user confirmation. Cancel → no write.
+  it('Phase 5.2 D-10: copy-to-code overwrites existing fence silently (no confirm)', async () => {
+    // D-10 supersedes the old confirm gate — the detail modal now matches
+    // Run/Submit click-through precedent and writes unconditionally.
+    // The confirm-on-destructive path lives exclusively on the Reset command
+    // (tests/main/resetCommand.test.ts).
     const initial =
       '---\nlc-id: 1\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD CODE\n```\n';
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
     const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
 
-    const confirm = vi.fn(async () => false);   // user cancels
     const modal = new SubmissionDetailModal(m.app as never, {
       file: file as never,
       problemTitle: 'Two Sum',
       verdictDisplay: 'Accepted',
       code: 'NEW CODE',
       lang: 'python3',
-      confirmOverwriteForTest: confirm,
     });
 
     await (modal as unknown as { handleCopyToCode(): Promise<void> }).handleCopyToCode();
 
-    expect(confirm).toHaveBeenCalledTimes(1);
     const body = m.getContent('LeetCode/1-two-sum.md') ?? '';
-    expect(body).toContain('OLD CODE');      // user-cancelled — original intact
-    expect(body).not.toContain('NEW CODE');
-    expect(m.spies.process).not.toHaveBeenCalled();
+    expect(body).toContain('NEW CODE');
+    expect(body).not.toContain('OLD CODE');
+    expect(m.spies.process).toHaveBeenCalledTimes(1);
   });
 
   it('copy uses submission language', async () => {
     // D-04: the replacement fence's language tag = submitted language (not
-    // the current fence's tag).
+    // the current fence's tag). Phase 5.2 D-10: silent overwrite.
     const initial =
       '---\nlc-id: 1\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD\n```\n';
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
@@ -118,7 +115,6 @@ describe('SubmissionDetailModal (D-04 + D-31)', () => {
       verdictDisplay: 'Accepted',
       code: 'class Solution {}',
       lang: 'java',                            // submitted language differs
-      confirmOverwriteForTest: async () => true,
     });
 
     await (modal as unknown as { performCopy(): Promise<void> }).performCopy();
