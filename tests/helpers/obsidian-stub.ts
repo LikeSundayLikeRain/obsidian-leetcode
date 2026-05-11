@@ -87,3 +87,22 @@ export const MarkdownRenderer = {
     // Test stub — tests that assert on call args override via vi.mock.
   },
 };
+
+// Phase 5.1 (POLISH-07 / 05-UAT G1) — CM6 editor-extension imports.
+// `codeActionsEditorExtension.ts` reads the active file via `state.field(editorInfoField)`
+// and rebuilds decorations on `editorLivePreviewField` flips (per RESEARCH.md Pattern 1
+// + Pitfall 5). Tests that mock 'obsidian' need these exports present so module
+// resolution doesn't fail when the implementation file is imported under vi.mock.
+// Actual field behavior is exercised only in integration tests that construct a real
+// EditorView; pure unit tests of findCodeFence stub state.doc directly.
+import { StateField } from '@codemirror/state';
+
+export const editorInfoField = StateField.define<{ file: { path: string } | null }>({
+  create: () => ({ file: null }),
+  update: (v) => v,
+});
+
+export const editorLivePreviewField = StateField.define<boolean>({
+  create: () => true,
+  update: (v) => v,
+});
