@@ -342,23 +342,29 @@ export class ProblemBrowserView extends ItemView {
     this.solvedCounterEl.empty();
 
     // SVG donut: 20x20 viewbox, radius 8, stroke-width 3, circumference 2πr.
+    // Use createElementNS rather than activeDocument.createSvg — the latter is
+    // Obsidian's helper that appends to document root and throws
+    // "Only one element on document allowed" (the <html> element is already
+    // there). createElementNS creates a detached SVG we append ourselves.
     const size = 20;
     const r = 8;
     const circumference = 2 * Math.PI * r;
-    const svg = activeDocument.createSvg('svg');
+    const doc = this.solvedCounterEl.ownerDocument;
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const svg = doc.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('class', 'lc-counter__donut');
     svg.setAttribute('width', String(size));
     svg.setAttribute('height', String(size));
     svg.setAttribute('viewBox', `0 0 ${String(size)} ${String(size)}`);
     // Track circle (muted background)
-    const track = activeDocument.createSvg('circle');
+    const track = doc.createElementNS(SVG_NS, 'circle');
     track.setAttribute('class', 'lc-counter__donut-track');
     track.setAttribute('cx', String(size / 2));
     track.setAttribute('cy', String(size / 2));
     track.setAttribute('r', String(r));
     svg.appendChild(track);
     // Progress arc (green). dasharray = (solved portion, remainder). Rotated -90deg so 0 starts at top.
-    const arc = activeDocument.createSvg('circle');
+    const arc = doc.createElementNS(SVG_NS, 'circle');
     arc.setAttribute('class', 'lc-counter__donut-arc');
     arc.setAttribute('cx', String(size / 2));
     arc.setAttribute('cy', String(size / 2));

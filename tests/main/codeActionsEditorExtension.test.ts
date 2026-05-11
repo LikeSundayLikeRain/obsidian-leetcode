@@ -72,8 +72,10 @@ function makeState(text: string): EditorState {
       },
       line(n: number) {
         const t = lines[n - 1] ?? '';
+        const before = lines.slice(0, n - 1).join('\n');
+        const from = n === 1 ? 0 : before.length + 1; // +1 for the newline before this line
         const to = lines.slice(0, n).join('\n').length;
-        return { text: t, to, number: n };
+        return { text: t, from, to, number: n };
       },
     },
   } as unknown as EditorState;
@@ -111,8 +113,10 @@ function makeStateWithFile(text: string, path: string): EditorState {
       },
       line(n: number) {
         const t = lines[n - 1] ?? '';
+        const before = lines.slice(0, n - 1).join('\n');
+        const from = n === 1 ? 0 : before.length + 1; // +1 for the newline before this line
         const to = lines.slice(0, n).join('\n').length;
-        return { text: t, to, number: n };
+        return { text: t, from, to, number: n };
       },
       get length() {
         return text.length;

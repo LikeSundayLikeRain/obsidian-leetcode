@@ -163,13 +163,27 @@ export function buildDecorations(
   const fence = findCodeFence(state);
   if (!fence) return builder.finish();
 
-  const anchor = state.doc.line(fence.closerLine).to;
+  // Reading-mode parity (D-01, 05-05 D-13): the button row is a *sibling after*
+  // the <pre> block, not inside it. In CM6 Live Preview, the closing fence line
+  // is still part of the rendered code-block widget; a widget anchored at that
+  // line's end gets clipped visually inside the block. Anchor the widget at the
+  // start of the line AFTER the closer so it renders on its own line between
+  // the fence and the next content (matches reading-mode's `insertAdjacentElement('afterend', ...)`).
+  // When the closing fence is the last line of the document, fall back to the
+  // closer line's end with side: 1 — there's no next line to anchor to.
+  const hasLineAfterCloser = fence.closerLine < state.doc.lines;
+  const anchor = hasLineAfterCloser
+    ? state.doc.line(fence.closerLine + 1).from
+    : state.doc.line(fence.closerLine).to;
   builder.add(
     anchor,
     anchor,
     Decoration.widget({
       widget: new CodeActionsWidget(plugin),
-      side: 1, // after the position; inline (never the block-widget flag — 05-UAT G1 lock)
+      // side: -1 at the start of the next line places the widget before that
+      // line's rendered content, visually outside the fenced-block widget.
+      // side: 1 at end-of-doc fallback (no following line to anchor to).
+      side: hasLineAfterCloser ? -1 : 1,
     }),
   );
 

@@ -881,3 +881,19 @@
   color: var(--text-normal);
 }
 
+/* Phase 5.1 (POLISH-07 / 05-UAT G1) — Edit-Mode inline button row.
+   CM6 fence rendering has no bottom margin on the rendered block, so the
+   base 4px top margin sits flush against the closing backticks. Add
+   breathing room inside the editor context only. Sanctioned by UI-SPEC
+   §Spacing Scale + RESEARCH Open Question 3. */
+.cm-editor .leetcode-code-actions {
+  margin-top: 12px;
+}
+
+/* Phase 5.1 — Reading-Mode compensator: <pre>'s default margin-bottom (~16px)
+   plus the base 4px margin-top produces a ~20px gap — bigger than Edit-Mode.
+   Pull the action row up so Read and Edit Mode land at the same visual gap. */
+.markdown-rendered pre + .leetcode-code-actions {
+  margin-top: -4px;
+}
+
