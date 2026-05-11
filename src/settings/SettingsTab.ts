@@ -41,37 +41,36 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       ? `Logged in as ${username ?? '…'}`
       : 'Not logged in';
 
+    // Phase 5.2 D-01 — Status row and primary auth button merged into a single
+    // Setting. Name+Desc render on the left via Obsidian's built-in
+    // `.setting-item-info` flex cell; the button renders on the right via
+    // `.setting-item-control`. No custom CSS required.
+    //
+    // Accent-modifier grep gate preserved: exactly one invocation of the
+    // call-to-action modifier in this file, on the logged-out Log-in branch.
     new Setting(containerEl)
       .setName('Status')
-      .setDesc(statusText);
-
-    // Primary auth button row.
-    // Logged-out state: primary Log-in button uses the call-to-action accent modifier.
-    // Logged-in state: neutral Logout button (no accent modifier — UI-SPEC.md § Color).
-    if (loggedIn) {
-      // AUTH-05: immediate logout, no confirmation modal (UI-SPEC.md § Destructive actions).
-      new Setting(containerEl)
-        .addButton((b) => b
-          .setButtonText('Logout')
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages: "LeetCode" is a LOCKED proper-noun brand name
-          .setTooltip('Log out of LeetCode')
-          .onClick(async () => {
-            await this.plugin.auth.logout();
-            this.display();
-          }),
-        );
-    } else {
-      // Only button in this file that receives the call-to-action accent modifier.
-      new Setting(containerEl)
-        .addButton((b) => b
-          .setButtonText('Log in via embedded window')
-          .setCta()
-          .onClick(async () => {
-            await this.plugin.auth.login();
-            this.display();
-          }),
-        );
-    }
+      .setDesc(statusText)
+      .addButton((b) => {
+        if (loggedIn) {
+          // AUTH-05: immediate logout, no confirmation modal (UI-SPEC.md § Destructive actions).
+          b.setButtonText('Logout')
+            // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages: "LeetCode" is a LOCKED proper-noun brand name
+            .setTooltip('Log out of LeetCode')
+            .onClick(async () => {
+              await this.plugin.auth.logout();
+              this.display();
+            });
+        } else {
+          // Only button in this file that receives the call-to-action accent modifier.
+          b.setButtonText('Log in via embedded window')
+            .setCta()
+            .onClick(async () => {
+              await this.plugin.auth.login();
+              this.display();
+            });
+        }
+      });
 
     // =============================
     //   Manual cookie (fallback) — D-05 first-class, inside Auth section per D-09
