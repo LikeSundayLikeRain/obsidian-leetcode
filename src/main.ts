@@ -55,6 +55,8 @@ import { showSessionExpiredNotice } from './solve/SessionExpiredNotice';
 import { classifyStatus } from './solve/statusMap';
 // Phase 5 Plan 05 (D-11) — reading-mode Run/Submit buttons below fenced code blocks.
 import { registerCodeBlockActionProcessor } from './main/codeActionsPostProcessor';
+// Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) — edit-mode Run/Submit buttons in CM6.
+import { buildCodeActionsEditorExtension } from './main/codeActionsEditorExtension';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { SubmissionHistoryStore } from './graph/SubmissionHistoryStore';
@@ -351,6 +353,14 @@ export default class LeetCodePlugin extends Plugin {
     // Click handlers dispatch `${manifest.id}:run` / `:submit` via
     // executeCommandById (Pitfall 14); idempotent per Pitfall 3.
     registerCodeBlockActionProcessor(this);
+
+    // Step 6f — Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) edit-mode Run/Submit buttons.
+    // Registers a CM6 StateField<DecorationSet> that paints an inline widget below
+    // the `## Code` fence in Live Preview + Source Mode. Gated on `lc-slug`
+    // frontmatter (D-06). WidgetType.eq() guards idempotency (RESEARCH Pitfall 2).
+    // Click handlers call plugin.runFromActive() / submitFromActive() directly
+    // (D-05 — avoids editorCheckCallback gate regression from 05-05 live smoke).
+    this.registerEditorExtension(buildCodeActionsEditorExtension(this));
 
     // GAP-6: fire-and-forget one-time migration Notice for users on the
     // v0.1.0 broken LeetCode.base schema. Non-blocking; never throws into
