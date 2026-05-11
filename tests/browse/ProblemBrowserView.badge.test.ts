@@ -29,7 +29,7 @@ describe('ProblemBrowserView filter badge count (RED until 05.2-03)', () => {
   // D-04 — fresh install (no user rules, one auto-default rule) shows no
   // badge. Assertion uses count=0 as the proxy for "badge hidden" since the
   // DOM toggle (`is-visible`) is driven by `count === 0`.
-  it.skip('D-04: fresh install with only auto-default premium rule → badge count is 0 (TODO(05.2-03): export computeFilterBadgeCount)', async () => {
+  it('D-04: fresh install with only auto-default premium rule → badge count is 0 (TODO(05.2-03): export computeFilterBadgeCount)', async () => {
     const mod = (await import('../../src/browse/ProblemBrowserView')) as unknown as {
       computeFilterBadgeCount?: (f: unknown) => number;
     };
@@ -47,7 +47,7 @@ describe('ProblemBrowserView filter badge count (RED until 05.2-03)', () => {
 
   // D-04 — user-added rules always count; auto-default rules never do. A
   // mixed filter (one of each) reads "1", not "2".
-  it.skip('D-04: one user rule + one auto-default rule → badge count is 1 (TODO(05.2-03))', async () => {
+  it('D-04: one user rule + one auto-default rule → badge count is 1 (TODO(05.2-03))', async () => {
     const mod = (await import('../../src/browse/ProblemBrowserView')) as unknown as {
       computeFilterBadgeCount?: (f: unknown) => number;
     };

@@ -41,7 +41,7 @@ describe('ProblemListService premium multi-select (RED until 05.2-03)', () => {
   // D-03 — empty values array is a no-op. The evaluator should return
   // `undefined` so the surrounding `applyCompoundFilter` treats it as
   // "skip this rule", not "rule failed".
-  it.skip('D-03: values=[] → rule is no-op (evaluator returns undefined)', async () => {
+  it('D-03: values=[] → rule is no-op (evaluator returns undefined)', async () => {
     // Wave 1 plan will export `evaluateRule` from ProblemListService (currently
     // file-local). This test drives that contract — delete the .skip once
     // 05.2-03 exports the helper.
@@ -60,7 +60,7 @@ describe('ProblemListService premium multi-select (RED until 05.2-03)', () => {
   // evaluator may return `true` or `undefined` (both match semantically), but
   // we assert the user-visible outcome via applyCompoundFilter to pin the
   // behavior users actually experience.
-  it.skip("D-03: values=['premium','non-premium'] → both paid and free pass (TODO(05.2-03))", async () => {
+  it("D-03: values=['premium','non-premium'] → both paid and free pass (TODO(05.2-03))", async () => {
     const { ProblemListService } = (await import('../../src/browse/ProblemListService')) as unknown as {
       ProblemListService: new (...args: unknown[]) => {
         applyCompoundFilter: (idx: IndexedProblem[], f: unknown) => IndexedProblem[];
@@ -79,7 +79,7 @@ describe('ProblemListService premium multi-select (RED until 05.2-03)', () => {
   });
 
   // D-03 — only non-premium selected: paid rows dropped.
-  it.skip("D-03: values=['non-premium'] → only free (paid=false) rows pass (TODO(05.2-03))", async () => {
+  it("D-03: values=['non-premium'] → only free (paid=false) rows pass (TODO(05.2-03))", async () => {
     const { ProblemListService } = (await import('../../src/browse/ProblemListService')) as unknown as {
       ProblemListService: new (...args: unknown[]) => {
         applyCompoundFilter: (idx: IndexedProblem[], f: unknown) => IndexedProblem[];

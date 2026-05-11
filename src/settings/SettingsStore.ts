@@ -93,7 +93,10 @@ export type FilterRule =
   | { field: 'topics'; op: 'is' | 'is-not'; values: string[] }
   | { field: 'question-id'; op: 'range'; min: number | null; max: number | null }
   | { field: 'acceptance'; op: 'range'; min: number | null; max: number | null }
-  | { field: 'premium'; op: 'is'; value: 'premium' | 'non-premium' | null };
+  // Phase 5.2 D-03 — premium becomes multi-value (values: string[]) mirroring
+  // the status/difficulty/topics shape. Legal entries in values are 'premium'
+  // and 'non-premium'; values=[] is a no-op in the evaluator.
+  | { field: 'premium'; op: 'is'; values: string[] };
 
 const DEFAULT_DATA: PluginData = {
   version: 1,
@@ -162,36 +165,57 @@ function isValidProblemIndex(v: unknown): v is ProblemIndex {
   return idx.problems.every(isValidIndexedProblem);
 }
 
-/** Shape-guard for persisted compound filter. Rejects unknown field names /
- *  operator values so a corrupt data.json can't inject a filter rule that
- *  crashes the evaluator. */
+/** Per-rule shape-guard. Accepts only recognized field names with valid op +
+ *  value shape. Unknown field values (e.g. legacy `language`) return false so
+ *  `sanitizeCompoundFilter` drops them (D-02 graceful degradation).
+ *
+ *  NOTE: Extra properties on rule objects (e.g. the `__autoDefault` marker the
+ *  first-open default carries) are IGNORED — the guard validates only the
+ *  fields it knows about. This lets the marker round-trip through data.json
+ *  without tripping validation (D-04 design). */
+function isValidFilterRule(r: unknown): r is FilterRule {
+  if (!r || typeof r !== 'object') return false;
+  const rule = r as Record<string, unknown>;
+  if (typeof rule.field !== 'string') return false;
+  const multiValueFields = new Set(['status', 'difficulty', 'topics']);
+  const rangeFields = new Set(['question-id', 'acceptance']);
+  if (multiValueFields.has(rule.field)) {
+    return (rule.op === 'is' || rule.op === 'is-not') &&
+      Array.isArray(rule.values) &&
+      rule.values.every((x) => typeof x === 'string');
+  }
+  if (rangeFields.has(rule.field)) {
+    return rule.op === 'range' &&
+      (rule.min === null || typeof rule.min === 'number') &&
+      (rule.max === null || typeof rule.max === 'number');
+  }
+  if (rule.field === 'premium') {
+    // D-03 multi-value — values is an array of 'premium' / 'non-premium'.
+    return rule.op === 'is' &&
+      Array.isArray(rule.values) &&
+      rule.values.every((x) => x === 'premium' || x === 'non-premium');
+  }
+  // Unknown field (e.g. legacy `language`) — reject so sanitize drops silently.
+  return false;
+}
+
+/** Permissive shell — only validates the container (match + rules array).
+ *  Per-rule validity is applied later by `sanitizeCompoundFilter` so malformed
+ *  or legacy rules (e.g. `language`) are silently dropped rather than causing
+ *  the entire filter to be discarded. */
 function isValidCompoundFilter(v: unknown): v is CompoundFilter {
   if (!v || typeof v !== 'object') return false;
   const f = v as Partial<CompoundFilter>;
   if (f.match !== 'all' && f.match !== 'any') return false;
   if (!Array.isArray(f.rules)) return false;
-  return f.rules.every((r: unknown) => {
-    if (!r || typeof r !== 'object') return false;
-    const rule = r as Record<string, unknown>;
-    const multiValueFields = new Set(['status', 'difficulty', 'topics']);
-    const rangeFields = new Set(['question-id', 'acceptance']);
-    if (typeof rule.field !== 'string') return false;
-    if (multiValueFields.has(rule.field)) {
-      return (rule.op === 'is' || rule.op === 'is-not') &&
-        Array.isArray(rule.values) &&
-        rule.values.every((x) => typeof x === 'string');
-    }
-    if (rangeFields.has(rule.field)) {
-      return rule.op === 'range' &&
-        (rule.min === null || typeof rule.min === 'number') &&
-        (rule.max === null || typeof rule.max === 'number');
-    }
-    if (rule.field === 'premium') {
-      return rule.op === 'is' &&
-        (rule.value === null || rule.value === 'premium' || rule.value === 'non-premium');
-    }
-    return false;
-  });
+  return true;
+}
+
+/** Filter the rules array down to valid FilterRules; unknown-field rules
+ *  (e.g. legacy `language`) are dropped silently. Empty result after sanitize
+ *  is fine — the downstream pipeline treats `{match, rules: []}` as no-filter. */
+function sanitizeCompoundFilter(f: CompoundFilter): CompoundFilter {
+  return { match: f.match, rules: f.rules.filter(isValidFilterRule) };
 }
 
 /** Shape-guard for a single DetailCacheEntry; same posture as isValidIndexedProblem. */
@@ -269,7 +293,9 @@ export class SettingsStore {
         ? raw.defaultLanguage
         : DEFAULT_DATA.defaultLanguage,
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
-      filter: isValidCompoundFilter(raw.filter) ? raw.filter : DEFAULT_DATA.filter,
+      filter: isValidCompoundFilter(raw.filter)
+        ? sanitizeCompoundFilter(raw.filter)
+        : DEFAULT_DATA.filter,
       problemDetails: sanitizeProblemDetails(raw.problemDetails),
       legacyBaseNoticeShown: raw.legacyBaseNoticeShown === true,
       // Phase 4 D-21 + Pitfall 9 — autoBacklinksEnabled shape-guard. Malicious

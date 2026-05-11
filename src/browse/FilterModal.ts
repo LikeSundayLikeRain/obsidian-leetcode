@@ -33,7 +33,9 @@ const FIELD_DEFS: FieldDef[] = [
   { key: 'acceptance',  label: 'Acceptance',  icon: 'cloud',
     blank: () => ({ field: 'acceptance', op: 'range', min: null, max: null }) },
   { key: 'premium',     label: 'Premium',     icon: 'crown',
-    blank: () => ({ field: 'premium', op: 'is', value: null }) },
+    // Phase 5.2 D-03 — premium now uses the multi-value shape shared with
+    // status/difficulty/topics. blank rule starts with no values selected.
+    blank: () => ({ field: 'premium', op: 'is', values: [] }) },
 ];
 
 /** Filter fields pre-populated when the modal opens empty (matches LC's
@@ -42,17 +44,13 @@ const FIELD_DEFS: FieldDef[] = [
  *  stub since per-problem language data is deferred to Phase 3
  *  (see .planning/phases/01-plugin-foundation/DEFERRED-FILTERS.md). */
 const PREPOPULATED_FIELDS: FilterRule['field'][] = ['status', 'difficulty', 'topics'];
-/** Deferred fields shown as visible-but-disabled rows to match LC's layout
- *  without committing to implementation. Each entry owns its own icon/label
- *  since they aren't in FIELD_DEFS (wouldn't be selectable via the + menu). */
-const DEFERRED_STUB_FIELDS: { key: string; label: string; icon: string; reason: string }[] = [
-  {
-    key: 'language',
-    label: 'Language',
-    icon: 'code-2',
-    reason: 'Coming with Run & Submit in a future release',
-  },
-];
+/** Deferred fields shown as visible-but-disabled rows to match LC's layout.
+ *  Phase 5.2 D-02 — the Language entry was removed per user feedback during
+ *  Phase 5.1 live smoke (per-problem language filtering is deferred indefinitely
+ *  since language isn't a property of a problem in LC's data model). Exported
+ *  so tests can assert the list is empty (D-02 RED shell in
+ *  tests/browse/FilterModal.test.ts). */
+export const DEFERRED_STUB_FIELDS: { key: string; label: string; icon: string; reason: string }[] = [];
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'untouched', label: 'Todo' },
@@ -74,6 +72,20 @@ const PREMIUM_OPTIONS: { value: 'premium' | 'non-premium'; label: string }[] = [
 /** Turn a topic slug ('hash-table') into a display label ('Hash Table'). */
 function formatTopicLabel(slug: string): string {
   return slug.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/** Phase 5.2 D-04 — remove the `__autoDefault: true` marker from each rule
+ *  before handing the draft to `onApply`. The marker is stamped onto the
+ *  first-open auto-applied premium rule so `updateFilterBadge` can exclude it
+ *  from the user-visible count; once the user opens the FilterModal and hits
+ *  Apply (even with no edits), the marker is cleared and subsequent loads
+ *  count the rule normally. Exported so tests can assert the contract
+ *  directly (see tests/browse/FilterModal.test.ts Wave 0 D-04 shell). */
+export function stripAutoDefaults(rules: FilterRule[]): FilterRule[] {
+  return rules.map((r) => {
+    const { __autoDefault: _m, ...rest } = r as FilterRule & { __autoDefault?: boolean };
+    return rest as FilterRule;
+  });
 }
 
 export class FilterModal extends Modal {
@@ -205,34 +217,8 @@ export class FilterModal extends Modal {
     if (!this.rulesEl) return;
     this.rulesEl.empty();
     this.draft.rules.forEach((r, i) => this.renderRule(this.rulesEl!, r, i));
-    // Append disabled stubs for fields deferred to future phases (Language, etc.)
-    // so the modal layout matches LC's while the user discovers that the
-    // capability isn't available yet via a tooltip.
-    for (const stub of DEFERRED_STUB_FIELDS) {
-      this.renderDeferredStub(this.rulesEl, stub);
-    }
-  }
-
-  private renderDeferredStub(
-    parent: HTMLElement,
-    stub: { key: string; label: string; icon: string; reason: string },
-  ): void {
-    const row = parent.createDiv({ cls: 'lc-fm__rule lc-fm__rule--disabled' });
-    row.setAttribute('title', stub.reason);
-    const fieldCell = row.createDiv({ cls: 'lc-fm__rule-field' });
-    const iconEl = fieldCell.createSpan({ cls: 'lc-fm__rule-ficon' });
-    setIcon(iconEl, stub.icon);
-    fieldCell.createSpan({ text: stub.label });
-    // Operator: "is" (disabled)
-    row.createDiv({ cls: 'lc-fm__rule-op', text: 'is' });
-    // Value: empty chevron (disabled)
-    const valCell = row.createDiv({ cls: 'lc-fm__rule-val' });
-    const picker = valCell.createDiv({ cls: 'lc-fm__picker' });
-    picker.createSpan({ cls: 'lc-fm__picker-val' });
-    const chev = picker.createSpan({ cls: 'lc-fm__picker-chev' });
-    setIcon(chev, 'chevron-down');
-    // Remove column placeholder (keeps grid alignment); no remove action.
-    row.createDiv({ cls: 'lc-fm__rule-rm' });
+    // Phase 5.2 D-02 — DEFERRED_STUB_FIELDS is now empty (Language entry
+    // removed). No disabled-stub rows to render.
   }
 
   private renderRule(parent: HTMLElement, rule: FilterRule, idx: number): void {
@@ -309,7 +295,10 @@ export class FilterModal extends Modal {
         this.renderRangeEditor(cell, rule, 0, 100, '%');
         break;
       case 'premium':
-        this.renderPremiumEditor(cell, rule);
+        // Phase 5.2 D-03 — premium now uses the shared multi-select popover
+        // identical to status/difficulty/topics. Values: 'premium',
+        // 'non-premium' (or both).
+        this.renderMultiSelect(cell, rule, PREMIUM_OPTIONS);
         break;
     }
   }
@@ -422,58 +411,10 @@ export class FilterModal extends Modal {
     });
   }
 
-  private renderPremiumEditor(
-    parent: HTMLElement,
-    rule: FilterRule & { value: 'premium' | 'non-premium' | null },
-  ): void {
-    // Single-select chevron picker matching the multi-select look. Displays
-    // the current label inline; a popover lets the user pick exactly one
-    // (or clear by picking the same value again).
-    const picker = parent.createDiv({ cls: 'lc-fm__picker', attr: { role: 'button', tabindex: '0' } });
-    const valCell = picker.createSpan({ cls: 'lc-fm__picker-val' });
-    const renderValue = (): void => {
-      valCell.empty();
-      if (rule.value !== null) {
-        const opt = PREMIUM_OPTIONS.find((o) => o.value === rule.value);
-        if (opt) valCell.createSpan({ cls: 'lc-fm__picker-pill', text: opt.label });
-      }
-    };
-    renderValue();
-    const chev = picker.createSpan({ cls: 'lc-fm__picker-chev' });
-    setIcon(chev, 'chevron-down');
-
-    picker.addEventListener('click', () => {
-      const menu = this.contentEl.createDiv({ cls: 'lc-fm__popover' });
-      const rect = picker.getBoundingClientRect();
-      const parentRect = this.contentEl.getBoundingClientRect();
-      menu.setCssStyles({
-        position: 'absolute',
-        top: `${String(rect.bottom - parentRect.top + 4)}px`,
-        left: `${String(rect.left - parentRect.left)}px`,
-        minWidth: `${String(Math.max(160, rect.width))}px`,
-      });
-      for (const o of PREMIUM_OPTIONS) {
-        const item = menu.createDiv({ cls: 'lc-fm__popover-item' });
-        const check = item.createSpan({ cls: 'lc-fm__popover-check' });
-        if (rule.value === o.value) setIcon(check, 'check');
-        item.createSpan({ cls: 'lc-fm__popover-label', text: o.label });
-        item.addEventListener('click', (e) => {
-          e.stopPropagation();
-          rule.value = rule.value === o.value ? null : o.value;
-          renderValue();
-          menu.remove();
-          activeDocument.removeEventListener('click', close, true);
-        });
-      }
-      const close = (e: MouseEvent): void => {
-        if (!menu.contains(e.target as Node) && !picker.contains(e.target as Node)) {
-          menu.remove();
-          activeDocument.removeEventListener('click', close, true);
-        }
-      };
-      activeWindow.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
-    });
-  }
+  // Phase 5.2 D-03 — per-field premium editor removed. The premium case in
+  // renderValueEditor now routes through the shared renderMultiSelect
+  // (backed by PREMIUM_OPTIONS), giving premium the same checkbox-popover UX
+  // as status/difficulty/topics.
 
   private renderAddButton(parent: HTMLElement): void {
     const wrap = parent.createDiv({ cls: 'lc-fm__add' });
@@ -554,8 +495,15 @@ export class FilterModal extends Modal {
       text: 'Apply',
     });
     applyBtn.addEventListener('click', () => {
-      // If no rules, pass null so the caller can clear the filter entirely.
-      this.onApply(this.draft.rules.length === 0 ? null : this.draft);
+      // Phase 5.2 D-04 — strip any `__autoDefault` markers from the draft
+      // rules before applying so the persisted filter only carries user-intent
+      // rules. After the user hits Apply, subsequent reloads count the premium
+      // rule (which previously lived as an auto-default) like any other rule.
+      const cleanedRules = stripAutoDefaults(this.draft.rules);
+      const cleaned: CompoundFilter | null = cleanedRules.length === 0
+        ? null
+        : { match: this.draft.match, rules: cleanedRules };
+      this.onApply(cleaned);
       this.close();
     });
   }

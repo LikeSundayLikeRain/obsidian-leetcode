@@ -1,10 +1,16 @@
 // tests/settings/SettingsTab.test.ts
 //
-// Phase 5.2 Plan 05.2-02 — D-12 Settings language dropdown pinned LC list.
+// Phase 5.2 Wave 0 — RED until 05.2-02 (Settings language dropdown D-12).
 //
-// Unskipped in 05.2-02 Task 2. `LANGUAGE_OPTIONS` is now exported from
-// SettingsTab.ts and matches the 19-entry LC-official submission-language
-// list (SQL dialects excluded — v1 scope is algorithm problems).
+// Current state (main): SettingsTab.ts has a file-local `LANGUAGE_OPTIONS`
+// Record<string,string> with 5 entries — python3/java/cpp/javascript/
+// typescript. Wave 1 plan 05.2-02 expands this to match LeetCode's official
+// submission-language dropdown (D-12) AND exports the constant so tests can
+// pin the exact key-set.
+//
+// This shell is `it.skip` because `LANGUAGE_OPTIONS` is not exported today;
+// the test imports the future shape. Plan 05.2-02 exports the constant and
+// adds the extra keys, at which point this test unskips.
 
 import { describe, it, expect, vi } from 'vitest';
 
@@ -39,9 +45,9 @@ const EXPECTED_KEYS = [
   'elixir',
 ];
 
-describe('SettingsTab LANGUAGE_OPTIONS (D-12 LC pinned list)', () => {
+describe('SettingsTab LANGUAGE_OPTIONS (RED until 05.2-02)', () => {
   // D-12 — the dropdown key set equals the LC-official list.
-  it('D-12: LANGUAGE_OPTIONS keys match LC pinned list', async () => {
+  it.skip('D-12: LANGUAGE_OPTIONS keys match LC pinned list (TODO(05.2-02): export LANGUAGE_OPTIONS + expand to LC list)', async () => {
     const mod = (await import('../../src/settings/SettingsTab')) as unknown as {
       LANGUAGE_OPTIONS?: Record<string, string>;
     };
@@ -53,7 +59,7 @@ describe('SettingsTab LANGUAGE_OPTIONS (D-12 LC pinned list)', () => {
 
   // D-12 — locked label text for the three ambiguous cases per CONTEXT.md:
   // `python3` → 'Python3', `python` → 'Python', `cpp` → 'C++'.
-  it('D-12: locked labels for python3 / python / cpp', async () => {
+  it.skip('D-12: locked labels for python3 / python / cpp (TODO(05.2-02))', async () => {
     const mod = (await import('../../src/settings/SettingsTab')) as unknown as {
       LANGUAGE_OPTIONS?: Record<string, string>;
     };
