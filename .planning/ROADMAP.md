@@ -138,19 +138,19 @@ Plans:
 **Plans**: 7 plans
 Plans:
 **Wave 0 — Test scaffolding** *(precondition for Waves 1-5)*
-- [ ] 05-01-PLAN.md — Wave 0 test infrastructure (10 failing vitest stubs + fakeSettingsStore extension + fakeWorkspace mock helper; Nyquist-compliant verify targets for every Waves 1-5 task)
+- [x] 05-01-PLAN.md — Wave 0 test infrastructure (10 failing vitest stubs + fakeSettingsStore extension + fakeWorkspace mock helper; Nyquist-compliant verify targets for every Waves 1-5 task)
 
 **Wave 1 — Settings UI completeness** *(blocked on Wave 0)*
-- [ ] 05-02-PLAN.md — SettingsStore `techniquesFolderOverride` field + override-aware `getTechniquesFolder()` + SettingsTab `Knowledge Graph` section (override text field + auto-backlink toggle) — D-14, D-15, D-16, D-17, D-32
+- [x] 05-02-PLAN.md — SettingsStore `techniquesFolderOverride` field + override-aware `getTechniquesFolder()` + SettingsTab `Knowledge Graph` section (override text field + auto-backlink toggle) — D-14, D-15, D-16, D-17, D-32
 
 **Wave 2 — Error handling UX** *(blocked on Wave 0; parallel with Wave 1 via disjoint files)*
-- [ ] 05-03-PLAN.md — `isNetworkError` + `TimeoutError` helpers; throttle layer 429 single-retry + 10s Promise.race timeout (polling carve-out via `{ timeoutMs: 20_000 }`); `SessionExpiredNotice` DocumentFragment helper + 9-call-site migration; D-22 command-palette error routing in main.ts — D-18, D-19, D-20, D-21, D-22
+- [x] 05-03-PLAN.md — `isNetworkError` + `TimeoutError` helpers; throttle layer 429 single-retry + 10s Promise.race timeout (polling carve-out via `{ timeoutMs: 20_000 }`); `SessionExpiredNotice` DocumentFragment helper + 9-call-site migration; D-22 command-palette error routing in main.ts — D-18, D-19, D-20, D-21, D-22
 
 **Wave 3 — Run UX rewrite** *(blocked on Waves 0, 1, 2)*
-- [ ] 05-04-PLAN.md — `ephemeralTabStore.ts` (layout-change + active-leaf-change reconcile; Pitfall 2 corrected from `file-close`) + `RunModal.ts` (rewrite of CustomTestModal) + main.ts delete `run-sample` + `run-custom` and add single `run` command; delete `customTestStore.ts` + `CaseRegion.ts` + `CustomTestModal.ts` — D-01..D-10
+- [x] 05-04-PLAN.md — `ephemeralTabStore.ts` (layout-change + active-leaf-change reconcile; Pitfall 2 corrected from `file-close`) + `RunModal.ts` (rewrite of CustomTestModal) + main.ts delete `run-sample` + `run-custom` and add single `run` command; delete `customTestStore.ts` + `CaseRegion.ts` + `CustomTestModal.ts` — D-01..D-10
 
 **Wave 4 — Reading-mode buttons + Phase 4 cosmetic polish** *(blocked on Waves 0, 4)*
-- [ ] 05-05-PLAN.md — `CodeBlockActionProcessor.ts` (MarkdownPostProcessor with lc-slug gate + idempotent button injection) + SubmissionDetailModal MarkdownRenderer.render + Component lifecycle rewrite + CSS for `.leetcode-code-actions` + CE chip orange override + light-mode focus ring — D-11, D-12, D-13, D-29, D-30, D-31
+- [x] 05-05-PLAN.md — `CodeBlockActionProcessor.ts` (MarkdownPostProcessor with lc-slug gate + idempotent button injection) + SubmissionDetailModal MarkdownRenderer.render + Component lifecycle rewrite + CSS for `.leetcode-code-actions` + CE chip orange override + light-mode focus ring — D-11, D-12, D-13, D-29, D-30, D-31
 
 **Wave 5a — README + LICENSE + prerelease script** *(blocked on Waves 2, 3, 4, 5)*
 - [ ] 05-06-PLAN.md — LICENSE (MIT) + `scripts/prerelease-check.sh` (12 mechanical gates) + README with 10 D-25 sections + 4 screenshot checkpoint (human-verify) + `versions.json` correction to `1.10.0` — D-23, D-24, D-25, D-26, D-27

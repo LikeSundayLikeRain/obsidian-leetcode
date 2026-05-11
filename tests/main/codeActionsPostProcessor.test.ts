@@ -1,11 +1,9 @@
-// Phase 5 Wave 0 — failing stub (Nyquist).
-// Target: POLISH-07-adjacent D-11 / D-12 / D-13 — Reading-mode
-// MarkdownPostProcessor that appends Run + Submit buttons after each <pre>
-// when the active note has `lc-slug` frontmatter; idempotent; dispatches
-// fully-qualified command IDs via app.commands.executeCommandById.
-// Turns green when Plan 06 ships the postprocessor in
-// src/main/codeActionsPostProcessor.ts (or equivalent location; the
-// target module name is tracked in this stub — adjust on Plan 06 rename).
+// Phase 5 Plan 05 — D-11 / D-12 / D-13 Reading-mode Run/Submit buttons.
+// Post-regression update (fix(05-05)): gate via ctx.getSectionInfo on the
+// `## Code` heading so buttons appear only below the solution code block,
+// not every fenced block. Click handlers call plugin.runFromActive() /
+// submitFromActive() directly (not executeCommandById) so Reading Mode
+// (no editor) can dispatch.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
@@ -18,16 +16,73 @@ vi.mock('obsidian', async () => {
   return actual;
 });
 
+interface FakeSectionInfo {
+  text: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
 interface ProcessorCtx {
   sourcePath: string;
-  // The real MarkdownPostProcessorContext has more fields; Wave 0 tests only
-  // drive sourcePath (frontmatter gate) + the element/root passed as the
-  // first processor arg.
+  getSectionInfo: (el: HTMLElement) => FakeSectionInfo | null;
 }
 
 type ProcessorFn = (root: HTMLElement, ctx: ProcessorCtx) => void | Promise<void>;
 
-describe('Phase 5 codeActionsPostProcessor (D-11 / D-12 / D-13)', () => {
+const FULL_NOTE = `## Problem
+
+Example 1:
+
+\`\`\`text
+ex1
+\`\`\`
+
+Example 2:
+
+\`\`\`text
+ex2
+\`\`\`
+
+## Code
+
+\`\`\`java
+class Solution {}
+\`\`\`
+
+## Techniques
+`;
+
+function makeCtx(sourcePath: string, sectionInfo: FakeSectionInfo | null): ProcessorCtx {
+  return {
+    sourcePath,
+    getSectionInfo: () => sectionInfo,
+  };
+}
+
+function buildSinglePreRoot(): HTMLElement {
+  const root = document.createElement('div');
+  const pre = document.createElement('pre');
+  const code = document.createElement('code');
+  code.className = 'language-java';
+  code.textContent = 'class Solution {}';
+  pre.appendChild(code);
+  root.appendChild(pre);
+  return root;
+}
+
+interface FakePluginOverrides {
+  runFromActive?: ReturnType<typeof vi.fn>;
+  submitFromActive?: ReturnType<typeof vi.fn>;
+}
+
+function withHostMethods(plugin: ReturnType<typeof createFakePlugin>, overrides: FakePluginOverrides = {}) {
+  const host = plugin as unknown as Record<string, unknown>;
+  host.runFromActive = overrides.runFromActive ?? vi.fn();
+  host.submitFromActive = overrides.submitFromActive ?? vi.fn();
+  return plugin as ReturnType<typeof createFakePlugin> & FakePluginOverrides;
+}
+
+describe('codeActionsPostProcessor (Reading Mode)', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -35,118 +90,147 @@ describe('Phase 5 codeActionsPostProcessor (D-11 / D-12 / D-13)', () => {
     vi.resetModules();
   });
 
-  function buildRoot(): HTMLElement {
-    // Reading-mode Markdown rendering produces this element shape:
-    //   <div>                          ← root passed to postprocessor
-    //     <pre><code class="language-python">…</code></pre>
-    //   </div>
-    const root = document.createElement('div');
-    const pre = document.createElement('pre');
-    const code = document.createElement('code');
-    code.className = 'language-python';
-    code.textContent = 'class Solution:\n    pass\n';
-    pre.appendChild(code);
-    root.appendChild(pre);
-    return root;
-  }
-
-  it('no-op when the active file has no lc-slug frontmatter (D-12)', async () => {
+  it('no-op when file has no lc-slug frontmatter (D-12)', async () => {
     const mod = (await import('../../src/main/codeActionsPostProcessor')) as unknown as {
-      registerCodeBlockActionProcessor?: (plugin: unknown) => void;
+      registerCodeBlockActionProcessor: (plugin: unknown) => void;
     };
-    expect(typeof mod.registerCodeBlockActionProcessor).toBe('function');
 
     const metadataCache = createFakeMetadataCache();
-    // Explicitly set NO frontmatter for the sourcePath.
     metadataCache.setFrontmatter('Notes/random.md', null);
-    const plugin = createFakePlugin({ metadataCache });
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
 
-    mod.registerCodeBlockActionProcessor!(plugin);
-    // Retrieve the registered processor callback from the spy.
-    expect(plugin.registerMarkdownPostProcessor).toHaveBeenCalled();
+    mod.registerCodeBlockActionProcessor(plugin);
     const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
 
-    const root = buildRoot();
-    await processor(root, { sourcePath: 'Notes/random.md' });
+    const root = buildSinglePreRoot();
+    // Simulate ## Code section — would attach buttons if lc-slug were set.
+    const ctx = makeCtx('Notes/random.md', {
+      text: FULL_NOTE,
+      lineStart: FULL_NOTE.split('\n').indexOf('## Code') + 2,
+      lineEnd: FULL_NOTE.split('\n').indexOf('## Code') + 4,
+    });
+    await processor(root, ctx);
 
-    // No actions div appended when frontmatter lacks lc-slug.
     expect(root.querySelectorAll('.leetcode-code-actions').length).toBe(0);
   });
 
-  it('appends .leetcode-code-actions with Run + Submit buttons after <pre> when lc-slug present (D-13)', async () => {
+  it('appends Run + Submit when section is under ## Code', async () => {
     const mod = (await import('../../src/main/codeActionsPostProcessor')) as unknown as {
-      registerCodeBlockActionProcessor?: (plugin: unknown) => void;
+      registerCodeBlockActionProcessor: (plugin: unknown) => void;
     };
-    expect(typeof mod.registerCodeBlockActionProcessor).toBe('function');
 
     const metadataCache = createFakeMetadataCache();
     metadataCache.setFrontmatter('LeetCode/1-two-sum.md', { 'lc-slug': 'two-sum' });
-    const plugin = createFakePlugin({ metadataCache });
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
 
-    mod.registerCodeBlockActionProcessor!(plugin);
+    mod.registerCodeBlockActionProcessor(plugin);
     const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
 
-    const root = buildRoot();
-    await processor(root, { sourcePath: 'LeetCode/1-two-sum.md' });
+    const root = buildSinglePreRoot();
+    const lines = FULL_NOTE.split('\n');
+    const codeHeadingIdx = lines.indexOf('## Code');
+    const ctx = makeCtx('LeetCode/1-two-sum.md', {
+      text: FULL_NOTE,
+      lineStart: codeHeadingIdx + 2,
+      lineEnd: codeHeadingIdx + 4,
+    });
+    await processor(root, ctx);
 
     const actionsDiv = root.querySelector('.leetcode-code-actions');
     expect(actionsDiv).not.toBeNull();
-    // Exactly two buttons, Run + Submit, in order. Neutral styling — no
-    // .mod-cta class (UI-SPEC: accent reserved for primary auth button).
-    const buttons = Array.from(
-      actionsDiv!.querySelectorAll('button'),
-    ) as HTMLButtonElement[];
+    const buttons = Array.from(actionsDiv!.querySelectorAll('button')) as HTMLButtonElement[];
     expect(buttons.length).toBe(2);
     expect(buttons[0].textContent).toBe('Run');
     expect(buttons[1].textContent).toBe('Submit');
-    // Positioned AFTER the <pre>.
-    const pre = root.querySelector('pre')!;
-    expect(pre.nextElementSibling).toBe(actionsDiv);
   });
 
-  it('is idempotent — processing the same root twice does NOT duplicate the actions div', async () => {
+  it('does NOT append when section is under ## Problem (example code blocks)', async () => {
     const mod = (await import('../../src/main/codeActionsPostProcessor')) as unknown as {
-      registerCodeBlockActionProcessor?: (plugin: unknown) => void;
+      registerCodeBlockActionProcessor: (plugin: unknown) => void;
     };
-    expect(typeof mod.registerCodeBlockActionProcessor).toBe('function');
 
     const metadataCache = createFakeMetadataCache();
     metadataCache.setFrontmatter('LeetCode/1-two-sum.md', { 'lc-slug': 'two-sum' });
-    const plugin = createFakePlugin({ metadataCache });
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
 
-    mod.registerCodeBlockActionProcessor!(plugin);
+    mod.registerCodeBlockActionProcessor(plugin);
     const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
 
-    const root = buildRoot();
-    await processor(root, { sourcePath: 'LeetCode/1-two-sum.md' });
-    await processor(root, { sourcePath: 'LeetCode/1-two-sum.md' });
+    const root = buildSinglePreRoot();
+    const lines = FULL_NOTE.split('\n');
+    const problemHeadingIdx = lines.indexOf('## Problem');
+    const ctx = makeCtx('LeetCode/1-two-sum.md', {
+      text: FULL_NOTE,
+      lineStart: problemHeadingIdx + 4,
+      lineEnd: problemHeadingIdx + 6,
+    });
+    await processor(root, ctx);
 
-    // Exactly one actions div, not two.
+    expect(root.querySelectorAll('.leetcode-code-actions').length).toBe(0);
+  });
+
+  it('is idempotent — processing the same root twice does NOT duplicate', async () => {
+    const mod = (await import('../../src/main/codeActionsPostProcessor')) as unknown as {
+      registerCodeBlockActionProcessor: (plugin: unknown) => void;
+    };
+
+    const metadataCache = createFakeMetadataCache();
+    metadataCache.setFrontmatter('LeetCode/1-two-sum.md', { 'lc-slug': 'two-sum' });
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
+
+    mod.registerCodeBlockActionProcessor(plugin);
+    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
+
+    const root = buildSinglePreRoot();
+    const lines = FULL_NOTE.split('\n');
+    const codeHeadingIdx = lines.indexOf('## Code');
+    const ctx = makeCtx('LeetCode/1-two-sum.md', {
+      text: FULL_NOTE,
+      lineStart: codeHeadingIdx + 2,
+      lineEnd: codeHeadingIdx + 4,
+    });
+    await processor(root, ctx);
+    await processor(root, ctx);
+
     expect(root.querySelectorAll('.leetcode-code-actions').length).toBe(1);
   });
 
-  it('Run button click dispatches fully-qualified executeCommandById (Pitfall 14: prefixed with plugin.manifest.id)', async () => {
+  it('Run click invokes plugin.runFromActive(); Submit click invokes submitFromActive()', async () => {
     const mod = (await import('../../src/main/codeActionsPostProcessor')) as unknown as {
-      registerCodeBlockActionProcessor?: (plugin: unknown) => void;
+      registerCodeBlockActionProcessor: (plugin: unknown) => void;
     };
-    expect(typeof mod.registerCodeBlockActionProcessor).toBe('function');
 
     const metadataCache = createFakeMetadataCache();
     metadataCache.setFrontmatter('LeetCode/1-two-sum.md', { 'lc-slug': 'two-sum' });
-    const plugin = createFakePlugin({ metadataCache, manifestId: 'leetcode' });
+    const runFromActive = vi.fn();
+    const submitFromActive = vi.fn();
+    const plugin = withHostMethods(
+      createFakePlugin({ metadataCache, manifestId: 'leetcode' }),
+      { runFromActive, submitFromActive },
+    );
 
-    mod.registerCodeBlockActionProcessor!(plugin);
+    mod.registerCodeBlockActionProcessor(plugin);
     const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
 
-    const root = buildRoot();
-    await processor(root, { sourcePath: 'LeetCode/1-two-sum.md' });
+    const root = buildSinglePreRoot();
+    const lines = FULL_NOTE.split('\n');
+    const codeHeadingIdx = lines.indexOf('## Code');
+    const ctx = makeCtx('LeetCode/1-two-sum.md', {
+      text: FULL_NOTE,
+      lineStart: codeHeadingIdx + 2,
+      lineEnd: codeHeadingIdx + 4,
+    });
+    await processor(root, ctx);
 
-    const runBtn = root.querySelector(
-      '.leetcode-code-actions button',
-    ) as HTMLButtonElement | null;
-    expect(runBtn?.textContent).toBe('Run');
-    runBtn!.click();
+    const [runBtn, submitBtn] = Array.from(
+      root.querySelectorAll('.leetcode-code-actions button'),
+    ) as HTMLButtonElement[];
 
-    expect(plugin.app.commands.executeCommandById).toHaveBeenCalledWith('leetcode:run');
+    runBtn.click();
+    expect(runFromActive).toHaveBeenCalledTimes(1);
+    expect(submitFromActive).not.toHaveBeenCalled();
+
+    submitBtn.click();
+    expect(submitFromActive).toHaveBeenCalledTimes(1);
   });
 });

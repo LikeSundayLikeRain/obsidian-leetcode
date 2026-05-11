@@ -503,7 +503,7 @@ export default class LeetCodePlugin extends Plugin {
 
   /** Submit the active note via SubmissionOrchestrator (Plan 05). Opens a
    *  VerdictModal, drives it through pending → terminal / abort / timeout. */
-  private async submitFromActive(): Promise<void> {
+  async submitFromActive(): Promise<void> {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
@@ -638,7 +638,7 @@ export default class LeetCodePlugin extends Plugin {
    *  ONLY the active tab's input (D-07 single-active-tab semantics) and we
    *  forward it to `runInterpretedInput` which drives the same pending /
    *  terminal / abort / timeout state machine as submit. */
-  private async runFromActive(): Promise<void> {
+  async runFromActive(): Promise<void> {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
