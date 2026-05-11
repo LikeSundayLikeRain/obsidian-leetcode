@@ -208,10 +208,21 @@ Plans:
   7. Copy-to-Code: overwrite confirmation modal removed — Copy overwrites the `## Code` fence silently (matches reading-mode Run/Submit buttons which already operate silently)
   8. Default language list in Settings matches LeetCode's official language list (add/remove languages to exactly mirror LC's submission language dropdown)
   9. `python3` language tag in code fences produces proper syntax highlighting (currently python3-tagged blocks show unhighlighted plain text)
-**Plans**: TBD (run /gsd-plan-phase 5.2 to break down)
-
+**Plans**: 6 plans
 Plans:
-- [ ] TBD (run /gsd-plan-phase 5.2 to break down)
+**Wave 0 — Test scaffolding** *(RED-state unit tests; precondition for Wave 1)*
+- [ ] 05.2-01-PLAN.md — 8 vitest RED shells covering items 2/3/4/5/7/8/9 + workspace.on('file-open') obsidian-stub extension
+
+**Wave 1 — Implementation (parallel)** *(3 plans, zero files_modified overlap)*
+- [ ] 05.2-02-PLAN.md — Settings row merge (D-01) + pinned LC 2026 language list (D-12) in src/settings/SettingsTab.ts
+- [ ] 05.2-03-PLAN.md — Filter UX cluster: remove `language` field (D-02), premium multi-value (D-03), badge auto-default exclusion (D-04) across FilterModal + SettingsStore + ProblemListService + ProblemBrowserView
+- [ ] 05.2-04-PLAN.md — Starter-code + Copy-to-Code cluster: remove Insert starter code command (D-05), add workspace.on('file-open') auto-insert hook (D-06), add Reset code command with ConfirmOverwriteModal gate (D-07, D-08, D-11), silent Copy-to-Code (D-10) in src/main.ts + src/graph/SubmissionDetailModal.ts
+
+**Wave 2 — CSS contrast + python3 alias** *(blocked on 05.2-04 due to shared src/main.ts)*
+- [ ] 05.2-05-PLAN.md — AC/WA chip contrast fix via color-mix (D-09) + new src/main/python3Highlighter.ts MarkdownPostProcessor (D-13) wired in src/main.ts
+
+**Wave 3 — Live-smoke checkpoint** *(blocked on Waves 1+2; autonomous: false)*
+- [ ] 05.2-06-PLAN.md — Human-verified live-smoke: 12-item checklist covering all 9 items + 3 regression checks (Phase 5.1 edit-mode buttons, Phase 5 reading-mode buttons, full npm test suite)
 
 ### Phase 5.3: Language-Aware Editor (INSERTED)
 **Goal**: Fenced `## Code` blocks in Edit Mode get IDE-grade auto-indentation, bracket/paren handling, and language-aware editing behavior, so typing a multi-line solution feels like a real editor instead of a raw text field
