@@ -171,3 +171,19 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. Run & Submit | 0/7 | Planned — Wave 0/1/2/3 | - |
 | 4. Knowledge Graph Wiring | 0/TBD | Not started | - |
 | 5. Polish & Ship | 0/7 | Planned — Wave 0/1/2/3/4/5a/5b | - |
+
+### Phase 5.1: Edit-mode Inline Run/Submit Buttons (INSERTED)
+**Goal**: Run/Submit buttons are anchored inline directly below the `## Code` fenced block in Edit Mode (Source + Live Preview) without layout corruption, so users can submit without switching to Reading Mode during their normal coding flow
+**Depends on**: Phase 5 (specifically 05-05 reading-mode buttons, which this mirrors for edit mode)
+**Requirements**: POLISH-07 (gap-closure from 05-UAT G1; reading-mode buttons shipped in 05-05, edit-mode path was deferred and escalated to ship-blocker during 05-05 live smoke)
+**Success Criteria** (what must be TRUE):
+  1. In Live Preview and Source Mode on an `lc-slug` note, Run + Submit buttons appear inline directly below the closing fence of the `## Code` block — anchored to that specific block, scrolling with the note content
+  2. Buttons are NOT a floating/corner toolbar; they live inline with the document and remain positioned correctly through edits to surrounding content
+  3. Clicking dispatches `runFromActive` / `submitFromActive` (same command handlers already used by the reading-mode path)
+  4. No layout corruption in either edit mode: no inserted whitespace, no duplicate widgets, no shifted heading positions, no large blank rectangles between existing blocks
+  5. Reading Mode buttons from 05-05 continue to work unchanged — no regression
+  6. Renders correctly in both light and dark themes
+**Plans**: TBD (run /gsd-plan-phase 5.1 to break down)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 5.1 to break down)

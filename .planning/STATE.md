@@ -4,10 +4,10 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 5 context gathered
-last_updated: "2026-05-10T03:38:01.327Z"
+last_updated: "2026-05-11T03:02:09.399Z"
 last_activity: 2026-05-10 -- Phase 05 execution started
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 3
   total_plans: 34
   completed_plans: 29
@@ -73,6 +73,10 @@ for the full finding + remediation path.
 *Updated after each plan completion*
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 5.1 inserted after Phase 5: Edit-mode inline Run/Submit buttons anchored below ## Code fenced block (URGENT)
 
 ### Decisions
 
