@@ -211,18 +211,18 @@ Plans:
 **Plans**: 6 plans
 Plans:
 **Wave 0 — Test scaffolding** *(RED-state unit tests; precondition for Wave 1)*
-- [ ] 05.2-01-PLAN.md — 8 vitest RED shells covering items 2/3/4/5/7/8/9 + workspace.on('file-open') obsidian-stub extension
+- [x] 05.2-01-PLAN.md — 8 vitest RED shells covering items 2/3/4/5/7/8/9 + workspace.on('file-open') obsidian-stub extension
 
 **Wave 1 — Implementation (parallel)** *(3 plans, zero files_modified overlap)*
-- [ ] 05.2-02-PLAN.md — Settings row merge (D-01) + pinned LC 2026 language list (D-12) in src/settings/SettingsTab.ts
-- [ ] 05.2-03-PLAN.md — Filter UX cluster: remove `language` field (D-02), premium multi-value (D-03), badge auto-default exclusion (D-04) across FilterModal + SettingsStore + ProblemListService + ProblemBrowserView
-- [ ] 05.2-04-PLAN.md — Starter-code + Copy-to-Code cluster: remove Insert starter code command (D-05), add workspace.on('file-open') auto-insert hook (D-06), add Reset code command with ConfirmOverwriteModal gate (D-07, D-08, D-11), silent Copy-to-Code (D-10) in src/main.ts + src/graph/SubmissionDetailModal.ts
+- [x] 05.2-02-PLAN.md — Settings row merge (D-01) + pinned LC 2026 language list (D-12) in src/settings/SettingsTab.ts
+- [x] 05.2-03-PLAN.md — Filter UX cluster: remove `language` field (D-02), premium multi-value (D-03), badge auto-default exclusion (D-04) across FilterModal + SettingsStore + ProblemListService + ProblemBrowserView
+- [x] 05.2-04-PLAN.md — Starter-code + Copy-to-Code cluster: remove Insert starter code command (D-05), add workspace.on('file-open') auto-insert hook (D-06), add Reset code command with ConfirmOverwriteModal gate (D-07, D-08, D-11), silent Copy-to-Code (D-10) in src/main.ts + src/graph/SubmissionDetailModal.ts
 
 **Wave 2 — CSS contrast + python3 alias** *(blocked on 05.2-04 due to shared src/main.ts)*
-- [ ] 05.2-05-PLAN.md — AC/WA chip contrast fix via color-mix (D-09) + new src/main/python3Highlighter.ts MarkdownPostProcessor (D-13) wired in src/main.ts
+- [x] 05.2-05-PLAN.md — AC/WA chip contrast fix via color-mix (D-09) + new src/main/python3Highlighter.ts MarkdownPostProcessor (D-13) wired in src/main.ts
 
 **Wave 3 — Live-smoke checkpoint** *(blocked on Waves 1+2; autonomous: false)*
-- [ ] 05.2-06-PLAN.md — Human-verified live-smoke: 12-item checklist covering all 9 items + 3 regression checks (Phase 5.1 edit-mode buttons, Phase 5 reading-mode buttons, full npm test suite)
+- [x] 05.2-06-PLAN.md — Human-verified live-smoke: 12-item checklist covering all 9 items + 3 regression checks (Phase 5.1 edit-mode buttons, Phase 5 reading-mode buttons, full npm test suite)
 
 ### Phase 5.3: Language-Aware Editor (INSERTED)
 **Goal**: Fenced `## Code` blocks in Edit Mode get IDE-grade auto-indentation, bracket/paren handling, and language-aware editing behavior, so typing a multi-line solution feels like a real editor instead of a raw text field
@@ -236,7 +236,16 @@ Plans:
   5. Reading Mode + Source Mode behavior unchanged — indentation applies only in Live Preview where the CM6 editor is active (same surface as Phase 5.1)
   6. Bundle size impact documented and accepted; language packs are lazy-loaded or conditionally bundled to keep the baseline install under a reasonable cap (exact number locked during discuss-phase)
   7. No regression in Phase 5.1 edit-mode Run/Submit buttons or Phase 5 reading-mode buttons
-**Plans**: TBD (run /gsd-plan-phase 5.3 to break down)
-
+**Plans**: 4 plans
 Plans:
-- [ ] TBD (run /gsd-plan-phase 5.3 to break down)
+**Wave 1 — Test scaffolding + dependency install + baseline** *(RED-state unit tests; precondition for Wave 2)*
+- [ ] 05.3-01-PLAN.md — Install 6 @codemirror/lang-* packs + 3 RED-state vitest files (codeFenceLanguageExtension, languagePackRegistry, whitespaceCopyIndent) + A1 peer-dep verify + pre-install main.js baseline
+
+**Wave 2 — Implementation (registry + fallback + extension + main.ts wiring)** *(blocked on Wave 1)*
+- [ ] 05.3-02-PLAN.md — src/main/{languagePackRegistry,whitespaceCopyIndent,codeFenceLanguageExtension}.ts + src/main.ts Step 6i registerEditorExtension + optional warmDefaultPack — D-01..D-13, D-16; per-view Compartment swap (D-11 primary per RESEARCH Pitfall 1 + A4)
+
+**Wave 3 — Bundle-size gate (D-09 / D-15)** *(blocked on Wave 2)*
+- [ ] 05.3-03-PLAN.md — scripts/check-bundle-size.sh (700 KB hard / 600 KB warn) + scripts/prerelease-check.sh Gate 12 delegation + A8 + A9 close-out
+
+**Wave 4 — D-14 LOCKED human-verified live-smoke** *(blocked on Wave 3; autonomous: false)*
+- [ ] 05.3-04-PLAN.md — 44-item live-smoke: 8 supported langs + unsupported fallback + lc-slug gate + Source/Live-Preview parity + Phase 5.1/5.2/5 regression + light/dark theme + bundle-size ship gate — D-14
