@@ -1,59 +1,57 @@
 // tests/graph/SubmissionDetailModal.silent-copy.test.ts
 //
-// Phase 5.2 Wave 0 — RED until 05.2-04 (Copy-to-Code silent overwrite D-10).
+// Phase 5.2 Plan 04 — D-10 silent Copy-to-Code path.
 //
-// Wave 1 behavior change: SubmissionDetailModal.handleCopyToCode must call
-// `performCopy` DIRECTLY — no consultation of any confirm gate. The
-// `ConfirmOverwriteModal` class stays in the codebase for Reset (D-07 / D-11),
-// but the Copy-to-Code call site is decoupled from it entirely.
-//
-// Why a fresh file: `tests/graph/SubmissionDetailModal.test.ts` currently
-// asserts the confirm-gate semantics (`copy-to-code confirms overwrite`); the
-// confirm path is intentional today. Deleting / mutating that test mid-Wave-0
-// would pre-commit Wave 1 decisions. We add the new contract in a sibling
-// file; 05.2-04 reshapes the legacy test when the silent overwrite lands.
-// TODO(05.2-04): reshape SubmissionDetailModal.test.ts confirm assertions after
-// silent-overwrite lands.
+// Contracts:
+//   - handleCopyToCode performs a silent overwrite — it NEVER opens
+//     ConfirmOverwriteModal and NEVER calls any confirm hook.
+//   - performCopy is invoked on every Copy click.
+//   - `askConfirm` method is deleted from SubmissionDetailModal.
+//   - `confirmOverwriteForTest` hook is deleted from SubmissionDetailDeps.
+//   - Source file no longer references ConfirmOverwriteModal (D-10 cleanup).
+//   - ConfirmOverwriteModal.ts file STILL exists (D-11 — reused by Reset).
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { makeMockVaultApp } from '../helpers/mock-vault';
+import fs from 'node:fs';
+import path from 'node:path';
 
-// We assert on two invariants:
-//   (a) ConfirmOverwriteModal's constructor is never invoked.
-//   (b) performCopy (the private vault-write path) IS invoked once.
-// Spy on the constructor via module-level vi.mock so the detail modal's
-// lazy `await import('./ConfirmOverwriteModal')` resolves to our fake.
+// Same vi.hoisted + vi.mock pattern as SubmissionDetailModal.test.ts so the
+// CM6 render path doesn't explode during onOpen. Here we only need the mock
+// to exist; these tests exercise handleCopyToCode / performCopy directly.
 const hoisted = vi.hoisted(() => ({
-  confirmCtorSpy: vi.fn(),
-}));
-vi.mock('../../src/graph/ConfirmOverwriteModal', () => ({
-  ConfirmOverwriteModal: class {
-    constructor(...args: unknown[]) {
-      hoisted.confirmCtorSpy(...args);
-    }
-    open(): void {
-      /* swallow */
-    }
-  },
+  renderSpy: vi.fn(async () => undefined),
+  loadSpy: vi.fn(),
+  unloadSpy: vi.fn(),
 }));
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
-  return actual;
+  class Component {
+    load = hoisted.loadSpy;
+    unload = hoisted.unloadSpy;
+    addChild<T>(c: T): T {
+      return c;
+    }
+  }
+  return {
+    ...actual,
+    MarkdownRenderer: { render: hoisted.renderSpy },
+    Component,
+  };
 });
 
 import { SubmissionDetailModal } from '../../src/graph/SubmissionDetailModal';
 
-describe('SubmissionDetailModal silent copy (RED until 05.2-04)', () => {
-  beforeEach(() => {
-    hoisted.confirmCtorSpy.mockClear();
-  });
+const REPO_ROOT = process.cwd();
+const MODAL_SRC = fs.readFileSync(
+  path.join(REPO_ROOT, 'src/graph/SubmissionDetailModal.ts'),
+  'utf-8',
+);
 
-  // D-10 — handleCopyToCode on a file with an existing non-empty fence must
-  // NOT open the confirm modal. It calls performCopy directly and the vault
-  // is rewritten in one step.
-  it.skip('D-10: handleCopyToCode with non-empty existing fence — no ConfirmOverwriteModal constructed (TODO(05.2-04): delete confirm gate in handleCopyToCode)', async () => {
+describe('SubmissionDetailModal silent Copy-to-Code (D-10)', () => {
+  it('handleCopyToCode overwrites existing non-empty fence silently', async () => {
     const initial =
-      '---\nlc-id: 1\nlc-slug: two-sum\n---\n\n## Problem\nfoo\n\n## Code\n```python3\nold starter\n```\n\n## Notes\nbar\n';
+      '---\nlc-id: 1\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD CODE\n```\n';
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
     const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
 
@@ -61,21 +59,33 @@ describe('SubmissionDetailModal silent copy (RED until 05.2-04)', () => {
       file: file as never,
       problemTitle: 'Two Sum',
       verdictDisplay: 'Accepted',
-      code: 'class Solution:\n    pass\n',
+      code: 'NEW CODE',
       lang: 'python3',
-      // NOTE: deliberately NOT passing `confirmOverwriteForTest`. Today's
-      // production path would open ConfirmOverwriteModal in this branch; the
-      // Wave 1 fix skips the branch entirely.
     });
 
-    const performCopySpy = vi.spyOn(
-      modal as unknown as { performCopy: () => Promise<void> },
-      'performCopy',
-    ).mockResolvedValue(undefined);
+    await (modal as unknown as { handleCopyToCode(): Promise<void> }).handleCopyToCode();
 
-    await (modal as unknown as { handleCopyToCode: () => Promise<void> }).handleCopyToCode();
+    const body = m.getContent('LeetCode/1-two-sum.md') ?? '';
+    expect(body).toContain('NEW CODE');
+    expect(body).not.toContain('OLD CODE');
+    expect(m.spies.process).toHaveBeenCalledTimes(1);
+  });
 
-    expect(hoisted.confirmCtorSpy).not.toHaveBeenCalled();
-    expect(performCopySpy).toHaveBeenCalledTimes(1);
+  it('D-10: source does NOT reference ConfirmOverwriteModal', () => {
+    expect(MODAL_SRC).not.toMatch(/ConfirmOverwriteModal/);
+  });
+
+  it('D-10: source does NOT define askConfirm method', () => {
+    expect(MODAL_SRC).not.toMatch(/askConfirm/);
+  });
+
+  it('D-10: SubmissionDetailDeps does NOT include confirmOverwriteForTest', () => {
+    expect(MODAL_SRC).not.toMatch(/confirmOverwriteForTest/);
+  });
+
+  it('D-11: ConfirmOverwriteModal.ts file STILL exists in src/graph/', () => {
+    expect(
+      fs.existsSync(path.join(REPO_ROOT, 'src/graph/ConfirmOverwriteModal.ts')),
+    ).toBe(true);
   });
 });

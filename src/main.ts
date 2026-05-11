@@ -40,7 +40,9 @@ import { VerdictModal } from './solve/VerdictModal';
 import { RunModal } from './solve/RunModal';
 import { EphemeralTabStore } from './solve/ephemeralTabStore';
 import { registerRunCommand } from './solve/runCommandRegistration';
-import { forceInjectCodeSection } from './solve/starterCodeInjector';
+import { retrofit as retrofitStarterCode } from './solve/starterCodeInjector';
+import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
+import { makeFileOpenHandler } from './main/fileOpenHook';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
 import { interpretSolution, authHeaders } from './solve/leetcodeRest';
@@ -287,20 +289,21 @@ export default class LeetCodePlugin extends Plugin {
       },
     });
 
-    // Insert starter code — unconditionally replaces the first recognized
-    // fenced block under `## Code` with a fresh starter from the cached
-    // detail's codeSnippets (D-07 forced variant). Uses Plan 02 Task 4's
-    // forceInjectCodeSection helper — Plan 07 only imports and invokes.
+    // Phase 5.2 D-05 / D-07 — legacy insert-starter command is removed; the
+    // file-open hook (Step 6g below) now handles first-open auto-insert (D-06),
+    // and this `Reset code` command is the only remaining user-initiated flow.
+    // Deliberate destructive reset is gated behind ConfirmOverwriteModal when
+    // an existing fence is non-empty (D-11 keeps the modal class alive).
     this.addCommand({
-      id: 'insert-starter-code',
-      name: 'Insert starter code',
+      id: 'reset-code',
+      name: 'Reset code',
       editorCheckCallback: (checking, _editor, view) => {
         const file = view.file;
         if (!file) return false;
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
         const slug = fm?.['lc-slug'];
         if (!isValidSlug(slug)) return false;
-        if (!checking) { void this.insertStarterCodeForced(file, slug); }
+        if (!checking) { void this.resetCode(file, slug); }
         return true;
       },
     });
@@ -361,6 +364,22 @@ export default class LeetCodePlugin extends Plugin {
     // Click handlers call plugin.runFromActive() / submitFromActive() directly
     // (D-05 — avoids editorCheckCallback gate regression from 05-05 live smoke).
     this.registerEditorExtension(buildCodeActionsEditorExtension(this));
+
+    // Step 6g — Phase 5.2 D-06 auto-insert starter code on file-open.
+    // Fires for every note reveal; the handler gates on `lc-slug` frontmatter
+    // via `isValidSlug` before calling `retrofit(...)`. retrofit is idempotent
+    // (RESEARCH Pitfall 5) and silent-on-failure (D-09), so double-fire with
+    // the existing row-click retrofit in NoteWriter is safe.
+    this.registerEvent(
+      this.app.workspace.on(
+        'file-open',
+        makeFileOpenHandler({
+          app: this.app,
+          settings: this.settings,
+          retrofit: retrofitStarterCode,
+        }),
+      ),
+    );
 
     // GAP-6: fire-and-forget one-time migration Notice for users on the
     // v0.1.0 broken LeetCode.base schema. Non-blocking; never throws into
@@ -878,19 +897,29 @@ export default class LeetCodePlugin extends Plugin {
     }).open();
   }
 
-  /** Unconditionally replace the first recognized fenced block under
-   *  `## Code` with the fresh starter snippet for the user's default
-   *  language (D-07 forced variant). Uses Plan 02 Task 4's
-   *  forceInjectCodeSection helper — Plan 07 only imports + invokes. */
-  private async insertStarterCodeForced(file: TFile, slug: string): Promise<void> {
-    const detail = this.settings.getProblemDetail(slug);
-    const langSlug = this.settings.getDefaultLanguage();
-    const starter = detail?.codeSnippets?.find((s) => s.langSlug === langSlug)?.code ?? '';
-    await this.app.vault.process(file, (current) =>
-      forceInjectCodeSection(current, { starterCode: starter, langSlug }),
-    );
-     
-    new Notice('Starter code inserted.', 3000);
+  /** Phase 5.2 D-07 — thin wrapper around the testable
+   *  `resetCodeWithConfirm` helper. Opens ConfirmOverwriteModal (D-11)
+   *  when the existing fence is non-empty; bypasses the modal when the
+   *  fence is empty or absent. Success Notice copy is locked to
+   *  "Code reset to starter." per UI-SPEC §Copywriting. */
+  private async resetCode(file: TFile, slug: string): Promise<void> {
+    await resetCodeWithConfirm({
+      app: this.app,
+      file,
+      slug,
+      settings: this.settings,
+      confirm: () =>
+        new Promise<boolean>((resolve) => {
+          void import('./graph/ConfirmOverwriteModal').then(
+            ({ ConfirmOverwriteModal }) => {
+              new ConfirmOverwriteModal(this.app, resolve).open();
+            },
+          );
+        }),
+      notify: (message) => {
+        new Notice(message, 3000);
+      },
+    });
   }
 }
 

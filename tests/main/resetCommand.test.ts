@@ -1,163 +1,167 @@
 // tests/main/resetCommand.test.ts
 //
-// Phase 5.2 Wave 0 — RED until 05.2-04 (D-05 remove Insert starter code,
-// D-07 add Reset code + confirm gate).
+// Phase 5.2 Plan 04 — D-05 + D-07 Reset code command.
 //
-// Wave 1 plan 05.2-04 performs two related changes in main.ts:
-//   D-05: the `insert-starter-code` command is deleted.
-//   D-07: a new `reset-code` command is added. On `lc-slug` notes:
-//         - If the Code section has a non-empty fence → open
-//           `ConfirmOverwriteModal` before writing.
-//         - If no fence / empty fence → write directly, no confirm.
-//         - On non-lc-slug files, editorCheckCallback returns false so
-//           the command stays hidden from the palette.
+// Contracts:
+//   - `Insert starter code` command is removed from src/main.ts (D-05).
+//   - A new `Reset code` command (id=`reset-code`) is registered via
+//     `this.addCommand({ id: 'reset-code', name: 'Reset code', ... })` (D-07).
+//   - The helper that the command invokes — `resetCodeWithConfirm` —
+//     gates the destructive force-inject behind ConfirmOverwriteModal
+//     when a non-empty fence exists; proceeds silently when the fence
+//     is empty/absent.
+//   - Successful reset fires a Notice with copy "Code reset to starter."
+//   - ConfirmOverwriteModal.ts file remains in src/graph/ (D-11).
 //
-// These tests exercise the command-registration contract (what ids exist)
-// and the confirm-gate contract. All are `it.skip` pending 05.2-04 because
-// main.ts today still registers `insert-starter-code` and has no reset path.
+// The helper is extracted to src/solve/resetCodeWithConfirm.ts so we can
+// exercise the confirm gate deterministically without spinning up a real
+// Obsidian Plugin.
 
 import { describe, it, expect, vi } from 'vitest';
+import { makeMockVaultApp } from '../helpers/mock-vault';
+import { resetCodeWithConfirm } from '../../src/solve/resetCodeWithConfirm';
+import type { DetailCacheEntry } from '../../src/settings/SettingsStore';
+import fs from 'node:fs';
+import path from 'node:path';
 
-vi.mock('obsidian', async () => {
-  const actual = await import('../helpers/obsidian-stub');
-  return actual;
+const REPO_ROOT = process.cwd();
+
+function makeSettings(
+  detail: Partial<DetailCacheEntry> | null = null,
+  defaultLang = 'python3',
+) {
+  return {
+    getProblemDetail: vi.fn(
+      (_slug: string): DetailCacheEntry | null =>
+        detail as DetailCacheEntry | null,
+    ),
+    getDefaultLanguage: vi.fn((): string => defaultLang),
+  };
+}
+
+describe('resetCodeWithConfirm helper (D-07)', () => {
+  it('when fence is non-empty, opens ConfirmOverwriteModal and cancel skips write', async () => {
+    const initial = '---\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD\n```\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    const settings = makeSettings({
+      codeSnippets: [{ lang: "Python3", langSlug: "python3", code: "class S: pass" }],
+    });
+    const confirm = vi.fn(async () => false); // user cancels
+
+    const notices: string[] = [];
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm,
+      notify: (msg) => notices.push(msg),
+    });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(m.spies.process).not.toHaveBeenCalled();
+    const body = m.getContent('LeetCode/1-two-sum.md')!;
+    expect(body).toContain('OLD');
+    expect(body).not.toContain('class S: pass');
+    expect(notices).toEqual([]);
+  });
+
+  it('when fence is non-empty and user confirms, force-injects starter + fires success Notice', async () => {
+    const initial = '---\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD\n```\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    const settings = makeSettings({
+      codeSnippets: [{ lang: "Python3", langSlug: "python3", code: "class S: pass" }],
+    });
+    const confirm = vi.fn(async () => true);
+
+    const notices: string[] = [];
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm,
+      notify: (msg) => notices.push(msg),
+    });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(m.spies.process).toHaveBeenCalledTimes(1);
+    const body = m.getContent('LeetCode/1-two-sum.md')!;
+    expect(body).toContain('class S: pass');
+    expect(body).not.toContain('OLD');
+    expect(notices).toEqual(['Code reset to starter.']);
+  });
+
+  it('when fence is empty, skips confirm and writes starter immediately', async () => {
+    const initial = '---\nlc-slug: two-sum\n---\n\n## Code\n```python3\n\n```\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    const settings = makeSettings({
+      codeSnippets: [{ lang: "Python3", langSlug: "python3", code: "class S: pass" }],
+    });
+    const confirm = vi.fn(async () => true);
+
+    const notices: string[] = [];
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm,
+      notify: (msg) => notices.push(msg),
+    });
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(m.spies.process).toHaveBeenCalledTimes(1);
+    const body = m.getContent('LeetCode/1-two-sum.md')!;
+    expect(body).toContain('class S: pass');
+    expect(notices).toEqual(['Code reset to starter.']);
+  });
+
+  it('when detail is null, falls back to empty starter (still fires Notice)', async () => {
+    const initial = '---\nlc-slug: two-sum\n---\n\n## Code\n```python3\n\n```\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    const settings = makeSettings(null);
+    const confirm = vi.fn(async () => true);
+
+    const notices: string[] = [];
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm,
+      notify: (msg) => notices.push(msg),
+    });
+
+    expect(m.spies.process).toHaveBeenCalledTimes(1);
+    expect(notices).toEqual(['Code reset to starter.']);
+  });
 });
 
-describe('Reset code command + confirm gate (RED until 05.2-04)', () => {
-  // D-07 — reset-code command registered with id='reset-code', name='Reset code'.
-  it.skip('D-07: reset-code command registered with expected id + name (TODO(05.2-04))', async () => {
-    const mod = (await import('../../src/main')) as unknown as {
-      getRegisteredCommandIds?: () => string[];
-    };
-    if (typeof mod.getRegisteredCommandIds !== 'function') {
-      throw new Error(
-        'getRegisteredCommandIds not exported — 05.2-04 must expose a test-only ' +
-          'introspection helper OR this test must instantiate the plugin and read ' +
-          'captured addCommand calls (planner picks the mechanism)',
-      );
-    }
-    const ids = mod.getRegisteredCommandIds();
-    expect(ids).toContain('reset-code');
+describe('src/main.ts wiring (D-05, D-07 grep gates)', () => {
+  const src = fs.readFileSync(path.join(REPO_ROOT, 'src/main.ts'), 'utf-8');
+
+  it('D-05: does NOT register the `insert-starter-code` command', () => {
+    expect(src).not.toMatch(/'insert-starter-code'/);
+    expect(src).not.toMatch(/Insert starter code/);
   });
 
-  // D-05 — insert-starter-code command is removed from the registration list.
-  it.skip('D-05: insert-starter-code command is NOT registered (TODO(05.2-04))', async () => {
-    const mod = (await import('../../src/main')) as unknown as {
-      getRegisteredCommandIds?: () => string[];
-    };
-    if (typeof mod.getRegisteredCommandIds !== 'function') {
-      throw new Error('getRegisteredCommandIds not exported — 05.2-04 must expose it');
-    }
-    const ids = mod.getRegisteredCommandIds();
-    expect(ids).not.toContain('insert-starter-code');
+  it('D-07: registers `reset-code` command with name "Reset code"', () => {
+    // id is quoted in the addCommand literal
+    expect(src).toMatch(/id:\s*'reset-code'/);
+    expect(src).toMatch(/name:\s*'Reset code'/);
   });
 
-  // D-07 — Reset on a file with an existing non-empty fence opens the confirm
-  // modal before writing.
-  it.skip('D-07: Reset on file with existing fence opens ConfirmOverwriteModal (TODO(05.2-04): extract resetCode helper for testability)', async () => {
-    const mod = (await import('../../src/main')) as unknown as {
-      resetCodeForActive?: (plugin: unknown, file: unknown) => Promise<void>;
-    };
-    if (typeof mod.resetCodeForActive !== 'function') {
-      throw new Error('resetCodeForActive helper not exported — 05.2-04 must extract it');
-    }
-    // Body with a non-empty fence under ## Code — the gate should fire.
-    const confirmCtorSpy = vi.fn();
-    vi.doMock('../../src/solve/ConfirmOverwriteModal', () => ({
-      ConfirmOverwriteModal: class {
-        constructor(...args: unknown[]) {
-          confirmCtorSpy(...args);
-        }
-        open(): void {
-          /* test stub; would surface the modal in production */
-        }
-      },
-    }));
-    // The helper is expected to read the file body, detect the non-empty
-    // fence via `hasExistingCodeBlock`, and open the confirm modal. We only
-    // assert the confirm path was taken.
-    const file = { path: 'LeetCode/1-two-sum.md' };
-    const plugin = {
-      app: {
-        vault: {
-          read: async () =>
-            '## Problem\nfoo\n\n## Code\n```python3\nexisting code\n```\n',
-          process: vi.fn(),
-        },
-      },
-      settings: {
-        getDefaultLanguage: () => 'python3',
-        getProblemDetail: () => null,
-      },
-    };
-    await mod.resetCodeForActive(plugin, file);
-    expect(confirmCtorSpy).toHaveBeenCalledTimes(1);
+  it('D-06: registers workspace.on("file-open") via registerEvent', () => {
+    expect(src).toMatch(/workspace\.on\(\s*'file-open'/);
+    expect(src).toMatch(/registerEvent/);
   });
 
-  // D-07 — Reset on a file without an existing non-empty fence proceeds without
-  // the confirm modal (nothing destructive is being overwritten).
-  it.skip('D-07: Reset on empty Code section proceeds without confirm (TODO(05.2-04))', async () => {
-    const mod = (await import('../../src/main')) as unknown as {
-      resetCodeForActive?: (plugin: unknown, file: unknown) => Promise<void>;
-    };
-    if (typeof mod.resetCodeForActive !== 'function') {
-      throw new Error('resetCodeForActive helper not exported — 05.2-04 must extract it');
-    }
-    const confirmCtorSpy = vi.fn();
-    vi.doMock('../../src/solve/ConfirmOverwriteModal', () => ({
-      ConfirmOverwriteModal: class {
-        constructor(...args: unknown[]) {
-          confirmCtorSpy(...args);
-        }
-        open(): void {
-          /* swallow */
-        }
-      },
-    }));
-    const file = { path: 'LeetCode/1-two-sum.md' };
-    const plugin = {
-      app: {
-        vault: {
-          read: async () => '## Problem\nfoo\n\n## Code\n```python3\n\n```\n',
-          process: vi.fn(),
-        },
-      },
-      settings: {
-        getDefaultLanguage: () => 'python3',
-        getProblemDetail: () => null,
-      },
-    };
-    await mod.resetCodeForActive(plugin, file);
-    expect(confirmCtorSpy).not.toHaveBeenCalled();
-  });
-
-  // D-07 — editorCheckCallback gate for non-lc-slug files. Reading-mode /
-  // non-problem notes must not surface the command at all.
-  it.skip('D-07: editorCheckCallback returns false for non-lc-slug files (TODO(05.2-04))', async () => {
-    const mod = (await import('../../src/main')) as unknown as {
-      resetCodeCheckCallback?: (
-        checking: boolean,
-        editor: unknown,
-        view: { file: { path: string } | null },
-        plugin: unknown,
-      ) => boolean;
-    };
-    if (typeof mod.resetCodeCheckCallback !== 'function') {
-      throw new Error('resetCodeCheckCallback not exported — 05.2-04 must export it');
-    }
-    const plugin = {
-      app: {
-        metadataCache: {
-          getFileCache: () => ({ frontmatter: {} }),
-        },
-      },
-    };
-    const result = mod.resetCodeCheckCallback(
-      true,
-      {},
-      { file: { path: 'Notes/random.md' } },
-      plugin,
-    );
-    expect(result).toBe(false);
+  it('D-11: ConfirmOverwriteModal.ts still exists in src/graph/', () => {
+    expect(fs.existsSync(path.join(REPO_ROOT, 'src/graph/ConfirmOverwriteModal.ts'))).toBe(true);
   });
 });

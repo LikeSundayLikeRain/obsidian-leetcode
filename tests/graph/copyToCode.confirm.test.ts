@@ -1,14 +1,15 @@
 // tests/graph/copyToCode.confirm.test.ts
 //
-// Phase 4 Wave 0 — TDD red stub for ConfirmOverwriteModal gate.
-// Target: src/graph/copyToCode.ts (Wave 2) — exports hasExistingCodeBlock.
+// Phase 5.2 Plan 04 — D-10: SubmissionDetailModal confirm gate removed.
+// Reset command confirm gate is tested in tests/main/resetCommand.test.ts.
+// Silent-overwrite behavior is tested in
+// tests/graph/SubmissionDetailModal.silent-copy.test.ts.
 //
-// The confirm modal fires only when ## Code has a NON-EMPTY fenced block.
-// An empty fenced block (starter code cleared by the user) is treated as
-// "nothing to preserve" → copy proceeds without the confirm modal.
+// This file survives as lightweight coverage for the `hasExistingCodeBlock`
+// predicate — still exported from `src/graph/copyToCode.ts` and still used by
+// `resetCodeWithConfirm` (the destructive Reset command path).
 
 import { describe, it, expect } from 'vitest';
-// Target — does not exist until Wave 2 ships it.
 import { hasExistingCodeBlock } from '../../src/graph/copyToCode';
 
 describe('hasExistingCodeBlock', () => {
