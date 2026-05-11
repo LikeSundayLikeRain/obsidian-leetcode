@@ -59,6 +59,8 @@ import { classifyStatus } from './solve/statusMap';
 import { registerCodeBlockActionProcessor } from './main/codeActionsPostProcessor';
 // Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) — edit-mode Run/Submit buttons in CM6.
 import { buildCodeActionsEditorExtension } from './main/codeActionsEditorExtension';
+// Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
+import { registerPython3Highlighter } from './main/python3Highlighter';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { SubmissionHistoryStore } from './graph/SubmissionHistoryStore';
@@ -380,6 +382,12 @@ export default class LeetCodePlugin extends Plugin {
         }),
       ),
     );
+
+    // Step 6h — Phase 5.2 D-13 python3 → python language-tag alias for
+    // Reading-Mode Prism highlighting. Global application (not gated on
+    // lc-slug) so any note with a ```python3 fence benefits. Synchronous
+    // class swap avoids the loadPrism() race (RESEARCH Pitfall 7).
+    registerPython3Highlighter(this);
 
     // GAP-6: fire-and-forget one-time migration Notice for users on the
     // v0.1.0 broken LeetCode.base schema. Non-blocking; never throws into
