@@ -56,7 +56,31 @@ export class MarkdownView {}
 export class ItemView {}
 export class FileManager {}
 export class Vault {}
-export class Workspace {}
+
+// Phase 5.2 Plan 01 (D-06) — Workspace stub gains a minimal event registry for
+// the `file-open` hook. Test code uses `fireFileOpen(workspace, file)` to
+// synchronously invoke all registered listeners. Additive — existing tests
+// that `new Workspace()` without touching events stay unaffected.
+export type FileOpenHandler = (file: TFile | null) => void;
+export class Workspace {
+  _fileOpenHandlers: FileOpenHandler[] = [];
+  on(name: string, cb: FileOpenHandler): { __stubEventRef: true; name: string } {
+    if (name === 'file-open') {
+      this._fileOpenHandlers.push(cb);
+    }
+    return { __stubEventRef: true, name };
+  }
+  offref(_ref: unknown): void {
+    /* no-op — stub; tests that care can reset _fileOpenHandlers directly. */
+  }
+}
+
+/** Test helper — synchronously fire every `file-open` listener attached to
+ *  `ws`. Returns the count of handlers invoked so tests can assert wiring. */
+export function fireFileOpen(ws: Workspace, file: TFile | null): number {
+  for (const cb of ws._fileOpenHandlers) cb(file);
+  return ws._fileOpenHandlers.length;
+}
 
 // Phase 5 Plan 05 (D-31) — SubmissionDetailModal uses Component + MarkdownRenderer
 // to render the code fence with Obsidian's CM6 syntax highlighting. Tests that
