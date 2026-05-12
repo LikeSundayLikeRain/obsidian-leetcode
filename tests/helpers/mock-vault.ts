@@ -76,6 +76,19 @@ export function makeMockVaultApp(initialFiles: Record<string, string> = {}) {
   });
   const getActiveViewOfType = vi.fn(() => null);
 
+  // Phase 5.3 Plan 06 — minimal metadataCache.getFileCache that returns the
+  // current frontmatter snapshot from state.frontmatter. Mirrors the read
+  // shape used in src/main.ts switchFenceLanguage Step C
+  // (`app.metadataCache.getFileCache(file)?.frontmatter`). Tests can seed via
+  // `seedFrontmatter()` and observe writes via processFrontMatter.
+  const getFileCache = vi.fn((file: MockVaultFile | { path?: string } | null | undefined) => {
+    if (!file) return null;
+    const path = (file as { path?: string }).path;
+    if (!path) return null;
+    const fm = state.frontmatter.get(path);
+    return fm ? { frontmatter: { ...fm } } : null;
+  });
+
   return {
     app: {
       vault: {
@@ -88,6 +101,9 @@ export function makeMockVaultApp(initialFiles: Record<string, string> = {}) {
       fileManager: {
         processFrontMatter,
       },
+      metadataCache: {
+        getFileCache,
+      },
       workspace: {
         openLinkText,
         getActiveViewOfType,
@@ -97,7 +113,7 @@ export function makeMockVaultApp(initialFiles: Record<string, string> = {}) {
     // Convenience: expose spies at the top level for assertion ergonomics.
     spies: {
       getAbstractFileByPath, create, createFolder, process, read,
-      processFrontMatter, openLinkText, getActiveViewOfType,
+      processFrontMatter, openLinkText, getActiveViewOfType, getFileCache,
     },
     /** Pre-populate frontmatter for a file (e.g., in regeneration tests). */
     seedFrontmatter(path: string, fm: Record<string, unknown>): void {
