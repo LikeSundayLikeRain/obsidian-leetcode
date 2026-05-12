@@ -102,6 +102,12 @@ export function buildLanguageChevron(
   // Esc never reaches the button listener. The doc-level handler covers
   // every focus location while the dropdown is open and self-removes on close.
   let escKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+  // G-DROPDOWN-CLIPPED — window-level scroll/resize handler that recomputes
+  // the body-portaled dropdown's coordinates so it stays anchored to the
+  // chevron button as the user scrolls or resizes the Obsidian window.
+  // Native addEventListener (NOT plugin.registerDomEvent) is used because the
+  // listener lifecycle is open-close-cycle scoped, not plugin-lifecycle scoped.
+  let repositionHandler: (() => void) | null = null;
 
   // G-DROPDOWN-CLIPPED (Task 2) — Position the body-portaled dropdown directly
   // below the chevron button using viewport-relative coordinates from
@@ -139,6 +145,15 @@ export function buildLanguageChevron(
       doc.removeEventListener('keydown', escKeyHandler, true);
       escKeyHandler = null;
     }
+    // G-DROPDOWN-CLIPPED — remove scroll (capture phase) + resize listeners
+    // and null out the closure reference so they don't leak across open/close
+    // cycles. Capture phase MUST be passed to removeEventListener so it
+    // matches the addEventListener signature in openDropdown().
+    if (repositionHandler) {
+      window.removeEventListener('scroll', repositionHandler, true);
+      window.removeEventListener('resize', repositionHandler);
+      repositionHandler = null;
+    }
   };
 
   const openDropdown = (): void => {
@@ -152,6 +167,15 @@ export function buildLanguageChevron(
     // so getBoundingClientRect on the dropdown (if ever needed) would return
     // real values. Reading from `button` is safe any time the button is mounted.
     positionDropdown();
+    // G-DROPDOWN-CLIPPED — attach scroll + resize listeners that recompute
+    // the dropdown position so it tracks the chevron button as the editor
+    // scrolls or the window resizes. Capture phase (`true`) for scroll so we
+    // hear scroll events from nested scroll containers (e.g., cm-scroller)
+    // even though those events do NOT bubble. Bubble phase for resize is
+    // sufficient since resize fires only on window.
+    repositionHandler = (): void => positionDropdown();
+    window.addEventListener('scroll', repositionHandler, true);
+    window.addEventListener('resize', repositionHandler);
     // Defer attaching the outside-click listener so the click that OPENED
     // the dropdown doesn't immediately close it via the same event-loop tick.
     outsideClickHandler = (e: MouseEvent): void => {
