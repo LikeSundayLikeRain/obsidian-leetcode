@@ -61,9 +61,6 @@ import { registerCodeBlockActionProcessor } from './main/codeActionsPostProcesso
 import { buildCodeActionsEditorExtension } from './main/codeActionsEditorExtension';
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
-// Phase 5.3 (POLISH-09) — Edit-Mode language-aware editor for `## Code` fence.
-import { buildCodeFenceLanguageExtension } from './main/codeFenceLanguageExtension';
-import { warmDefaultPack } from './main/languagePackRegistry';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { SubmissionHistoryStore } from './graph/SubmissionHistoryStore';
@@ -391,19 +388,6 @@ export default class LeetCodePlugin extends Plugin {
     // lc-slug) so any note with a ```python3 fence benefits. Synchronous
     // class swap avoids the loadPrism() race (RESEARCH Pitfall 7).
     registerPython3Highlighter(this);
-
-    // Step 6i — Phase 5.3 (POLISH-09) language-aware editor for `## Code` fence.
-    // Registers a CM6 Compartment that holds per-view LanguageSupport for the
-    // pragmatic 8 LC languages (Python, Java, C/C++, JS/TS, Go, Rust). Gated on
-    // `lc-slug` frontmatter (D-12) + caret-in-`## Code`-fence (D-13). Unsupported
-    // languages fall back to whitespace-copy indent (D-06). Lazy pack-init via
-    // dynamic import() on first fence encounter (D-07). Silent on pack-load
-    // failure (CF-19 parity with 5.2 python3Highlighter).
-    this.registerEditorExtension(buildCodeFenceLanguageExtension(this));
-    // Fire-and-forget warm of the user's default language so first fence-enter
-    // doesn't pay the 50–100 ms pack-init latency. warmDefaultPack swallows
-    // failures silently — first real swap() handles them via fallback.
-    warmDefaultPack(this.settings.getDefaultLanguage());
 
     // GAP-6: fire-and-forget one-time migration Notice for users on the
     // v0.1.0 broken LeetCode.base schema. Non-blocking; never throws into
