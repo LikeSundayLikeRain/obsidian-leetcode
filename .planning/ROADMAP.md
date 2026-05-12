@@ -237,7 +237,7 @@ Plans:
   6. Reverts the failed D-10/D-11 implementation: deletes 3 source files + 3 test files, uninstalls 6 @codemirror/lang-* packs; bundle returns from 520 KB to ~155 KB (D-13)
   7. No regression in Phase 5.1 Run/Submit (Edit + Reading), Phase 5 reading-mode buttons, Phase 5.2's python3Highlighter Prism alias
   8. Note: ROADMAP success criteria 1 from the original draft (per-language indent rules) is EXPLICITLY DEFERRED — superseded by the replan; see CONTEXT.md `<deferred>` Path A/B for the future Phase 6.x work
-**Plans**: 4 plans
+**Plans**: 7 plans
 Plans:
 **Wave 0 — Revert failed Compartment-swap implementation (D-13)**
 - [x] 05.3-01-PLAN.md — Delete codeFenceLanguageExtension.ts + languagePackRegistry.ts + whitespaceCopyIndent.ts + their tests; uninstall 6 @codemirror/lang-* packs; strip Step 6i imports + registration from src/main.ts; PRESERVE scripts/check-bundle-size.sh (D-13). Bundle drops 520 KB → ~149 KB
@@ -250,3 +250,10 @@ Plans:
 
 **Wave 3 — D-14 successor: live-smoke + bundle ship gate** *(blocked on Wave 2; autonomous: false)*
 - [x] 05.3-04-PLAN.md — Rewrite 05.3-UAT.md as the chevron+remap checklist (~45 items across 9 sections); tighten scripts/check-bundle-size.sh to 250 KB hard / 200 KB warn (RESEARCH §Q7); update scripts/prerelease-check.sh Gate 12 legend; human-verified live-smoke against dev vault — D-14 LOCKED
+
+**Wave 4 — Gap closure: chevron polish + copy-to-code lang sync** *(blocked on Wave 3; closes 7 verifier-prioritized gaps from Plan 04 UAT — gap_closure: true)*
+- [ ] 05.3-05-PLAN.md — Chevron polish (6 of 7 gaps): C6 Esc dismissal + G-CLICK-THROUGH wrapper-level pointerdown stopPropagation in src/main/languageChevronWidget.ts; G-LABEL-LAG metadataCache→languageRefreshEffect dispatch in src/main/codeActionsEditorExtension.ts; G-CHEVRON-STYLING port .lc-fm__picker rule to .leetcode-language-chevron in styles.css; G-LAYOUT widget anchor moved to closer-line.to with side: 1; G-PYTHON-LABEL python3→Python 3 in LC_LANG_DISPLAY_LABELS; G-UNDO-ORDER explicitly NOT addressed (verifier-accepted divergence)
+- [ ] 05.3-06-PLAN.md — G-COPY-TO-CODE-LANG-DRIFT: extend src/graph/copyToCode.ts to call app.fileManager.processFrontMatter after vault.process resolves (mirrors switchFenceLanguage Step C); same-slug + unknown-slug short-circuits; new tests/graph/copyToCode.langSync.test.ts (5 it-blocks); zero caller-surface changes — SubmissionDetailModal.performCopy unchanged
+
+**Wave 5 — Gap-closure live-smoke verification** *(blocked on Wave 4; autonomous: false; gap_closure: true)*
+- [ ] 05.3-07-PLAN.md — Re-run chevron-affected UAT subset (Sections C, D, F + new Copy-to-Code Sync-1..Sync-6 + Section A spot-check + light theme spot-check) after Plans 05/06 land; record results in 05.3-UAT.md preserving Plan 04 historical entries; flip 05.3-VERIFICATION.md from status: human_needed → status: verified; commit + 05.3-07-SUMMARY.md sign-off
