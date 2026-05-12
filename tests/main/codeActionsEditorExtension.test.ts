@@ -359,6 +359,92 @@ describe('buildCodeActionsEditorExtension — public API exists', () => {
   });
 });
 
+// Phase 5.3 Plan 05 (gap-closure) — G-LAYOUT: widget anchor must be
+// fence-relative (end-of-closer-line + side: 1), NOT next-line-relative.
+// The previous anchor (start of post-closer line + side: -1) inherited the
+// next line's indent guides, so typing Tab on the line below shifted the
+// action row horizontally. The new anchor is on the fence's own line,
+// always at its indent (0 for top-level ## Code fences).
+describe('G-LAYOUT: widget anchor is fence-relative not next-line-relative', () => {
+  it('anchor offset equals state.doc.line(closerLine).to (NOT line(closerLine + 1).from)', () => {
+    const metadataCache = createFakeMetadataCache();
+    metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', { 'lc-slug': 'two-sum' });
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
+
+    // Body with closer on line 6 followed by an INDENTED line on 7.
+    // FULL_NOTE-style frontmatter + ## Code + fence + tab-indented line.
+    const noteWithIndentBelow = [
+      '---',
+      'lc-slug: two-sum',
+      '---',
+      '## Code',
+      '```java',
+      '```',
+      '\t\tindented line below the fence',
+    ].join('\n');
+    const state = makeStateWithFile(noteWithIndentBelow, 'LeetCode/0001-two-sum.md');
+    const set = buildDecorations(state, plugin as never);
+
+    expect(set.size).toBe(1);
+
+    // Find the closer line by scanning. In the doc above, the closer is
+    // line 6 (1-indexed). The expected anchor offset is line(6).to.
+    let closerLineNumber = -1;
+    for (let i = 1; i <= state.doc.lines; i++) {
+      const t = state.doc.line(i).text;
+      if (/^\s*```/.test(t) && i > 1 && /^\s*```/.test(state.doc.line(i - 1).text)) {
+        closerLineNumber = i;
+        break;
+      }
+    }
+    expect(closerLineNumber).toBeGreaterThan(0);
+    const expectedAnchor = state.doc.line(closerLineNumber).to;
+    const oldAnchor = state.doc.line(closerLineNumber + 1).from;
+
+    let widgetFrom = -1;
+    set.between(0, 1_000_000, (from, _to) => {
+      widgetFrom = from;
+      return false;
+    });
+
+    expect(widgetFrom).toBe(expectedAnchor);
+    expect(widgetFrom).not.toBe(oldAnchor);
+  });
+
+  it('still works when the closer fence is the LAST line of the document (no trailing line)', () => {
+    const metadataCache = createFakeMetadataCache();
+    metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', { 'lc-slug': 'two-sum' });
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
+
+    // Closer is the last line — the previous fallback path (anchor at
+    // closerLine.to with side: 1) is now the canonical path. Confirm no
+    // throw + correct anchor.
+    const noteEndingWithCloser = [
+      '---',
+      'lc-slug: two-sum',
+      '---',
+      '## Code',
+      '```java',
+      '```',
+    ].join('\n');
+    const state = makeStateWithFile(noteEndingWithCloser, 'LeetCode/0001-two-sum.md');
+
+    expect(() => buildDecorations(state, plugin as never)).not.toThrow();
+    const set = buildDecorations(state, plugin as never);
+    expect(set.size).toBe(1);
+
+    // Closer line is line 6 in this fixture; widget anchor should equal
+    // line(6).to (the only valid offset on the closer line).
+    const closerOffset = state.doc.line(6).to;
+    let widgetFrom = -1;
+    set.between(0, 1_000_000, (from, _to) => {
+      widgetFrom = from;
+      return false;
+    });
+    expect(widgetFrom).toBe(closerOffset);
+  });
+});
+
 // Phase 5.3 Plan 05 (gap-closure) — G-LABEL-LAG: language refresh effect
 // rebuilds widget. The chevron's `currentSlug` is captured at widget
 // construction; without a manual rebuild trigger after `processFrontMatter`,

@@ -208,9 +208,11 @@ export function findCodeFence(
  * (RESEARCH §Pitfall 3 — first paint may precede metadataCache population).
  *
  * When all three hold, the set contains exactly one inline widget anchored
- * at the line AFTER the closing fence (or end-of-doc fallback at the closer's
- * line end with side: 1 — the block-widget flag is strictly forbidden per
- * 05-UAT G1).
+ * at the END of the closer-fence line with side: 1 (G-LAYOUT fix — gap-closure
+ * 05.3-05). The earlier anchor (start of post-closer line) inherited that
+ * line's indent guides and caused the widget to drift horizontally when the
+ * user typed Tab on the line below. The block-widget flag is strictly
+ * forbidden per 05-UAT G1.
  */
 export function buildDecorations(
   state: EditorState,
@@ -242,27 +244,20 @@ export function buildDecorations(
       ? lcLanguageRaw
       : plugin.settings.getDefaultLanguage();
 
-  // Reading-mode parity (D-01, 05-05 D-13): the button row is a *sibling after*
-  // the <pre> block, not inside it. In CM6 Live Preview, the closing fence line
-  // is still part of the rendered code-block widget; a widget anchored at that
-  // line's end gets clipped visually inside the block. Anchor the widget at the
-  // start of the line AFTER the closer so it renders on its own line between
-  // the fence and the next content (matches reading-mode's `insertAdjacentElement('afterend', ...)`).
-  // When the closing fence is the last line of the document, fall back to the
-  // closer line's end with side: 1 — there's no next line to anchor to.
-  const hasLineAfterCloser = fence.closerLine < state.doc.lines;
-  const anchor = hasLineAfterCloser
-    ? state.doc.line(fence.closerLine + 1).from
-    : state.doc.line(fence.closerLine).to;
+  // G-LAYOUT fix (gap-closure 05.3-05): anchor at end of closer-fence line
+  // with side: 1. The previous anchor (start of post-closer line, with the
+  // negative-side hint) inherited that line's indent guides, causing the
+  // action row to shift horizontally when the user typed Tab on the line
+  // below. The closer-fence line is always at the fence's own indent (0
+  // for top-level ## Code fences), so the widget no longer drifts.
+  const anchor = state.doc.line(fence.closerLine).to;
+  const side = 1;
   builder.add(
     anchor,
     anchor,
     Decoration.widget({
       widget: new CodeActionsWidget(plugin, file as TFile, currentSlug),
-      // side: -1 at the start of the next line places the widget before that
-      // line's rendered content, visually outside the fenced-block widget.
-      // side: 1 at end-of-doc fallback (no following line to anchor to).
-      side: hasLineAfterCloser ? -1 : 1,
+      side,
     }),
   );
 
