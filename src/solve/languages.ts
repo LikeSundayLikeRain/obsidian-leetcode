@@ -75,3 +75,76 @@ export function resolveLangSlug(
   if (alias) return alias;
   return fallback;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 5.3 Wave 1 — write-time fence-tag remap (D-04) + chevron labels (D-10)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// CONTEXT D-04 mapping table (LC slug → markdown-recognized fence tag):
+//   python3 → python   (REMAPPED — Prism/Lezer don't recognize 'python3')
+//   golang  → go       (REMAPPED — markdown/Prism/Lezer expect 'go')
+//   c       → cpp      (REMAPPED — shared parser; LC's 'c' slug rendered via cpp)
+//   python, java, cpp, javascript, typescript, rust → identity
+//
+// Unsupported LC slugs (csharp, kotlin, ruby, swift, scala, php, dart, elixir,
+// erlang, racket, mysql, postgresql, mssql, oraclesql) pass through verbatim —
+// fence renders plain monospace, same UX as today's "no Edit-Mode highlight".
+//
+// Purity preserved (file header contract): all four additions below are pure
+// data + one pure function; zero runtime imports, zero captured state, zero I/O.
+
+/** D-04: LC langSlug → markdown-recognized fence-tag. Covers the 9 LC slugs
+ *  for which markdown's nested parser has a recognized language; entries that
+ *  remap (`python3`, `golang`, `c`) plus identity entries that pin the contract. */
+export const LC_LANG_FENCE_TAG: Readonly<Record<string, string>> = {
+  python3: 'python',
+  python: 'python',
+  java: 'java',
+  cpp: 'cpp',
+  c: 'cpp',
+  javascript: 'javascript',
+  typescript: 'typescript',
+  golang: 'go',
+  rust: 'rust',
+};
+
+/**
+ * D-04: Map an LC langSlug to the markdown-recognized fence-tag. Unsupported
+ * LC slugs pass through verbatim (e.g., 'csharp' → 'csharp') — those render
+ * plain monospace, matching today's no-Edit-Mode-highlight baseline.
+ *
+ * Pure: returns table lookup or input.
+ */
+export function lcSlugToFenceTag(slug: string): string {
+  return LC_LANG_FENCE_TAG[slug] ?? slug;
+}
+
+/** D-10: LC langSlug → user-friendly display label for the chevron widget.
+ *  `python` and `python3` both render as 'Python' (the chevron writes `python3`
+ *  to `lc-language` for the canonical LC API slug). */
+export const LC_LANG_DISPLAY_LABELS: Readonly<Record<string, string>> = {
+  python3: 'Python',
+  python: 'Python',
+  java: 'Java',
+  cpp: 'C++',
+  c: 'C',
+  javascript: 'JavaScript',
+  typescript: 'TypeScript',
+  golang: 'Go',
+  rust: 'Rust',
+};
+
+/** D-04 + D-10: Chevron dropdown order for the 8 supported LC languages.
+ *  Python first as most common, Rust last as least common. `python3` is the
+ *  canonical LC API slug (chevron writes `python3` to `lc-language` even though
+ *  the fence-tag is remapped to `python`). */
+export const LC_CHEVRON_LANG_ORDER: ReadonlyArray<string> = [
+  'python3',
+  'java',
+  'cpp',
+  'c',
+  'javascript',
+  'typescript',
+  'golang',
+  'rust',
+];

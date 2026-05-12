@@ -3,6 +3,10 @@ import {
   LC_LANG_SLUGS,
   FENCE_TAG_ALIASES,
   resolveLangSlug,
+  LC_LANG_FENCE_TAG,
+  lcSlugToFenceTag,
+  LC_LANG_DISPLAY_LABELS,
+  LC_CHEVRON_LANG_ORDER,
 } from '../../src/solve/languages';
 
 describe('LC_LANG_SLUGS (SOLVE-08)', () => {
@@ -73,5 +77,119 @@ describe('resolveLangSlug (SOLVE-08, D-02/D-03/D-05)', () => {
 
   it('is pure — same input returns same output', () => {
     expect(resolveLangSlug('py', FALLBACK)).toBe(resolveLangSlug('py', FALLBACK));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 5.3 Wave 1 — D-04 fence-tag remap + D-10 chevron labels/order
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('lcSlugToFenceTag (Phase 5.3 D-04)', () => {
+  it('remaps python3 → python', () => {
+    expect(lcSlugToFenceTag('python3')).toBe('python');
+  });
+
+  it('remaps golang → go', () => {
+    expect(lcSlugToFenceTag('golang')).toBe('go');
+  });
+
+  it('remaps c → cpp (shared parser)', () => {
+    expect(lcSlugToFenceTag('c')).toBe('cpp');
+  });
+
+  it('returns identity for python, java, cpp, javascript, typescript, rust', () => {
+    expect(lcSlugToFenceTag('python')).toBe('python');
+    expect(lcSlugToFenceTag('java')).toBe('java');
+    expect(lcSlugToFenceTag('cpp')).toBe('cpp');
+    expect(lcSlugToFenceTag('javascript')).toBe('javascript');
+    expect(lcSlugToFenceTag('typescript')).toBe('typescript');
+    expect(lcSlugToFenceTag('rust')).toBe('rust');
+  });
+
+  it('passes through unsupported LC slugs verbatim (csharp, kotlin, ruby, swift)', () => {
+    expect(lcSlugToFenceTag('csharp')).toBe('csharp');
+    expect(lcSlugToFenceTag('kotlin')).toBe('kotlin');
+    expect(lcSlugToFenceTag('ruby')).toBe('ruby');
+    expect(lcSlugToFenceTag('swift')).toBe('swift');
+  });
+
+  it('LC_LANG_FENCE_TAG covers all 9 D-04 entries', () => {
+    expect(Object.keys(LC_LANG_FENCE_TAG).sort()).toEqual(
+      ['c', 'cpp', 'golang', 'java', 'javascript', 'python', 'python3', 'rust', 'typescript'],
+    );
+  });
+
+  it('is pure — same input returns same output', () => {
+    expect(lcSlugToFenceTag('python3')).toBe(lcSlugToFenceTag('python3'));
+    expect(lcSlugToFenceTag('csharp')).toBe(lcSlugToFenceTag('csharp'));
+  });
+});
+
+describe('LC_LANG_DISPLAY_LABELS (Phase 5.3 D-10)', () => {
+  it('renders python3 and python both as "Python"', () => {
+    expect(LC_LANG_DISPLAY_LABELS['python3']).toBe('Python');
+    expect(LC_LANG_DISPLAY_LABELS['python']).toBe('Python');
+  });
+
+  it('renders cpp as "C++"', () => {
+    expect(LC_LANG_DISPLAY_LABELS['cpp']).toBe('C++');
+  });
+
+  it('renders golang as "Go"', () => {
+    expect(LC_LANG_DISPLAY_LABELS['golang']).toBe('Go');
+  });
+
+  it('renders c as "C"', () => {
+    expect(LC_LANG_DISPLAY_LABELS['c']).toBe('C');
+  });
+
+  it('renders javascript as "JavaScript" and typescript as "TypeScript"', () => {
+    expect(LC_LANG_DISPLAY_LABELS['javascript']).toBe('JavaScript');
+    expect(LC_LANG_DISPLAY_LABELS['typescript']).toBe('TypeScript');
+  });
+
+  it('renders java as "Java" and rust as "Rust"', () => {
+    expect(LC_LANG_DISPLAY_LABELS['java']).toBe('Java');
+    expect(LC_LANG_DISPLAY_LABELS['rust']).toBe('Rust');
+  });
+
+  it('covers all 9 LC slugs in the D-04 table', () => {
+    expect(Object.keys(LC_LANG_DISPLAY_LABELS).sort()).toEqual(
+      ['c', 'cpp', 'golang', 'java', 'javascript', 'python', 'python3', 'rust', 'typescript'],
+    );
+  });
+});
+
+describe('LC_CHEVRON_LANG_ORDER (Phase 5.3 D-04 + D-10)', () => {
+  it('has length 8 (Python first, Rust last per UI-SPEC)', () => {
+    expect(LC_CHEVRON_LANG_ORDER.length).toBe(8);
+  });
+
+  it('lists python3 first', () => {
+    expect(LC_CHEVRON_LANG_ORDER[0]).toBe('python3');
+  });
+
+  it('lists rust last', () => {
+    expect(LC_CHEVRON_LANG_ORDER[LC_CHEVRON_LANG_ORDER.length - 1]).toBe('rust');
+  });
+
+  it('contains the 8 supported LC languages in dropdown order', () => {
+    expect([...LC_CHEVRON_LANG_ORDER]).toEqual([
+      'python3', 'java', 'cpp', 'c', 'javascript', 'typescript', 'golang', 'rust',
+    ]);
+  });
+
+  it('every entry has a corresponding LC_LANG_DISPLAY_LABELS entry', () => {
+    for (const slug of LC_CHEVRON_LANG_ORDER) {
+      expect(LC_LANG_DISPLAY_LABELS[slug]).toBeDefined();
+      expect(typeof LC_LANG_DISPLAY_LABELS[slug]).toBe('string');
+      expect((LC_LANG_DISPLAY_LABELS[slug] as string).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('every entry has a corresponding LC_LANG_FENCE_TAG entry', () => {
+    for (const slug of LC_CHEVRON_LANG_ORDER) {
+      expect(LC_LANG_FENCE_TAG[slug]).toBeDefined();
+    }
   });
 });
