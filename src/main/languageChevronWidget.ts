@@ -176,8 +176,13 @@ export function buildLanguageChevron(
     repositionHandler = (): void => positionDropdown();
     window.addEventListener('scroll', repositionHandler, true);
     window.addEventListener('resize', repositionHandler);
-    // Defer attaching the outside-click listener so the click that OPENED
-    // the dropdown doesn't immediately close it via the same event-loop tick.
+    // The outside-click listener is attached synchronously (no setTimeout /
+    // queueMicrotask). The click that OPENED the dropdown doesn't fire it
+    // because, by the time the click bubbles to `doc`, the chevron button is
+    // already inside `wrapper.contains(target)` (see guard below) — so the
+    // open-click is treated as INSIDE and skipped. Any refactor that narrows
+    // or moves the `wrapper.contains(target)` guard MUST defer this attach
+    // (e.g. via `queueMicrotask`) to avoid an instant-close race.
     outsideClickHandler = (e: MouseEvent): void => {
       const target = e.target;
       // G-DROPDOWN-CLIPPED — dropdown is now portaled to doc.body (NOT a

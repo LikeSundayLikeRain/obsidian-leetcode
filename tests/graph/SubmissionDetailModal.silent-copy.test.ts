@@ -170,15 +170,24 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: onSuccess callback', () => {
       onSuccess,
     });
 
-    // Drive the click-handler success path. handleCopyToCode resolves
-    // (no rejection), then the click-handler IIFE invokes deps.onSuccess?.().
-    await (modal as unknown as { handleCopyToCode(): Promise<void> }).handleCopyToCode();
-    // The modal's click-handler is what invokes onSuccess — call it directly
-    // by simulating the click-handler IIFE's success path.
-    // (handleCopyToCode itself doesn't call onSuccess; the click handler does
-    //  AFTER the await resolves.)
-    // Confirm the callback exists on deps and is the same spy.
-    expect((modal as unknown as { deps: { onSuccess: () => void } }).deps.onSuccess).toBe(onSuccess);
+    // Render the footer so the Copy click handler is wired. onOpen is async
+    // (renders body via MarkdownRenderer.render then appends the footer);
+    // await it before locating the Copy button.
+    await modal.onOpen();
+    const copyBtn = modal.contentEl.querySelector(
+      'button.mod-cta',
+    ) as HTMLButtonElement | null;
+    expect(copyBtn).not.toBeNull();
+
+    // Click the Copy button. The handler IIFE awaits handleCopyToCode then
+    // invokes deps.onSuccess?.() on the success branch. Wait two microtask
+    // turns for the awaited copyToCode + onSuccess invocation to settle.
+    copyBtn!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
   it('behavioral: deps.onSuccess does NOT fire when copyToCode rejects (success-only contract)', async () => {
