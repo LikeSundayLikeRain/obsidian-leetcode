@@ -146,8 +146,8 @@ describe('Integration: AC pipeline (section A — detail-ac fixture)', () => {
     expect(fm).toBeDefined();
     if (!fm) throw new Error('frontmatter missing');
     expect(fm['lc-status']).toBe('accepted');
-    expect(fm['lc-runtime-ms']).toBe(2); // from detail-ac runtimeDisplay "2 ms"
-    expect(fm['lc-memory-mb']).toBeCloseTo(47.1, 1); // from detail-ac "47.1 MB"
+    // Phase 5.3 D-01/D-02: legacy runtime/memory frontmatter writes removed —
+    // display path reads runtime/memory fresh from LC GraphQL on demand.
     expect(fm['lc-language']).toBe('java');
     expect(typeof fm['lc-solved-date']).toBe('string');
     expect(fm['lc-solved-date']).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);

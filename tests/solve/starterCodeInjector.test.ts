@@ -8,7 +8,8 @@ describe('injectCodeSection — idempotent path (SOLVE-02, D-06/D-07)', () => {
     const body = '## Problem\nA problem.\n\n## Notes\nMy notes.\n';
     const out = injectCodeSection(body, OPTS);
     expect(out).toContain('## Code');
-    expect(out).toContain('```python3');
+    // Phase 5.3 D-04: codeBlockFor remaps python3 → python at the fence opener.
+    expect(out).toContain('```python');
     expect(out).toContain('def solve():');
     const problemIdx = out.indexOf('## Problem');
     const codeIdx = out.indexOf('## Code');
@@ -47,14 +48,14 @@ describe('injectCodeSection — idempotent path (SOLVE-02, D-06/D-07)', () => {
       '## Notes',
     ].join('\n');
     const out = injectCodeSection(body, OPTS);
-    // New recognized block present.
-    expect(out).toContain('```python3');
+    // New recognized block present (Phase 5.3 D-04: python3 → python at write).
+    expect(out).toContain('```python');
     expect(out).toContain('def solve():');
     // The old text block is still present too (inserted BEFORE, not replaced).
     expect(out).toContain('```text');
     expect(out).toContain('not really code');
-    // The python3 block appears before the text block.
-    const py = out.indexOf('```python3');
+    // The python block appears before the text block.
+    const py = out.indexOf('```python');
     const txt = out.indexOf('```text');
     expect(py).toBeGreaterThan(0);
     expect(py).toBeLessThan(txt);
@@ -64,7 +65,8 @@ describe('injectCodeSection — idempotent path (SOLVE-02, D-06/D-07)', () => {
     const body = 'Just a free-form note.\n';
     const out = injectCodeSection(body, OPTS);
     expect(out).toContain('## Code');
-    expect(out).toContain('```python3');
+    // Phase 5.3 D-04: codeBlockFor remaps python3 → python at the fence opener.
+    expect(out).toContain('```python');
   });
 
   it('is pure — same input returns same output', () => {
@@ -78,12 +80,13 @@ describe('injectCodeSection — idempotent path (SOLVE-02, D-06/D-07)', () => {
     const body = '## Problem\nA problem.\n';
     const out = injectCodeSection(body, OPTS);
     expect(out).toContain('## Code');
-    expect(out).toContain('```python3');
+    // Phase 5.3 D-04: python3 → python at the fence opener.
+    expect(out).toContain('```python');
   });
 
-  it('empty starterCode still produces a fenced block', () => {
+  it('empty starterCode still produces a fenced block (D-04 remap applied)', () => {
     const body = '## Problem\nX\n\n## Notes\n';
     const out = injectCodeSection(body, { starterCode: '', langSlug: 'python3' });
-    expect(out).toContain('```python3\n\n```');
+    expect(out).toContain('```python\n\n```');
   });
 });

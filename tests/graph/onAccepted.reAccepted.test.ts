@@ -3,9 +3,10 @@
 // Phase 4 Wave 0 — TDD red stub for D-24 (re-AC reflects latest, not best).
 // Target: src/graph/KnowledgeGraphWriter.ts (Wave 1).
 //
-// On the second AC of the same problem the pipeline re-fires all five writes.
-// lc-runtime-ms and lc-memory-mb OVERWRITE with the new submission's values
-// even when they're worse. The picker is where best-ever lives.
+// On the second AC of the same problem the pipeline re-fires the surviving
+// solve-time writes (lc-status, lc-solved-date, lc-language) and union-merges
+// tags. Phase 5.3 D-01/D-02 removed the legacy runtime/memory frontmatter
+// writes — display reads those fresh from LC GraphQL.
 
 import { describe, it, expect } from 'vitest';
 import { makeFakeKnowledgeGraphDeps } from './mocks/fakeKnowledgeGraphDeps';
@@ -31,13 +32,11 @@ describe('KnowledgeGraphWriter.onAccepted — re-AC (D-24)', () => {
         },
       },
     });
-    // Seed with prior best-ever: 8 ms, 13.1 MB — already "accepted" note state.
+    // Seed with prior accepted state.
     deps.vault.seedFrontmatter('LeetCode/1-two-sum.md', {
       'lc-id': 1,
       'lc-slug': 'two-sum',
       'lc-status': 'accepted',
-      'lc-runtime-ms': 8,
-      'lc-memory-mb': 13.1,
       'lc-language': 'python3',
     });
 
@@ -63,9 +62,8 @@ describe('KnowledgeGraphWriter.onAccepted — re-AC (D-24)', () => {
     );
 
     const fm = deps.vault.getFrontmatter('LeetCode/1-two-sum.md')!;
-    // D-24: overwrite with latest, even though it's worse.
-    expect(fm['lc-runtime-ms']).toBe(24);
-    expect(fm['lc-memory-mb']).toBe(15.8);
+    // D-24: overwrite the surviving fields with latest. Phase 5.3 D-01/D-02:
+    // legacy runtime/memory frontmatter writes are no longer emitted.
     expect(fm['lc-language']).toBe('java');
     expect(fm['lc-status']).toBe('accepted');
     expect(fm['lc-solved-date']).toMatch(

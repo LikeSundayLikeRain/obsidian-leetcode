@@ -8,10 +8,12 @@
 //   - the `{id}-{slug}.md` filename pattern (buildNoteFilename)
 //   - the two-heading body layout (`## Problem` + `## Notes`) (buildNoteBody)
 //
-// Phase 2 writes exactly 7 lc-* keys + aliases + the difficulty tag. Phase 4 will
-// extend the tag policy to include topic tags AND will write solve-time lc-*
-// keys (lc-solved-date, lc-runtime-ms, lc-memory-mb) and flip lc-status to
-// 'accepted' — see D-04 / D-05 / D-10 for the boundary.
+// Phase 2 writes exactly 7 lc-* keys + aliases + the difficulty tag. Phase 4
+// extends the tag policy to include topic tags AND writes the solve-time lc-*
+// key set (lc-solved-date, lc-language) plus flips lc-status to 'accepted' —
+// see D-04 / D-05 / D-10 for the boundary. Phase 5.3 D-01/D-02 narrowed the
+// solve-time write surface (display reads runtime/memory fresh from LC
+// GraphQL on demand).
 //
 // GAP-2a closure: this module also owns the IndexedProblem.status →
 // lc-status mapping (see `mapStatusDisplay`). Callers pass the internal
@@ -20,6 +22,9 @@
 
 import type { App, TFile } from 'obsidian';
 import type { DetailCacheEntry } from './types';
+// Phase 5.3 D-04: write-time fence-tag remap (python3→python, golang→go, c→cpp).
+// Pure data + pure helper; languages.ts pulls nothing from notes/, so no cycle risk.
+import { lcSlugToFenceTag } from '../solve/languages';
 
 /** The 7 lc-* frontmatter keys Phase 2 writes. Ordered to match D-03 YAML. */
 export const PLUGIN_LC_KEYS = [
@@ -59,10 +64,16 @@ export const TECHNIQUES_HEADING_LINE = '## Techniques' as const;
 /**
  * Renders a fenced code block with the given langSlug tag + starter code.
  * Caller appends trailing newline as needed.
+ *
+ * Phase 5.3 D-04: the fence-tag opener is remapped via `lcSlugToFenceTag` so
+ * Obsidian's `lang-markdown` nested-parser recognizes the language natively
+ * in Edit Mode (e.g., `python3` slug → ` ```python` opener; `golang` → ` ```go`;
+ * `c` → ` ```cpp`). Unsupported LC slugs pass through verbatim and render plain
+ * monospace — same UX as the pre-Phase-5.3 baseline.
  */
 export function codeBlockFor(langSlug: string, starterCode: string): string {
   const code = starterCode.trim();
-  return '```' + langSlug + '\n' + code + '\n```';
+  return '```' + lcSlugToFenceTag(langSlug) + '\n' + code + '\n```';
 }
 
 /**
@@ -258,18 +269,20 @@ export async function applyFrontmatter(
 // Phase 4 Plan 03 — solve-time frontmatter writer (GRAPH-02, D-10, D-11, D-20)
 // ─────────────────────────────────────────────────────────────────────────
 //
-// On an Accepted submission, KnowledgeGraphWriter.onAccepted flips five
+// On an Accepted submission, KnowledgeGraphWriter.onAccepted flips three
 // lc-* frontmatter fields (lc-status='accepted', lc-solved-date ISO-8601,
-// lc-runtime-ms, lc-memory-mb, lc-language) and union-merges `lc/{topic-slug}`
-// tags (D-11). `applyFrontmatter` above drives the open/refresh path; this
-// solve-time variant is intentionally separate because:
-//   - It writes FIVE lc-* keys, not seven (aliases + problem-identity fields
+// lc-language) and union-merges `lc/{topic-slug}` tags (D-11). The historical
+// runtime/memory keys were dropped in Phase 5.3 D-01/D-02 because no production
+// reader consumed them — display reads runtime/memory fresh from LC GraphQL.
+// `applyFrontmatter` above drives the open/refresh path; this solve-time
+// variant is intentionally separate because:
+//   - It writes THREE lc-* keys, not seven (aliases + problem-identity fields
 //     are already persisted on note creation).
 //   - It has a non-downgrade contract in the OPPOSITE direction from D-04:
 //     here we ALWAYS upgrade to 'accepted', never preserve an existing
 //     'attempted' status.
-//   - Runtime/memory parse may return undefined — the writer must still
-//     flip status + date + language in that case (T-04-03-01 threat mitigation).
+//   - On every AC, the writer flips status + date + language regardless of
+//     network-side display lookups (T-04-03-01 threat mitigation).
 //
 // Purity contract: same as applyFrontmatter — all mutations happen INSIDE
 // the processFrontMatter callback. `solvedAt` is captured by the caller
@@ -280,14 +293,15 @@ export async function applyFrontmatter(
 // problem-detail topicSlugs + any other tags the caller wants to contribute).
 // Non-lc tags ('revisit', 'todo-review', etc.) are preserved.
 
-/** Input for the solve-time frontmatter writer. */
+/** Input for the solve-time frontmatter writer.
+ *
+ * Phase 5.3 D-01/D-02: solve-time runtime + memory inputs removed. The display
+ * path uses fresh GraphQL via `SubmissionDetailModal.runtimeDisplay`, so the
+ * legacy frontmatter keys for those values had no production reader and are
+ * dropped entirely. */
 export interface SolveTimeFrontmatterInput {
   /** Solve timestamp as a captured Date (caller owns the clock for retry-safety). */
   solvedAt: Date;
-  /** Parsed runtime in milliseconds. Undefined when LC returns "N/A". */
-  runtimeMs: number | undefined;
-  /** Parsed memory in MB. Undefined when LC returns "N/A". */
-  memoryMb: number | undefined;
   /** LC langSlug the submission used (python3, java, cpp, …). */
   language: string;
   /** Plugin-derived tags to union into the frontmatter's tags array — e.g.
@@ -323,17 +337,15 @@ function formatIsoLocalTz(d: Date): string {
  *              'accepted' itself (re-AC case; D-24 keeps frontmatter reflective
  *              of the latest submission).
  *   lc-solved-date — ISO-8601 local-tz (D-10). Always written.
- *   lc-runtime-ms — written only when input.runtimeMs is a finite number.
- *                   When undefined (LC returned "N/A"), the key is left
- *                   untouched if previously set, or absent if never set.
- *                   We do NOT explicitly write `undefined` — YAML serializers
- *                   differ on how they handle undefined keys, and the test
- *                   contract accepts "undefined or absent".
- *   lc-memory-mb — same posture as runtime.
  *   lc-language — overwrites with the submission's language (D-24: reflect
  *                 latest, not best; the user may have switched languages).
  *   tags — union-merge input.currentPassTags with existing tags. Preserves
  *          user tags ('revisit') and existing `lc/{slug}` tags.
+ *
+ * Phase 5.3 D-01/D-02: legacy runtime/memory frontmatter writes deleted —
+ * those keys were write-only and never read by display code (which uses
+ * fresh GraphQL via `SubmissionDetailModal.runtimeDisplay`). Removing the
+ * writes eliminates stale-data risk and narrows the frontmatter surface.
  *
  * Non-lc-* user keys: untouched.
  */
@@ -347,21 +359,8 @@ export async function applySolveTimeFrontmatter(
     fm['lc-status'] = 'accepted';
     // Solved date — ISO-8601 local-tz (D-10). Always written.
     fm['lc-solved-date'] = formatIsoLocalTz(input.solvedAt);
-    // Runtime — D-24 semantic: frontmatter reflects the LATEST AC, not
-    // best-ever. When LC returns "N/A" (parse failure → undefined input),
-    // explicitly clear the field so the frontmatter doesn't carry stale
-    // data from a prior AC. Test contract accepts undefined || absent || null
-    // — Obsidian's processFrontMatter serializes `undefined` as an erased key.
-    if (typeof input.runtimeMs === 'number' && Number.isFinite(input.runtimeMs)) {
-      fm['lc-runtime-ms'] = input.runtimeMs;
-    } else {
-      fm['lc-runtime-ms'] = undefined;
-    }
-    if (typeof input.memoryMb === 'number' && Number.isFinite(input.memoryMb)) {
-      fm['lc-memory-mb'] = input.memoryMb;
-    } else {
-      fm['lc-memory-mb'] = undefined;
-    }
+    // Phase 5.3 D-01/D-02: legacy runtime/memory frontmatter writes removed.
+    // Display path reads fresh runtime/memory from LC GraphQL on demand.
     // Language — overwrites (D-24).
     fm['lc-language'] = input.language;
 

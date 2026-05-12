@@ -7,9 +7,11 @@
 //
 // Pipeline (D-09 "one atomic-per-concern pass"):
 //   1. Frontmatter write — fileManager.processFrontMatter. Flips lc-status
-//      to 'accepted', writes lc-solved-date + lc-runtime-ms + lc-memory-mb
-//      + lc-language, union-merges lc/{topic-slug} tags. Always fires on AC.
-//      (GRAPH-02, D-10, D-11.)
+//      to 'accepted', writes lc-solved-date + lc-language, union-merges
+//      lc/{topic-slug} tags. Always fires on AC.
+//      (GRAPH-02, D-10, D-11; Phase 5.3 D-01/D-02 narrowed the on-AC
+//      frontmatter surface — runtime/memory display reads fresh from LC
+//      GraphQL.)
 //   2. ## Techniques body write — vault.process driven by the
 //      mergeTechniquesSection pure transform (Plan 04-02). Gated by
 //      autoBacklinksEnabled (D-20) AND topicTags-present (Pitfall 10).
@@ -136,17 +138,15 @@ export class KnowledgeGraphWriter {
       : topicSlugs.map((slug) => ({ slug, name: slugToTagName(slug) }));
 
     // Step 1 — frontmatter write (GRAPH-02, D-09, D-11). Always fires on AC.
+    // Phase 5.3 D-01/D-02: runtime/memory parsing + passing removed; display
+    // path uses fresh LC GraphQL via SubmissionDetailModal.runtimeDisplay.
     try {
-      const runtimeMs = parseRuntimeMs(terminal.status_runtime);
-      const memoryMb = parseMemoryMb(terminal.status_memory);
       const language = typeof terminal.lang === 'string' && terminal.lang.length > 0
         ? terminal.lang
         : 'unknown';
       const solvedAt = new Date();  // captured for retry-safety (pure helper downstream).
       await applySolveTimeFrontmatter(this.app, ctx.file, {
         solvedAt,
-        runtimeMs,
-        memoryMb,
         language,
         currentPassTags: tagContribution,
       });
@@ -213,35 +213,9 @@ export class KnowledgeGraphWriter {
   }
 }
 
-// ── parse helpers (D-10) ──────────────────────────────────────────────────
-
-/** Parse LC's runtime display string into milliseconds. Examples:
- *    "12 ms" → 12
- *    "N/A"   → undefined (AC runs rarely return this, but guard anyway)
- *    ""      → undefined
- *    undefined → undefined
- */
-function parseRuntimeMs(raw: unknown): number | undefined {
-  if (typeof raw !== 'string' || raw.length === 0) return undefined;
-  const match = /^(\d+)\s*ms/i.exec(raw.trim());
-  if (!match) return undefined;
-  const n = Number(match[1]);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-/** Parse LC's memory display string into megabytes. Examples:
- *    "14.2 MB" → 14.2
- *    "47.4 MB" → 47.4
- *    "N/A"     → undefined
- *    ""        → undefined
- */
-function parseMemoryMb(raw: unknown): number | undefined {
-  if (typeof raw !== 'string' || raw.length === 0) return undefined;
-  const match = /^(\d+(?:\.\d+)?)\s*mb/i.exec(raw.trim());
-  if (!match) return undefined;
-  const n = Number(match[1]);
-  return Number.isFinite(n) ? n : undefined;
-}
+// Phase 5.3 D-01/D-02: solve-time runtime/memory parse helpers + frontmatter
+// writes were removed. Display reads runtime/memory fresh from LC GraphQL
+// via SubmissionDetailModal.
 
 /** Turn an LC topic slug into a display name that matches LC's own convention
  *  ('hash-table' → 'Hash Table'). Used as a fallback for pre-Phase-4 cache

@@ -42,7 +42,8 @@ describe('forceInjectCodeSection — forced path (Blocker 2 fix, D-07 on-demand)
       '## Notes',
     ].join('\n');
     const out = forceInjectCodeSection(body, OPTS);
-    expect(out).toContain('```python3');
+    // Phase 5.3 D-04: codeBlockFor remaps python3 → python at the fence opener.
+    expect(out).toContain('```python');
     expect(out).toContain('# new');
     // Existing text block preserved.
     expect(out).toContain('```text');
