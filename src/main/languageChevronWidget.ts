@@ -19,6 +19,23 @@
 //   - Click on different language item calls plugin.switchLanguage(file, slug)
 //   - Esc / outside-click dismisses the dropdown
 //   - No `title` attribute (UI-SPEC §Copywriting "zero hover tooltip")
+//
+// G-DROPDOWN-CLIPPED portal pattern (Plan 05.3-08):
+//   - The dropdown DOM node is portaled into `doc.body` while open, NOT left as
+//     a descendant of the chevron `wrapper`. Reason: the chevron block widget
+//     mounts inside CM6's `cm-content`, which sets `contain: paint`. CSS
+//     containment of type `paint` clips ALL descendants outside the cm-content
+//     box AND breaks hit-testing on those descendants regardless of z-index or
+//     isolation. Plan 07's z-index: 9999 + isolation: isolate did NOT fix this;
+//     `contain: paint` overrides stacking-order hit-test rules.
+//   - openDropdown(): doc.body.appendChild(dropdown), then position via
+//     button.getBoundingClientRect() with position: fixed inline style.
+//   - closeDropdown(): symmetric detach (dropdown.remove()) + listener teardown.
+//   - Outside-click dismissal checks BOTH wrapper.contains(target) AND
+//     dropdown.contains(target) since the dropdown is no longer a descendant
+//     of wrapper.
+//   - Window scroll (capture phase) + resize listeners reposition the dropdown
+//     while open; both detach on close (no listener leaks).
 
 import type { Plugin, TFile } from 'obsidian';
 import {
@@ -89,6 +106,14 @@ export function buildLanguageChevron(
   const closeDropdown = (): void => {
     dropdown.style.display = 'none';
     button.setAttribute('aria-expanded', 'false');
+    // G-DROPDOWN-CLIPPED — detach the body-portaled dropdown. Idempotent: a
+    // second close call is a no-op because dropdown.parentElement will be null
+    // after the first remove(). Guard with parent-presence check so we don't
+    // throw if the dropdown was already detached (e.g., widget destroyed
+    // mid-open).
+    if (dropdown.parentElement === doc.body) {
+      dropdown.remove();
+    }
     if (outsideClickHandler) {
       doc.removeEventListener('click', outsideClickHandler, true);
       outsideClickHandler = null;
@@ -102,6 +127,10 @@ export function buildLanguageChevron(
   };
 
   const openDropdown = (): void => {
+    // G-DROPDOWN-CLIPPED — portal attach. The dropdown lives on doc.body
+    // while open so it escapes the cm-content paint container's clip + hit
+    // test boundary. Position is set in Task 2 via positionDropdown().
+    doc.body.appendChild(dropdown);
     dropdown.style.display = 'block';
     button.setAttribute('aria-expanded', 'true');
     // Defer attaching the outside-click listener so the click that OPENED
@@ -155,7 +184,9 @@ export function buildLanguageChevron(
     dropdown.appendChild(item);
   }
 
-  wrapper.appendChild(dropdown);
+  // G-DROPDOWN-CLIPPED — dropdown is NOT appended to wrapper. It is portaled
+  // to doc.body in openDropdown() and detached in closeDropdown() so it lives
+  // outside the cm-content paint container.
 
   // G-CLICK-THROUGH — pointerdown stopPropagation. CM6's caret-positioning
   // runs on `pointerdown` (which fires BEFORE the per-item `click` handlers),
