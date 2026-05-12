@@ -103,6 +103,21 @@ export function buildLanguageChevron(
   // every focus location while the dropdown is open and self-removes on close.
   let escKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
+  // G-DROPDOWN-CLIPPED (Task 2) — Position the body-portaled dropdown directly
+  // below the chevron button using viewport-relative coordinates from
+  // button.getBoundingClientRect(). `position: fixed` is immune to scroll
+  // containers' transforms (cm-scroller, etc.) so the dropdown lands exactly
+  // under the button regardless of which scroll parent owns the chevron.
+  // Top offset is 4px (UI-SPEC §Spacing `xs` token) — the same margin-top the
+  // CSS rule `.leetcode-language-chevron-dropdown` set under the descendant
+  // attach pattern.
+  const positionDropdown = (): void => {
+    const rect = button.getBoundingClientRect();
+    dropdown.style.position = 'fixed';
+    dropdown.style.top = `${rect.bottom + 4}px`;
+    dropdown.style.left = `${rect.left}px`;
+  };
+
   const closeDropdown = (): void => {
     dropdown.style.display = 'none';
     button.setAttribute('aria-expanded', 'false');
@@ -133,6 +148,10 @@ export function buildLanguageChevron(
     doc.body.appendChild(dropdown);
     dropdown.style.display = 'block';
     button.setAttribute('aria-expanded', 'true');
+    // G-DROPDOWN-CLIPPED — set viewport-relative coordinates AFTER display:block
+    // so getBoundingClientRect on the dropdown (if ever needed) would return
+    // real values. Reading from `button` is safe any time the button is mounted.
+    positionDropdown();
     // Defer attaching the outside-click listener so the click that OPENED
     // the dropdown doesn't immediately close it via the same event-loop tick.
     outsideClickHandler = (e: MouseEvent): void => {
