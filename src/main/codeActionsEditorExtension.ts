@@ -31,6 +31,7 @@
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   StateField,
+  StateEffect,
   RangeSetBuilder,
   type EditorState,
   type Extension,
@@ -45,6 +46,7 @@ import {
 import {
   editorInfoField,
   editorLivePreviewField,
+  MarkdownView,
   type Plugin,
   type TFile,
 } from 'obsidian';
@@ -67,6 +69,28 @@ import {
 type PluginHost = Plugin & LanguageChevronHost & {
   settings: { getDefaultLanguage(): string };
 };
+
+/**
+ * G-LABEL-LAG fix (gap-closure 05.3-05): a manual rebuild trigger for the
+ * StateField when nothing in the document changed but the chevron's source
+ * data (frontmatter `lc-language`) has. Two equivalent paths exist for
+ * surfacing this signal:
+ *   PATH A (chosen) — the extension owns a `metadataCache.on('changed')`
+ *     subscription and dispatches this effect on the active view when the
+ *     subscribed file matches. Minimal surface; keeps src/main.ts unaware
+ *     of the StateField's rebuild contract.
+ *   PATH B (alternative) — `switchFenceLanguage` in src/main.ts dispatches
+ *     this effect on its own EditorView after `processFrontMatter` resolves.
+ *     Cleaner causality but couples main.ts to the editor extension.
+ *
+ * PATH A chosen: keeps the chevron-label freshness contract local to the
+ * editor extension that owns the chevron rendering. The metadataCache
+ * listener already fires whenever frontmatter changes — including for
+ * external edits that bypass `switchFenceLanguage` (e.g., user edits the
+ * property panel manually) — so PATH A also closes that secondary refresh
+ * gap automatically.
+ */
+export const languageRefreshEffect = StateEffect.define<void>();
 
 /**
  * Inline widget that paints a chevron + Run + Submit row. Reuses the shipped
@@ -256,6 +280,10 @@ export function buildDecorations(
  *   - `editorLivePreviewField` flip — Cmd-E toggled Source↔LivePreview;
  *     rebuild ensures we don't stash stale decorations tied to the previous
  *     mode (RESEARCH Pitfall 5)
+ *   - `languageRefreshEffect` — Phase 5.3 Plan 05 G-LABEL-LAG fix:
+ *     metadataCache 'changed' subscription dispatches this effect after
+ *     `processFrontMatter` lands, so the chevron label re-renders on the
+ *     same click instead of lagging until the next docChanged transaction
  *
  * Other transactions (selection change, focus change) skip the rebuild and
  * map the old set through `tr.changes` (identity map when doc didn't change).
@@ -263,6 +291,34 @@ export function buildDecorations(
 export function buildCodeActionsEditorExtension(
   plugin: PluginHost,
 ): Extension {
+  // G-LABEL-LAG fix (PATH A): subscribe to metadataCache 'changed' once at
+  // extension build time. When the active MarkdownView's file matches the
+  // changed file, dispatch the languageRefreshEffect on its EditorView so
+  // the StateField below rebuilds the chevron label synchronously — no
+  // user-typing transaction required to flush the new lc-language value.
+  // plugin.registerEvent owns auto-cleanup on unload (no manual off()).
+  try {
+    plugin.registerEvent(
+      plugin.app.metadataCache.on('changed', (file) => {
+        try {
+          const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
+          if (!view || view.file !== file) return;
+          // `view.editor.cm` is the same undocumented internal handle the
+          // chevron switch path uses (see src/main.ts switchFenceLanguage).
+          const cm = (view.editor as unknown as { cm: EditorView }).cm;
+          cm.dispatch({ effects: languageRefreshEffect.of(undefined) });
+        } catch {
+          // Silently ignore — the editor may be in teardown, the active view
+          // may not be a MarkdownView, or `editor.cm` may be missing in test
+          // contexts. The next docChanged transaction will rebuild anyway.
+        }
+      }),
+    );
+  } catch {
+    // Defensive: if metadataCache isn't yet wired (test fixtures sometimes
+    // omit it), fall through to the StateField — extension still builds.
+  }
+
   return StateField.define<DecorationSet>({
     create(state) {
       return buildDecorations(state, plugin);
@@ -271,7 +327,10 @@ export function buildCodeActionsEditorExtension(
       const modeFlipped =
         tr.state.field(editorLivePreviewField) !==
         tr.startState.field(editorLivePreviewField);
-      if (tr.docChanged || modeFlipped) {
+      // G-LABEL-LAG: rebuild when the manual refresh effect lands, in
+      // addition to the existing docChanged + modeFlipped triggers.
+      const refreshEffect = tr.effects.some((e) => e.is(languageRefreshEffect));
+      if (tr.docChanged || modeFlipped || refreshEffect) {
         return buildDecorations(tr.state, plugin);
       }
       return old.map(tr.changes);
