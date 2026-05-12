@@ -359,6 +359,63 @@ describe('buildCodeActionsEditorExtension — public API exists', () => {
   });
 });
 
+// Phase 5.3 Plan 07 (gap-closure post-Plan 06) — G-LAYOUT-V2: widget MUST be a
+// CM6 BLOCK widget anchored at the END of the closer-fence line. A block widget
+// renders as its own line below the fence, so it (a) sits visually below the
+// fenced code area (user's preferred placement, NOT inside the code region as
+// Plan 05's fence-relative inline widget effectively did), AND (b) is immune
+// to indent decoration on the content-bearing line below the fence (the
+// original G-LAYOUT bug).
+describe('G-LAYOUT-V2: widget is a block widget anchored at fence-close (Plan 07)', () => {
+  it('decoration spec has block: true and side: 1', () => {
+    const metadataCache = createFakeMetadataCache();
+    metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', { 'lc-slug': 'two-sum' });
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
+    const state = makeStateWithFile(FULL_NOTE, 'LeetCode/0001-two-sum.md');
+
+    const set = buildDecorations(state, plugin as never);
+    expect(set.size).toBe(1);
+
+    let blockFlag: unknown = undefined;
+    let sideFlag: unknown = undefined;
+    set.between(0, 1_000_000, (_from, _to, deco) => {
+      const spec = (deco as unknown as {
+        spec: { block?: unknown; side?: unknown };
+      }).spec;
+      blockFlag = spec.block;
+      sideFlag = spec.side;
+      return false;
+    });
+
+    expect(blockFlag).toBe(true);
+    expect(sideFlag).toBe(1);
+  });
+
+  it('block widget is anchored at end of closer-fence line (line(closerLine).to)', () => {
+    const metadataCache = createFakeMetadataCache();
+    metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', { 'lc-slug': 'two-sum' });
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
+    const state = makeStateWithFile(FULL_NOTE, 'LeetCode/0001-two-sum.md');
+
+    const fence = findCodeFence(state);
+    expect(fence).not.toBeNull();
+    const expectedAnchor = state.doc.line(fence!.closerLine).to;
+
+    const set = buildDecorations(state, plugin as never);
+    let widgetFrom = -1;
+    let widgetTo = -1;
+    set.between(0, 1_000_000, (from, to, _deco) => {
+      widgetFrom = from;
+      widgetTo = to;
+      return false;
+    });
+
+    expect(widgetFrom).toBe(expectedAnchor);
+    // Block widgets occupy a zero-length range at the anchor point.
+    expect(widgetTo).toBe(expectedAnchor);
+  });
+});
+
 // Phase 5.3 Plan 05 (gap-closure) — G-LAYOUT: widget anchor must be
 // fence-relative (end-of-closer-line + side: 1), NOT next-line-relative.
 // The previous anchor (start of post-closer line + side: -1) inherited the

@@ -2,10 +2,20 @@
 //
 // Mounts a CM6 StateField<DecorationSet> that paints a widget below the
 // `## Code` fence in Live Preview + Source Mode on `lc-slug` notes. Gated on
-// `lc-slug` frontmatter via editorInfoField (D-06). Widget uses
-// `Decoration.widget({ side: 1 })` — NEVER the block-widget flag — to avoid
-// the Live Preview layout corruption observed in the 05-UAT G1 first attempt
-// (RESEARCH Pitfall 1).
+// `lc-slug` frontmatter via editorInfoField (D-06).
+//
+// G-LAYOUT-V2 (gap-closure post-Plan 06): widget is now a CM6 BLOCK widget
+// (`Decoration.widget({ widget, block: true, side: 1 })`) anchored at the END
+// of the fence-close line. A block widget renders as its OWN line below the
+// fence, so it (a) sits visually below the fence area (NOT inside the code
+// region — the Plan 05 G-LAYOUT fix had moved it inside, which the user
+// rejected) AND (b) is not subject to indent decoration of any
+// content-bearing line (the original G-LAYOUT bug — Tab on the line below
+// the fence dragged the chevron+buttons horizontally). The earlier
+// constraint that `block: true` caused Live Preview corruption (Phase 5.1
+// RESEARCH Pitfall 1) traced to anchoring at the START of a content line;
+// anchoring at the closer-fence line's END (with side: 1) treats the widget
+// as a post-line block and renders cleanly in Live Preview + Source Mode.
 //
 // WidgetType.eq() returns true for same-plugin + same-file + same-currentSlug
 // widgets so CM6 reuses the rendered DOM across transactions — no flicker, no
@@ -207,12 +217,14 @@ export function findCodeFence(
  * from frontmatter with a `settings.getDefaultLanguage()` cold-cache fallback
  * (RESEARCH §Pitfall 3 — first paint may precede metadataCache population).
  *
- * When all three hold, the set contains exactly one inline widget anchored
- * at the END of the closer-fence line with side: 1 (G-LAYOUT fix — gap-closure
- * 05.3-05). The earlier anchor (start of post-closer line) inherited that
- * line's indent guides and caused the widget to drift horizontally when the
- * user typed Tab on the line below. The block-widget flag is strictly
- * forbidden per 05-UAT G1.
+ * When all three hold, the set contains exactly one BLOCK widget anchored
+ * at the END of the closer-fence line with side: 1 + block: true
+ * (G-LAYOUT-V2 — gap-closure post-Plan 06). The widget renders as its own
+ * line below the fence, immune to indent decoration of any content-bearing
+ * line (the Plan 05 G-LAYOUT inline-widget anchor was vulnerable to Tab on
+ * the line below shifting the chevron+buttons horizontally; Plan 05's fix
+ * moved the widget INTO the fence which the user rejected). Block-widget
+ * placement at fence-close-end is the canonical solution.
  */
 export function buildDecorations(
   state: EditorState,
@@ -244,12 +256,15 @@ export function buildDecorations(
       ? lcLanguageRaw
       : plugin.settings.getDefaultLanguage();
 
-  // G-LAYOUT fix (gap-closure 05.3-05): anchor at end of closer-fence line
-  // with side: 1. The previous anchor (start of post-closer line, with the
-  // negative-side hint) inherited that line's indent guides, causing the
-  // action row to shift horizontally when the user typed Tab on the line
-  // below. The closer-fence line is always at the fence's own indent (0
-  // for top-level ## Code fences), so the widget no longer drifts.
+  // G-LAYOUT-V2 fix (gap-closure post-Plan 06): BLOCK widget anchored at
+  // end of closer-fence line with side: 1. A block widget renders as its
+  // own line BELOW the fence, so it (a) sits visually below the fenced
+  // code area (user's preferred placement), AND (b) escapes the indent
+  // decoration of any content-bearing line — typing Tab on the line below
+  // the fence no longer shifts the chevron+buttons horizontally.
+  // The closer-fence line is always at the fence's own indent (0 for
+  // top-level ## Code fences), and `block: true` makes the widget render
+  // as a standalone block following that line.
   const anchor = state.doc.line(fence.closerLine).to;
   const side = 1;
   builder.add(
@@ -258,6 +273,7 @@ export function buildDecorations(
     Decoration.widget({
       widget: new CodeActionsWidget(plugin, file as TFile, currentSlug),
       side,
+      block: true,
     }),
   );
 
