@@ -224,28 +224,29 @@ Plans:
 **Wave 3 — Live-smoke checkpoint** *(blocked on Waves 1+2; autonomous: false)*
 - [x] 05.2-06-PLAN.md — Human-verified live-smoke: 12-item checklist covering all 9 items + 3 regression checks (Phase 5.1 edit-mode buttons, Phase 5 reading-mode buttons, full npm test suite)
 
-### Phase 5.3: Language-Aware Editor (INSERTED)
-**Goal**: Fenced `## Code` blocks in Edit Mode get IDE-grade auto-indentation, bracket/paren handling, and language-aware editing behavior, so typing a multi-line solution feels like a real editor instead of a raw text field
-**Depends on**: Phase 5.1 (CM6 editor extension infrastructure), Phase 5.2 (python3 highlighting support — language-pack wiring is the foundation 5.3 builds on)
-**Requirements**: POLISH-09 (INSERTED — auto-indentation + language support for code fences)
-**Success Criteria** (what must be TRUE):
-  1. Pressing Enter inside a `## Code` fence on an `lc-slug` note triggers language-aware indentation: new line inherits the previous line's leading whitespace and adds/removes a level based on the language's grammar rules (Java/C++/JS: `{` bumps in, `}` dedents; Python: `:` bumps in, `else`/`elif`/`except`/`finally` dedent)
-  2. Supported languages match LC's core set: Python (and python3), Java, C++, JavaScript, TypeScript, Go, Rust, C, C# (exact list locked during discuss-phase)
-  3. Unsupported languages fall back cleanly to whitespace-copy (no crash, no disabled editor, just matches previous line's indentation without grammar awareness)
-  4. Auto-indentation only fires inside the `## Code` fence on `lc-slug` notes — never in prose, never in other fences (parity with Phase 5.1's scoping)
-  5. Reading Mode + Source Mode behavior unchanged — indentation applies only in Live Preview where the CM6 editor is active (same surface as Phase 5.1)
-  6. Bundle size impact documented and accepted; language packs are lazy-loaded or conditionally bundled to keep the baseline install under a reasonable cap (exact number locked during discuss-phase)
-  7. No regression in Phase 5.1 edit-mode Run/Submit buttons or Phase 5 reading-mode buttons
+### Phase 5.3: Language-Aware Editor (INSERTED — REPLANNED 2026-05-11)
+**Goal**: Fenced `## Code` blocks in Edit Mode render with native markdown syntax highlighting for the user's LC language, and a chevron dropdown LEFT of Phase 5.1's Run/Submit row lets users switch the LC language atomically (refetches starter code, rewrites fence opener tag + body, writes lc-language frontmatter — all in one Cmd-Z-revertible CM6 transaction)
+**Depends on**: Phase 5.1 (CM6 editor extension infrastructure), Phase 5.2 (python3 → python Prism alias precedent — Phase 5.3 lifts the same trick to write-time)
+**Requirements**: POLISH-09 (INSERTED — language support via write-time fence-tag remap + chevron switching UX. The original "IDE-grade auto-indentation + bracket handling" half is deferred to Phase 6.x per CONTEXT `<deferred>` Path A or Path B; documented as parked, not abandoned)
+**Success Criteria** (what must be TRUE — replanned per CONTEXT.md domain block 2026-05-11):
+  1. `## Code` fence content in Edit Mode (Live Preview + Source) renders with native markdown syntax highlighting for any LC language whose fence tag is markdown-recognized (after write-time remap: python3→python, golang→go, c→cpp; java/cpp/javascript/typescript/rust/python identity)
+  2. Language chevron `[▼ Python]` appears inline with Phase 5.1's Run/Submit buttons (LEFT-aligned; chevron + Run + Submit share the .leetcode-code-actions flex row via space-between)
+  3. Chevron is Edit-Mode only (D-09); Reading Mode shows ONLY Run + Submit
+  4. Clicking the chevron opens a dropdown of 8 supported LC languages; selecting one destructively replaces the fence body with LC's canonical starter code, rewrites the fence opener tag, and writes lc-language frontmatter — single CM6 dispatch so Cmd-Z reverts the visible fence atomically
+  5. Frontmatter cleanup: drop never-read lc-runtime-ms and lc-memory-mb (D-01/D-02); keep lc-language as the canonical LC-API source of truth (D-03)
+  6. Reverts the failed D-10/D-11 implementation: deletes 3 source files + 3 test files, uninstalls 6 @codemirror/lang-* packs; bundle returns from 520 KB to ~155 KB (D-13)
+  7. No regression in Phase 5.1 Run/Submit (Edit + Reading), Phase 5 reading-mode buttons, Phase 5.2's python3Highlighter Prism alias
+  8. Note: ROADMAP success criteria 1 from the original draft (per-language indent rules) is EXPLICITLY DEFERRED — superseded by the replan; see CONTEXT.md `<deferred>` Path A/B for the future Phase 6.x work
 **Plans**: 4 plans
 Plans:
-**Wave 1 — Test scaffolding + dependency install + baseline** *(RED-state unit tests; precondition for Wave 2)*
-- [ ] 05.3-01-PLAN.md — Install 6 @codemirror/lang-* packs + 3 RED-state vitest files (codeFenceLanguageExtension, languagePackRegistry, whitespaceCopyIndent) + A1 peer-dep verify + pre-install main.js baseline
+**Wave 0 — Revert failed Compartment-swap implementation (D-13)**
+- [ ] 05.3-01-PLAN.md — Delete codeFenceLanguageExtension.ts + languagePackRegistry.ts + whitespaceCopyIndent.ts + their tests; uninstall 6 @codemirror/lang-* packs; strip Step 6i imports + registration from src/main.ts; PRESERVE scripts/check-bundle-size.sh (D-13). Bundle drops 520 KB → ~149 KB
 
-**Wave 2 — Implementation (registry + fallback + extension + main.ts wiring)** *(blocked on Wave 1)*
-- [ ] 05.3-02-PLAN.md — src/main/{languagePackRegistry,whitespaceCopyIndent,codeFenceLanguageExtension}.ts + src/main.ts Step 6i registerEditorExtension + optional warmDefaultPack — D-01..D-13, D-16; per-view Compartment swap (D-11 primary per RESEARCH Pitfall 1 + A4)
+**Wave 1 — Frontmatter cleanup + write-time fence-tag remap** *(blocked on Wave 0)*
+- [ ] 05.3-02-PLAN.md — src/solve/languages.ts: add LC_LANG_FENCE_TAG + lcSlugToFenceTag + LC_LANG_DISPLAY_LABELS + LC_CHEVRON_LANG_ORDER (D-04, D-10); src/notes/NoteTemplate.ts: codeBlockFor calls lcSlugToFenceTag (D-04 write-time remap); applySolveTimeFrontmatter drops lc-runtime-ms / lc-memory-mb writes (D-01/D-02); src/graph/KnowledgeGraphWriter.ts: drop runtime/memory parsing + passing; update tests/graph/* fixtures
 
-**Wave 3 — Bundle-size gate (D-09 / D-15)** *(blocked on Wave 2)*
-- [ ] 05.3-03-PLAN.md — scripts/check-bundle-size.sh (700 KB hard / 600 KB warn) + scripts/prerelease-check.sh Gate 12 delegation + A8 + A9 close-out
+**Wave 2 — Chevron widget + atomic destructive switch** *(blocked on Wave 1)*
+- [ ] 05.3-03-PLAN.md — src/main/codeBlockButtonRow.ts: add opts.prefix?; src/main/languageChevronWidget.ts (NEW): DOM builder + dropdown click handler; src/main/codeActionsEditorExtension.ts: CodeActionsWidget.toDOM passes chevron factory (Edit-Mode only — D-09); src/main.ts: LeetCodePlugin.switchLanguage atomic-dispatch handler (CM6 dispatch FIRST, processFrontMatter SECOND — D-05/D-08); styles.css: chevron classes + space-between flex layout (D-06); two new vitest files
 
-**Wave 4 — D-14 LOCKED human-verified live-smoke** *(blocked on Wave 3; autonomous: false)*
-- [ ] 05.3-04-PLAN.md — 44-item live-smoke: 8 supported langs + unsupported fallback + lc-slug gate + Source/Live-Preview parity + Phase 5.1/5.2/5 regression + light/dark theme + bundle-size ship gate — D-14
+**Wave 3 — D-14 successor: live-smoke + bundle ship gate** *(blocked on Wave 2; autonomous: false)*
+- [ ] 05.3-04-PLAN.md — Rewrite 05.3-UAT.md as the chevron+remap checklist (~45 items across 9 sections); tighten scripts/check-bundle-size.sh to 250 KB hard / 200 KB warn (RESEARCH §Q7); update scripts/prerelease-check.sh Gate 12 legend; human-verified live-smoke against dev vault — D-14 LOCKED
