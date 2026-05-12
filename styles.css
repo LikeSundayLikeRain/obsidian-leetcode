@@ -878,6 +878,11 @@
   gap: 8px;
   margin-top: 4px;
   margin-bottom: 8px;
+  /* G-LAYOUT-V2 follow-up: when rendered as a CM6 block widget the wrapping
+   * container shrinks to content width by default, which collapses the
+   * space-between flip. Force full row width so chevron clings LEFT and
+   * Run/Submit cling RIGHT regardless of widget mode. */
+  width: 100%;
 }
 .leetcode-code-actions .leetcode-code-action-run {
   margin-left: auto;
