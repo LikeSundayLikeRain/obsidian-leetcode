@@ -1,0 +1,157 @@
+// Phase 5.3 (POLISH-09 / D-06..D-12) — Edit-Mode language chevron DOM builder.
+//
+// Renders the `[▼ {Language}]` chevron + 8-item dropdown that Phase 5.1's
+// CodeActionsWidget mounts as the LEFT-aligned prefix in the `## Code` fence
+// button row. Click-on-different-language calls `plugin.switchLanguage(file, slug)`
+// which the LeetCodePlugin implementation (src/main.ts) wires to the atomic
+// CM6 dispatch + processFrontMatter sequence (UI-SPEC §"Dropdown item click").
+//
+// CSP compliance (CLAUDE.md store-policy mandate):
+//   - DOM built via `doc.createElement` + `textContent` exclusively
+//   - No raw-HTML assignment, no inline script tags, no dynamic eval
+//   - All Document access via the `doc` parameter (popout-window safe;
+//     `obsidianmd/prefer-active-doc` lint rule); never reaches for the global doc
+//
+// Behavior contract (UI-SPEC §"Chevron click → dropdown open" + §"Dropdown
+// item click → language switch"):
+//   - Click chevron toggles dropdown; aria-expanded mirrors visibility
+//   - Click on current language item is a no-op (no fetch, no dispatch, no Notice)
+//   - Click on different language item calls plugin.switchLanguage(file, slug)
+//   - Esc / outside-click dismisses the dropdown
+//   - No `title` attribute (UI-SPEC §Copywriting "zero hover tooltip")
+
+import type { Plugin, TFile } from 'obsidian';
+import {
+  LC_LANG_DISPLAY_LABELS,
+  LC_CHEVRON_LANG_ORDER,
+} from '../solve/languages';
+import type { CodeBlockButtonRowHost } from './codeBlockButtonRow';
+
+/**
+ * Plugin host contract. Adds the chevron-specific switchLanguage method on top
+ * of CodeBlockButtonRowHost. LeetCodePlugin satisfies this — switchLanguage is
+ * implemented in src/main.ts (Task 3) as a wrapper around switchFenceLanguage.
+ */
+export interface LanguageChevronHost extends CodeBlockButtonRowHost {
+  switchLanguage(file: TFile, newSlug: string): Promise<void>;
+}
+
+/**
+ * Build the chevron DOM (button + dropdown) for the active fence's language.
+ *
+ * @param doc          The owning Document (use `view.dom.ownerDocument`,
+ *                     never the renderer's global doc — popout-window safety).
+ * @param plugin       Plugin satisfying the chevron host contract.
+ * @param file         The active note's TFile (passed through to switchLanguage).
+ * @param currentSlug  The note's current `lc-language` slug (e.g. 'python3').
+ *                     Used for the chevron label, the .is-current marker on
+ *                     the matching dropdown item, and the same-slug-no-op gate.
+ * @returns A wrapper `<span>` containing the chevron button + dropdown div.
+ */
+export function buildLanguageChevron(
+  doc: Document,
+  plugin: Plugin & LanguageChevronHost,
+  file: TFile,
+  currentSlug: string,
+): HTMLElement {
+  const wrapper = doc.createElement('span');
+  wrapper.className = 'leetcode-language-chevron-wrapper';
+
+  // Chevron button — `▼ {DisplayLabel}` (UI-SPEC §Copywriting Contract).
+  const button = doc.createElement('button');
+  button.className = 'leetcode-language-chevron';
+  button.setAttribute('aria-haspopup', 'listbox');
+  button.setAttribute('aria-expanded', 'false');
+  // textContent (NOT raw-HTML assignment) — CSP-safe per CLAUDE.md store-policy.
+  // Triangle is the literal Unicode glyph U+25BC.
+  const label = LC_LANG_DISPLAY_LABELS[currentSlug] ?? currentSlug;
+  button.textContent = `▼ ${label}`;
+  // Note: NO `title` attribute (UI-SPEC §Copywriting "Tooltip / hover hint: zero").
+  wrapper.appendChild(button);
+
+  // Dropdown popover — initially hidden via inline style.display.
+  const dropdown = doc.createElement('div');
+  dropdown.className = 'leetcode-language-chevron-dropdown';
+  dropdown.setAttribute('role', 'listbox');
+  dropdown.style.display = 'none';
+
+  // Outside-click handler — capture-phase listener attached to `doc` only
+  // while the dropdown is open. Self-detaches when the dropdown closes.
+  let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
+
+  const closeDropdown = (): void => {
+    dropdown.style.display = 'none';
+    button.setAttribute('aria-expanded', 'false');
+    if (outsideClickHandler) {
+      doc.removeEventListener('click', outsideClickHandler, true);
+      outsideClickHandler = null;
+    }
+  };
+
+  const openDropdown = (): void => {
+    dropdown.style.display = 'block';
+    button.setAttribute('aria-expanded', 'true');
+    // Defer attaching the outside-click listener so the click that OPENED
+    // the dropdown doesn't immediately close it via the same event-loop tick.
+    outsideClickHandler = (e: MouseEvent): void => {
+      const target = e.target;
+      if (target instanceof Node && !wrapper.contains(target)) {
+        closeDropdown();
+      }
+    };
+    // Capture phase so we beat any nested click handler that might
+    // stopPropagation() (matches UI-SPEC §Pitfall 7-equivalent posture).
+    doc.addEventListener('click', outsideClickHandler, true);
+  };
+
+  for (const slug of LC_CHEVRON_LANG_ORDER) {
+    const item = doc.createElement('button');
+    item.className = 'leetcode-language-chevron-item';
+    item.setAttribute('role', 'option');
+    const itemLabel = LC_LANG_DISPLAY_LABELS[slug] ?? slug;
+    item.textContent = itemLabel;
+    if (slug === currentSlug) {
+      item.classList.add('is-current');
+    }
+    item.addEventListener('click', (e) => {
+      // CM6 selection-bleed prevention (RESEARCH §Pitfall 3 from Phase 5.1).
+      e.preventDefault();
+      e.stopPropagation();
+      // Close the dropdown FIRST (UI-SPEC §"Dropdown item click" Step 1 —
+      // instant close gives the user tactile confirmation of selection
+      // even before any async work resolves).
+      closeDropdown();
+      // No-op when the user picks the current language (UI-SPEC §"State machine"
+      // — "click current language item → back to CLOSED, no further action").
+      if (slug !== currentSlug) {
+        void plugin.switchLanguage(file, slug);
+      }
+    });
+    dropdown.appendChild(item);
+  }
+
+  wrapper.appendChild(dropdown);
+
+  // Chevron button toggles dropdown.
+  button.addEventListener('click', (e) => {
+    // Same selection-bleed prevention as the dropdown items.
+    e.preventDefault();
+    e.stopPropagation();
+    if (dropdown.style.display === 'none') {
+      openDropdown();
+    } else {
+      closeDropdown();
+    }
+  });
+
+  // Esc dismissal — minimal keyboard support per UI-SPEC §Accessibility.
+  button.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && dropdown.style.display !== 'none') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeDropdown();
+    }
+  });
+
+  return wrapper;
+}
