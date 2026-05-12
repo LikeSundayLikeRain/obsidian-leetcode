@@ -135,7 +135,20 @@ export class SubmissionDetailModal extends Modal {
     const copyBtn = appendEl(footer, 'button', 'mod-cta');
     setText(copyBtn, 'Copy to ## Code');
     copyBtn.addEventListener('click', () => {
-      void this.handleCopyToCode();
+      // G-COPY-MODAL-NOCLOSE (gap-closure post-Plan 06): explicitly dismiss
+      // the modal after a SUCCESSFUL copy so the user lands back on the note.
+      // The await chain below is intentional — if `handleCopyToCode` rejects,
+      // control never reaches `safeClose()` and the modal stays open so the
+      // user sees the error context (rejection bubbles up via the unhandled
+      // promise; matches existing T-05.3.06-04 accepted disposition).
+      // `safeClose()` is also called inside `performCopy()` for the test path
+      // that invokes performCopy directly; calling it here ensures the
+      // production click path closes even if a future refactor moves the
+      // close out of performCopy.
+      void (async () => {
+        await this.handleCopyToCode();
+        this.safeClose();
+      })();
     });
 
     const closeBtn = appendEl(footer, 'button');
@@ -158,6 +171,13 @@ export class SubmissionDetailModal extends Modal {
    * previous confirm gate is removed to match the Run/Submit click-through
    * precedent. Users who need a deliberate destructive reset use the
    * Reset code command (src/solve/resetCodeWithConfirm.ts).
+   *
+   * G-COPY-MODAL-NOCLOSE (gap-closure post-Plan 06): on successful copy,
+   * the modal auto-dismisses so the user lands back on the note immediately
+   * after the fence body + lc-language frontmatter sync (Plan 06). If the
+   * copy throws (vault lock, processFrontMatter rejection, etc.) the modal
+   * STAYS OPEN so the user can see the error context and retry / close
+   * manually — the close is success-only by design.
    */
   async handleCopyToCode(): Promise<void> {
     await this.performCopy();
@@ -167,9 +187,18 @@ export class SubmissionDetailModal extends Modal {
    * Writes the submitted code into the ## Code fenced block. Called by
    * handleCopyToCode and directly by the `copy does not create ## Solution`
    * test.
+   *
+   * G-COPY-MODAL-NOCLOSE: `safeClose()` runs ONLY after `copyToCode`
+   * resolves successfully. If `copyToCode` throws (vault lock,
+   * processFrontMatter rejection from Plan 06's lang-sync write, etc.) the
+   * rejection propagates to `handleCopyToCode`'s caller and the modal
+   * stays open — the user keeps the failure context and can retry or close
+   * via the Close button / Esc / outside click.
    */
   async performCopy(): Promise<void> {
     await copyToCode(this.app, this.deps.file, this.deps.code, this.deps.lang);
+    // Success-only auto-dismiss. If the await above rejected, control never
+    // reaches here — modal stays open and the rejection bubbles up.
     this.safeClose();
   }
 
