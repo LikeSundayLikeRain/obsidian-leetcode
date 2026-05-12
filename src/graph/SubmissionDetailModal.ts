@@ -47,6 +47,19 @@ export interface SubmissionDetailDeps {
   runtimeDisplay?: string;
   memoryDisplay?: string;
   submittedAt?: string;
+  /** G-PICKER-MODAL-NOCLOSE-ON-COPY (Plan 05.3-09) — optional success-only
+   *  callback invoked after a successful Copy-to-Code click resolves AND
+   *  the modal's own safeClose has fired (via performCopy). The callback
+   *  fires from the click-handler IIFE AFTER `await this.handleCopyToCode()`
+   *  resolves with no rejection — same success-only posture as the existing
+   *  G-COPY-MODAL-NOCLOSE contract (T-05.3.06-04 disposition).
+   *
+   *  Use case: a composing parent modal (e.g., the outer past-submission
+   *  picker) can subscribe and dismiss itself in response, so a single Copy
+   *  click chains both modals closed. The callback is intentionally generic
+   *  `() => void` — the detail modal does NOT know about its parent; the
+   *  decoupling header at lines 26–28 forbids importing the picker. */
+  onSuccess?: () => void;
 }
 
 export class SubmissionDetailModal extends Modal {
@@ -139,9 +152,22 @@ export class SubmissionDetailModal extends Modal {
       // copyToCode resolves successfully — calling it again here would invoke
       // close() twice on the same modal, which Obsidian interprets as
       // detach-then-reattach (modal flickers and stays open).
-      void this.handleCopyToCode().catch((err) => {
-        console.error('[leetcode] copy-to-code failed:', err);
-      });
+      //
+      // G-PICKER-MODAL-NOCLOSE-ON-COPY (Plan 05.3-09): after the await
+      // resolves successfully (which includes performCopy's internal
+      // safeClose), invoke deps.onSuccess?.() so any composing parent modal
+      // (e.g., the outer SubmissionPickerModal) can chain its own dismissal.
+      // Success-only by design — if handleCopyToCode rejects, control jumps
+      // to the catch block and onSuccess never fires (mirrors the existing
+      // T-05.3.06-04 success-only disposition).
+      void (async () => {
+        try {
+          await this.handleCopyToCode();
+          this.deps.onSuccess?.();
+        } catch (err) {
+          console.error('[leetcode] copy-to-code failed:', err);
+        }
+      })();
     });
 
     const closeBtn = appendEl(footer, 'button');
@@ -171,6 +197,12 @@ export class SubmissionDetailModal extends Modal {
    * copy throws (vault lock, processFrontMatter rejection, etc.) the modal
    * STAYS OPEN so the user can see the error context and retry / close
    * manually — the close is success-only by design.
+   *
+   * G-PICKER-MODAL-NOCLOSE-ON-COPY (Plan 05.3-09): the click handler that
+   * calls this method ALSO invokes `deps.onSuccess?.()` after the await
+   * resolves so a composing parent modal (the outer SubmissionPickerModal)
+   * can chain its dismissal. Same success-only contract — onSuccess never
+   * fires on rejection.
    */
   async handleCopyToCode(): Promise<void> {
     await this.performCopy();
@@ -187,6 +219,12 @@ export class SubmissionDetailModal extends Modal {
    * rejection propagates to `handleCopyToCode`'s caller and the modal
    * stays open — the user keeps the failure context and can retry or close
    * via the Close button / Esc / outside click.
+   *
+   * G-PICKER-MODAL-NOCLOSE-ON-COPY (Plan 05.3-09): the click handler that
+   * awaits this method invokes `deps.onSuccess?.()` AFTER the await
+   * resolves. Rejection here propagates and onSuccess never fires — the
+   * outer picker stays open with the failure context, parity with the
+   * detail modal's own stay-open behavior.
    */
   async performCopy(): Promise<void> {
     await copyToCode(this.app, this.deps.file, this.deps.code, this.deps.lang);
