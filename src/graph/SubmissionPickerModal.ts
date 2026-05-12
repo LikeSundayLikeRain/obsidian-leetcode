@@ -61,8 +61,18 @@ export interface SubmissionPickerDeps {
    *  pass either this or `fetchHistory`. */
   submissionHistoryStore?: SubmissionHistoryStore;
   /** Open the detail modal for a given row. Production wires through
-   *  detailForSubmission → SubmissionDetailModal; tests pass a spy. */
-  openDetailModal: (row: SubmissionRow) => void;
+   *  detailForSubmission → SubmissionDetailModal; tests pass a spy.
+   *
+   *  G-PICKER-MODAL-NOCLOSE-ON-COPY (Plan 05.3-09): the optional second
+   *  argument is forwarded to the detail modal's `deps.onSuccess` so the
+   *  picker can chain-dismiss on a successful copy. The picker supplies
+   *  `() => this.safeClose()` at every call site below — when the detail
+   *  modal's click handler invokes `deps.onSuccess?.()` after a successful
+   *  Copy-to-Code, the picker closes itself in response.
+   *
+   *  The second parameter is OPTIONAL — existing tests that supply a
+   *  1-arg spy remain compatible with this signature widening. */
+  openDetailModal: (row: SubmissionRow, onSuccess?: () => void) => void;
   /** Phase 5 D-21 — optional login callback for the sticky session-expired
    *  Notice's Log in button. Production wiring in main.ts passes
    *  `() => { void this.auth.login(); }`; existing Wave 2 tests that omit
@@ -232,9 +242,13 @@ export class SubmissionPickerModal extends Modal {
     setText(lang, row.langName || row.lang || '');
 
     // Row click opens the detail modal (D-03).
+    // G-PICKER-MODAL-NOCLOSE-ON-COPY (Plan 05.3-09): supply the second
+    // argument `() => this.safeClose()` so the detail modal's deps.onSuccess
+    // dismisses THIS picker after a successful Copy-to-Code. Lambda captures
+    // `this` lexically — no static state, no cross-instance bleed.
     el.addEventListener('click', () => {
       try {
-        this.deps.openDetailModal(row);
+        this.deps.openDetailModal(row, () => this.safeClose());
       } catch {
         // openDetailModal failure shouldn't tear down the picker. Inline-safe.
       }
@@ -243,7 +257,7 @@ export class SubmissionPickerModal extends Modal {
       if (evt.key === 'Enter' || evt.key === ' ') {
         evt.preventDefault();
         try {
-          this.deps.openDetailModal(row);
+          this.deps.openDetailModal(row, () => this.safeClose());
         } catch {
           /* swallow */
         }

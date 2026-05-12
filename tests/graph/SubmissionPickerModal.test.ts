@@ -115,3 +115,88 @@ describe('SubmissionPickerModal (D-03, D-05, D-06)', () => {
     expect(contentEl.textContent).toContain("Couldn't load submissions.");
   });
 });
+
+describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: picker chain-dismiss on copy', () => {
+  // Plan 05.3-09 — when the inner SubmissionDetailModal reports a successful
+  // Copy-to-Code via deps.onSuccess, the outer SubmissionPickerModal must
+  // also dismiss so the user lands back on the note. The wiring flows
+  // through the picker's openDetailModal factory injection — the picker
+  // supplies a callback that closes itself, and the factory threads that
+  // callback into the detail modal's deps.
+
+  function makePickerWithRow() {
+    const row = {
+      id: '12345',
+      lang: 'python3',
+      langName: 'Python3',
+      runtime: '52 ms',
+      memory: '14.2 MB',
+      status: 10,
+      statusDisplay: 'Accepted',
+      timestamp: 1700000000,
+    };
+    const fetchHistory = vi.fn(async () => [row]);
+    const openDetailModal = vi.fn();
+    const modal = new SubmissionPickerModal(makeMinimalAppStub() as never, {
+      file: makeStubFile() as never,
+      slug: 'two-sum',
+      title: 'Two Sum',
+      fetchHistory,
+      openDetailModal,
+    });
+    return { modal, openDetailModal, row };
+  }
+
+  it('picker passes onSuccess as 2nd arg to openDetailModal on row click', async () => {
+    const { modal, openDetailModal } = makePickerWithRow();
+
+    // Drive the load + render, then synthesize a click on the first row.
+    await (modal as unknown as { loadAndRender(): Promise<void> }).loadAndRender();
+    const contentEl = (modal as unknown as { contentEl: HTMLElement }).contentEl;
+    const firstRow = contentEl.querySelector('.leetcode-submissions-row') as HTMLElement | null;
+    expect(firstRow).not.toBeNull();
+
+    firstRow!.dispatchEvent(new Event('click', { bubbles: true }));
+
+    expect(openDetailModal).toHaveBeenCalledTimes(1);
+    const args = openDetailModal.mock.calls[0];
+    // Position 0 = SubmissionRow, position 1 = onSuccess callback function.
+    expect(typeof args[1]).toBe('function');
+  });
+
+  it('invoking the onSuccess callback closes the picker (chain-dismiss)', async () => {
+    const { modal, openDetailModal } = makePickerWithRow();
+    // Track close invocations — the test-mode Modal stub doesn't define
+    // close(), so attach a spy onto the picker instance directly.
+    const closeSpy = vi.fn();
+    (modal as unknown as { close: () => void }).close = closeSpy;
+
+    await (modal as unknown as { loadAndRender(): Promise<void> }).loadAndRender();
+    const contentEl = (modal as unknown as { contentEl: HTMLElement }).contentEl;
+    const firstRow = contentEl.querySelector('.leetcode-submissions-row') as HTMLElement | null;
+    expect(firstRow).not.toBeNull();
+    firstRow!.dispatchEvent(new Event('click', { bubbles: true }));
+
+    const onSuccess = openDetailModal.mock.calls[0][1] as (() => void) | undefined;
+    expect(typeof onSuccess).toBe('function');
+    onSuccess!();
+
+    // safeClose() invokes close() once on the picker instance.
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keydown Enter on a row also passes onSuccess as 2nd arg to openDetailModal', async () => {
+    const { modal, openDetailModal } = makePickerWithRow();
+
+    await (modal as unknown as { loadAndRender(): Promise<void> }).loadAndRender();
+    const contentEl = (modal as unknown as { contentEl: HTMLElement }).contentEl;
+    const firstRow = contentEl.querySelector('.leetcode-submissions-row') as HTMLElement | null;
+    expect(firstRow).not.toBeNull();
+
+    const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
+    firstRow!.dispatchEvent(evt);
+
+    expect(openDetailModal).toHaveBeenCalledTimes(1);
+    expect(typeof openDetailModal.mock.calls[0][1]).toBe('function');
+  });
+});

@@ -953,8 +953,14 @@ export default class LeetCodePlugin extends Plugin {
       slug: ctx.slug,
       title: ctx.title,
       submissionHistoryStore: this.submissionHistory,
-      openDetailModal: (row: SubmissionRow) => {
-        void this.openSubmissionDetailFromRow(ctx.file, ctx.title, row);
+      // G-PICKER-MODAL-NOCLOSE-ON-COPY (Plan 05.3-09): the picker supplies
+      // an `onSuccess` callback as the 2nd argument here; we thread it into
+      // openSubmissionDetailFromRow which forwards it to the
+      // SubmissionDetailModal constructor's deps.onSuccess. When the inner
+      // detail modal's click handler invokes deps.onSuccess?.() after a
+      // successful Copy-to-Code, the picker also dismisses (chain-close).
+      openDetailModal: (row: SubmissionRow, onSuccess?: () => void) => {
+        void this.openSubmissionDetailFromRow(ctx.file, ctx.title, row, onSuccess);
       },
       // D-21 — login wiring for the sticky session-expired Notice's button.
       login: () => { void this.auth.login(); },
@@ -974,6 +980,7 @@ export default class LeetCodePlugin extends Plugin {
     file: TFile,
     title: string,
     row: SubmissionRow,
+    onSuccess?: () => void,
   ): Promise<void> {
     const cookies = this.settings.getAuthCookies();
     if (!cookies) {
@@ -1017,6 +1024,10 @@ export default class LeetCodePlugin extends Plugin {
       runtimeDisplay: detail.runtimeDisplay,
       memoryDisplay: detail.memoryDisplay,
       submittedAt: formatLocalTz(detail.timestamp),
+      // G-PICKER-MODAL-NOCLOSE-ON-COPY (Plan 05.3-09): forward the picker's
+      // chain-close callback so the detail modal's click-handler
+      // (`this.deps.onSuccess?.()`) dismisses the outer picker on success.
+      onSuccess,
     }).open();
   }
 
