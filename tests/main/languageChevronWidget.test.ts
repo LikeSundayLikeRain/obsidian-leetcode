@@ -37,14 +37,14 @@ function makeHost(switchLanguage = vi.fn()): {
 const FAKE_FILE = { path: 'LeetCode/0001-two-sum.md' } as unknown as TFile;
 
 describe('buildLanguageChevron DOM render', () => {
-  it('renders ▼ Python when currentSlug = python3 (display-label remap)', () => {
+  it('renders ▼ Python 3 when currentSlug = python3 (G-PYTHON-LABEL disambiguation)', () => {
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
 
     expect(wrapper.classList.contains('leetcode-language-chevron-wrapper')).toBe(true);
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
     expect(button).not.toBeNull();
-    expect(button!.textContent).toBe('▼ Python');
+    expect(button!.textContent).toBe('▼ Python 3');
   });
 
   it('renders ▼ Java when currentSlug = java', () => {
@@ -119,7 +119,8 @@ describe('buildLanguageChevron DOM render', () => {
       wrapper.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
     );
     const javaItem = items.find((it) => it.textContent === 'Java');
-    const pythonItem = items.find((it) => it.textContent === 'Python');
+    // G-PYTHON-LABEL: python3 dropdown item now reads 'Python 3' (was 'Python').
+    const pythonItem = items.find((it) => it.textContent === 'Python 3');
 
     expect(javaItem).toBeDefined();
     expect(javaItem!.classList.contains('is-current')).toBe(true);

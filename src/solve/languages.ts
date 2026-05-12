@@ -120,10 +120,13 @@ export function lcSlugToFenceTag(slug: string): string {
 }
 
 /** D-10: LC langSlug → user-friendly display label for the chevron widget.
- *  `python` and `python3` both render as 'Python' (the chevron writes `python3`
- *  to `lc-language` for the canonical LC API slug). */
+ *  Phase 5.3 Plan 05 (gap-closure): `python3` is disambiguated from LC's
+ *  deprecated `python` (Python 2) slug. Both slugs may appear in user
+ *  vaults — the chevron's label must signal which Python the LC API call
+ *  will dispatch. */
 export const LC_LANG_DISPLAY_LABELS: Readonly<Record<string, string>> = {
-  python3: 'Python',
+  // G-PYTHON-LABEL: disambiguate Python 3 from deprecated Python 2
+  python3: 'Python 3',
   python: 'Python',
   java: 'Java',
   cpp: 'C++',

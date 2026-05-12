@@ -126,8 +126,10 @@ describe('lcSlugToFenceTag (Phase 5.3 D-04)', () => {
 });
 
 describe('LC_LANG_DISPLAY_LABELS (Phase 5.3 D-10)', () => {
-  it('renders python3 and python both as "Python"', () => {
-    expect(LC_LANG_DISPLAY_LABELS['python3']).toBe('Python');
+  // G-PYTHON-LABEL (Phase 5.3 Plan 05): python3 disambiguated to 'Python 3';
+  // python (Python 2 — deprecated by LC but harmless here) stays 'Python'.
+  it('renders python3 as "Python 3" (disambiguated from python)', () => {
+    expect(LC_LANG_DISPLAY_LABELS['python3']).toBe('Python 3');
     expect(LC_LANG_DISPLAY_LABELS['python']).toBe('Python');
   });
 
