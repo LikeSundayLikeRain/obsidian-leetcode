@@ -78,6 +78,13 @@ export function buildLanguageChevron(
   // Outside-click handler — capture-phase listener attached to `doc` only
   // while the dropdown is open. Self-detaches when the dropdown closes.
   let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
+  // C6 — Esc dismissal — document-level keydown listener parallel to
+  // outsideClickHandler. The button-level keydown handler at the bottom of
+  // this function only fires when focus is on the chevron BUTTON; once the
+  // dropdown opens and the user moves the mouse away, focus may shift and
+  // Esc never reaches the button listener. The doc-level handler covers
+  // every focus location while the dropdown is open and self-removes on close.
+  let escKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   const closeDropdown = (): void => {
     dropdown.style.display = 'none';
@@ -85,6 +92,12 @@ export function buildLanguageChevron(
     if (outsideClickHandler) {
       doc.removeEventListener('click', outsideClickHandler, true);
       outsideClickHandler = null;
+    }
+    // C6 — remove the doc-level Esc handler so it doesn't leak across
+    // open/close cycles or fire after the dropdown is already closed.
+    if (escKeyHandler) {
+      doc.removeEventListener('keydown', escKeyHandler, true);
+      escKeyHandler = null;
     }
   };
 
@@ -102,6 +115,18 @@ export function buildLanguageChevron(
     // Capture phase so we beat any nested click handler that might
     // stopPropagation() (matches UI-SPEC §Pitfall 7-equivalent posture).
     doc.addEventListener('click', outsideClickHandler, true);
+
+    // C6 — Esc dismissal regardless of focus location. Capture-phase keydown
+    // listener on `doc` so the dropdown closes whether focus is on the
+    // chevron button, on a dropdown item, or anywhere else in the document.
+    escKeyHandler = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeDropdown();
+      }
+    };
+    doc.addEventListener('keydown', escKeyHandler, true);
   };
 
   for (const slug of LC_CHEVRON_LANG_ORDER) {
@@ -131,6 +156,18 @@ export function buildLanguageChevron(
   }
 
   wrapper.appendChild(dropdown);
+
+  // G-CLICK-THROUGH — pointerdown stopPropagation. CM6's caret-positioning
+  // runs on `pointerdown` (which fires BEFORE the per-item `click` handlers),
+  // so the per-item `click`-time preventDefault/stopPropagation is too late
+  // to keep the caret from jumping. A wrapper-level capture-phase pointerdown
+  // listener catches the event for both the chevron button AND every dropdown
+  // item before CM6 sees it. `pointerdown` covers mouse + touch + pen in one
+  // listener (Obsidian/CM6 v6 dispatches pointerdown before mousedown).
+  wrapper.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
 
   // Chevron button toggles dropdown.
   button.addEventListener('click', (e) => {

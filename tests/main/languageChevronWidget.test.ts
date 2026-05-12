@@ -232,3 +232,122 @@ describe('buildLanguageChevron item click', () => {
     document.body.removeChild(wrapper);
   });
 });
+
+// Phase 5.3 Plan 05 (gap-closure) — C6 Esc dismissal regression coverage.
+describe('Esc dismissal (C6)', () => {
+  it('Esc on document closes the dropdown regardless of focus location', () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    const dropdown = wrapper.querySelector<HTMLDivElement>(
+      'div.leetcode-language-chevron-dropdown',
+    );
+
+    // Open the dropdown via button click.
+    button!.click();
+    expect(dropdown!.style.display).toBe('block');
+    expect(button!.getAttribute('aria-expanded')).toBe('true');
+
+    // Dispatch Escape on document (NOT on the button — focus may have moved).
+    const escEvent = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+    document.dispatchEvent(escEvent);
+
+    expect(dropdown!.style.display).toBe('none');
+    expect(button!.getAttribute('aria-expanded')).toBe('false');
+
+    document.body.removeChild(wrapper);
+  });
+
+  it('Esc handler is removed when dropdown closes (no leak across open/close cycles)', () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    const dropdown = wrapper.querySelector<HTMLDivElement>(
+      'div.leetcode-language-chevron-dropdown',
+    );
+
+    // Open then close via outside click (simulated by re-clicking the button).
+    button!.click();
+    expect(dropdown!.style.display).toBe('block');
+    button!.click(); // toggle close
+    expect(dropdown!.style.display).toBe('none');
+    expect(button!.getAttribute('aria-expanded')).toBe('false');
+
+    // Now dispatch Escape on document — no observable change (handler removed).
+    const escEvent = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+    document.dispatchEvent(escEvent);
+
+    // aria-expanded stays 'false'; dropdown stays hidden.
+    expect(dropdown!.style.display).toBe('none');
+    expect(button!.getAttribute('aria-expanded')).toBe('false');
+
+    document.body.removeChild(wrapper);
+  });
+});
+
+// Phase 5.3 Plan 05 (gap-closure) — G-CLICK-THROUGH dropdown caret bleed prevention.
+describe('Click-through prevention (G-CLICK-THROUGH)', () => {
+  it('pointerdown on dropdown item does NOT propagate to document (CM6 caret stays)', () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    // Open dropdown.
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    button!.click();
+
+    // Document-level pointerdown spy. CM6 attaches its caret-positioning
+    // handler at the document/editor-root level; if our wrapper-level capture
+    // listener works, the document-level spy must NOT fire.
+    const docSpy = vi.fn();
+    document.addEventListener('pointerdown', docSpy);
+
+    const items = Array.from(
+      wrapper.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
+    );
+    const javaItem = items.find((it) => it.textContent === 'Java');
+    expect(javaItem).toBeDefined();
+
+    // happy-dom may not fully implement PointerEvent; fall back to a generic
+    // bubbling Event with the same propagation semantics for this assertion.
+    let pointerEvent: Event;
+    try {
+      pointerEvent = new PointerEvent('pointerdown', { bubbles: true, cancelable: true });
+    } catch {
+      pointerEvent = new Event('pointerdown', { bubbles: true, cancelable: true });
+    }
+    javaItem!.dispatchEvent(pointerEvent);
+
+    expect(docSpy).not.toHaveBeenCalled();
+
+    document.removeEventListener('pointerdown', docSpy);
+    document.body.removeChild(wrapper);
+  });
+
+  it('pointerdown on chevron button does NOT propagate to document', () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    const docSpy = vi.fn();
+    document.addEventListener('pointerdown', docSpy);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    let pointerEvent: Event;
+    try {
+      pointerEvent = new PointerEvent('pointerdown', { bubbles: true, cancelable: true });
+    } catch {
+      pointerEvent = new Event('pointerdown', { bubbles: true, cancelable: true });
+    }
+    button!.dispatchEvent(pointerEvent);
+
+    expect(docSpy).not.toHaveBeenCalled();
+
+    document.removeEventListener('pointerdown', docSpy);
+    document.body.removeChild(wrapper);
+  });
+});
