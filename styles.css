@@ -866,12 +866,21 @@
 /* Neutral Run + Submit buttons appended below <pre> on lc-slug notes.      */
 /* Accent reserved for primary auth button (UI-SPEC color rule) — NO        */
 /* .mod-cta here. All colors via Obsidian CSS variables.                    */
+/* Phase 5.3 D-06 — flex container flipped from `flex-end` to               */
+/* `space-between` so the Edit-Mode chevron prefix clings LEFT and          */
+/* Run + Submit cling RIGHT as a group. Reading-Mode call site (no prefix)  */
+/* still right-aligns Run+Submit because `margin-left: auto` on             */
+/* `.leetcode-code-action-run` collapses the group rightward.               */
 .leetcode-code-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   margin-top: 4px;
   margin-bottom: 8px;
+}
+.leetcode-code-actions .leetcode-code-action-run {
+  margin-left: auto;
 }
 .leetcode-code-actions .leetcode-code-action-run,
 .leetcode-code-actions .leetcode-code-action-submit {
@@ -889,6 +898,63 @@
 .leetcode-code-actions .leetcode-code-action-submit:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+}
+
+/* ── Phase 5.3 — Edit-Mode language chevron (D-06..D-10) ───────────── */
+/* Custom dropdown anchored LEFT of the Phase 5.1 Run/Submit row. All      */
+/* colors via Obsidian theme CSS variables — no raw hex except the one     */
+/* documented `rgba(0, 0, 0, 0.15)` shadow exception (Obsidian publishes    */
+/* no popover-shadow variable). Accent reserved for `.is-current` only     */
+/* (UI-SPEC §Color rule).                                                  */
+.leetcode-language-chevron-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+.leetcode-language-chevron {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  transition: background 100ms ease, color 100ms ease;
+}
+.leetcode-language-chevron:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.leetcode-language-chevron-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 140px;
+  padding: 4px 0;
+  border-radius: 4px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+.leetcode-language-chevron-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-normal);
+  font-size: 12px;
+  cursor: pointer;
+}
+.leetcode-language-chevron-item:hover {
+  background: var(--background-modifier-hover);
+}
+.leetcode-language-chevron-item.is-current {
+  color: var(--text-accent);
+  font-weight: 600;
 }
 
 /* Phase 5.1 (POLISH-07 / 05-UAT G1) — Edit-Mode inline button row.

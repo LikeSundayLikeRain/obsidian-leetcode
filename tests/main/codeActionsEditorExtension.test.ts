@@ -82,10 +82,15 @@ function makeState(text: string): EditorState {
 }
 
 // --- Helper to attach runFromActive + submitFromActive spies to a fake plugin ---
+// Phase 5.3 D-06 — also wires `settings.getDefaultLanguage()` (chevron cold-cache
+// fallback) and `switchLanguage` (chevron host contract) so the new
+// `CodeActionsWidget(plugin, file, currentSlug)` signature compiles end-to-end.
 // Mirrors analog `withHostMethods` at codeActionsPostProcessor.test.ts lines 78-83.
 type HostOverrides = {
   runFromActive?: ReturnType<typeof vi.fn>;
   submitFromActive?: ReturnType<typeof vi.fn>;
+  switchLanguage?: ReturnType<typeof vi.fn>;
+  defaultLanguage?: string;
 };
 function withHostMethods(
   plugin: ReturnType<typeof createFakePlugin>,
@@ -94,6 +99,10 @@ function withHostMethods(
   const host = plugin as unknown as Record<string, unknown>;
   host.runFromActive = overrides.runFromActive ?? vi.fn();
   host.submitFromActive = overrides.submitFromActive ?? vi.fn();
+  host.switchLanguage = overrides.switchLanguage ?? vi.fn();
+  host.settings = {
+    getDefaultLanguage: () => overrides.defaultLanguage ?? 'python3',
+  };
   return plugin;
 }
 
@@ -201,11 +210,12 @@ describe('buildDecorations — widget emits .leetcode-code-actions', () => {
     expect(set.size).toBe(1);
   });
 
-  it('widget emits .leetcode-code-actions container with Run + Submit buttons', () => {
+  it('widget emits .leetcode-code-actions container with chevron + Run + Submit buttons (Phase 5.3 D-06)', () => {
     const metadataCache = createFakeMetadataCache();
     metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', { 'lc-slug': 'two-sum' });
     const plugin = withHostMethods(createFakePlugin({ metadataCache }));
-    const widget = new CodeActionsWidget(plugin as never);
+    const fakeFile = { path: 'LeetCode/0001-two-sum.md' };
+    const widget = new CodeActionsWidget(plugin as never, fakeFile as never, 'python3');
     // WidgetType.toDOM expects an EditorView; for this DOM-shape assertion we only
     // need the view.dom.ownerDocument hook the helper reads.
     const fakeView = { dom: { ownerDocument: document } } as unknown as Parameters<
@@ -215,23 +225,56 @@ describe('buildDecorations — widget emits .leetcode-code-actions', () => {
     const root = widget.toDOM(fakeView);
 
     expect(root.classList.contains('leetcode-code-actions')).toBe(true);
-    const buttons = Array.from(root.querySelectorAll('button'));
-    expect(buttons).toHaveLength(2);
-    expect(buttons[0].classList.contains('leetcode-code-action-run')).toBe(true);
-    expect(buttons[0].textContent).toBe('Run');
-    expect(buttons[1].classList.contains('leetcode-code-action-submit')).toBe(true);
-    expect(buttons[1].textContent).toBe('Submit');
+    // Phase 5.3 D-06: row now includes a chevron prefix BEFORE Run + Submit.
+    // Direct children: chevron-wrapper (span), Run (button), Submit (button).
+    expect(root.children.length).toBe(3);
+    expect(
+      (root.children[0] as HTMLElement).classList.contains(
+        'leetcode-language-chevron-wrapper',
+      ),
+    ).toBe(true);
+    // Run + Submit click handlers + textContent are still wired correctly.
+    const runBtn = root.querySelector<HTMLButtonElement>('button.leetcode-code-action-run');
+    const submitBtn = root.querySelector<HTMLButtonElement>(
+      'button.leetcode-code-action-submit',
+    );
+    expect(runBtn).not.toBeNull();
+    expect(runBtn!.textContent).toBe('Run');
+    expect(submitBtn).not.toBeNull();
+    expect(submitBtn!.textContent).toBe('Submit');
   });
 });
 
-describe('CodeActionsWidget — idempotent across updates', () => {
-  it('eq returns true for widgets with the same plugin reference (idempotent across updates — part 2)', () => {
+describe('CodeActionsWidget — idempotent across updates (Phase 5.3 D-10 eq() identity)', () => {
+  it('eq returns true for widgets with same plugin + same file + same currentSlug', () => {
     const metadataCache = createFakeMetadataCache();
     const plugin = withHostMethods(createFakePlugin({ metadataCache }));
-    const a = new CodeActionsWidget(plugin as never);
-    const b = new CodeActionsWidget(plugin as never);
+    const file = { path: 'LeetCode/0001-two-sum.md' };
+    const a = new CodeActionsWidget(plugin as never, file as never, 'python3');
+    const b = new CodeActionsWidget(plugin as never, file as never, 'python3');
 
     expect(a.eq(b)).toBe(true);
+  });
+
+  it('eq returns false when currentSlug differs (load-bearing rebuild trigger on lc-language flip)', () => {
+    const metadataCache = createFakeMetadataCache();
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
+    const file = { path: 'LeetCode/0001-two-sum.md' };
+    const a = new CodeActionsWidget(plugin as never, file as never, 'python3');
+    const b = new CodeActionsWidget(plugin as never, file as never, 'java');
+
+    expect(a.eq(b)).toBe(false);
+  });
+
+  it('eq returns false when file differs', () => {
+    const metadataCache = createFakeMetadataCache();
+    const plugin = withHostMethods(createFakePlugin({ metadataCache }));
+    const f1 = { path: 'LeetCode/0001-two-sum.md' };
+    const f2 = { path: 'LeetCode/0002-add-two-numbers.md' };
+    const a = new CodeActionsWidget(plugin as never, f1 as never, 'python3');
+    const b = new CodeActionsWidget(plugin as never, f2 as never, 'python3');
+
+    expect(a.eq(b)).toBe(false);
   });
 
   it('eq returns false for widgets with different plugin references', () => {
@@ -239,8 +282,9 @@ describe('CodeActionsWidget — idempotent across updates', () => {
     const m2 = createFakeMetadataCache();
     const p1 = withHostMethods(createFakePlugin({ metadataCache: m1 }));
     const p2 = withHostMethods(createFakePlugin({ metadataCache: m2 }));
-    const a = new CodeActionsWidget(p1 as never);
-    const b = new CodeActionsWidget(p2 as never);
+    const file = { path: 'LeetCode/0001-two-sum.md' };
+    const a = new CodeActionsWidget(p1 as never, file as never, 'python3');
+    const b = new CodeActionsWidget(p2 as never, file as never, 'python3');
 
     expect(a.eq(b)).toBe(false);
   });
@@ -255,7 +299,8 @@ describe('click dispatches runFromActive / submitFromActive (direct call)', () =
       createFakePlugin({ metadataCache, manifestId: 'leetcode' }),
       { runFromActive, submitFromActive },
     );
-    const widget = new CodeActionsWidget(plugin as never);
+    const file = { path: 'LeetCode/0001-two-sum.md' };
+    const widget = new CodeActionsWidget(plugin as never, file as never, 'python3');
     const fakeView = { dom: { ownerDocument: document } } as unknown as Parameters<
       CodeActionsWidget['toDOM']
     >[0];
@@ -284,7 +329,8 @@ describe('click dispatches runFromActive / submitFromActive (direct call)', () =
       createFakePlugin({ metadataCache, manifestId: 'leetcode' }),
       { runFromActive, submitFromActive },
     );
-    const widget = new CodeActionsWidget(plugin as never);
+    const file = { path: 'LeetCode/0001-two-sum.md' };
+    const widget = new CodeActionsWidget(plugin as never, file as never, 'python3');
     const fakeView = { dom: { ownerDocument: document } } as unknown as Parameters<
       CodeActionsWidget['toDOM']
     >[0];

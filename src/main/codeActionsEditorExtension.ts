@@ -7,17 +7,22 @@
 // the Live Preview layout corruption observed in the 05-UAT G1 first attempt
 // (RESEARCH Pitfall 1).
 //
-// WidgetType.eq() returns true for same-plugin widgets so CM6 reuses the
-// rendered DOM across transactions — no flicker, no handler re-attachment
-// (RESEARCH Pitfall 2).
+// WidgetType.eq() returns true for same-plugin + same-file + same-currentSlug
+// widgets so CM6 reuses the rendered DOM across transactions — no flicker, no
+// handler re-attachment (RESEARCH Pitfall 2). Phase 5.3 D-10 added file +
+// currentSlug to the eq() identity so flipping `lc-language` rebuilds the
+// chevron label without a docChanged trigger (UI-SPEC §"Coexistence with
+// Phase 5.1 Run/Submit buttons").
 //
 // Click handlers call `plugin.runFromActive()` / `plugin.submitFromActive()`
 // directly via the shared `buildCodeBlockButtonRow` helper — bypasses the
 // `editorCheckCallback` gate regression fixed in 05-05 live smoke (D-05 /
 // RESEARCH Pitfall 6).
 //
-// Reading-mode path (`codeActionsPostProcessor.ts`) stays untouched — this
-// module is purely additive per D-11.
+// Phase 5.3 D-06 / D-09 — Edit-Mode-only language chevron is mounted as a
+// LEFT-aligned prefix in the same row via `opts.prefix` factory; Reading-Mode
+// path (`codeActionsPostProcessor.ts`) stays untouched and does NOT pass the
+// factory (Reading-Mode chevron is out of scope per D-09).
 // @codemirror/state + @codemirror/view are transitive peers of obsidian@1.12.3;
 // both are marked external in esbuild.config.mjs and supplied by the Obsidian
 // host at runtime. They are not declared in package.json dependencies — the
@@ -41,34 +46,70 @@ import {
   editorInfoField,
   editorLivePreviewField,
   type Plugin,
+  type TFile,
 } from 'obsidian';
+import { buildCodeBlockButtonRow } from './codeBlockButtonRow';
 import {
-  buildCodeBlockButtonRow,
-  type CodeBlockButtonRowHost,
-} from './codeBlockButtonRow';
-
-type PluginHost = Plugin & CodeBlockButtonRowHost;
+  buildLanguageChevron,
+  type LanguageChevronHost,
+} from './languageChevronWidget';
 
 /**
- * Inline widget that paints a Run + Submit button row. Reuses the shipped
- * reading-mode helper verbatim so the `.leetcode-code-actions` DOM contract
- * stays centralized (zero CSS drift, CF-07 `createEl` compliance transitive).
+ * Phase 5.3 D-06 — the plugin host must satisfy `LanguageChevronHost` so the
+ * chevron's click handler can call `plugin.switchLanguage(file, slug)`.
+ * `LanguageChevronHost` extends `CodeBlockButtonRowHost`, so Run/Submit
+ * dispatch is preserved transitively.
+ *
+ * Plugins also need a `settings.getDefaultLanguage()` accessor for the cold-cache
+ * fallback when `lc-language` frontmatter is absent (RESEARCH §Pitfall 3).
+ * Structural typing keeps tests free of full SettingsStore imports.
+ */
+type PluginHost = Plugin & LanguageChevronHost & {
+  settings: { getDefaultLanguage(): string };
+};
+
+/**
+ * Inline widget that paints a chevron + Run + Submit row. Reuses the shipped
+ * reading-mode helper (with an Edit-Mode-only `opts.prefix` factory) so the
+ * `.leetcode-code-actions` DOM contract stays centralized (zero CSS drift,
+ * CF-07 `createEl` compliance transitive).
+ *
+ * Phase 5.3 D-06 / D-10 — `file` and `currentSlug` are captured at widget
+ * construction so the chevron can render the right label and so `eq()` can
+ * detect a `lc-language` flip and force a DOM rebuild.
  */
 export class CodeActionsWidget extends WidgetType {
-  constructor(readonly plugin: PluginHost) {
+  constructor(
+    readonly plugin: PluginHost,
+    readonly file: TFile,
+    readonly currentSlug: string,
+  ) {
     super();
   }
 
   toDOM(view: EditorView): HTMLElement {
     // Per RESEARCH Pitfall 10: use the editor's own Document (popout-window
-    // safe) rather than the global `document`.
-    return buildCodeBlockButtonRow(view.dom.ownerDocument, this.plugin);
+    // safe) rather than the global doc.
+    const doc = view.dom.ownerDocument;
+    return buildCodeBlockButtonRow(doc, this.plugin, {
+      // D-09 — Edit-Mode only. The Reading-Mode call site
+      // (codeActionsPostProcessor.ts) MUST NOT pass opts.prefix.
+      prefix: () =>
+        buildLanguageChevron(doc, this.plugin, this.file, this.currentSlug),
+    });
   }
 
   eq(other: CodeActionsWidget): boolean {
-    // RESEARCH Pitfall 2: same-plugin widgets are equivalent, so CM6 reuses
-    // the existing DOM across transactions.
-    return other instanceof CodeActionsWidget && other.plugin === this.plugin;
+    // RESEARCH Pitfall 2: same-plugin widgets are equivalent. Phase 5.3 D-10
+    // extends the identity to include the active file and the current LC
+    // language so flipping `lc-language` rebuilds the chevron label without
+    // requiring a docChanged transaction.
+    return (
+      other instanceof CodeActionsWidget &&
+      other.plugin === this.plugin &&
+      other.file === this.file &&
+      other.currentSlug === this.currentSlug
+    );
   }
 
   ignoreEvent(): boolean {
@@ -138,10 +179,14 @@ export function findCodeFence(
  *      CF-13 — parity with reading-mode).
  *   3. A `## Code` fence exists in the document (D-02).
  *
+ * Phase 5.3 D-06: the active `lc-language` (chevron currentSlug) is sourced
+ * from frontmatter with a `settings.getDefaultLanguage()` cold-cache fallback
+ * (RESEARCH §Pitfall 3 — first paint may precede metadataCache population).
+ *
  * When all three hold, the set contains exactly one inline widget anchored
- * at the end-of-line position of the closing fence's line, with `side: 1`
- * (renders AFTER the position, flowing in-line; the block-widget flag is
- * strictly forbidden per 05-UAT G1).
+ * at the line AFTER the closing fence (or end-of-doc fallback at the closer's
+ * line end with side: 1 — the block-widget flag is strictly forbidden per
+ * 05-UAT G1).
  */
 export function buildDecorations(
   state: EditorState,
@@ -163,6 +208,16 @@ export function buildDecorations(
   const fence = findCodeFence(state);
   if (!fence) return builder.finish();
 
+  // Phase 5.3 D-06 — chevron current-language source. Pulls from `lc-language`
+  // frontmatter; falls back to the user's default language when absent
+  // (cold-cache mitigation per RESEARCH §Pitfall 3 — keeps the chevron from
+  // briefly painting "▼ undefined" the first ~100 ms after file open).
+  const lcLanguageRaw = fm?.['lc-language'];
+  const currentSlug =
+    typeof lcLanguageRaw === 'string' && lcLanguageRaw.length > 0
+      ? lcLanguageRaw
+      : plugin.settings.getDefaultLanguage();
+
   // Reading-mode parity (D-01, 05-05 D-13): the button row is a *sibling after*
   // the <pre> block, not inside it. In CM6 Live Preview, the closing fence line
   // is still part of the rendered code-block widget; a widget anchored at that
@@ -179,7 +234,7 @@ export function buildDecorations(
     anchor,
     anchor,
     Decoration.widget({
-      widget: new CodeActionsWidget(plugin),
+      widget: new CodeActionsWidget(plugin, file as TFile, currentSlug),
       // side: -1 at the start of the next line places the widget before that
       // line's rendered content, visually outside the fenced-block widget.
       // side: 1 at end-of-doc fallback (no following line to anchor to).
