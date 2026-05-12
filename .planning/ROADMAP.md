@@ -257,3 +257,6 @@ Plans:
 
 **Wave 5 — Gap-closure live-smoke verification** *(blocked on Wave 4; autonomous: false; gap_closure: true)*
 - [ ] 05.3-07-PLAN.md — Re-run chevron-affected UAT subset (Sections C, D, F + new Copy-to-Code Sync-1..Sync-6 + Section A spot-check + light theme spot-check) after Plans 05/06 land; record results in 05.3-UAT.md preserving Plan 04 historical entries; flip 05.3-VERIFICATION.md from status: human_needed → status: verified; commit + 05.3-07-SUMMARY.md sign-off
+
+**Wave 5b — Plan 07 polish-loop fixes** *(landed inline before Plan 07 UAT re-verification; gap_closure: true)*
+- [x] 05.3-07-FIXES-SUMMARY.md — G-LAYOUT-V2: Edit-Mode action row now CM6 block widget below fence (Decoration.widget({ block: true, side: 1 }) at closer-fence-line.to); restores user-preferred below-fence placement AND remains immune to indent decoration of adjacent content lines (commit db2d075). G-COPY-MODAL-NOCLOSE: SubmissionDetailModal auto-dismisses on successful Copy-to-Code via explicit safeClose at click-handler level (success-only; modal stays open on error so user retains failure context — commit 3503255). Tests 567 / bundle 148 KB / D-09 Reading-Mode lock preserved.

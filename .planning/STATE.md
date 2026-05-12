@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-stopped_at: "Phase 5.3 Plan 06 (gap-closure) complete — G-COPY-TO-CODE-LANG-DRIFT closed; copyToCode now syncs lc-language frontmatter after vault.process"
-last_updated: "2026-05-12T15:50:00Z"
-last_activity: 2026-05-12 -- Phase 05.3 Plan 06 complete (gap-closure)
+stopped_at: "Phase 5.3 Plan 07 polish-loop fixes complete — G-LAYOUT-V2 (block widget below fence) + G-COPY-MODAL-NOCLOSE (modal auto-dismiss on successful copy); awaiting Plan 07 live-smoke UAT re-verification"
+last_updated: "2026-05-12T16:30:00Z"
+last_activity: 2026-05-12 -- Phase 05.3 Plan 07 polish-loop pre-UAT fixes complete
 progress:
   total_phases: 8
   completed_phases: 7
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-05-07)
 ## Current Position
 
 Phase: 05.3
-Plan: 06 complete (gap-closure: G-COPY-TO-CODE-LANG-DRIFT — copyToCode now syncs lc-language frontmatter after vault.process; same-slug + unknown-slug short-circuits; SubmissionDetailModal.performCopy unchanged)
-Status: In progress — Plan 07 remains (chevron-affected UAT re-test live-smoke)
+Plan: 07 polish-loop fixes complete (G-LAYOUT-V2 block widget below fence + G-COPY-MODAL-NOCLOSE modal auto-dismiss on successful copy). Plan 07 UAT live-smoke re-verification still pending.
+Status: In progress — Plan 07 live-smoke UAT re-verification remains (extends scope to also re-verify G-LAYOUT-V2 + G-COPY-MODAL-NOCLOSE in dev vault)
 Last activity: 2026-05-12
 
 Progress: [█████████░] 92%
@@ -36,10 +36,12 @@ Progress: [█████████░] 92%
 
 1. `/gsd-execute-phase 5.3` next plan: 05.3-07 — re-run chevron-affected UAT
    subset (Sections C, D, F + new Copy-to-Code Sync-1..Sync-6 + Section A
-   spot-check + light theme spot-check) after Plans 05/06 land; record results
-   in 05.3-UAT.md preserving Plan 04 historical entries; flip
+   spot-check + light theme spot-check + NEW: G-LAYOUT-V2 below-fence
+   placement + indent-decoration immunity + G-COPY-MODAL-NOCLOSE modal
+   auto-dismiss) after Plans 05/06 + Plan 07 polish-loop fixes land; record
+   results in 05.3-UAT.md preserving Plan 04 historical entries; flip
    05.3-VERIFICATION.md from status: human_needed → status: verified;
-   05.3-07-SUMMARY.md sign-off.
+   05.3-07-SUMMARY.md sign-off (alongside the existing 05.3-07-FIXES-SUMMARY.md).
 
 ### Phase 04 historical pause (still applies)
 
@@ -70,6 +72,7 @@ for the full finding + remediation path.
 
 **Phase 05.3 Plan 05:** ~13 min, 4 tasks, 7 files modified, 8 new tests (558 passing total).
 **Phase 05.3 Plan 06:** ~5 min, 1 task, 2 files modified + 1 new test file, 5 new it-blocks (563 passing total).
+**Phase 05.3 Plan 07 polish-loop:** ~10 min, 2 fixes (G-LAYOUT-V2 + G-COPY-MODAL-NOCLOSE), 4 files modified, 4 new it-blocks (567 passing total).
 
 **Recent Trend:**
 
@@ -102,6 +105,8 @@ Recent decisions affecting current work:
 - Phase 5.3 Plan 06: copyToCode unknown-slug guard via LC_LANG_SLUGS membership check — defensive against corrupting the LC API dispatch contract; fence body still rewrites verbatim (existing forceInjectCodeSection contract preserved) but lc-language stays at the prior canonical slug
 - Phase 5.3 Plan 06: copyToCode same-slug short-circuit avoids spurious vault writes + metadataCache 'changed' events when lc-language already matches the submission's slug
 - Phase 5.3 Plan 06: vault.process MUST run before processFrontMatter — Plan 05's languageRefreshEffect listens to metadataCache.on('changed') and re-scans the buffer for the fence; the fence must already be the new code by then
+- Phase 5.3 Plan 07 polish-loop: G-LAYOUT-V2 switched the Edit-Mode action row from inline widget (Plan 05) to CM6 block widget at the same closer-line.to anchor (block: true + side: 1). Block widget renders as its own line below the fence, restoring the user-preferred below-fence placement WHILE remaining immune to indent decoration of adjacent content lines. The Phase 5.1 prohibition on `block: true` (RESEARCH Pitfall 1) traced to anchoring at the START of a content line; anchoring at the closer-fence-line END is a different placement pattern that renders cleanly in Live Preview + Source Mode.
+- Phase 5.3 Plan 07 polish-loop: G-COPY-MODAL-NOCLOSE moved the close call into the click handler (`await this.handleCopyToCode(); this.safeClose();` inside an IIFE) instead of relying solely on the existing safeClose inside performCopy. The original `void this.handleCopyToCode()` swallowed any rejection (including Plan 06's processFrontMatter path), so the modal close was vulnerable to silent failure. Click-handler-level close is success-only by design — rejection bubbles up and modal stays open with failure context preserved. performCopy retains its internal safeClose for the test path.
 
 ### Pending Todos
 
@@ -120,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-12T15:50:00Z
-Stopped at: Phase 5.3 Plan 06 (gap-closure) complete — G-COPY-TO-CODE-LANG-DRIFT closed; copyToCode now syncs lc-language frontmatter after vault.process; same-slug + unknown-slug short-circuits in place; SubmissionDetailModal.performCopy unchanged
-Resume file: .planning/phases/05.3-language-aware-editor/05.3-07-PLAN.md (next: chevron-affected UAT re-test live-smoke checkpoint)
+Last session: 2026-05-12T16:30:00Z
+Stopped at: Phase 5.3 Plan 07 polish-loop fixes complete — G-LAYOUT-V2 (Edit-Mode action row now CM6 block widget below fence; commit db2d075) + G-COPY-MODAL-NOCLOSE (SubmissionDetailModal auto-dismisses on successful copy via explicit safeClose at click-handler level; commit 3503255). Tests 567 passed / 2 skipped / 0 failed; bundle 148 KB; D-09 Reading-Mode lock preserved. Plan 07 UAT live-smoke re-verification still pending — extends scope to also re-verify the two new fixes.
+Resume file: .planning/phases/05.3-language-aware-editor/05.3-07-PLAN.md (next: chevron-affected UAT re-test live-smoke checkpoint, now also covering G-LAYOUT-V2 + G-COPY-MODAL-NOCLOSE)
