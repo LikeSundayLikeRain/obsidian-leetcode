@@ -26,7 +26,7 @@
 #   9. README.md present; contains "leetcode.com"; >=4 image links
 #  10. npm run lint exit 0
 #  11. npm test -- --run exit 0
-#  12. main.js <= 700 kB (Phase 5.3 D-09; delegated to scripts/check-bundle-size.sh; warn at 600 kB)
+#  12. main.js <= 250 kB (Phase 5.3 Plan 04 D-13/Q7; delegated to scripts/check-bundle-size.sh; warn at 200 kB)
 #
 set -eo pipefail
 
@@ -235,13 +235,15 @@ fi
 ok "gate 11 — npm test clean"
 
 # ---------------------------------------------------------------------------
-# Gate 12: main.js <= 700 kB (Phase 5.3 D-09 bundle cap; delegated to
-# scripts/check-bundle-size.sh so the ceiling is a single source of truth).
+# Gate 12: main.js <= 250 kB (Phase 5.3 Plan 04 D-13/Q7 bundle cap; delegated
+# to scripts/check-bundle-size.sh so the ceiling is a single source of truth.
+# Cap tightened from 700/600 to 250/200 after the failed-implementation
+# revert; chevron+remap baseline is ~155 KB.).
 # ---------------------------------------------------------------------------
 if ! bash scripts/check-bundle-size.sh; then
   fail "check-bundle-size.sh failed (see output above)"
 fi
-ok "gate 12 — main.js within 700 KB budget"
+ok "gate 12 — main.js within 250 KB budget"
 
 echo ""
 echo "PRERELEASE OK: all 12 gates passed."
