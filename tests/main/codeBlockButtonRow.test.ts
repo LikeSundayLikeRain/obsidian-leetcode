@@ -33,8 +33,8 @@ describe('buildCodeBlockButtonRow without opts.prefix (Reading-Mode parity, D-09
 
     expect(row.classList.contains('leetcode-code-actions')).toBe(true);
     expect(row.children.length).toBe(2);
-    expect(row.children[0].classList.contains('leetcode-code-action-run')).toBe(true);
-    expect(row.children[1].classList.contains('leetcode-code-action-submit')).toBe(true);
+    expect(row.children[0]!.classList.contains('leetcode-code-action-run')).toBe(true);
+    expect(row.children[1]!.classList.contains('leetcode-code-action-submit')).toBe(true);
   });
 
   it('Run button click invokes plugin.runFromActive (no Submit side effect)', () => {
@@ -78,8 +78,8 @@ describe('buildCodeBlockButtonRow with opts.prefix (Edit-Mode chevron, D-06/D-09
 
     expect(row.children.length).toBe(3);
     expect(row.children[0]).toBe(prefixEl);
-    expect(row.children[1].classList.contains('leetcode-code-action-run')).toBe(true);
-    expect(row.children[2].classList.contains('leetcode-code-action-submit')).toBe(true);
+    expect(row.children[1]!.classList.contains('leetcode-code-action-run')).toBe(true);
+    expect(row.children[2]!.classList.contains('leetcode-code-action-submit')).toBe(true);
   });
 
   it('still wires Run + Submit click handlers correctly when prefix is present', () => {
