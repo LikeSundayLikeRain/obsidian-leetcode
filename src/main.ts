@@ -44,7 +44,16 @@ import { retrofit as retrofitStarterCode } from './solve/starterCodeInjector';
 import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
 import { makeFileOpenHandler } from './main/fileOpenHook';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
-import { resolveLangSlug } from './solve/languages';
+import { resolveLangSlug, lcSlugToFenceTag, LC_LANG_DISPLAY_LABELS } from './solve/languages';
+// Phase 5.3 D-13 parity — chevron's atomic dispatch reuses Phase 5.1's exported
+// `findCodeFence` so fence detection has one source of truth.
+import { findCodeFence } from './main/codeActionsEditorExtension';
+// @codemirror/view is a transitive peer of obsidian@1.12.3; external in esbuild.
+// `view.editor.cm as EditorView` is the canonical (undocumented internal) path
+// for plugins reaching CM6 from a click handler — RESEARCH §Pitfall 6 +
+// CLAUDE.md acknowledged.
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+import type { EditorView } from '@codemirror/view';
 import { interpretSolution, authHeaders } from './solve/leetcodeRest';
 import {
   RateLimitError,
@@ -695,6 +704,112 @@ export default class LeetCodePlugin extends Plugin {
         if (current) void this.runInterpretedInput(current, input);
       },
     }).open();
+  }
+
+  /**
+   * Phase 5.3 (POLISH-09 / D-05..D-12) — chevron-driven LC language switch on
+   * the active note's `## Code` fence.
+   *
+   * Sequence is LOAD-BEARING (UI-SPEC §"Dropdown item click → language switch"):
+   *
+   *   Step A — Fetch starter code via `client.getProblemDetail` (cache-then-
+   *            network; existing `LeetCodeClient` path with 7-day TTL). On
+   *            rejection: ONE Notice "Couldn't fetch starter code for {Label}."
+   *            and return — fence + frontmatter unchanged (Pitfall 4).
+   *   Step B — Single CM6 `view.dispatch({ changes: [openerChange, bodyChange],
+   *            userEvent: 'leetcode.lang-switch' })`. ONE transaction → ONE
+   *            Cmd-Z reverts opener + body atomically (D-08).
+   *   Step C — `await app.fileManager.processFrontMatter(file, fm => { … })`.
+   *            Lands on Obsidian's vault undo stack — separate from CM6's
+   *            editor undo (Pitfall 1; accepted divergence).
+   *
+   * Order matters: doing C before B opens a 5–20 ms window where `lc-language`
+   * says the new language but the fence still has the old one (Run during
+   * that window dispatches mismatched language to LC).
+   *
+   * Silent no-ops:
+   *   - Active leaf moved off `file` between click and execution → bail.
+   *   - `findCodeFence(state)` returns null (fence deleted mid-edit) → bail.
+   *
+   * Atomicity guard: a single `cm.dispatch({ changes: [...] })` carries BOTH
+   * range edits. NEVER split into two dispatch calls — that would create two
+   * undo steps and break D-08.
+   */
+  async switchFenceLanguage(file: TFile, newSlug: string): Promise<void> {
+    // Step 1 — active-view guard (UI-SPEC §"silent" cases). Raced with leaf
+    // change → bail silently; no Notice.
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || view.file !== file) return;
+
+    // Read current note's lc-slug from frontmatter so we can fetch the LC
+    // detail. Same shape as getActiveProblemContext.
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const lcSlugRaw = fm?.['lc-slug'];
+    if (!isValidSlug(lcSlugRaw)) return; // silent no-op — chevron rendered on a non-lc-slug note (race)
+    const lcSlug = lcSlugRaw;
+
+    // Friendly label for the network-failure Notice.
+    const newLabel = LC_LANG_DISPLAY_LABELS[newSlug] ?? newSlug;
+
+    // Step A — Fetch starter code. Existing client path (`requestUrl` +
+    // throttle + 7-day cache via SettingsStore.getProblemDetail). On
+    // rejection: locked Notice copy from UI-SPEC §Copywriting.
+    let snippet: string;
+    try {
+      const detail = await this.client.getProblemDetail(lcSlug);
+      snippet = detail?.codeSnippets?.find((s) => s.langSlug === newSlug)?.code ?? '';
+    } catch {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC §Copywriting LOCKED
+      new Notice(`Couldn't fetch starter code for ${newLabel}.`, 6000);
+      return;
+    }
+
+    // Step B — atomic CM6 dispatch. `view.editor.cm` is undocumented internal
+    // API; canonical path for plugin click handlers (RESEARCH §Pitfall 6 +
+    // CLAUDE.md acknowledged). Double-cast through `unknown` because the
+    // public `Editor` interface doesn't expose `cm` in obsidian.d.ts.
+    const cm = (view.editor as unknown as { cm: EditorView }).cm;
+    const fence = findCodeFence(cm.state);
+    if (!fence) return; // silent no-op — fence missing/unterminated mid-edit (UI-SPEC §"Error state — findCodeFence returns null")
+
+    const openerLine = cm.state.doc.line(fence.openerLine);
+    const closerLine = cm.state.doc.line(fence.closerLine);
+    const newFenceTag = lcSlugToFenceTag(newSlug);
+    // Preserve any leading whitespace on the opener line (rare but possible
+    // in nested-list contexts) — RESEARCH §Pattern 1.
+    const tagMatch = /^(\s*```)\s*\S*\s*$/.exec(openerLine.text);
+    const newOpenerText = tagMatch
+      ? `${tagMatch[1]}${newFenceTag}`
+      : `\`\`\`${newFenceTag}`;
+
+    // Body spans from start-of-line-after-opener to start-of-closer-line.
+    const bodyStart = openerLine.to + 1; // newline after opener
+    const bodyEnd = closerLine.from;
+
+    // Single dispatch — both edits land in one undo step (D-08 atomicity).
+    cm.dispatch({
+      changes: [
+        { from: openerLine.from, to: openerLine.to, insert: newOpenerText },
+        { from: bodyStart, to: bodyEnd, insert: snippet + '\n' },
+      ],
+      userEvent: 'leetcode.lang-switch',
+    });
+
+    // Step C — frontmatter write (separate undo stack — Pitfall 1 accepted).
+    await this.app.fileManager.processFrontMatter(file, (fmObj) => {
+      fmObj['lc-language'] = newSlug;
+    });
+  }
+
+  /**
+   * Phase 5.3 D-06 — `LanguageChevronHost` interface alias. Chevron widget
+   * calls `plugin.switchLanguage(file, slug)`; thin wrapper around
+   * `switchFenceLanguage` for naming hygiene at the host-contract layer.
+   */
+  switchLanguage(file: TFile, newSlug: string): Promise<void> {
+    return this.switchFenceLanguage(file, newSlug);
   }
 
   /** D-25 — "Copy failing testcase" affordance from VerdictModal. Appends the
