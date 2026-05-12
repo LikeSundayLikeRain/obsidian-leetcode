@@ -180,7 +180,18 @@ export function buildLanguageChevron(
     // the dropdown doesn't immediately close it via the same event-loop tick.
     outsideClickHandler = (e: MouseEvent): void => {
       const target = e.target;
-      if (target instanceof Node && !wrapper.contains(target)) {
+      // G-DROPDOWN-CLIPPED — dropdown is now portaled to doc.body (NOT a
+      // descendant of wrapper), so the outside-click guard must check BOTH
+      // wrapper.contains(target) AND dropdown.contains(target). Without the
+      // dropdown.contains check, clicking a language item would satisfy
+      // !wrapper.contains(target) and fire closeDropdown() in the capture
+      // phase BEFORE the per-item click handler runs, racing with item
+      // selection. Both Node.contains() calls work across DOM-tree fragments.
+      if (
+        target instanceof Node &&
+        !wrapper.contains(target) &&
+        !dropdown.contains(target)
+      ) {
         closeDropdown();
       }
     };
