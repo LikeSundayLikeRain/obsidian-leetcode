@@ -240,7 +240,7 @@ Plans:
 **Plans**: 4 plans
 Plans:
 **Wave 0 — Revert failed Compartment-swap implementation (D-13)**
-- [ ] 05.3-01-PLAN.md — Delete codeFenceLanguageExtension.ts + languagePackRegistry.ts + whitespaceCopyIndent.ts + their tests; uninstall 6 @codemirror/lang-* packs; strip Step 6i imports + registration from src/main.ts; PRESERVE scripts/check-bundle-size.sh (D-13). Bundle drops 520 KB → ~149 KB
+- [x] 05.3-01-PLAN.md — Delete codeFenceLanguageExtension.ts + languagePackRegistry.ts + whitespaceCopyIndent.ts + their tests; uninstall 6 @codemirror/lang-* packs; strip Step 6i imports + registration from src/main.ts; PRESERVE scripts/check-bundle-size.sh (D-13). Bundle drops 520 KB → ~149 KB
 
 **Wave 1 — Frontmatter cleanup + write-time fence-tag remap** *(blocked on Wave 0)*
 - [ ] 05.3-02-PLAN.md — src/solve/languages.ts: add LC_LANG_FENCE_TAG + lcSlugToFenceTag + LC_LANG_DISPLAY_LABELS + LC_CHEVRON_LANG_ORDER (D-04, D-10); src/notes/NoteTemplate.ts: codeBlockFor calls lcSlugToFenceTag (D-04 write-time remap); applySolveTimeFrontmatter drops lc-runtime-ms / lc-memory-mb writes (D-01/D-02); src/graph/KnowledgeGraphWriter.ts: drop runtime/memory parsing + passing; update tests/graph/* fixtures
