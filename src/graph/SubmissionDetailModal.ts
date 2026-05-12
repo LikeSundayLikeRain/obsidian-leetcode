@@ -135,20 +135,13 @@ export class SubmissionDetailModal extends Modal {
     const copyBtn = appendEl(footer, 'button', 'mod-cta');
     setText(copyBtn, 'Copy to ## Code');
     copyBtn.addEventListener('click', () => {
-      // G-COPY-MODAL-NOCLOSE (gap-closure post-Plan 06): explicitly dismiss
-      // the modal after a SUCCESSFUL copy so the user lands back on the note.
-      // The await chain below is intentional — if `handleCopyToCode` rejects,
-      // control never reaches `safeClose()` and the modal stays open so the
-      // user sees the error context (rejection bubbles up via the unhandled
-      // promise; matches existing T-05.3.06-04 accepted disposition).
-      // `safeClose()` is also called inside `performCopy()` for the test path
-      // that invokes performCopy directly; calling it here ensures the
-      // production click path closes even if a future refactor moves the
-      // close out of performCopy.
-      void (async () => {
-        await this.handleCopyToCode();
-        this.safeClose();
-      })();
+      // G-COPY-MODAL-NOCLOSE: safeClose() is called inside performCopy() after
+      // copyToCode resolves successfully — calling it again here would invoke
+      // close() twice on the same modal, which Obsidian interprets as
+      // detach-then-reattach (modal flickers and stays open).
+      void this.handleCopyToCode().catch((err) => {
+        console.error('[leetcode] copy-to-code failed:', err);
+      });
     });
 
     const closeBtn = appendEl(footer, 'button');

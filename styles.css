@@ -878,11 +878,19 @@
   gap: 8px;
   margin-top: 4px;
   margin-bottom: 8px;
-  /* G-LAYOUT-V2 follow-up: when rendered as a CM6 block widget the wrapping
-   * container shrinks to content width by default, which collapses the
-   * space-between flip. Force full row width so chevron clings LEFT and
-   * Run/Submit cling RIGHT regardless of widget mode. */
   width: 100%;
+  box-sizing: border-box;
+}
+
+/* G-LAYOUT-V2 follow-up: CM6's `cm-content` parent overrides our `display`
+ * because hypermd / lang-markdown styles set `display: block` on direct
+ * children of cm-content with higher specificity. Re-assert flex layout
+ * on the chevron+button row when it's a direct child of cm-content. */
+.cm-editor .cm-content > .leetcode-code-actions,
+.cm-content > .leetcode-code-actions {
+  display: flex !important;
+  justify-content: space-between !important;
+  width: 100% !important;
 }
 .leetcode-code-actions .leetcode-code-action-run {
   margin-left: auto;
@@ -914,6 +922,11 @@
 .leetcode-language-chevron-wrapper {
   position: relative;
   display: inline-flex;
+  /* G-LAYOUT-V2 follow-up: CM6's cm-active line sits in a stacking context
+   * that intercepts dropdown clicks unless the chevron wrapper claims its
+   * own elevated stacking context too. */
+  z-index: 9999;
+  isolation: isolate;
 }
 /* G-CHEVRON-STYLING (gap-closure 05.3-05) — ported from .lc-fm__picker
    for cross-feature visual consistency with the browser's filter dropdown. */
@@ -942,7 +955,13 @@
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 100;
+  /* G-LAYOUT-V2 follow-up: when the row is a CM6 block widget, CM6's
+   * cm-active line creates its own stacking context with a higher z-index
+   * than 100, intercepting clicks on the dropdown. Bump z-index above
+   * CM6's typical line stacking and force a stacking context with
+   * isolation so we don't get re-trapped by an ancestor. */
+  z-index: 9999;
+  isolation: isolate;
 }
 .leetcode-language-chevron-item {
   display: block;
