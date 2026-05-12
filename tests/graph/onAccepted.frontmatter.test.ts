@@ -67,58 +67,13 @@ describe('KnowledgeGraphWriter.onAccepted — frontmatter (GRAPH-02)', () => {
     expect(fm!['lc-solved-date']).toMatch(
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/,
     );
-    expect(fm!['lc-runtime-ms']).toBe(12);
-    expect(fm!['lc-memory-mb']).toBe(14.2);
+    // Phase 5.3 D-01/D-02: solve-time runtime/memory frontmatter writes removed.
     expect(fm!['lc-language']).toBe('python3');
   });
 
-  it('parses runtime/memory', async () => {
-    // D-10: parseInt "12 ms" → 12; parseFloat "14.2 MB" → 14.2; undefined on
-    // "N/A" (status + date still write regardless).
-    const deps = makeFakeKnowledgeGraphDeps({
-      files: { 'LeetCode/1-two-sum.md': '---\nlc-id: 1\nlc-slug: two-sum\n---\n' },
-      problemDetails: {
-        'two-sum': {
-          fetchedAt: Date.now(),
-          id: 1,
-          title: 'Two Sum',
-          difficulty: 'Easy',
-          url: 'https://leetcode.com/problems/two-sum/',
-          contentHtml: '',
-          topicSlugs: [],
-          topicTags: [],
-          exampleTestcases: '',
-          codeSnippets: [],
-        },
-      },
-    });
-    deps.vault.seedFrontmatter('LeetCode/1-two-sum.md', { 'lc-id': 1, 'lc-slug': 'two-sum' });
-
-    const writer = new KnowledgeGraphWriter({ app: deps.app as never, settings: deps.settings });
-    const ctx = {
-      file: deps.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!,
-      slug: 'two-sum',
-      title: 'Two Sum',
-    };
-
-    // Successful parse
-    await writer.onAccepted(ctx as never, acceptedTerminal as never);
-    let fm = deps.vault.getFrontmatter('LeetCode/1-two-sum.md')!;
-    expect(fm['lc-runtime-ms']).toBe(12);
-    expect(fm['lc-memory-mb']).toBe(14.2);
-
-    // "N/A" path — status + date still write; numeric fields undefined or absent
-    await writer.onAccepted(
-      ctx as never,
-      { ...acceptedTerminal, status_runtime: 'N/A', status_memory: 'N/A' } as never,
-    );
-    fm = deps.vault.getFrontmatter('LeetCode/1-two-sum.md')!;
-    expect(fm['lc-status']).toBe('accepted');
-    expect(fm['lc-solved-date']).toBeDefined();
-    // Either undefined or absent — both acceptable per D-10.
-    const runtime = fm['lc-runtime-ms'];
-    expect(runtime === undefined || Number.isNaN(runtime) || runtime === null).toBe(true);
-  });
+  // Phase 5.3 D-01/D-02: previous "parses runtime/memory" test deleted —
+  // those frontmatter writes are no longer emitted; display path uses fresh
+  // GraphQL via SubmissionDetailModal.runtimeDisplay.
 
   it('on AC does not modify ## Code', async () => {
     // GRAPH-01 revised (D-01): the on-AC pipeline must never touch ## Code.

@@ -21,9 +21,19 @@ describe('NoteTemplate Phase 3 schema additions (CONTEXT D-06, D-18, D-20)', () 
   });
 
   describe('codeBlockFor', () => {
-    it('renders a fenced block with langSlug tag', () => {
+    it('renders a fenced block with langSlug tag (Phase 5.3 D-04 remaps python3 → python)', () => {
       const result = codeBlockFor('python3', 'def solve():\n    pass');
-      expect(result).toBe('```python3\ndef solve():\n    pass\n```');
+      expect(result).toBe('```python\ndef solve():\n    pass\n```');
+    });
+
+    it('Phase 5.3 D-04 remaps the fence opener: golang → go, c → cpp, python3 → python', () => {
+      expect(codeBlockFor('golang', 'package main')).toBe('```go\npackage main\n```');
+      expect(codeBlockFor('c', 'int main(){}')).toBe('```cpp\nint main(){}\n```');
+      expect(codeBlockFor('python3', 'pass')).toBe('```python\npass\n```');
+    });
+
+    it('Phase 5.3 D-04 passes through unsupported LC slugs verbatim (csharp)', () => {
+      expect(codeBlockFor('csharp', 'class Foo {}')).toBe('```csharp\nclass Foo {}\n```');
     });
 
     it('trims starter code whitespace (pure, deterministic)', () => {
@@ -55,8 +65,12 @@ describe('NoteTemplate Phase 3 schema additions (CONTEXT D-06, D-18, D-20)', () 
     });
 
     it('defaults langSlug to `python3` when omitted (backward-compat for Phase 2 callers)', () => {
+      // Phase 5.3 D-04: the default `python3` slug is remapped to `python` at
+      // the fence opener so Obsidian's lang-markdown nested parser highlights
+      // the block natively in Edit Mode.
       const body = buildNoteBody({ problemMarkdown: 'X' });
-      expect(body).toContain('```python3');
+      expect(body).toContain('```python');
+      expect(body).not.toContain('```python3');
     });
 
     it('accepts explicit langSlug', () => {
@@ -73,9 +87,9 @@ describe('NoteTemplate Phase 3 schema additions (CONTEXT D-06, D-18, D-20)', () 
       expect(body).toContain('def solve():');
     });
 
-    it('renders an empty fenced block when starterCode is omitted', () => {
+    it('renders an empty fenced block when starterCode is omitted (D-04 remap applied)', () => {
       const body = buildNoteBody({ problemMarkdown: 'X', langSlug: 'python3' });
-      expect(body).toContain('```python3\n\n```');
+      expect(body).toContain('```python\n\n```');
     });
 
     it('problem markdown is trimmed', () => {
