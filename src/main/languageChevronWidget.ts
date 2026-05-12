@@ -245,14 +245,20 @@ export function buildLanguageChevron(
   // G-CLICK-THROUGH — pointerdown stopPropagation. CM6's caret-positioning
   // runs on `pointerdown` (which fires BEFORE the per-item `click` handlers),
   // so the per-item `click`-time preventDefault/stopPropagation is too late
-  // to keep the caret from jumping. A wrapper-level capture-phase pointerdown
-  // listener catches the event for both the chevron button AND every dropdown
-  // item before CM6 sees it. `pointerdown` covers mouse + touch + pen in one
-  // listener (Obsidian/CM6 v6 dispatches pointerdown before mousedown).
-  wrapper.addEventListener('pointerdown', (e) => {
+  // to keep the caret from jumping. `pointerdown` covers mouse + touch + pen
+  // in one listener (Obsidian/CM6 v6 dispatches pointerdown before mousedown).
+  //
+  // The wrapper listener catches pointerdown on the chevron BUTTON. The
+  // dropdown listener catches pointerdown on every dropdown ITEM. The two
+  // listeners are needed because the dropdown is portaled to doc.body
+  // (G-DROPDOWN-CLIPPED) so it is no longer a wrapper descendant — a single
+  // wrapper-level listener would miss item events.
+  const stopPointerdown = (e: PointerEvent | Event): void => {
     e.preventDefault();
     e.stopPropagation();
-  });
+  };
+  wrapper.addEventListener('pointerdown', stopPointerdown);
+  dropdown.addEventListener('pointerdown', stopPointerdown);
 
   // Chevron button toggles dropdown.
   button.addEventListener('click', (e) => {

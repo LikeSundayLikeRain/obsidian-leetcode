@@ -5,8 +5,16 @@
 //   - Click on different language item invokes plugin.switchLanguage(file, slug) once
 //   - Click on currently-selected language item is a no-op (no fetch, no dispatch, no Notice)
 //   - 8 dropdown items in LC_CHEVRON_LANG_ORDER
+//
+// Phase 5.3 Plan 08 (G-DROPDOWN-CLIPPED) — portal-pattern coverage:
+//   - Dropdown is portaled to document.body when open (NOT a wrapper descendant)
+//   - position: fixed + top/left from button.getBoundingClientRect()
+//   - Window scroll/resize listeners attach on open and detach on close
+//   - Outside-click handler dismisses on body click outside both wrapper + dropdown
+//   - Existing tests use document-level dropdown queries (no wrapper.querySelector)
+//     because the dropdown lives elsewhere in the DOM after portal.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
@@ -35,6 +43,27 @@ function makeHost(switchLanguage = vi.fn()): {
 }
 
 const FAKE_FILE = { path: 'LeetCode/0001-two-sum.md' } as unknown as TFile;
+
+// G-DROPDOWN-CLIPPED — the dropdown is portaled to document.body when open
+// (NOT a wrapper descendant). Tests must query at document-level. This helper
+// returns the singleton dropdown if one exists in the document tree.
+function findDropdown(): HTMLDivElement | null {
+  return document.querySelector<HTMLDivElement>(
+    'div.leetcode-language-chevron-dropdown',
+  );
+}
+
+// Cleanup: ensure no stray body-portaled dropdowns leak across tests. Each
+// test that opens the dropdown is expected to close it explicitly, but this
+// safety net catches any oversight to avoid cross-test pollution.
+afterEach(() => {
+  document
+    .querySelectorAll('div.leetcode-language-chevron-dropdown')
+    .forEach((el) => el.remove());
+  document
+    .querySelectorAll('span.leetcode-language-chevron-wrapper')
+    .forEach((el) => el.remove());
+});
 
 describe('buildLanguageChevron DOM render', () => {
   it('renders ▼ Python 3 when currentSlug = python3 (G-PYTHON-LABEL disambiguation)', () => {
@@ -88,35 +117,58 @@ describe('buildLanguageChevron DOM render', () => {
     expect(button!.hasAttribute('title')).toBe(false);
   });
 
-  it('dropdown is initially hidden via style.display=none and has role=listbox', () => {
+  it('dropdown is initially detached and has display=none + role=listbox once opened', () => {
+    // G-DROPDOWN-CLIPPED — before open, the dropdown is not in the DOM at all
+    // (portal pattern: only attached to body during open). After open, the
+    // dropdown is in document.body with display=block. Closing detaches it.
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
-    const dropdown = wrapper.querySelector<HTMLDivElement>(
-      'div.leetcode-language-chevron-dropdown',
-    );
+    document.body.appendChild(wrapper);
 
+    // Initially detached — querySelector across document returns null.
+    expect(findDropdown()).toBeNull();
+
+    // Open: dropdown attaches to document.body.
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    button!.click();
+    const dropdown = findDropdown();
     expect(dropdown).not.toBeNull();
-    expect(dropdown!.style.display).toBe('none');
+    expect(dropdown!.style.display).toBe('block');
     expect(dropdown!.getAttribute('role')).toBe('listbox');
+
+    // Cleanup.
+    button!.click();
   });
 
   it('dropdown lists exactly 8 items in LC_CHEVRON_LANG_ORDER with role=option', () => {
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
-    const items = wrapper.querySelectorAll<HTMLButtonElement>(
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    button!.click();
+    const dropdown = findDropdown()!;
+    const items = dropdown.querySelectorAll<HTMLButtonElement>(
       'button.leetcode-language-chevron-item',
     );
 
     expect(items.length).toBe(8);
     expect(items.length).toBe(LC_CHEVRON_LANG_ORDER.length);
     items.forEach((item) => expect(item.getAttribute('role')).toBe('option'));
+
+    button!.click();
   });
 
   it('marks the currently-selected language item with .is-current', () => {
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'java');
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    button!.click();
+    const dropdown = findDropdown()!;
     const items = Array.from(
-      wrapper.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
+      dropdown.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
     );
     const javaItem = items.find((it) => it.textContent === 'Java');
     // G-PYTHON-LABEL: python3 dropdown item now reads 'Python 3' (was 'Python').
@@ -126,28 +178,32 @@ describe('buildLanguageChevron DOM render', () => {
     expect(javaItem!.classList.contains('is-current')).toBe(true);
     expect(pythonItem).toBeDefined();
     expect(pythonItem!.classList.contains('is-current')).toBe(false);
+
+    button!.click();
   });
 });
 
 describe('buildLanguageChevron click toggles dropdown', () => {
-  it('first click sets dropdown display to block; second click reverts to none', () => {
+  it('first click attaches dropdown to body with display=block; second click detaches', () => {
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
-    const dropdown = wrapper.querySelector<HTMLDivElement>(
-      'div.leetcode-language-chevron-dropdown',
-    );
 
-    expect(dropdown!.style.display).toBe('none');
+    expect(findDropdown()).toBeNull();
     button!.click();
+    const dropdown = findDropdown();
+    expect(dropdown).not.toBeNull();
     expect(dropdown!.style.display).toBe('block');
     button!.click();
-    expect(dropdown!.style.display).toBe('none');
+    // After close: dropdown detached from body.
+    expect(findDropdown()).toBeNull();
   });
 
   it('updates aria-expanded matching dropdown visibility', () => {
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
     expect(button!.getAttribute('aria-expanded')).toBe('false');
@@ -168,8 +224,9 @@ describe('buildLanguageChevron item click', () => {
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
     button!.click();
 
+    const dropdown = findDropdown()!;
     const items = Array.from(
-      wrapper.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
+      dropdown.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
     );
     const javaItem = items.find((it) => it.textContent === 'Java');
     expect(javaItem).toBeDefined();
@@ -177,9 +234,6 @@ describe('buildLanguageChevron item click', () => {
 
     expect(switchLanguage).toHaveBeenCalledTimes(1);
     expect(switchLanguage).toHaveBeenCalledWith(FAKE_FILE, 'java');
-
-    // Cleanup so other tests don't see leftover DOM.
-    document.body.removeChild(wrapper);
   });
 
   it('clicking the currently-selected language is a no-op (no switchLanguage call)', () => {
@@ -190,8 +244,9 @@ describe('buildLanguageChevron item click', () => {
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
     button!.click();
 
+    const dropdown = findDropdown()!;
     const items = Array.from(
-      wrapper.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
+      dropdown.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
     );
     const javaItem = items.find((it) => it.textContent === 'Java');
     expect(javaItem).toBeDefined();
@@ -201,12 +256,7 @@ describe('buildLanguageChevron item click', () => {
     expect(switchLanguage).not.toHaveBeenCalled();
 
     // Dropdown still closes (no spurious side effect — UI-SPEC §"State machine").
-    const dropdown = wrapper.querySelector<HTMLDivElement>(
-      'div.leetcode-language-chevron-dropdown',
-    );
-    expect(dropdown!.style.display).toBe('none');
-
-    document.body.removeChild(wrapper);
+    expect(findDropdown()).toBeNull();
   });
 
   it('item click closes the dropdown (instant feedback per UI-SPEC §State machine)', () => {
@@ -216,21 +266,20 @@ describe('buildLanguageChevron item click', () => {
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
     button!.click();
-    const dropdown = wrapper.querySelector<HTMLDivElement>(
-      'div.leetcode-language-chevron-dropdown',
-    );
+    let dropdown = findDropdown();
+    expect(dropdown).not.toBeNull();
     expect(dropdown!.style.display).toBe('block');
 
     const items = Array.from(
-      wrapper.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
+      dropdown!.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
     );
     const javaItem = items.find((it) => it.textContent === 'Java');
     javaItem!.click();
 
-    expect(dropdown!.style.display).toBe('none');
+    // Post-close: dropdown detached from body.
+    dropdown = findDropdown();
+    expect(dropdown).toBeNull();
     expect(button!.getAttribute('aria-expanded')).toBe('false');
-
-    document.body.removeChild(wrapper);
   });
 });
 
@@ -242,12 +291,11 @@ describe('Esc dismissal (C6)', () => {
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
-    const dropdown = wrapper.querySelector<HTMLDivElement>(
-      'div.leetcode-language-chevron-dropdown',
-    );
 
     // Open the dropdown via button click.
     button!.click();
+    const dropdown = findDropdown();
+    expect(dropdown).not.toBeNull();
     expect(dropdown!.style.display).toBe('block');
     expect(button!.getAttribute('aria-expanded')).toBe('true');
 
@@ -255,10 +303,9 @@ describe('Esc dismissal (C6)', () => {
     const escEvent = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
     document.dispatchEvent(escEvent);
 
-    expect(dropdown!.style.display).toBe('none');
+    // Post-close: dropdown detached from body.
+    expect(findDropdown()).toBeNull();
     expect(button!.getAttribute('aria-expanded')).toBe('false');
-
-    document.body.removeChild(wrapper);
   });
 
   it('Esc handler is removed when dropdown closes (no leak across open/close cycles)', () => {
@@ -267,26 +314,21 @@ describe('Esc dismissal (C6)', () => {
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
-    const dropdown = wrapper.querySelector<HTMLDivElement>(
-      'div.leetcode-language-chevron-dropdown',
-    );
 
-    // Open then close via outside click (simulated by re-clicking the button).
+    // Open then close via re-clicking the button (toggle close).
     button!.click();
-    expect(dropdown!.style.display).toBe('block');
+    expect(findDropdown()).not.toBeNull();
     button!.click(); // toggle close
-    expect(dropdown!.style.display).toBe('none');
+    expect(findDropdown()).toBeNull();
     expect(button!.getAttribute('aria-expanded')).toBe('false');
 
     // Now dispatch Escape on document — no observable change (handler removed).
     const escEvent = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
     document.dispatchEvent(escEvent);
 
-    // aria-expanded stays 'false'; dropdown stays hidden.
-    expect(dropdown!.style.display).toBe('none');
+    // aria-expanded stays 'false'; no dropdown attached.
+    expect(findDropdown()).toBeNull();
     expect(button!.getAttribute('aria-expanded')).toBe('false');
-
-    document.body.removeChild(wrapper);
   });
 });
 
@@ -307,8 +349,9 @@ describe('Click-through prevention (G-CLICK-THROUGH)', () => {
     const docSpy = vi.fn();
     document.addEventListener('pointerdown', docSpy);
 
+    const dropdown = findDropdown()!;
     const items = Array.from(
-      wrapper.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
+      dropdown.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
     );
     const javaItem = items.find((it) => it.textContent === 'Java');
     expect(javaItem).toBeDefined();
@@ -326,7 +369,6 @@ describe('Click-through prevention (G-CLICK-THROUGH)', () => {
     expect(docSpy).not.toHaveBeenCalled();
 
     document.removeEventListener('pointerdown', docSpy);
-    document.body.removeChild(wrapper);
   });
 
   it('pointerdown on chevron button does NOT propagate to document', () => {
@@ -349,6 +391,180 @@ describe('Click-through prevention (G-CLICK-THROUGH)', () => {
     expect(docSpy).not.toHaveBeenCalled();
 
     document.removeEventListener('pointerdown', docSpy);
-    document.body.removeChild(wrapper);
+  });
+});
+
+// Phase 5.3 Plan 08 (gap-closure) — G-DROPDOWN-CLIPPED portal-pattern coverage.
+// The dropdown is portaled to document.body when open so it escapes the
+// cm-content paint container's clip + hit-test boundary. These assertions
+// are unit-level (happy-dom doesn't implement CSS containment hit-test rules,
+// so the live-smoke checkpoint covers actual hit-testing in the dev vault).
+describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
+  it('dropdown is a child of document.body when open (not a descendant of wrapper)', () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    button!.click();
+
+    const dropdown = findDropdown();
+    expect(dropdown).not.toBeNull();
+    expect(dropdown!.parentElement).toBe(document.body);
+    expect(wrapper.contains(dropdown!)).toBe(false);
+
+    button!.click();
+  });
+
+  it('dropdown is removed from document.body when closed', () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    button!.click();
+    expect(findDropdown()).not.toBeNull();
+    button!.click();
+
+    // After close: the dropdown is no longer reachable from document — it has
+    // been detached. parentElement should be null, and document-level query
+    // returns no match.
+    const stale = findDropdown();
+    expect(stale).toBeNull();
+  });
+
+  it("dropdown.style.position === 'fixed' when open", () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
+    button!.click();
+
+    const dropdown = findDropdown()!;
+    expect(dropdown.style.position).toBe('fixed');
+
+    button!.click();
+  });
+
+  it('dropdown.style.top is set from button.getBoundingClientRect().bottom + 4 when open', () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron')!;
+    // Stub getBoundingClientRect to return predictable values so the assertion
+    // is deterministic regardless of happy-dom's layout-engine fidelity.
+    const FAKE_RECT: DOMRect = {
+      x: 100,
+      y: 200,
+      width: 80,
+      height: 24,
+      top: 200,
+      left: 100,
+      right: 180,
+      bottom: 224,
+      toJSON: () => ({}),
+    } as DOMRect;
+    button.getBoundingClientRect = () => FAKE_RECT;
+
+    button.click();
+    const dropdown = findDropdown()!;
+    expect(dropdown.style.top).toBe(`${FAKE_RECT.bottom + 4}px`);
+
+    button.click();
+  });
+
+  it('dropdown.style.left is set from button.getBoundingClientRect().left when open', () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron')!;
+    const FAKE_RECT: DOMRect = {
+      x: 100,
+      y: 200,
+      width: 80,
+      height: 24,
+      top: 200,
+      left: 100,
+      right: 180,
+      bottom: 224,
+      toJSON: () => ({}),
+    } as DOMRect;
+    button.getBoundingClientRect = () => FAKE_RECT;
+
+    button.click();
+    const dropdown = findDropdown()!;
+    expect(dropdown.style.left).toBe(`${FAKE_RECT.left}px`);
+
+    button.click();
+  });
+
+  it('scroll listener on window is registered on open and removed on close', () => {
+    // G-DROPDOWN-CLIPPED — scroll/resize listeners reposition the dropdown
+    // while open. Both must register on open AND deregister on close, with
+    // the SAME handler reference (otherwise removeEventListener would not
+    // detach the listener and we'd leak across open/close cycles).
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron')!;
+    button.click();
+
+    // Find scroll add invocation. Capture-phase (third arg = true) is the
+    // load-bearing flag — without it, scroll events from nested scroll
+    // containers (cm-scroller) won't reach the listener.
+    const scrollAdds = addSpy.mock.calls.filter((c) => c[0] === 'scroll');
+    expect(scrollAdds.length).toBeGreaterThanOrEqual(1);
+    const scrollHandler = scrollAdds[0][1];
+    expect(scrollAdds[0][2]).toBe(true); // capture phase
+
+    const resizeAdds = addSpy.mock.calls.filter((c) => c[0] === 'resize');
+    expect(resizeAdds.length).toBeGreaterThanOrEqual(1);
+
+    // Close the dropdown.
+    button.click();
+
+    // The same handler reference must be passed to removeEventListener.
+    const scrollRemoves = removeSpy.mock.calls.filter((c) => c[0] === 'scroll');
+    expect(scrollRemoves.length).toBeGreaterThanOrEqual(1);
+    expect(scrollRemoves.some((c) => c[1] === scrollHandler)).toBe(true);
+
+    const resizeRemoves = removeSpy.mock.calls.filter((c) => c[0] === 'resize');
+    expect(resizeRemoves.length).toBeGreaterThanOrEqual(1);
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
+  it('outside-click on document body (outside both wrapper and dropdown) closes the dropdown', () => {
+    const { plugin } = makeHost();
+    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    document.body.appendChild(wrapper);
+
+    // Add an unrelated outside element to dispatch the click on.
+    const outside = document.createElement('div');
+    outside.id = 'unrelated-outside';
+    document.body.appendChild(outside);
+
+    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron')!;
+    button.click();
+    expect(findDropdown()).not.toBeNull();
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+
+    // Dispatch a real click on the unrelated element. Outside-click handler
+    // is registered with capture: true, so any bubbling click anywhere in
+    // the document tree triggers the capture-phase listener on doc.
+    outside.click();
+
+    expect(findDropdown()).toBeNull();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+
+    document.body.removeChild(outside);
   });
 });
