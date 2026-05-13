@@ -94,7 +94,7 @@ describe('Phase 5 RunModal (D-03 / D-05 / D-06 / D-07)', () => {
     });
     modal.open();
 
-    expect(store.getOrSeed).toHaveBeenCalledWith('two-sum', '[2,7,11,15]\n9\n\n[3,2,4]\n6');
+    expect(store.getOrSeed).toHaveBeenCalledWith('two-sum', '[2,7,11,15]\n9\n\n[3,2,4]\n6', undefined);
     const tabButtons = modal.contentEl.querySelectorAll('.leetcode-run-tab');
     expect(tabButtons.length).toBe(2);
   });
@@ -121,7 +121,7 @@ describe('Phase 5 RunModal (D-03 / D-05 / D-06 / D-07)', () => {
     expect(resetBtn).not.toBeNull();
     resetBtn!.click();
 
-    expect(store.resetToSamples).toHaveBeenCalledWith('two-sum', '[1]\n2\n\n[3]\n4');
+    expect(store.resetToSamples).toHaveBeenCalledWith('two-sum', '[1]\n2\n\n[3]\n4', undefined);
   });
 
   // SUPERSEDED by D-01 in Phase 5.4 — onRun now joins all tabs.

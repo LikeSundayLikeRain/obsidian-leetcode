@@ -39,6 +39,7 @@ import { VerdictModal } from './solve/VerdictModal';
 // (D-08 ignore-legacy).
 import { RunModal } from './solve/RunModal';
 import { EphemeralTabStore } from './solve/ephemeralTabStore';
+import { deriveArity } from './solve/runArity';
 import { registerRunCommand } from './solve/runCommandRegistration';
 import { retrofit as retrofitStarterCode } from './solve/starterCodeInjector';
 import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
@@ -693,9 +694,15 @@ export default class LeetCodePlugin extends Plugin {
     }
     const detail = this.settings.getProblemDetail(ctx.slug);
     const exampleTestcases = detail?.exampleTestcases ?? '';
+    // Phase 5.4 UAT fix — derive lines-per-case so RunModal can split LC's
+    // single-newline-formatted exampleTestcases (observed live for two-sum)
+    // into per-case tabs. deriveArity falls back to 1 when both metaData
+    // and sampleTestCase are absent.
+    const linesPerCase = deriveArity(detail?.metaData, detail?.sampleTestCase);
     new RunModal(this.app, {
       slug: ctx.slug,
       exampleTestcases,
+      linesPerCase,
       store: this.ephemeralTabs,
       onRun: (input: string) => {
         // Re-resolve context at run time (the modal is asynchronous; the user
@@ -825,14 +832,17 @@ export default class LeetCodePlugin extends Plugin {
     }
     const detail = this.settings.getProblemDetail(ctx.slug);
     const exampleTestcases = detail?.exampleTestcases ?? '';
+    // Phase 5.4 UAT fix — same arity derivation as runFromActive.
+    const linesPerCase = deriveArity(detail?.metaData, detail?.sampleTestCase);
     // Pre-seed via getOrSeed + append — RunModal's onOpen will read what
     // we just set. setTabs overwrites; we want to preserve existing tabs so
     // the user's in-progress edits from an earlier Run are not clobbered.
-    const existing = this.ephemeralTabs.getOrSeed(ctx.slug, exampleTestcases);
+    const existing = this.ephemeralTabs.getOrSeed(ctx.slug, exampleTestcases, linesPerCase);
     this.ephemeralTabs.setTabs(ctx.slug, [...existing, seedInput]);
     new RunModal(this.app, {
       slug: ctx.slug,
       exampleTestcases,
+      linesPerCase,
       store: this.ephemeralTabs,
       onRun: (input: string) => {
         const current = this.getActiveProblemContext();

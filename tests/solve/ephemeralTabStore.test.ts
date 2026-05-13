@@ -14,9 +14,9 @@ vi.mock('obsidian', async () => {
 
 interface EphemeralTabStoreCtor {
   new (plugin: unknown): {
-    getOrSeed(slug: string, exampleTestcases: string): string[];
+    getOrSeed(slug: string, exampleTestcases: string, linesPerCase?: number): string[];
     setTabs(slug: string, tabs: string[]): void;
-    resetToSamples(slug: string, exampleTestcases: string): string[];
+    resetToSamples(slug: string, exampleTestcases: string, linesPerCase?: number): string[];
     getTabs(slug: string): string[] | null;
     reconcile(): void;
   };
@@ -41,6 +41,40 @@ describe('Phase 5 EphemeralTabStore (D-02 / D-09)', () => {
     // LC's exampleTestcases payload uses newline-separated cases; the store
     // must split on blank-line boundaries into distinct tab strings.
     const tabs = store.getOrSeed('two-sum', '[2,7,11,15]\n9\n\n[3,2,4]\n6');
+    expect(tabs).toEqual(['[2,7,11,15]\n9', '[3,2,4]\n6']);
+  });
+
+  it('getOrSeed chunks by linesPerCase when blank-line separators are absent (UAT 2026-05-13)', async () => {
+    // LIVE-observed two-sum exampleTestcases uses single-newline-only formatting
+    // with NO blank line between cases. Without linesPerCase, the splitter
+    // would return one big chunk → one tab. With linesPerCase=2, we recover
+    // three per-case tabs.
+    const mod = (await import('../../src/solve/ephemeralTabStore')) as unknown as {
+      EphemeralTabStore?: EphemeralTabStoreCtor;
+    };
+    const plugin = createFakePlugin();
+    const store = new mod.EphemeralTabStore!(plugin);
+    const tabs = store.getOrSeed(
+      'two-sum',
+      '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+      2,
+    );
+    expect(tabs).toEqual(['[2,7,11,15]\n9', '[3,2,4]\n6', '[3,3]\n6']);
+  });
+
+  it('getOrSeed prefers blank-line split over linesPerCase chunking when both available', async () => {
+    // Defensive: if LC ever sends both blank-line and arity-padded format,
+    // prefer the explicit blank-line boundary (legacy / unambiguous).
+    const mod = (await import('../../src/solve/ephemeralTabStore')) as unknown as {
+      EphemeralTabStore?: EphemeralTabStoreCtor;
+    };
+    const plugin = createFakePlugin();
+    const store = new mod.EphemeralTabStore!(plugin);
+    const tabs = store.getOrSeed(
+      'two-sum',
+      '[2,7,11,15]\n9\n\n[3,2,4]\n6',
+      2,
+    );
     expect(tabs).toEqual(['[2,7,11,15]\n9', '[3,2,4]\n6']);
   });
 

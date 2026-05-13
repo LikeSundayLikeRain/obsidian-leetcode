@@ -50,11 +50,20 @@ export class EphemeralTabStore {
   /** D-03 — first-run-per-note-open seed from `exampleTestcases`; subsequent
    *  Runs restore whatever tabs are currently in memory (edits / adds /
    *  deletes preserved). Seeding an already-seeded slug is a no-op — returns
-   *  the stored list verbatim. */
-  getOrSeed(slug: string, exampleTestcases: string): string[] {
+   *  the stored list verbatim.
+   *
+   *  `linesPerCase` (Phase 5.4 UAT fix) is consulted when LC's
+   *  `exampleTestcases` field has no blank-line case boundaries (observed
+   *  live for two-sum 2026-05-13). When passed, the seed is chunked into
+   *  groups of `linesPerCase` lines so each LC sample becomes its own tab. */
+  getOrSeed(
+    slug: string,
+    exampleTestcases: string,
+    linesPerCase?: number,
+  ): string[] {
     const existing = this.state.get(slug);
     if (existing && existing.length > 0) return existing;
-    const cases = splitExampleTestcases(exampleTestcases);
+    const cases = splitExampleTestcases(exampleTestcases, linesPerCase);
     const tabs: string[] = cases.length > 0 ? cases : [''];
     this.state.set(slug, tabs);
     this.lastKnownSlugs.add(slug);
@@ -63,10 +72,14 @@ export class EphemeralTabStore {
 
   /** D-05 — Reset button re-seeds from `exampleTestcases` (destructive, no
    *  confirmation — destructive but recoverable). */
-  resetToSamples(slug: string, exampleTestcases: string): string[] {
+  resetToSamples(
+    slug: string,
+    exampleTestcases: string,
+    linesPerCase?: number,
+  ): string[] {
     this.state.delete(slug);
     this.lastKnownSlugs.delete(slug);
-    return this.getOrSeed(slug, exampleTestcases);
+    return this.getOrSeed(slug, exampleTestcases, linesPerCase);
   }
 
   /** Modal onClose / onRun pushes the current tab state back so the next
@@ -141,13 +154,44 @@ export class EphemeralTabStore {
   }
 }
 
-/** Split LC's `exampleTestcases` payload into distinct tab inputs. LC uses a
- *  blank-line boundary between cases; per-case-internal newlines are
- *  preserved. Empty / whitespace-only input → empty list. */
-export function splitExampleTestcases(raw: string): string[] {
+/** Split LC's `exampleTestcases` payload into distinct tab inputs.
+ *
+ *  LC's `exampleTestcases` field is a single string with one value per line.
+ *  Historically some problems separated cases with blank lines; observed
+ *  LIVE 2026-05-13 (two-sum), LC sends single-newline-only — every line is
+ *  one value, with NO blank-line boundary between cases.
+ *
+ *  Strategy:
+ *    1. Try blank-line split first (legacy / whitespace-padded format).
+ *    2. If that returns ≤ 1 chunk AND `linesPerCase` is provided, chunk
+ *       the whole string into groups of `linesPerCase` lines.
+ *    3. Otherwise, return the whole string as a single chunk (caller
+ *       gets one tab — same as the pre-5.4 fallback).
+ *
+ *  `linesPerCase` is typically derived from `metaData.params.length` or
+ *  `sampleTestCase.split('\n').filter(non-empty).length`. Caller passes
+ *  `undefined` when neither is available. */
+export function splitExampleTestcases(
+  raw: string,
+  linesPerCase?: number,
+): string[] {
   if (!raw) return [];
-  return raw
+  const blankLineSplit = raw
     .split(/\n\s*\n/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+  if (blankLineSplit.length > 1) return blankLineSplit;
+
+  // Blank-line split didn't help; try arity-based chunking.
+  if (typeof linesPerCase === 'number' && linesPerCase > 0) {
+    const lines = raw.split('\n');
+    const chunks: string[] = [];
+    for (let i = 0; i < lines.length; i += linesPerCase) {
+      const chunk = lines.slice(i, i + linesPerCase).join('\n').trim();
+      if (chunk.length > 0) chunks.push(chunk);
+    }
+    if (chunks.length > 0) return chunks;
+  }
+
+  return blankLineSplit;
 }

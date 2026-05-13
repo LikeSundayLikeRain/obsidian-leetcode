@@ -184,6 +184,42 @@ describe('Phase 5.4 — Run-mode redesign (RED)', () => {
     expect(tabs.length).toBe(1);
   });
 
+  it('arity respects total_testcases when LC pads code_answer with trailing empty (live UAT 2026-05-13)', () => {
+    // Live LC interpret_solution observed: 3-case Run returned code_answer of
+    // length 4 with the trailing entry being '' (and total_testcases: 3,
+    // compare_result: '111'). Arity must trust total_testcases over array
+    // length so we don't render a phantom 4th tab.
+    const padded = {
+      ...runMultiCase,
+      total_testcases: 3,
+      compare_result: '111',
+      code_answer: ['[0,1]', '[1,2]', '[0,1]', ''],
+      expected_code_answer: ['[0,1]', '[1,2]', '[0,1]', ''],
+    };
+    const { contentEl } = renderFixtureRun(padded, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+    });
+    const tabs = contentEl.querySelectorAll('.leetcode-verdict-case-tab');
+    expect(tabs.length).toBe(3);
+  });
+
+  it('arity falls back to compare_result.length when total_testcases is absent', () => {
+    const padded = {
+      ...runMultiCase,
+      compare_result: '11',
+      code_answer: ['[0,1]', '[1,2]', ''],
+      expected_code_answer: ['[0,1]', '[1,2]', ''],
+    };
+    delete (padded as { total_testcases?: number }).total_testcases;
+    const { contentEl } = renderFixtureRun(padded, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6',
+    });
+    const tabs = contentEl.querySelectorAll('.leetcode-verdict-case-tab');
+    expect(tabs.length).toBe(2);
+  });
+
   it('D-04: per-case PASS chip when code_answer[i].trim() === expected_code_answer[i].trim()', () => {
     const { contentEl } = renderFixtureRun(runMultiCase, {
       metaData: TWO_SUM_META_DATA,

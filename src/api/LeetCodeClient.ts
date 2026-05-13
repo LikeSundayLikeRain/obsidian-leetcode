@@ -26,6 +26,14 @@ export interface LeetCodeProblemDetail {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   isPaidOnly: boolean;
   exampleTestcases?: string;
+  /** Phase 5.4 D-08 — JSON-serialized metaData with `params: [{name, type}]`.
+   *  Used by RunModal to seed-split exampleTestcases by lines-per-case
+   *  (params.length) when blank-line separators are absent, and by the
+   *  verdict modal renderer to label per-case input rows. */
+  metaData?: string;
+  /** Phase 5.4 — first sample case (newline-separated values, one per line).
+   *  Used as fallback for arity derivation when metaData is malformed. */
+  sampleTestCase?: string;
   topicTags?: Array<{ name: string; slug: string }>;
   codeSnippets?: Array<{ lang: string; langSlug: string; code: string }>;
   stats?: string;

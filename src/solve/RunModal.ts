@@ -42,6 +42,11 @@ import { joinCasesForRun } from './runArity';
 export interface RunModalArgs {
   slug: string;
   exampleTestcases: string;
+  /** Phase 5.4 UAT fix — lines per LC sample case (typically derived from
+   *  metaData.params.length or sampleTestCase.split('\n').filter(non-empty).length).
+   *  When provided AND `exampleTestcases` lacks blank-line case boundaries,
+   *  the seed is chunked into per-case tabs. */
+  linesPerCase?: number;
   store: EphemeralTabStore;
   onRun: (input: string) => void;
 }
@@ -70,7 +75,11 @@ export class RunModal extends Modal {
     // note-open session, they come back here; otherwise we get a fresh
     // split of `exampleTestcases` (or a single empty tab for no-sample
     // problems).
-    const seeded = this.args.store.getOrSeed(this.args.slug, this.args.exampleTestcases);
+    const seeded = this.args.store.getOrSeed(
+      this.args.slug,
+      this.args.exampleTestcases,
+      this.args.linesPerCase,
+    );
     // Work on a local copy; `setTabs` on close pushes back.
     this.cases = [...seeded];
     this.activeTab = 0;
@@ -98,7 +107,11 @@ export class RunModal extends Modal {
     resetBtn.textContent = 'Reset to sample cases';
     resetBtn.addEventListener('click', () => {
       // D-05: wipe + re-seed from exampleTestcases (no confirmation).
-      const reset = this.args.store.resetToSamples(this.args.slug, this.args.exampleTestcases);
+      const reset = this.args.store.resetToSamples(
+        this.args.slug,
+        this.args.exampleTestcases,
+        this.args.linesPerCase,
+      );
       this.cases = [...reset];
       this.activeTab = 0;
       this.textareaEl.value = this.cases[0] ?? '';

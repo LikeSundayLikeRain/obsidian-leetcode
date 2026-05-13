@@ -80,6 +80,8 @@ export interface NoteWriterDetail {
   isPaidOnly: boolean;
   topicTags?: Array<{ name: string; slug: string }>;
   exampleTestcases?: string;
+  metaData?: string;
+  sampleTestCase?: string;
   codeSnippets?: Array<{ lang: string; langSlug: string; code: string }>;
 }
 
@@ -524,6 +526,8 @@ function toDetailCacheEntry(raw: NoteWriterDetail): DetailCacheEntry {
       ? raw.topicTags.map((t) => String(t?.slug ?? '')).filter((s) => s.length > 0)
       : [],
     exampleTestcases: raw.exampleTestcases,
+    metaData: raw.metaData,
+    sampleTestCase: raw.sampleTestCase,
     codeSnippets: raw.codeSnippets,
     // Phase 3 D-30 — carry LC's internal questionId through to the cache so
     // Plan 04's REST body can read it via SettingsStore.getInternalQuestionId().

@@ -24,6 +24,13 @@ export interface DetailCacheEntry {
   contentHtml: string;
   topicSlugs: string[];
   exampleTestcases?: string;
+  /** Phase 5.4 D-08 — JSON-serialized metaData blob from LC GraphQL.
+   *  Used to derive arity (lines per case) and label input rows in the
+   *  verdict modal. Optional: pre-5.4 cache entries are still valid. */
+  metaData?: string;
+  /** Phase 5.4 — first sample case (newline-separated values, one per line).
+   *  Used as fallback arity source when metaData is malformed. */
+  sampleTestCase?: string;
   codeSnippets?: Array<{ lang: string; langSlug: string; code: string }>;
   /** Phase 3 D-30 — LC's internal `questionId` (distinct from `questionFrontendId`
    *  for some problems, e.g., premium variants). Used as the `question_id` REST
@@ -230,6 +237,8 @@ function isValidDetailCacheEntry(v: unknown): v is DetailCacheEntry {
   if (typeof d.contentHtml !== 'string') return false;
   if (!Array.isArray(d.topicSlugs) || !d.topicSlugs.every((s) => typeof s === 'string')) return false;
   if (d.exampleTestcases !== undefined && typeof d.exampleTestcases !== 'string') return false;
+  if (d.metaData !== undefined && typeof d.metaData !== 'string') return false;
+  if (d.sampleTestCase !== undefined && typeof d.sampleTestCase !== 'string') return false;
   if (d.codeSnippets !== undefined) {
     if (!Array.isArray(d.codeSnippets)) return false;
     if (!d.codeSnippets.every((c) =>

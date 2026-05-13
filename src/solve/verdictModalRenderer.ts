@@ -141,17 +141,26 @@ function renderRunResult(
     return;
   }
 
-  // ── Step 2: arity ──────────────────────────────────────────────────────
-  // D-02 priority: response array length is authoritative for the number of
-  // CASES (the user submitted exactly this many test cases). metaData's
-  // params.length describes the per-case INPUT-LINE count (used by D-08 for
-  // the input-row split — see renderInputSection), NOT the case count.
-  // sampleTestCase isn't plumbed through the renderer today. Always returns
-  // ≥ 1 (D-05 keeps the tab strip visible even at N=1).
-  const responseArity = Math.max(
-    toLines(res.code_answer).length,
-    toLines(res.expected_code_answer).length,
-  );
+  // ── Step 2: arity (UAT-fixed 2026-05-13) ───────────────────────────────
+  // Authoritative case count, in priority order:
+  //   1. res.total_testcases (LC's count of submitted cases)
+  //   2. res.compare_result.length (LC's per-case "0"/"1" mask string)
+  //   3. max(code_answer.length, expected_code_answer.length) — fallback,
+  //      noisy because LC may pad these arrays with trailing '' entries
+  //      (observed live: a 3-case Run returned code_answer of length 4
+  //      with the trailing entry being '').
+  // Always returns ≥ 1 (D-05 keeps the tab strip visible even at N=1).
+  let responseArity = 0;
+  if (typeof res.total_testcases === 'number' && res.total_testcases > 0) {
+    responseArity = Math.floor(res.total_testcases);
+  } else if (typeof res.compare_result === 'string' && res.compare_result.length > 0) {
+    responseArity = res.compare_result.length;
+  } else {
+    responseArity = Math.max(
+      toLines(res.code_answer).length,
+      toLines(res.expected_code_answer).length,
+    );
+  }
   const arity = Math.max(responseArity, 1);
 
   // ── Step 3: per-case pass mask (D-04 strict trim-compare) ──────────────
