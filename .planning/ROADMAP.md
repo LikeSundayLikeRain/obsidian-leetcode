@@ -207,7 +207,7 @@ Plans:
 **Plans**: 5 plans
 Plans:
 **Wave 0 — Test scaffolding + multi-case fixture spike** *(precondition for Wave 1; resolves A2 assumption)*
-- [ ] 05.4-01-PLAN.md — src/solve/runArity.ts pure helpers (parseMetaData / deriveArity / splitInput / joinCasesForRun / splitOutput) + live-captured tests/solve/fixtures/run-multi-case.json + RED-state scaffolding in tests/solve/RunModal.test.ts (D-01), tests/solve/verdictModalRenderer.test.ts (D-04/05/07/08/13/15/16), tests/main/languageChevronWidget.test.ts (D-12b drop literal ▼ at lines 76/84/92/100)
+- [x] 05.4-01-PLAN.md — src/solve/runArity.ts pure helpers (parseMetaData / deriveArity / splitInput / joinCasesForRun / splitOutput) + live-captured tests/solve/fixtures/run-multi-case.json + RED-state scaffolding in tests/solve/RunModal.test.ts (D-01), tests/solve/verdictModalRenderer.test.ts (D-04/05/07/08/13/15/16), tests/main/languageChevronWidget.test.ts (D-12b drop literal ▼ at lines 76/84/92/100)
 
 **Wave 1 — RunModal multi-case join** *(blocked on Wave 0; tiny single-file edit)*
 - [ ] 05.4-02-PLAN.md — src/solve/RunModal.ts: switch Run-button click handler from active-tab-only (Phase 5 D-07) to joinCasesForRun(this.cases, arity) (D-01); preserve textarea-sync + setTabs + try/finally close; D-01 RED test goes GREEN; D-14 + Plan 03/04 isolation guardrails held
