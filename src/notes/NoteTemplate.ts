@@ -62,6 +62,23 @@ export const CASE_HEADING_PREFIX = '### Case ' as const;
 export const TECHNIQUES_HEADING_LINE = '## Techniques' as const;
 
 /**
+ * Phase 05.5 D-01 / D-03 — the four heading lines locked by `sectionLockExtension`.
+ * Order matches the canonical anchor order from Phase 4 D-14 (## Problem → ## Code →
+ * ## Techniques → ## Notes). `## Custom Tests` is intentionally NOT in this
+ * array (Phase 5 D-08 ignores it on read/write; Phase 05.5 D-03 leaves it editable).
+ *
+ * SSoT invariant (Phase 2 D-03): heading literals come from this module — no
+ * other module hardcodes these strings. The lock extension imports this tuple
+ * directly so `## Custom Tests` cannot accidentally be added to the lock surface.
+ */
+export const LOCKED_HEADINGS = [
+  PROBLEM_HEADING_LINE,
+  CODE_HEADING_LINE,
+  TECHNIQUES_HEADING_LINE,
+  NOTES_HEADING_LINE,
+] as const;
+
+/**
  * Renders a fenced code block with the given langSlug tag + starter code.
  * Caller appends trailing newline as needed.
  *
