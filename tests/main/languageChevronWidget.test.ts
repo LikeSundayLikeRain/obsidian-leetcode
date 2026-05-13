@@ -66,38 +66,54 @@ afterEach(() => {
 });
 
 describe('buildLanguageChevron DOM render', () => {
-  it('renders ▼ Python 3 when currentSlug = python3 (G-PYTHON-LABEL disambiguation)', () => {
+  // Phase 5.4 D-12b — chevron glyph swaps from literal Unicode `▼` to a
+  // Lucide `chevron-down` icon span sibling of the label span. Tests now
+  // assert the (label-span text + icon-span presence) shape rather than
+  // the literal `▼ {label}` textContent. RED until Plan 04 ships the swap.
+  it('renders Python 3 label + icon-child when currentSlug = python3 (G-PYTHON-LABEL disambiguation; D-12b)', () => {
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
 
     expect(wrapper.classList.contains('leetcode-language-chevron-wrapper')).toBe(true);
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
     expect(button).not.toBeNull();
-    expect(button!.textContent).toBe('▼ Python 3');
+    const labelSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-label');
+    expect(labelSpan?.textContent).toBe('Python 3');
+    const iconSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-icon');
+    expect(iconSpan).not.toBeNull();
   });
 
-  it('renders ▼ Java when currentSlug = java', () => {
+  it('renders Java label + icon-child when currentSlug = java (D-12b)', () => {
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'java');
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
-    expect(button!.textContent).toBe('▼ Java');
+    const labelSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-label');
+    expect(labelSpan?.textContent).toBe('Java');
+    const iconSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-icon');
+    expect(iconSpan).not.toBeNull();
   });
 
-  it('renders ▼ C++ when currentSlug = cpp', () => {
+  it('renders C++ label + icon-child when currentSlug = cpp (D-12b)', () => {
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'cpp');
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
-    expect(button!.textContent).toBe('▼ C++');
+    const labelSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-label');
+    expect(labelSpan?.textContent).toBe('C++');
+    const iconSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-icon');
+    expect(iconSpan).not.toBeNull();
   });
 
-  it('passes through unknown slug as raw text (no LC_LANG_DISPLAY_LABELS entry)', () => {
+  it('passes through unknown slug as raw label-span text + icon-child (no LC_LANG_DISPLAY_LABELS entry; D-12b)', () => {
     const { plugin } = makeHost();
     const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'xyz');
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
-    expect(button!.textContent).toBe('▼ xyz');
+    const labelSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-label');
+    expect(labelSpan?.textContent).toBe('xyz');
+    const iconSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-icon');
+    expect(iconSpan).not.toBeNull();
   });
 
   it('button has aria-haspopup=listbox and aria-expanded=false initially', () => {
@@ -521,8 +537,8 @@ describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
     // containers (cm-scroller) won't reach the listener.
     const scrollAdds = addSpy.mock.calls.filter((c) => c[0] === 'scroll');
     expect(scrollAdds.length).toBeGreaterThanOrEqual(1);
-    const scrollHandler = scrollAdds[0][1];
-    expect(scrollAdds[0][2]).toBe(true); // capture phase
+    const scrollHandler = scrollAdds[0]![1];
+    expect(scrollAdds[0]![2]).toBe(true); // capture phase
 
     const resizeAdds = addSpy.mock.calls.filter((c) => c[0] === 'resize');
     expect(resizeAdds.length).toBeGreaterThanOrEqual(1);

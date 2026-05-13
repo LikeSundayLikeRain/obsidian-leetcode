@@ -124,7 +124,11 @@ describe('Phase 5 RunModal (D-03 / D-05 / D-06 / D-07)', () => {
     expect(store.resetToSamples).toHaveBeenCalledWith('two-sum', '[1]\n2\n\n[3]\n4');
   });
 
-  it('clicking Run passes ONLY the active tab\'s input to onRun (D-07, not concatenated)', async () => {
+  // SUPERSEDED by D-01 in Phase 5.4 — onRun now joins all tabs.
+  // Phase 5.4 Plan 01 Task 3 keeps this it-block under it.skip so the
+  // historical contract is documented for future readers; Plan 02 will
+  // delete it once D-01 lands and the new D-01 it-block below is GREEN.
+  it.skip('D-07: single active tab only (SUPERSEDED by D-01 in Phase 5.4)', async () => {
     const mod = (await import('../../src/solve/RunModal')) as unknown as {
       RunModal?: RunModalCtor;
     };
@@ -155,11 +159,46 @@ describe('Phase 5 RunModal (D-03 / D-05 / D-06 / D-07)', () => {
     runBtn!.click();
 
     expect(onRun).toHaveBeenCalledTimes(1);
-    const passed = onRun.mock.calls[0][0] as string;
+    const passed = onRun.mock.calls[0]![0] as string;
     // D-07: single active tab only. Must NOT include the non-active tabs.
     expect(passed).toBe('INPUT_B');
     expect(passed).not.toContain('INPUT_A');
     expect(passed).not.toContain('INPUT_C');
+  });
+
+  // D-01 (Phase 5.4): clicking Run joins ALL tabs into one newline-
+  // separated string so a single batched interpret_solution call
+  // covers every case (matches LC.com). RED until Plan 02 ships the
+  // RunModal join change.
+  it('D-01: onRun joins all tabs into single newline-separated string (Phase 5.4)', async () => {
+    const mod = (await import('../../src/solve/RunModal')) as unknown as {
+      RunModal?: RunModalCtor;
+    };
+    expect(typeof mod.RunModal).toBe('function');
+
+    const tabs = ['INPUT_A', 'INPUT_B'];
+    const store = makeStore(tabs);
+    const onRun = vi.fn();
+    const modal = new mod.RunModal!({} as never, {
+      slug: 'two-sum',
+      exampleTestcases: 'INPUT_A\n\nINPUT_B',
+      store,
+      onRun,
+    });
+    modal.open();
+
+    const runBtn = modal.contentEl.querySelector(
+      'button.leetcode-run-submit, button.leetcode-run-run',
+    ) as HTMLButtonElement | null;
+    expect(runBtn).not.toBeNull();
+    runBtn!.click();
+
+    expect(onRun).toHaveBeenCalledTimes(1);
+    const passed = onRun.mock.calls[0]![0] as string;
+    // D-01: ALL tabs joined with `\n` (Phase 5.4 supersedes D-07).
+    expect(passed).toBe('INPUT_A\nINPUT_B');
+    expect(passed).toContain('INPUT_A');
+    expect(passed).toContain('INPUT_B');
   });
 
   it('× delete button hidden when tabs.length === 1 (D-06)', async () => {
