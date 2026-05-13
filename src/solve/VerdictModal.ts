@@ -99,13 +99,25 @@ export class VerdictModal extends Modal {
     }
   }
 
-  renderVerdict(res: TerminalResponse, problemTitle: string): void {
+  /** Phase 5.4 D-08 — `opts.metaData` (LC questionData.metaData JSON string)
+   *  + `opts.joinedDataInput` (the exact data_input sent to interpret_solution)
+   *  are forwarded into the pure renderer so the Run path can label per-case
+   *  Input rows. Submit-path callers omit `opts`; the fields default to
+   *  undefined and the renderer's Submit branch ignores them entirely (D-14
+   *  byte-identical preservation). */
+  renderVerdict(
+    res: TerminalResponse,
+    problemTitle: string,
+    opts?: { metaData?: string; joinedDataInput?: string },
+  ): void {
     this.clearPendingStateClass();
     renderVerdict({
       titleEl: this.titleEl,
       contentEl: this.contentEl,
       payload: res,
       problemTitle,
+      metaData: opts?.metaData,
+      joinedDataInput: opts?.joinedDataInput,
       onCopyFailingInput: (input) => {
         this.args.onCopyFailingInput?.(input);
         this.close();

@@ -898,7 +898,21 @@ export default class LeetCodePlugin extends Plugin {
         abortSignal: abort,
         headers: authHeaders(ctx.slug, cookies),
       });
-      modal.renderVerdict(terminal as RunCheckResponse, ctx.title);
+      // Phase 5.4 D-08: forward LC `metaData` (when cached on detail) +
+      // the exact `data_input` that was sent so the renderer can label
+      // per-case Input rows. `detail?.metaData` is undefined today (the
+      // DetailCacheEntry shape — src/settings/SettingsStore.ts:18-40 —
+      // does NOT yet cache metaData / sampleTestCase); the renderer
+      // hits the D-08 raw-dump fallback in that case. Caching of
+      // metaData is a follow-up gap surfaced in 05.4-03-SUMMARY.md.
+      const detailMetaData =
+        typeof (detail as unknown as { metaData?: unknown })?.metaData === 'string'
+          ? ((detail as unknown as { metaData?: string }).metaData ?? undefined)
+          : undefined;
+      modal.renderVerdict(terminal as RunCheckResponse, ctx.title, {
+        metaData: detailMetaData,
+        joinedDataInput: dataInput,
+      });
     } catch (err) {
       if ((err as Error).name === 'AbortError' || err instanceof PollAbortError) {
         try { modal.close(); } catch { /* headless */ }

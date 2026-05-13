@@ -43,6 +43,20 @@ export interface RenderVerdictArgs {
   problemTitle?: string;
   /** Called when the user clicks `Copy failing testcase to custom input`. */
   onCopyFailingInput?: (input: string) => void;
+  // ── Phase 5.4 (D-08) — Run-path-only optional inputs ─────────────────────
+  // Backward-compatible: every existing call site (Submit / Pending / Timeout
+  // / Unknown / Run path callers that haven't been updated) continues to
+  // work; renderRunResult uses the raw-dump fallback when both are absent.
+  /** Raw LC `questionData.metaData` JSON string. Used by renderRunResult to
+   *  label per-case Input rows (`paramName = value`). Falls back to a raw
+   *  `joinedDataInput` dump when undefined / malformed (D-08). Submit /
+   *  Pending / Timeout / Unknown paths ignore this field. */
+  metaData?: string;
+  /** Exact `data_input` string sent to LC's `interpret_solution`. Same
+   *  string `joinCasesForRun(this.cases, ...)` produced in Plan 02. Sliced
+   *  per-case via `splitInput(joined, arity)` for the per-tab Input section
+   *  (D-08). Submit / Pending / Timeout / Unknown paths ignore this field. */
+  joinedDataInput?: string;
 }
 
 const PAYLOAD_DISPLAY_MAX = 2048;
@@ -63,8 +77,17 @@ export function renderVerdict(args: RenderVerdictArgs): void {
 
   // Run-mode response (interpret_solution): has code_answer array, no
   // submission verdict; show the user's computed output next to expected.
-  if (isRunResponse(payload)) {
-    renderRunResult(titleEl, contentEl, payload as RunCheckResponse, problemTitle);
+  // Phase 5.4 D-15 also routes compile/runtime errors with empty code_answer
+  // through this branch — see hasRunErrorPayload sniff inside renderRunResult.
+  if (isRunResponse(payload) || hasRunErrorPayload(payload)) {
+    renderRunResult(
+      titleEl,
+      contentEl,
+      payload as RunCheckResponse,
+      problemTitle,
+      args.metaData,
+      args.joinedDataInput,
+    );
     return;
   }
 
@@ -104,12 +127,18 @@ function renderRunResult(
   titleEl: HTMLElement,
   contentEl: HTMLElement,
   res: RunCheckResponse,
-  problemTitle: string | undefined,
+  // Phase 5.4 D-13: problemTitle is intentionally unused on the Run path
+  // (parameter retained for backward compat with the renderVerdict dispatch
+  // signature; chrome no longer carries the problem title).
+  _problemTitle: string | undefined,
+  _metaData?: string,
+  _joinedDataInput?: string,
 ): void {
   // Title: derive from correct_answer + status_msg when available.
   const correct = res.correct_answer === true;
   const label = correct ? 'Run — all samples passed' : 'Run — output differs';
-  setText(titleEl, problemTitle ? `${label} — ${problemTitle}` : label);
+  // Phase 5.4 D-13: problem title intentionally omitted from Run chrome.
+  setText(titleEl, label);
 
   const body = appendEl(contentEl, 'div', 'leetcode-verdict-body');
   body.setAttribute('aria-live', 'polite');
@@ -364,6 +393,36 @@ function isRunResponse(v: unknown): boolean {
   // present AND non-empty so we route WA submits with null code_answer into
   // the submit path.
   return Array.isArray(r.code_answer) && (r.code_answer as unknown[]).length > 0;
+}
+
+/** Phase 5.4 D-15 — Run-mode compile/runtime error sniff. LC's Run path
+ *  fills `compile_error` / `runtime_error` while leaving `code_answer` empty
+ *  (so isRunResponse returns false). This helper surfaces that case so the
+ *  renderer's Run branch (renderRunResult → renderRunErrorBlock) handles
+ *  the error layout instead of falling through to the Submit branch.
+ *
+ *  Heuristic: status_code is one of LC's run-side error codes (15 RE, 20 CE)
+ *  AND code_answer is absent OR empty AND a compile_error/runtime_error
+ *  string is present. The narrow status_code gate prevents WA / TLE / MLE
+ *  Submit responses from being misrouted (those carry input + last_testcase
+ *  + status_code 11/12/14 — handled by the Submit branch). */
+function hasRunErrorPayload(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false;
+  const r = v as Record<string, unknown>;
+  // Submit responses carry submission_id (or last_testcase + total_testcases);
+  // Run responses do not. If submission_id is present, route to Submit.
+  if (typeof r.submission_id === 'string' || typeof r.submission_id === 'number') return false;
+  if (typeof r.total_testcases === 'number' && r.total_testcases > 0) return false;
+  const codeAnswerEmpty =
+    !Array.isArray(r.code_answer) || (r.code_answer as unknown[]).length === 0;
+  if (!codeAnswerEmpty) return false;
+  const hasCompileErr =
+    (typeof r.compile_error === 'string' && r.compile_error.length > 0) ||
+    (typeof r.full_compile_error === 'string' && r.full_compile_error.length > 0);
+  const hasRuntimeErr =
+    (typeof r.runtime_error === 'string' && r.runtime_error.length > 0) ||
+    (typeof r.full_runtime_error === 'string' && r.full_runtime_error.length > 0);
+  return hasCompileErr || hasRuntimeErr;
 }
 
 function firstNonEmpty(...values: Array<string | undefined>): string {
