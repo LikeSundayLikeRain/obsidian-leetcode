@@ -6,24 +6,14 @@
 // by absence — see header comment near the bottom), D-08 trailing-newline
 // heading lock, D-09 fence opener/closer + malformed-fence fallthrough.
 //
-// WAVE 0 LINT NOTE: the rules disabled below fire solely because
-// `../../src/main/sectionLockExtension` does not yet exist (TDD Wave 0
-// RED contract — those imports resolve to `any`/`error` until Wave 1 ships
-// the module). When Wave 1 (Plan 02) creates the real module with typed
-// exports, TypeScript will infer concrete types, the no-unsafe-* cascade
-// will evaporate, and these disables can be removed.
-//
-// FILTER-CALLBACK EXTRACTION CONTRACT FOR WAVE 1: tests against
+// FILTER-CALLBACK EXTRACTION CONTRACT (Wave 1 GREEN): tests against
 // buildSectionLockExtension(plugin) iterate the returned Extension array
 // and pull out the callable that, when invoked with a fake Transaction,
 // returns either `true` (no lock) or a `number[]` (suppression ranges).
-// Wave 1 may either: (a) return a flat `[changeFilter.of(cb), atomicRanges.of(...)]`
-// where the test walks the array and finds the one whose `.value` is the
-// callback; OR (b) export a dedicated named function (e.g., `lockChangeFilter`)
-// that the tests can call directly. The test helper `extractChangeFilterCallback`
-// below works with either approach as long as the filter callback is
-// reachable from the returned Extension.
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment -- Wave 0 RED-state scaffolding; removed when Wave 1 ships the implementation module */
+// Wave 1 returns the flat `[changeFilter.of(cb), atomicRanges.of(...)]`
+// shape; the test helper `extractChangeFilterCallback` walks the array and
+// finds the one whose `.value` is the callback. Forward-compatible if
+// Wave 1's shape ever changes to a dedicated named export.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
