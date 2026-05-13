@@ -172,6 +172,53 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 4. Knowledge Graph Wiring | 0/TBD | Not started | - |
 | 5. Polish & Ship | 0/7 | Planned — Wave 0/1/2/3/4/5a/5b | - |
 
+### Phase 05.5: Section Locking for lc-slug Notes (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 5
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 05.5 to break down)
+
+### Phase 05.4: Run Verdict UX + Button Polish (INSERTED)
+
+**Goal**: Run-mode VerdictModal renders LC.com-style per-case results (header with verdict + runtime, always-on tab strip, three stacked Input/Output/Expected sections with theme-aware coloring, per-case PASS/FAIL chips, single error block on compile/runtime errors); RunModal sends one batched multi-case interpret_solution call; all non-CTA buttons across RunModal + VerdictModal + the inline ## Code action row port the .lc-fm__picker neutral-button polish; the language chevron renders a Lucide chevron-down glyph and reads as a select-input pill — all without touching the Submit verdict modal (D-14 LOCKED)
+**Requirements**: POLISH-10 (INSERTED — Phase 5.4 is driven entirely by user decisions D-01..D-16 in 05.4-CONTEXT.md; no formal REQ-IDs assigned)
+**Depends on**: Phase 5 (Run + Submit pipeline, RunModal, VerdictModal renderer/modal split), Phase 5.1 (inline ## Code action row), Phase 5.3 (.lc-fm__picker port to .leetcode-language-chevron, chevron widget)
+**Success Criteria** (what must be TRUE):
+  1. Clicking Run in RunModal triggers exactly one batched interpret_solution REST call whose data_input is all non-empty tabs joined by 
+ (D-01)
+  2. Per-case PASS/FAIL chips computed via per-index code_answer[i].trim() === expected_code_answer[i].trim() (D-04)
+  3. Run-mode VerdictModal layout matches LC.com screenshots: title + runtime inline, always-on tab strip (even N=1), three stacked Input → Output → Expected sections (D-05)
+  4. All colors via Obsidian semantic CSS vars only — no hardcoded hex/rgb in styles.css beyond the documented popover-shadow rgba exception (D-06)
+  5. State-driven coloring: title var(--text-success) on AC / var(--text-error) on WA; Output value var(--text-error) only on per-case fail; Expected value var(--text-success) only on per-case fail; section labels always var(--text-muted); section surfaces always var(--background-secondary) (D-07)
+  6. Input section parses metaData.params and renders name = value per param; falls back to raw input dump on missing/malformed metaData (D-08)
+  7. All non-CTA buttons (RunModal tabs, +, ×, Reset, Verdict-modal case tabs) port the .lc-fm__picker token set verbatim (D-09)
+  8. RunModal tabs and VerdictModal case tabs share visual shape, active highlight, and pill sizing (D-10)
+  9. Footer hierarchy stays primary-right / secondary-left via existing space-between flex layout (D-11)
+  10. Inline Run/Submit buttons port the new neutral-button polish (D-12a); chevron renders Lucide chevron-down via setIcon and reads as a select-input pill (D-12b)
+  11. Run-mode header chrome is {verdict}  Runtime: N ms — no problem title (D-13)
+  12. Submit verdict modal (renderSubmitVerdict) is bytes-identical to pre-5.4 (D-14 LOCKED)
+  13. Run-mode compile/runtime errors render a single .leetcode-verdict-error-pre block with no tab strip (D-15)
+  14. Run path has zero copy-failing-testcase buttons; Submit path keeps the existing button + on click appends the failing case as a new RunModal tab via openRunModalWithSeedAppended (D-16)
+  15. No regression in Phase 5.1 / 5.2 / 5.3 surfaces; full vitest suite GREEN; bundle builds cleanly
+**Plans**: 5 plans
+Plans:
+**Wave 0 — Test scaffolding + multi-case fixture spike** *(precondition for Wave 1; resolves A2 assumption)*
+- [ ] 05.4-01-PLAN.md — src/solve/runArity.ts pure helpers (parseMetaData / deriveArity / splitInput / joinCasesForRun / splitOutput) + live-captured tests/solve/fixtures/run-multi-case.json + RED-state scaffolding in tests/solve/RunModal.test.ts (D-01), tests/solve/verdictModalRenderer.test.ts (D-04/05/07/08/13/15/16), tests/main/languageChevronWidget.test.ts (D-12b drop literal ▼ at lines 76/84/92/100)
+
+**Wave 1 — RunModal multi-case join** *(blocked on Wave 0; tiny single-file edit)*
+- [ ] 05.4-02-PLAN.md — src/solve/RunModal.ts: switch Run-button click handler from active-tab-only (Phase 5 D-07) to joinCasesForRun(this.cases, arity) (D-01); preserve textarea-sync + setTabs + try/finally close; D-01 RED test goes GREEN; D-14 + Plan 03/04 isolation guardrails held
+
+**Wave 2 — Renderer expansion + CSS polish + chevron glyph swap (parallel; disjoint file sets)**
+- [ ] 05.4-03-PLAN.md — src/solve/verdictModalRenderer.ts: extend RenderVerdictArgs with optional metaData + joinedDataInput; rewrite renderRunResult per D-04/05/07/08/13/15/16 (always-on tab strip, per-case PASS/FAIL chips, three stacked sections with state classes, single error block on compile/runtime errors, no copy button on Run path); thread metaData + dataInput from main.ts → VerdictModal → renderer; renderSubmitVerdict + submit-body helpers byte-identical (D-14 LOCKED)
+- [ ] 05.4-04-PLAN.md — styles.css: port .lc-fm__picker tokens to all RunModal + VerdictModal neutral surfaces (D-09/D-10), add D-07 class-gated value-color rules + D-13 runtime line + D-08 input section + chip variants, polish inline .leetcode-code-action-run/-submit (D-12a), add chevron icon-span rules (D-12b); src/main/languageChevronWidget.ts: swap textContent ▼ literal for setIcon(span, chevron-down) + label-span
+
+**Wave 3 — Live-smoke checkpoint + UAT sign-off** *(blocked on Waves 1-2; autonomous: false)*
+- [ ] 05.4-05-PLAN.md — Pre-flight automated gates (full vitest suite + build + lint + D-14 byte-diff + D-06 grep gate + A2 fixture provenance check) + 05.4-UAT.md skeleton with 11 sections (A pre-flight, B verdict layout, C chips, D input labeling, E theme parity, F multi-case spike, G error states, H Run-side copy absence, I Submit regression, J chevron polish, K cross-phase regression); human-verified live-smoke walkthrough in dev vault against LC.com screenshots; sign off 05.4-VALIDATION.md with nyquist_compliant: true
+
 ### Phase 5.1: Edit-mode Inline Run/Submit Buttons (INSERTED)
 **Goal**: Run/Submit buttons are anchored inline directly below the `## Code` fenced block in Edit Mode (Source + Live Preview) without layout corruption, so users can submit without switching to Reading Mode during their normal coding flow
 **Depends on**: Phase 5 (specifically 05-05 reading-mode buttons, which this mirrors for edit mode)
