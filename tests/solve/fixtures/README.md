@@ -204,6 +204,28 @@ Checks" above) and **FLAG IT IN THIS README** below. Synthetic fixtures must
 be clearly marked so verify-work knows which assertions are load-bearing
 versus approximate.
 
+### Live Multi-Case (Phase 5.4)
+
+Phase 5.4 Plan 01 (Wave 0 scaffolding) adds `run-multi-case.json` — a
+2-case `interpret_solution` response that resolves RESEARCH.md A2:
+"LC accepts newline-joined multi-case `data_input` and returns
+`code_answer` / `expected_code_answer` arrays of matching length."
+
+The Plan 01 executor agent did not have a live LC session and seeded
+this fixture as **SYNTHETIC-NOT-LIVE**. The Phase 05.4 Plan 05 live-smoke
+checkpoint MUST re-capture this fixture against the production judge
+before the phase ships (gate flagged in 05.4-01-SUMMARY.md).
+
+Capture protocol for `run-multi-case.json`:
+- problem slug: `two-sum`
+- language: `python3`
+- joined `data_input`: `[2,7,11,15]\n9\n[3,2,4]\n6` (two cases joined
+  with `\n` per D-02 arity = 2)
+- expected: `code_answer.length === expected_code_answer.length === 2`
+- on live capture, replace `_fixture_note` with the
+  `LIVE-CAPTURED <YYYY-MM-DD>` form documented in the Live Multi-Case
+  capture instructions below.
+
 ### Synthetic Fixture Flags
 
 All 8 Wave 0 fixtures were seeded as **SYNTHETIC-NOT-LIVE** by the GSD
@@ -220,6 +242,7 @@ confirming its synthetic provenance.
 - [x] `runtime-error.json` — synthetic (executor has no live LC; re-capture before Plan 04)
 - [x] `run-sample.json` — synthetic (executor has no live LC; re-capture before Plan 04)
 - [x] `run-custom.json` — synthetic (executor has no live LC; re-capture before Plan 04)
+- [x] `run-multi-case.json` — synthetic (Phase 5.4 Plan 01 — executor has no live LC; re-capture as part of Phase 05.4 Plan 05 live-smoke gate to resolve RESEARCH.md A2 assumption)
 
 **Re-capture gate (blocking for Plan 04 merge):** Every synthetic fixture
 MUST be replaced with a live-captured JSON before Plan 04's REST client
