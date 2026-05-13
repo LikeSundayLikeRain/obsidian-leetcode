@@ -174,13 +174,21 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 ### Phase 05.5: Section Locking for lc-slug Notes (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Plugin-owned regions of `lc-slug` notes (`## Problem` entire region; `## Code` heading + fence opener + closing fence; `## Techniques` heading; `## Notes` heading) become read-only in Edit Mode via a CM6 `EditorState.changeFilter`, so user edits cannot accidentally land in regions the plugin overwrites on background-refresh / chevron-switch / on-AC. Lock is gated on `lc-slug` frontmatter (D-06) + Edit Mode (D-07); plugin-side dispatches with `userEvent: 'leetcode.*'` bypass the lock so the Phase 5.3 chevron switch keeps working (RESEARCH Pitfall 5).
+**Requirements**: POLISH bracket — no formal REQ-ID assigned; behavioral anchors are CONTEXT decisions D-01..D-09
 **Depends on:** Phase 5
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 05.5 to break down)
+**Wave 0 — Test scaffolding** *(RED-state TDD; precondition for Wave 1)*
+- [x] 05.5-01-PLAN.md — `tests/main/sectionLockExtension.test.ts` (>=13 RED it-blocks for D-01..D-09) + `tests/helpers/obsidian-stub.ts` `makeStateForLockTests` + `makeFakeTransaction` factories + `LOCKED_HEADINGS` SSoT export added to `src/notes/NoteTemplate.ts`
+
+**Wave 1 — Implementation (GREEN-state)** *(blocked on Wave 0)*
+- [ ] 05.5-02-PLAN.md — `src/main/sectionLockExtension.ts` (NEW): `computeLockedRanges` pure helper + `buildSectionLockExtension` composing `EditorState.changeFilter` + `EditorView.atomicRanges`; honors `'leetcode.*'` userEvent bypass (Pitfall 5), uses `tr.startState` (Pitfall 2), reuses Phase 5.1 `findCodeFence` (Phase 5.3 D-13 SSoT). Plan 01 RED tests turn GREEN.
+
+**Wave 2 — Integration tests + wiring + polish + docs** *(parallel; both blocked on Wave 1; disjoint file sets)*
+- [ ] 05.5-03-PLAN.md — `tests/integration/sectionLockIntegration.test.ts` (NEW): chevron `'leetcode.lang-switch'` userEvent bypass survives lock; malformed-fence body editable (D-09 fallthrough); non-`lc-slug` notes universally unaffected (D-06); copy-to-code architectural assertion (`src/graph/copyToCode.ts` uses `vault.process` not `cm.dispatch` — bypass-by-design per RESEARCH Pitfall 6).
+- [ ] 05.5-04-PLAN.md — Wiring + visual-dim polish + docs: `src/main.ts` Step 6f-bis registers `buildSectionLockExtension(this)`; `src/main/sectionLockExtension.ts` adds `Decoration.mark` visual-dim layer (`.leetcode-section-locked`); `styles.css` adds `.cm-editor .leetcode-section-locked { background: var(--background-secondary); }` (no hardcoded colors); README documents section-lock UX under Phase 5 D-25 troubleshooting; CLAUDE.md §Conventions documents the `'leetcode.*'` userEvent bypass convention. Five-gate smoke (test/lint/tsc/build/bundle-size) green.
 
 ### Phase 05.4: Run Verdict UX + Button Polish (INSERTED)
 
