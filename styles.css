@@ -893,7 +893,10 @@
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  margin-top: 4px;
+  /* Phase 5.4 UAT-G6 (2026-05-13) — bump top margin so the action row
+     reads as a separate affordance below the `## Code` fence rather than
+     hugging it. */
+  margin-top: 10px;
   margin-bottom: 8px;
   width: 100%;
   box-sizing: border-box;
@@ -908,6 +911,10 @@
   display: flex !important;
   justify-content: space-between !important;
   width: 100% !important;
+  /* Phase 5.4 UAT-G6 — CM6 zeroes margins on direct children of cm-content;
+     re-assert the gap below the `## Code` fence so the action row reads as
+     a separate affordance (top margin alone collapses; padding-top survives). */
+  padding-top: 8px !important;
 }
 .leetcode-code-actions .leetcode-code-action-run {
   margin-left: auto;
