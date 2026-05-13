@@ -47,6 +47,10 @@ export interface RunModalArgs {
    *  When provided AND `exampleTestcases` lacks blank-line case boundaries,
    *  the seed is chunked into per-case tabs. */
   linesPerCase?: number;
+  /** Phase 5.4 UAT-G4 — when set, the modal opens with this tab index
+   *  active instead of defaulting to tab 0. Used by Copy-failing-testcase
+   *  so the user lands directly on the just-appended failing case tab. */
+  initialActiveTab?: number;
   store: EphemeralTabStore;
   onRun: (input: string) => void;
 }
@@ -82,7 +86,11 @@ export class RunModal extends Modal {
     );
     // Work on a local copy; `setTabs` on close pushes back.
     this.cases = [...seeded];
-    this.activeTab = 0;
+    // UAT-G4: opt-in initial active tab (used by Copy-failing-testcase to
+    // land on the just-appended tab). Clamp to a valid range so a stale
+    // index doesn't crash the renderer.
+    const requested = this.args.initialActiveTab ?? 0;
+    this.activeTab = Math.min(Math.max(0, requested), Math.max(0, this.cases.length - 1));
 
     this.tabsEl = appendEl(contentEl, 'div', 'leetcode-run-tabs');
     this.tabsEl.setAttribute('role', 'tablist');

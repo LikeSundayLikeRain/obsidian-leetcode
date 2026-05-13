@@ -358,17 +358,24 @@ function renderInputSection(
   chunk: string,
   md: ReturnType<typeof parseMetaData>,
 ): void {
-  const section = appendEl(parent, 'div', 'leetcode-verdict-input-section');
+  // Phase 5.4 UAT-G5 (2026-05-13) — match the Output/Expected DOM shape:
+  // outer wrapper carries `.leetcode-verdict-section` (no surface) so the
+  // "Input" label sits ABOVE the gray fenced block, exactly like Output and
+  // Expected. The inner pre (or rows wrapper) carries `.leetcode-verdict-
+  // input-section` which DOES paint the gray surface, keeping the visual
+  // weight consistent with Output/Expected's surfaced `<pre>`.
+  const section = appendEl(parent, 'div', 'leetcode-verdict-section');
   const label = appendEl(section, 'div', 'leetcode-verdict-section-label');
   setText(label, 'Input');
   label.setAttribute('aria-label', 'Input');
 
   const lines = chunk.length === 0 ? [] : chunk.split('\n');
   if (md && md.params.length >= 1 && lines.length === md.params.length) {
+    const body = appendEl(section, 'div', 'leetcode-verdict-input-section');
     for (let i = 0; i < md.params.length; i++) {
       const param = md.params[i];
       if (!param) continue;
-      const row = appendEl(section, 'div', 'leetcode-verdict-input-param');
+      const row = appendEl(body, 'div', 'leetcode-verdict-input-param');
       const name = appendEl(row, 'span', 'leetcode-verdict-input-param-name');
       setText(name, `${param.name} =`);
       const value = appendEl(row, 'pre', 'leetcode-verdict-input-param-value');
@@ -377,8 +384,9 @@ function renderInputSection(
     return;
   }
 
-  // Fallback: raw dump in a single <pre>.
-  const pre = appendEl(section, 'pre', 'leetcode-verdict-input-param-value');
+  // Fallback: raw dump in a single <pre> with the surface class so it
+  // visually matches the labeled-rows path.
+  const pre = appendEl(section, 'pre', 'leetcode-verdict-input-section leetcode-verdict-input-param-value');
   setText(pre, chunk);
 }
 

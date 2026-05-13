@@ -838,11 +838,14 @@ export default class LeetCodePlugin extends Plugin {
     // we just set. setTabs overwrites; we want to preserve existing tabs so
     // the user's in-progress edits from an earlier Run are not clobbered.
     const existing = this.ephemeralTabs.getOrSeed(ctx.slug, exampleTestcases, linesPerCase);
-    this.ephemeralTabs.setTabs(ctx.slug, [...existing, seedInput]);
+    const newTabs = [...existing, seedInput];
+    this.ephemeralTabs.setTabs(ctx.slug, newTabs);
     new RunModal(this.app, {
       slug: ctx.slug,
       exampleTestcases,
       linesPerCase,
+      // UAT-G4: focus the just-appended failing-case tab (last index).
+      initialActiveTab: newTabs.length - 1,
       store: this.ephemeralTabs,
       onRun: (input: string) => {
         const current = this.getActiveProblemContext();
