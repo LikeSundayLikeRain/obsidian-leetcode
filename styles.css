@@ -560,7 +560,9 @@
 .leetcode-verdict .leetcode-verdict-diff-input,
 .leetcode-verdict .leetcode-verdict-diff-actual,
 .leetcode-verdict .leetcode-verdict-diff-expected,
-.leetcode-verdict .leetcode-verdict-error-pre {
+.leetcode-verdict .leetcode-verdict-error-pre,
+.leetcode-verdict .leetcode-verdict-output-value,
+.leetcode-verdict .leetcode-verdict-expected-value {
   margin: 0;
   padding: 8px 12px;
   background: var(--background-secondary);
@@ -947,8 +949,16 @@
 /* G-CHEVRON-STYLING (gap-closure 05.3-05) — ported from .lc-fm__picker
    for cross-feature visual consistency with the browser's filter dropdown. */
 .leetcode-language-chevron {
+  display: inline-grid;
+  grid-template-columns: 14px 1fr 14px;
+  align-items: center;
   min-height: 30px;
   padding: 2px 8px;
+  /* Fixed width sized to the longest label ("JavaScript"/"TypeScript", 10ch)
+     plus chevron icon + gap. Prevents the inline action row from re-flowing
+     when the user switches between short ("C") and long ("JavaScript")
+     language labels (Phase 5.4 UAT 2026-05-13). */
+  width: 14ch;
   font-size: 13px;
   background: var(--background-primary);
   color: var(--text-normal);
@@ -956,6 +966,15 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   transition: border-color 120ms ease;
+}
+.leetcode-language-chevron .leetcode-language-chevron-icon {
+  grid-column: 1;
+}
+.leetcode-language-chevron .leetcode-language-chevron-label {
+  grid-column: 2;
+  text-align: center;
+  /* Phantom right spacer is provided by grid-column 3 (no DOM needed —
+     the third grid column is empty, balancing the icon on column 1). */
 }
 .leetcode-language-chevron:hover {
   border-color: var(--text-muted);
@@ -1149,5 +1168,11 @@
 .leetcode-language-chevron-label {
   display: inline-flex;
   align-items: center;
+  /* Span the full grid column 2 so `text-align: center` on the parent's
+     grid-column rule actually centers the text horizontally. Without this
+     the label shrinks to content width and ignores the column's 1fr size
+     (Phase 5.4 UAT 2026-05-13). */
+  justify-content: center;
+  width: 100%;
 }
 
