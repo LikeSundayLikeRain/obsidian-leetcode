@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: Phase 05.5 Plan 02 complete (Wave 1 GREEN-state — sectionLockExtension shipped; 16 RED → GREEN; 631 tests passing)
-last_updated: "2026-05-13T21:58:39.544Z"
+last_updated: "2026-05-13T22:09:10.513Z"
 last_activity: 2026-05-13
 progress:
   total_phases: 10
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 61
-  completed_plans: 63
+  completed_plans: 64
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-07)
 
 Phase: 05.5 (Section Locking for lc-slug Notes) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-13
 
 Progress: [██████████] 100%
@@ -86,6 +86,7 @@ for the full finding + remediation path.
 | Phase 05.5 P01 | 7m 28s | 2 tasks | 3 files |
 | Phase 05.5 P02 | 6m 53s | 2 tasks | 2 files |
 | Phase 05.5 P03 | 2m 49s | 1 tasks | 1 files |
+| Phase 05.5 P04 | 5m 15s | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,9 @@ Recent decisions affecting current work:
 - [Phase ?]: Phase 05.5 Plan 02: changeFilter gate order is cost-ascending — userEvent bypass (Pitfall 5) FIRST, then file gate, then metadataCache lc-slug gate, then computeLockedRanges; plugin-internal dispatches pay only an annotation lookup
 - [Phase ?]: Phase 05.5 Plan 02: visual-dim Decoration.mark deferred to Plan 04 per CONTEXT D-04 "planner discretion"; Plan 02 ships the lock without it. Internal-only class 'leetcode-section-locked-atomic' on atomicRanges decorations awaits Plan 04 styles.css polish
 - [Phase ?]: static-text invariant assertion (Plan 05.5-03 Scenario 4)
+- [Phase ?]: Phase 05.5 Plan 04: Visual-dim Decoration.mark layer SHIPPED default-on (RESEARCH Open Q4) — without it users only learn the lock exists by typing into a locked region; CSS uses var(--background-secondary), no hardcoded colors
+- [Phase ?]: Phase 05.5 Plan 04: Decoration.mark class is 'leetcode-section-locked' (user-facing) distinct from internal 'leetcode-section-locked-atomic' on atomicRanges layer — keeps visual-dim styling separable from cursor-skip semantics
+- [Phase ?]: Phase 05.5 Plan 04: 'leetcode.*' userEvent pinned in CLAUDE.md Conventions as the bypass convention for plugin-internal CM6 dispatches; future plugin dispatches MUST set userEvent: 'leetcode.<verb>' on cm.dispatch specs targeting locked ranges or the section lock silently drops them
 
 ### Pending Todos
 
@@ -143,6 +147,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-13T21:58:15.756Z
+Last session: 2026-05-13T22:08:57.961Z
 Stopped at: Phase 05.5 Plan 02 complete (Wave 1 GREEN-state — sectionLockExtension shipped; 16 RED → GREEN; 631 tests passing)
 Resume file: None
