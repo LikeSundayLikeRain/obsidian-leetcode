@@ -124,13 +124,24 @@ describe('runArity (Phase 5.4 Plan 01 — D-01 / D-02 / D-08)', () => {
   });
 
   it('splitOutput: passes through code_answer array verbatim at matching arity (run-multi-case fixture oracle)', () => {
-    // Oracle: tests/solve/fixtures/run-multi-case.json — A2 contract.
-    expect(runMultiCase.code_answer).toEqual(['[0,1]', '[1,2]']);
-    expect(splitOutput(runMultiCase.code_answer, 2)).toEqual(['[0,1]', '[1,2]']);
-    expect(splitOutput(runMultiCase.expected_code_answer, 2)).toEqual([
+    // Oracle: tests/solve/fixtures/run-multi-case.json — A2 contract refined
+    // by Phase 5.4 Plan 05 live UAT. LIVE LC pads code_answer + expected_
+    // code_answer with trailing empty strings: a 3-case Run returned length-4
+    // arrays with the trailing entry being ''. The renderer's arity logic
+    // (verdictModalRenderer.ts) prefers total_testcases / compare_result.length
+    // over array length to ignore the pad. splitOutput at arity=3 trims the
+    // trailing entry; at arity=4 (matching .length) returns verbatim.
+    expect(runMultiCase.code_answer).toEqual(['[0,1]', '[1,2]', '[0,1]', '']);
+    expect(splitOutput(runMultiCase.code_answer, 3)).toEqual(['[0,1]', '[1,2]', '[0,1]']);
+    expect(splitOutput(runMultiCase.expected_code_answer, 3)).toEqual([
       '[0,1]',
       '[1,2]',
+      '[0,1]',
     ]);
+    // total_testcases is the authoritative case count; compare_result encodes
+    // per-case pass/fail and its length matches.
+    expect(runMultiCase.total_testcases).toBe(3);
+    expect(runMultiCase.compare_result).toBe('111');
   });
 
   it('splitOutput: normalizes single-string input to length-arity array', () => {
