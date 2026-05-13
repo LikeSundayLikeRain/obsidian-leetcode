@@ -184,7 +184,7 @@ Plans:
 - [x] 05.5-01-PLAN.md — `tests/main/sectionLockExtension.test.ts` (>=13 RED it-blocks for D-01..D-09) + `tests/helpers/obsidian-stub.ts` `makeStateForLockTests` + `makeFakeTransaction` factories + `LOCKED_HEADINGS` SSoT export added to `src/notes/NoteTemplate.ts`
 
 **Wave 1 — Implementation (GREEN-state)** *(blocked on Wave 0)*
-- [ ] 05.5-02-PLAN.md — `src/main/sectionLockExtension.ts` (NEW): `computeLockedRanges` pure helper + `buildSectionLockExtension` composing `EditorState.changeFilter` + `EditorView.atomicRanges`; honors `'leetcode.*'` userEvent bypass (Pitfall 5), uses `tr.startState` (Pitfall 2), reuses Phase 5.1 `findCodeFence` (Phase 5.3 D-13 SSoT). Plan 01 RED tests turn GREEN.
+- [x] 05.5-02-PLAN.md — `src/main/sectionLockExtension.ts` (NEW): `computeLockedRanges` pure helper + `buildSectionLockExtension` composing `EditorState.changeFilter` + `EditorView.atomicRanges`; honors `'leetcode.*'` userEvent bypass (Pitfall 5), uses `tr.startState` (Pitfall 2), reuses Phase 5.1 `findCodeFence` (Phase 5.3 D-13 SSoT). Plan 01 RED tests turn GREEN. (completed 2026-05-13)
 
 **Wave 2 — Integration tests + wiring + polish + docs** *(parallel; both blocked on Wave 1; disjoint file sets)*
 - [ ] 05.5-03-PLAN.md — `tests/integration/sectionLockIntegration.test.ts` (NEW): chevron `'leetcode.lang-switch'` userEvent bypass survives lock; malformed-fence body editable (D-09 fallthrough); non-`lc-slug` notes universally unaffected (D-06); copy-to-code architectural assertion (`src/graph/copyToCode.ts` uses `vault.process` not `cm.dispatch` — bypass-by-design per RESEARCH Pitfall 6).
