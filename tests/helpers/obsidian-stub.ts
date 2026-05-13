@@ -42,6 +42,16 @@ export const requestUrl = async (_arg: unknown): Promise<unknown> => {
   throw new Error('obsidian-stub: requestUrl called without a test-level vi.mock');
 };
 
+// Phase 5.4 D-12b — setIcon stub. Source modules (languageChevronWidget,
+// FilterModal, VerdictModal) import setIcon from 'obsidian' to mount Lucide
+// glyphs into spans. Under happy-dom there's no Lucide registry; we render
+// nothing and let tests assert that the icon-host span exists (presence,
+// not pixel content). Tests that need icon-rendering behavior override
+// this via per-test vi.mock factories.
+export function setIcon(_el: HTMLElement, _name: string): void {
+  /* no-op in tests */
+}
+
 // Plugin / PluginSettingTab / Modal / Setting / WorkspaceLeaf / App /
 // MarkdownView — all used as type imports in source today. Exporting class
 // stubs keeps `import { X }` resolution happy for future tests that might

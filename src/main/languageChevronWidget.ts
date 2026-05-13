@@ -1,6 +1,6 @@
 // Phase 5.3 (POLISH-09 / D-06..D-12) — Edit-Mode language chevron DOM builder.
 //
-// Renders the `[▼ {Language}]` chevron + 8-item dropdown that Phase 5.1's
+// Renders the `[chevron-down {Language}]` chevron + 8-item dropdown that Phase 5.1's
 // CodeActionsWidget mounts as the LEFT-aligned prefix in the `## Code` fence
 // button row. Click-on-different-language calls `plugin.switchLanguage(file, slug)`
 // which the LeetCodePlugin implementation (src/main.ts) wires to the atomic
@@ -38,6 +38,7 @@
 //     while open; both detach on close (no listener leaks).
 
 import type { Plugin, TFile } from 'obsidian';
+import { setIcon } from 'obsidian';
 import {
   LC_LANG_DISPLAY_LABELS,
   LC_CHEVRON_LANG_ORDER,
@@ -74,15 +75,26 @@ export function buildLanguageChevron(
   const wrapper = doc.createElement('span');
   wrapper.className = 'leetcode-language-chevron-wrapper';
 
-  // Chevron button — `▼ {DisplayLabel}` (UI-SPEC §Copywriting Contract).
+  // Chevron button — Lucide `chevron-down` icon span + label span sibling.
+  // Phase 5.4 D-12b: literal Unicode down-triangle glyph swapped for setIcon('chevron-down')
+  // so the chevron button reads as a select-input pill (matches FilterModal's
+  // `.lc-fm__picker` shape). The icon and label live in separate child spans so
+  // CSS can size/color them independently and tests can assert each surface.
   const button = doc.createElement('button');
   button.className = 'leetcode-language-chevron';
   button.setAttribute('aria-haspopup', 'listbox');
   button.setAttribute('aria-expanded', 'false');
-  // textContent (NOT raw-HTML assignment) — CSP-safe per CLAUDE.md store-policy.
-  // Triangle is the literal Unicode glyph U+25BC.
-  const label = LC_LANG_DISPLAY_LABELS[currentSlug] ?? currentSlug;
-  button.textContent = `▼ ${label}`;
+  // Icon-host span — setIcon mounts a Lucide SVG into this element.
+  // CSP-safe: setIcon is Obsidian's sanctioned API (no innerHTML on our side).
+  const iconSpan = doc.createElement('span');
+  iconSpan.className = 'leetcode-language-chevron-icon';
+  setIcon(iconSpan, 'chevron-down');
+  button.appendChild(iconSpan);
+  // Label span — textContent (NOT raw-HTML assignment) per CLAUDE.md store-policy.
+  const labelSpan = doc.createElement('span');
+  labelSpan.className = 'leetcode-language-chevron-label';
+  labelSpan.textContent = LC_LANG_DISPLAY_LABELS[currentSlug] ?? currentSlug;
+  button.appendChild(labelSpan);
   // Note: NO `title` attribute (UI-SPEC §Copywriting "Tooltip / hover hint: zero").
   wrapper.appendChild(button);
 
