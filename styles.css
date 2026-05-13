@@ -663,13 +663,17 @@
   font-weight: 600;
 }
 .leetcode-run .leetcode-run-tab-delete {
-  display: none;
+  /* Phase 5.4 UAT-G3 — keep the `×` slot reserved so the tab width does
+     not jump on hover. `visibility: hidden` preserves layout; we flip to
+     `visible` on hover and on the active tab. */
+  visibility: hidden;
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1;
 }
-.leetcode-run .leetcode-run-tab:hover .leetcode-run-tab-delete {
-  display: inline;
+.leetcode-run .leetcode-run-tab:hover .leetcode-run-tab-delete,
+.leetcode-run .leetcode-run-tab.is-active .leetcode-run-tab-delete {
+  visibility: visible;
 }
 .leetcode-run .leetcode-run-tab-delete:hover {
   color: var(--text-normal);
@@ -1150,6 +1154,7 @@
 }
 .leetcode-verdict .leetcode-verdict-input-param-value {
   font-family: var(--font-monospace);
+  font-size: 12px;
   white-space: pre-wrap;
   margin: 0;
 }
