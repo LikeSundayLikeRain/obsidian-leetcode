@@ -25,6 +25,7 @@
 // focus management) around this renderer's output.
 
 import { classifyStatus, type VerdictKind } from './statusMap';
+import { parseMetaData, deriveArity, splitInput, splitOutput } from './runArity';
 import type { RunCheckResponse, SubmitCheckResponse } from './types';
 
 /** Payload hand-shaped by the orchestrator (Plan 05) into the 3 "synthetic"
@@ -131,37 +132,277 @@ function renderRunResult(
   // (parameter retained for backward compat with the renderVerdict dispatch
   // signature; chrome no longer carries the problem title).
   _problemTitle: string | undefined,
-  _metaData?: string,
-  _joinedDataInput?: string,
+  metaData?: string,
+  joinedDataInput?: string,
 ): void {
-  // Title: derive from correct_answer + status_msg when available.
-  const correct = res.correct_answer === true;
-  const label = correct ? 'Run — all samples passed' : 'Run — output differs';
-  // Phase 5.4 D-13: problem title intentionally omitted from Run chrome.
-  setText(titleEl, label);
+  // ── Step 1: D-15 error sniff — single error block + zero tabs ──────────
+  if (hasRunErrorPayload(res)) {
+    renderRunErrorBlock(titleEl, contentEl, res);
+    return;
+  }
+
+  // ── Step 2: arity ──────────────────────────────────────────────────────
+  // D-02 priority: response array length is authoritative for the number of
+  // CASES (the user submitted exactly this many test cases). metaData's
+  // params.length describes the per-case INPUT-LINE count (used by D-08 for
+  // the input-row split — see renderInputSection), NOT the case count.
+  // sampleTestCase isn't plumbed through the renderer today. Always returns
+  // ≥ 1 (D-05 keeps the tab strip visible even at N=1).
+  const responseArity = Math.max(
+    toLines(res.code_answer).length,
+    toLines(res.expected_code_answer).length,
+  );
+  const arity = Math.max(responseArity, 1);
+
+  // ── Step 3: per-case pass mask (D-04 strict trim-compare) ──────────────
+  // null = "no expected available" (custom-input run); no chip rendered.
+  const outputs = splitOutput(res.code_answer, arity);
+  const expected = splitOutput(res.expected_code_answer, arity);
+  const passMask: Array<boolean | null> = [];
+  for (let i = 0; i < arity; i++) {
+    const exp = expected[i] ?? '';
+    const out = outputs[i] ?? '';
+    if (exp.length === 0) {
+      passMask.push(null);
+    } else {
+      passMask.push(out.trim() === exp.trim());
+    }
+  }
+
+  // ── Step 4: aggregate verdict ──────────────────────────────────────────
+  const aggregatePass = passMask.every((m) => m !== false);
+  const statusInfo = classifyStatus(
+    typeof res.status_code === 'number' ? res.status_code : 10,
+    typeof res.status_msg === 'string' ? res.status_msg : undefined,
+  );
+  const titleText = aggregatePass
+    ? statusInfo.kind === 'ac'
+      ? 'Accepted'
+      : statusInfo.displayName
+    : statusInfo.kind === 'ac' || statusInfo.kind === 'unknown'
+      ? 'Wrong Answer'
+      : statusInfo.displayName;
+  const titleModifier = aggregatePass
+    ? 'leetcode-verdict-title--success'
+    : 'leetcode-verdict-title--error';
+
+  // ── Step 5: D-13 chrome — verdict + Runtime line, NO problem title ─────
+  setText(titleEl, titleText);
+  addClass(titleEl, titleModifier);
+
+  const runtimeText = typeof res.status_runtime === 'string' && res.status_runtime.length > 0
+    ? `Runtime: ${res.status_runtime}`
+    : 'Runtime: —';
+  const runtimeRow = appendEl(contentEl, 'div', 'leetcode-verdict-runtime');
+  setText(runtimeRow, runtimeText);
 
   const body = appendEl(contentEl, 'div', 'leetcode-verdict-body');
   body.setAttribute('aria-live', 'polite');
 
-  // Render the user's code_answer array as the "Output" section.
-  const outputLines = toLines(res.code_answer);
-  if (outputLines.length > 0) {
-    makeSection(body, 'Output', outputLines.join('\n'), 'leetcode-verdict-diff-actual',
-      correct ? undefined : 'leetcode-verdict-section-label--output');
+  // ── Step 6: D-05 always-on tab strip + D-04 PASS/FAIL chips ────────────
+  const tabStrip = appendEl(body, 'div', 'leetcode-verdict-case-tabs');
+  tabStrip.setAttribute('role', 'tablist');
+  const caseBody = appendEl(body, 'div', 'leetcode-verdict-case-body');
+  caseBody.setAttribute('role', 'tabpanel');
+
+  // Per-case input chunks (D-08 — split joinedDataInput by lines-per-case).
+  // splitInput's `arity` argument is LINES-PER-CASE, not case-count: LC's
+  // wire format is one value per line, so for a 2-case Two Sum run with
+  // metaData.params=[nums,target], joinedDataInput is 4 lines and we group
+  // every 2 to recover per-case chunks. When metaData is absent, fall back
+  // to splitting the input into one-chunk-per-case (lines / case-count) so
+  // the raw-dump path still pairs the right input lines with the right
+  // case body. Both paths defensively cap at ≥ 1 line-per-case.
+  const md = parseMetaData(metaData);
+  const linesPerCase = md && md.params.length >= 1
+    ? md.params.length
+    : (() => {
+        const totalLines = (joinedDataInput ?? '').split('\n').filter((s) => s.length > 0).length;
+        return arity > 0 ? Math.max(Math.ceil(totalLines / arity), 1) : 1;
+      })();
+  const inputChunks = splitInput(joinedDataInput, linesPerCase);
+
+  const tabButtons: HTMLElement[] = [];
+
+  const renderActiveCase = (activeIdx: number): void => {
+    clear(caseBody);
+    // Apply per-case state class for D-07 class-gated coloring.
+    caseBody.className = 'leetcode-verdict-case-body';
+    const passState = passMask[activeIdx];
+    if (passState === true) addClass(caseBody, 'leetcode-verdict-case--pass');
+    else if (passState === false) addClass(caseBody, 'leetcode-verdict-case--fail');
+
+    // ── Step 7a: Input section (D-08) ─────────────────────────────────────
+    renderInputSection(caseBody, inputChunks[activeIdx] ?? '', md);
+
+    // ── Step 7b: Output section ──────────────────────────────────────────
+    renderValueSection(
+      caseBody,
+      'Output',
+      outputs[activeIdx] ?? '',
+      'leetcode-verdict-output-value',
+    );
+
+    // ── Step 7c: Expected section (suppressed when no expected available) ─
+    if (passState !== null) {
+      renderValueSection(
+        caseBody,
+        'Expected',
+        expected[activeIdx] ?? '',
+        'leetcode-verdict-expected-value',
+      );
+    }
+
+    // Update active-tab class on the strip.
+    for (let i = 0; i < tabButtons.length; i++) {
+      const btn = tabButtons[i];
+      if (!btn) continue;
+      if (i === activeIdx) addClass(btn, 'is-active');
+      else btn.classList.remove('is-active');
+    }
+  };
+
+  for (let i = 0; i < arity; i++) {
+    const tab = appendEl(tabStrip, 'button', 'leetcode-verdict-case-tab');
+    tab.setAttribute('type', 'button');
+    tab.setAttribute('role', 'tab');
+    const labelSpan = appendEl(tab, 'span', 'leetcode-verdict-case-tab-label');
+    setText(labelSpan, `Case ${String(i + 1)}`);
+    const passState = passMask[i];
+    if (passState !== null) {
+      const chip = appendEl(
+        tab,
+        'span',
+        passState
+          ? 'leetcode-verdict-case-chip leetcode-verdict-case-chip--pass'
+          : 'leetcode-verdict-case-chip leetcode-verdict-case-chip--fail',
+      );
+      setText(chip, passState ? 'PASS' : 'FAIL');
+    }
+    const idx = i;
+    tab.addEventListener('click', () => { renderActiveCase(idx); });
+    tabButtons.push(tab);
   }
-  const expectedLines = toLines(res.expected_code_answer);
-  if (expectedLines.length > 0) {
-    makeSection(body, 'Expected', expectedLines.join('\n'), 'leetcode-verdict-diff-expected', 'leetcode-verdict-section-label--expected');
-  }
+
+  // First tab active by default.
+  renderActiveCase(0);
+
+  // ── Step 8: Footer — single Close, NO Copy button (D-16 Run side) ──────
+  const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
+  const closeBtn = appendEl(footer, 'button', 'mod-cta');
+  setText(closeBtn, 'Close');
+  closeBtn.setAttribute('data-lc-role', 'close');
+}
+
+/** Phase 5.4 D-15 — Run-mode compile/runtime error renderer.
+ *  Mirrors renderCeBody / renderReBody shape but is renderer-entry-point-
+ *  scoped (takes titleEl + contentEl, not just body). Emits ZERO case-tabs
+ *  per D-15. */
+function renderRunErrorBlock(
+  titleEl: HTMLElement,
+  contentEl: HTMLElement,
+  res: RunCheckResponse,
+): void {
+  const statusInfo = classifyStatus(
+    typeof res.status_code === 'number' ? res.status_code : 0,
+    typeof res.status_msg === 'string' ? res.status_msg : undefined,
+  );
+  setText(titleEl, statusInfo.displayName);
+  addClass(titleEl, 'leetcode-verdict-title--error');
+
   if (typeof res.status_runtime === 'string' && res.status_runtime.length > 0) {
-    const runtime = appendEl(body, 'div', 'leetcode-verdict-runtime');
-    setText(runtime, `Runtime: ${res.status_runtime}${typeof res.status_memory === 'string' ? ' · Memory: ' + res.status_memory : ''}`);
+    const runtimeRow = appendEl(contentEl, 'div', 'leetcode-verdict-runtime');
+    setText(runtimeRow, `Runtime: ${res.status_runtime}`);
   }
+
+  const body = appendEl(contentEl, 'div', 'leetcode-verdict-body');
+  body.setAttribute('aria-live', 'polite');
+
+  const errText = firstNonEmpty(
+    res.full_compile_error,
+    res.compile_error,
+    res.full_runtime_error,
+    res.runtime_error,
+  );
+  const pre = appendEl(body, 'pre', 'leetcode-verdict-error-pre');
+  setText(pre, errText);
 
   const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
   const closeBtn = appendEl(footer, 'button', 'mod-cta');
   setText(closeBtn, 'Close');
   closeBtn.setAttribute('data-lc-role', 'close');
+}
+
+/** Phase 5.4 D-08 — Input section renderer for the active case. When
+ *  metaData parses, label rows by `paramName = value` (one row per param);
+ *  otherwise fall back to a single `<pre>` block with the raw per-case
+ *  input dump (D-08 fallback mandate).
+ *
+ *  Rationale for the per-line param mapping: LC's interpret_solution wire
+ *  format is one value per line, in the order metaData.params declares.
+ *  splitInput already groups by arity = params.length, so the active
+ *  case's chunk has exactly `arity` lines (one per param). When that
+ *  alignment doesn't hold (chunk has fewer lines than params, or no
+ *  metaData), the renderer falls back to the raw chunk in a single pre. */
+function renderInputSection(
+  parent: HTMLElement,
+  chunk: string,
+  md: ReturnType<typeof parseMetaData>,
+): void {
+  const section = appendEl(parent, 'div', 'leetcode-verdict-input-section');
+  const label = appendEl(section, 'div', 'leetcode-verdict-section-label');
+  setText(label, 'Input');
+  label.setAttribute('aria-label', 'Input');
+
+  const lines = chunk.length === 0 ? [] : chunk.split('\n');
+  if (md && md.params.length >= 1 && lines.length === md.params.length) {
+    for (let i = 0; i < md.params.length; i++) {
+      const param = md.params[i];
+      if (!param) continue;
+      const row = appendEl(section, 'div', 'leetcode-verdict-input-param');
+      const name = appendEl(row, 'span', 'leetcode-verdict-input-param-name');
+      setText(name, `${param.name} =`);
+      const value = appendEl(row, 'pre', 'leetcode-verdict-input-param-value');
+      setText(value, lines[i] ?? '');
+    }
+    return;
+  }
+
+  // Fallback: raw dump in a single <pre>.
+  const pre = appendEl(section, 'pre', 'leetcode-verdict-input-param-value');
+  setText(pre, chunk);
+}
+
+/** Phase 5.4 D-07 — Value-section renderer for Output / Expected. The
+ *  value-text class (`leetcode-verdict-output-value` /
+ *  `leetcode-verdict-expected-value`) is the target of the Plan-04 CSS
+ *  rule that gates color on the parent `.leetcode-verdict-case--{pass,fail}`
+ *  class set in renderRunResult Step 7. */
+function renderValueSection(
+  parent: HTMLElement,
+  labelText: string,
+  value: string,
+  valueClass: string,
+): void {
+  const section = appendEl(parent, 'div', 'leetcode-verdict-section');
+  const label = appendEl(section, 'div', 'leetcode-verdict-section-label');
+  setText(label, labelText);
+  label.setAttribute('aria-label', labelText);
+  const pre = appendEl(section, 'pre', valueClass);
+  setText(pre, value);
+}
+
+/** Mirror of VerdictModal's addClass helper — pure-DOM, falls back to
+ *  classList when the Obsidian-only `addClass()` method is absent (test
+ *  env). Keeps renderer environment-agnostic per file-header purity rule. */
+function addClass(el: HTMLElement | null | undefined, cls: string): void {
+  if (!el) return;
+  const maybe = el as unknown as { addClass?: (c: string) => void };
+  if (typeof maybe.addClass === 'function') {
+    maybe.addClass(cls);
+  } else {
+    el.classList.add(cls);
+  }
 }
 
 // ── Render state: Submit verdicts ────────────────────────────────────────
