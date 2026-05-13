@@ -69,6 +69,9 @@ import { classifyStatus } from './solve/statusMap';
 import { registerCodeBlockActionProcessor } from './main/codeActionsPostProcessor';
 // Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) — edit-mode Run/Submit buttons in CM6.
 import { buildCodeActionsEditorExtension } from './main/codeActionsEditorExtension';
+// Phase 05.5 (POLISH) — section locking for lc-slug notes. Hard read-only
+// enforcement on plugin-owned regions via CM6 EditorState.changeFilter.
+import { buildSectionLockExtension } from './main/sectionLockExtension';
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
 // Phase 4 Plan 05 — knowledge-graph wiring.
@@ -376,6 +379,16 @@ export default class LeetCodePlugin extends Plugin {
     // Click handlers call plugin.runFromActive() / submitFromActive() directly
     // (D-05 — avoids editorCheckCallback gate regression from 05-05 live smoke).
     this.registerEditorExtension(buildCodeActionsEditorExtension(this));
+
+    // Step 6f-bis — Phase 05.5 (POLISH) section locking for lc-slug notes.
+    // Hard read-only enforcement via CM6 EditorState.changeFilter; gated on
+    // lc-slug frontmatter (D-06) + Edit Mode (D-07). Locks `## Problem`
+    // entirely; `## Code` heading + fence opener + closing fence;
+    // `## Techniques` heading; `## Notes` heading. `## Code` body and
+    // `## Techniques`/`## Notes` bodies stay editable. Plugin-side dispatches
+    // with userEvent='leetcode.*' bypass the lock so chevron switch keeps
+    // working (RESEARCH Pitfall 5).
+    this.registerEditorExtension(buildSectionLockExtension(this));
 
     // Step 6g — Phase 5.2 D-06 auto-insert starter code on file-open.
     // Fires for every note reveal; the handler gates on `lc-slug` frontmatter

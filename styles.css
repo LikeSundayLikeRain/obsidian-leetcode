@@ -916,6 +916,12 @@
      a separate affordance (top margin alone collapses; padding-top survives). */
   padding-top: 8px !important;
 }
+
+/* Phase 05.5 (POLISH) — section-lock visual dim per CONTEXT D-04.
+ * Only Obsidian semantic CSS vars; no hardcoded colors (CLAUDE.md §Conventions, Phase 5.4 D-06). */
+.cm-editor .leetcode-section-locked {
+  background: var(--background-secondary);
+}
 .leetcode-code-actions .leetcode-code-action-run {
   margin-left: auto;
 }
