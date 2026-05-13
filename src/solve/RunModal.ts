@@ -5,12 +5,16 @@
 // state lives in EphemeralTabStore; the plugin NEVER writes to
 // `## Custom Tests` (D-08 — legacy section is ignored on read and write).
 //
-// Behavior contract (UI-SPEC §2 RunModal + D-03..D-07):
+// Behavior contract (UI-SPEC §2 RunModal + D-03..D-07, updated by Phase 5.4 D-01):
 //   - Title `Run`
 //   - Tabs seeded from `store.getOrSeed(slug, exampleTestcases)` on open
 //   - Reset button (`Reset to sample cases`, no mod-cta) → store.resetToSamples
-//   - Run button (`Run`, mod-cta) → passes ONLY the active tab's input to
-//     `onRun`, then closes the modal
+//   - Run button (`Run`, mod-cta) → joins ALL non-empty tabs with `\n` via
+//     `joinCasesForRun` and passes the joined string to `onRun`, then
+//     closes the modal. Phase 5.4 D-01 supersedes Phase 5 D-07's single-
+//     active-tab behavior so a Run with N tabs makes ONE batched
+//     `interpret_solution` LC call (response's `code_answer[]` /
+//     `expected_code_answer[]` arrays carry per-case results).
 //   - `×` delete is hidden when only one tab remains (D-06 single-tab min)
 //   - `+` add-tab appends an empty tab and focuses it
 //   - onClose pushes current tab state back via `store.setTabs` (no I/O,
@@ -33,6 +37,7 @@
 
 import { Modal, type App } from 'obsidian';
 import type { EphemeralTabStore } from './ephemeralTabStore';
+import { joinCasesForRun } from './runArity';
 
 export interface RunModalArgs {
   slug: string;
@@ -103,12 +108,18 @@ export class RunModal extends Modal {
     runBtn.textContent = 'Run';
     runBtn.addEventListener('click', () => {
       // Sync the textarea content into the active tab so any in-progress
-      // edit is captured before we hand off to onRun.
+      // edit is captured before we hand off to onRun. (Phase 5 D-08 /
+      // CF-06: setTabs runs before the join — store-state contract.)
       this.cases[this.activeTab] = this.textareaEl.value;
       this.args.store.setTabs(this.args.slug, this.cases);
-      // D-07: pass ONLY the active tab's input. Phase 3 joined every
-      // non-empty case with `\n`; Phase 5 sends a single case.
-      const input = this.cases[this.activeTab] ?? '';
+      // D-01 (Phase 5.4): join ALL non-empty tabs with `\n` so the
+      // orchestrator's interpret_solution call carries every case in
+      // one batched LC request (matches LC.com). Supersedes Phase 5
+      // D-07's single-active-tab behavior. Arity is informational for
+      // the JOIN direction (LC wants a flat newline list); cases.length
+      // is a safe positive-int passthrough — runArity.ts ignores the
+      // value today, reserved for future arity-aware shaping.
+      const input = joinCasesForRun(this.cases, this.cases.length);
       try {
         this.args.onRun(input);
       } finally {
