@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
-stopped_at: Phase 5.3 Plan 07 polish-loop fixes complete — G-LAYOUT-V2 (Edit-Mode action row now CM6 block widget below fence; commit db2d075) + G-COPY-MODAL-NOCLOSE (SubmissionDetailModal auto-dismisses on successful copy via explicit safeClose at click-handler level; commit 3503255). Tests 567 passed / 2 skipped / 0 failed; bundle 148 KB; D-09 Reading-Mode lock preserved. Plan 07 UAT live-smoke re-verification still pending — extends scope to also re-verify the two new fixes.
-last_updated: "2026-05-12T19:50:09.287Z"
-last_activity: 2026-05-12 -- Phase 05.3 execution started
+status: completed
+stopped_at: Phase 05.4 context gathered
+last_updated: "2026-05-13T03:36:58.841Z"
+last_activity: 2026-05-13
 progress:
-  total_phases: 8
-  completed_phases: 8
+  total_phases: 10
+  completed_phases: 7
   total_plans: 52
-  completed_plans: 53
+  completed_plans: 55
   percent: 100
 ---
 
@@ -86,6 +86,8 @@ for the full finding + remediation path.
 ### Roadmap Evolution
 
 - Phase 5.1 inserted after Phase 5: Edit-mode inline Run/Submit buttons anchored below ## Code fenced block (URGENT)
+- Phase 05.4 inserted after Phase 5: Run Verdict UX + Button Polish (URGENT)
+- Phase 05.5 inserted after Phase 5: Section Locking for lc-slug Notes (URGENT)
 
 ### Decisions
 
@@ -125,6 +127,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-12T16:30:00Z
-Stopped at: Phase 5.3 Plan 07 polish-loop fixes complete — G-LAYOUT-V2 (Edit-Mode action row now CM6 block widget below fence; commit db2d075) + G-COPY-MODAL-NOCLOSE (SubmissionDetailModal auto-dismisses on successful copy via explicit safeClose at click-handler level; commit 3503255). Tests 567 passed / 2 skipped / 0 failed; bundle 148 KB; D-09 Reading-Mode lock preserved. Plan 07 UAT live-smoke re-verification still pending — extends scope to also re-verify the two new fixes.
-Resume file: .planning/phases/05.3-language-aware-editor/05.3-07-PLAN.md (next: chevron-affected UAT re-test live-smoke checkpoint, now also covering G-LAYOUT-V2 + G-COPY-MODAL-NOCLOSE)
+Last session: 2026-05-13T03:36:58.826Z
+Stopped at: Phase 05.4 context gathered
+Resume file: .planning/phases/05.4-run-verdict-ux-button-polish/05.4-CONTEXT.md
