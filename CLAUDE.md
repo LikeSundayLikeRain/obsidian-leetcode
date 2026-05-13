@@ -192,7 +192,7 @@ An Obsidian community plugin that fetches LeetCode problems, lets users write an
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+- **`'leetcode.*'` userEvent annotation is the bypass convention for plugin-internal CM6 dispatches.** The Phase 05.5 section lock (`src/main/sectionLockExtension.ts`) registers an `EditorState.changeFilter` that drops keystrokes inside locked ranges (`## Problem` entire region, `## Code` heading + fence opener + closing fence, `## Techniques` heading, `## Notes` heading). The filter checks `tr.annotation(Transaction.userEvent)` first; transactions whose userEvent string starts with `'leetcode.'` thread through unfiltered. **Any future plugin dispatch that targets a locked range MUST set `userEvent: 'leetcode.<verb>'` on its `cm.dispatch` spec, or the section lock will silently drop the change.** Audited callsites: `src/main.ts:799-805` (`switchFenceLanguage` — sets `'leetcode.lang-switch'`); `src/main/codeActionsEditorExtension.ts:~320` (`languageRefreshEffect` — dispatches an effect with no `changes`, not subject to the changeFilter). Vault-layer writes via `app.vault.process(...)` and `app.fileManager.processFrontMatter(...)` (e.g., `src/graph/copyToCode.ts`) bypass the lock by design — they happen below CM6 and never hit the editor's transaction filter.
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->

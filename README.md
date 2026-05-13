@@ -72,6 +72,34 @@ Open Settings → LeetCode. Three sections:
 - `LeetCode is slow to respond. Try again.` — LC did not answer within 10 seconds. Judge or network latency; retry manually.
 - Run/Submit buttons don't appear — buttons are rendered in Reading mode only. In Live Preview, use the command palette.
 
+### Section Locking
+
+Problem notes (any note with an `lc-slug` frontmatter entry) make plugin-owned regions read-only in Edit Mode (Live Preview + Source). The lock is silent: typing or pasting into a locked region simply has no effect — there's no Notice or warning. If you find yourself typing and the keystroke isn't appearing, check the heading you're under.
+
+**Locked regions** (read-only):
+
+````text
+## Problem            ← heading + entire body
+## Code               ← heading line only
+```python             ← fence opener (including the language tag)
+```                   ← fence closer
+## Techniques         ← heading line only
+## Notes              ← heading line only
+````
+
+**Editable regions:**
+
+- The `## Code` body between the opening and closing fence — this is your active solving surface.
+- The `## Techniques` body — you can add manual `[[Wikilinks]]` here; future AI-driven analysis will also write here.
+- The `## Notes` body — your own notes about the problem, fully under your control.
+- `## Custom Tests` (legacy section) — never locked; the plugin doesn't read or write it.
+
+**Why this exists:** the plugin overwrites `## Problem` on background refresh, the `## Code` fence body on Past Submissions / Copy-to-Code, and `## Techniques` + frontmatter on Accepted submissions. Locking the heading lines and structural anchors prevents your edits from accidentally landing in regions the plugin is about to overwrite.
+
+**Switching languages:** the fence opener line (e.g. ` ```python `) is locked, so you cannot rename the language by typing into the fence tag. Use the chevron dropdown next to the Run/Submit buttons — it rewrites the opener atomically (Cmd-Z reverts the change) and updates the `lc-language` frontmatter.
+
+**Cursor behavior:** you can still click anywhere — including inside locked regions — but typing will silently drop. Arrow-key cursor motion glides past locked regions automatically.
+
 ## License
 
 Released under the [MIT License](LICENSE).
