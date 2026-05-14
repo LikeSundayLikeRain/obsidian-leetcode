@@ -32,10 +32,10 @@ describe('registerPython3Highlighter (D-13)', () => {
   it('rewrites language-python3 → language-python on rendered <code>', async () => {
     const mod = await import('../../src/main/python3Highlighter');
     const plugin = createFakePlugin();
-    mod.registerPython3Highlighter(plugin);
+    mod.registerPython3Highlighter(plugin as never);
 
     const processor = plugin.registerMarkdownPostProcessor.mock
-      .calls[0][0] as ProcessorFn;
+      .calls[0]![0] as ProcessorFn;
 
     const root = document.createElement('div');
     const pre = document.createElement('pre');
@@ -54,9 +54,9 @@ describe('registerPython3Highlighter (D-13)', () => {
   it('leaves language-java / language-cpp untouched', async () => {
     const mod = await import('../../src/main/python3Highlighter');
     const plugin = createFakePlugin();
-    mod.registerPython3Highlighter(plugin);
+    mod.registerPython3Highlighter(plugin as never);
     const processor = plugin.registerMarkdownPostProcessor.mock
-      .calls[0][0] as ProcessorFn;
+      .calls[0]![0] as ProcessorFn;
 
     const root = document.createElement('div');
     for (const lang of ['java', 'cpp']) {

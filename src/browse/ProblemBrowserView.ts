@@ -43,6 +43,11 @@ export function computeFilterBadgeCount(f: CompoundFilter | null): number {
     if (marked) return false;
     // A rule with an empty values array is a no-op (matches everything /
     // filters nothing), so shouldn't count toward the "active filter" badge.
+    // Range-shaped rules (question-id, acceptance) don't have a `values`
+    // array — count them as active iff at least one of min/max is set.
+    if (r.field === 'question-id' || r.field === 'acceptance') {
+      return r.min !== null || r.max !== null;
+    }
     return Array.isArray(r.values) && r.values.length > 0;
   }).length;
 }

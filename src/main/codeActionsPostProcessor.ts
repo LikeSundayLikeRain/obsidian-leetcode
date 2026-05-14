@@ -40,8 +40,8 @@ function findCodeSectionPre(
       if (!line) continue;
       const m = /^(#{1,6})\s+(.+)$/.exec(line.trim());
       if (m) {
-        const level = m[1].length;
-        const title = m[2].trim();
+        const level = (m[1] ?? '').length;
+        const title = (m[2] ?? '').trim();
         if (level === 2 && title === 'Code') {
           return pre as HTMLElement;
         }

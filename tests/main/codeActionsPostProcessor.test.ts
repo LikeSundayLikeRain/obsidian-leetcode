@@ -100,7 +100,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     const plugin = withHostMethods(createFakePlugin({ metadataCache }));
 
     mod.registerCodeBlockActionProcessor(plugin);
-    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
+    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0]![0] as ProcessorFn;
 
     const root = buildSinglePreRoot();
     // Simulate ## Code section — would attach buttons if lc-slug were set.
@@ -124,7 +124,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     const plugin = withHostMethods(createFakePlugin({ metadataCache }));
 
     mod.registerCodeBlockActionProcessor(plugin);
-    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
+    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0]![0] as ProcessorFn;
 
     const root = buildSinglePreRoot();
     const lines = FULL_NOTE.split('\n');
@@ -140,8 +140,8 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     expect(actionsDiv).not.toBeNull();
     const buttons = Array.from(actionsDiv!.querySelectorAll('button')) as HTMLButtonElement[];
     expect(buttons.length).toBe(2);
-    expect(buttons[0].textContent).toBe('Run');
-    expect(buttons[1].textContent).toBe('Submit');
+    expect(buttons[0]!.textContent).toBe('Run');
+    expect(buttons[1]!.textContent).toBe('Submit');
   });
 
   it('does NOT append when section is under ## Problem (example code blocks)', async () => {
@@ -154,7 +154,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     const plugin = withHostMethods(createFakePlugin({ metadataCache }));
 
     mod.registerCodeBlockActionProcessor(plugin);
-    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
+    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0]![0] as ProcessorFn;
 
     const root = buildSinglePreRoot();
     const lines = FULL_NOTE.split('\n');
@@ -179,7 +179,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     const plugin = withHostMethods(createFakePlugin({ metadataCache }));
 
     mod.registerCodeBlockActionProcessor(plugin);
-    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
+    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0]![0] as ProcessorFn;
 
     const root = buildSinglePreRoot();
     const lines = FULL_NOTE.split('\n');
@@ -210,7 +210,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     );
 
     mod.registerCodeBlockActionProcessor(plugin);
-    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0][0] as ProcessorFn;
+    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0]![0] as ProcessorFn;
 
     const root = buildSinglePreRoot();
     const lines = FULL_NOTE.split('\n');
@@ -226,11 +226,11 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
       root.querySelectorAll('.leetcode-code-actions button'),
     ) as HTMLButtonElement[];
 
-    runBtn.click();
+    runBtn!.click();
     expect(runFromActive).toHaveBeenCalledTimes(1);
     expect(submitFromActive).not.toHaveBeenCalled();
 
-    submitBtn.click();
+    submitBtn!.click();
     expect(submitFromActive).toHaveBeenCalledTimes(1);
   });
 });

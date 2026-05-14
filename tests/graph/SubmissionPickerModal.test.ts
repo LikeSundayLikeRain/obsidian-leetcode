@@ -141,7 +141,7 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: picker chain-dismiss on copy', () => {
       file: makeStubFile() as never,
       slug: 'two-sum',
       title: 'Two Sum',
-      fetchHistory,
+      fetchHistory: fetchHistory as never,
       openDetailModal,
     });
     return { modal, openDetailModal, row };
@@ -159,7 +159,7 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: picker chain-dismiss on copy', () => {
     firstRow!.dispatchEvent(new Event('click', { bubbles: true }));
 
     expect(openDetailModal).toHaveBeenCalledTimes(1);
-    const args = openDetailModal.mock.calls[0];
+    const args = openDetailModal.mock.calls[0]!;
     // Position 0 = SubmissionRow, position 1 = onSuccess callback function.
     expect(typeof args[1]).toBe('function');
   });
@@ -177,7 +177,7 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: picker chain-dismiss on copy', () => {
     expect(firstRow).not.toBeNull();
     firstRow!.dispatchEvent(new Event('click', { bubbles: true }));
 
-    const onSuccess = openDetailModal.mock.calls[0][1] as (() => void) | undefined;
+    const onSuccess = openDetailModal.mock.calls[0]![1] as (() => void) | undefined;
     expect(typeof onSuccess).toBe('function');
     onSuccess!();
 
@@ -197,6 +197,6 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: picker chain-dismiss on copy', () => {
     firstRow!.dispatchEvent(evt);
 
     expect(openDetailModal).toHaveBeenCalledTimes(1);
-    expect(typeof openDetailModal.mock.calls[0][1]).toBe('function');
+    expect(typeof openDetailModal.mock.calls[0]![1]).toBe('function');
   });
 });

@@ -68,7 +68,7 @@ describe('Phase 5 SessionExpiredNotice (D-21 + CF-04)', () => {
     mod.showSessionExpiredNotice!(login);
 
     expect(capturedNotices).toHaveLength(1);
-    const notice = capturedNotices[0];
+    const notice = capturedNotices[0]!;
     expect(notice.message).toBeInstanceOf(DocumentFragment);
     expect(notice.timeout).toBe(0);
 
@@ -89,7 +89,7 @@ describe('Phase 5 SessionExpiredNotice (D-21 + CF-04)', () => {
 
     const login = vi.fn();
     mod.showSessionExpiredNotice!(login);
-    const notice = capturedNotices[0];
+    const notice = capturedNotices[0]!;
     const button = notice.messageEl.querySelector(
       'button.leetcode-notice-action.mod-cta',
     ) as HTMLButtonElement | null;
@@ -109,7 +109,7 @@ describe('Phase 5 SessionExpiredNotice (D-21 + CF-04)', () => {
       sequence.push('login');
     });
     mod.showSessionExpiredNotice!(login);
-    const notice = capturedNotices[0];
+    const notice = capturedNotices[0]!;
     notice.hide.mockImplementation(() => {
       sequence.push('hide');
     });
