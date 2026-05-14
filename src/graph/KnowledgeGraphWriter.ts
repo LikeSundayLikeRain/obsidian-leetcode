@@ -144,9 +144,7 @@ export class KnowledgeGraphWriter {
       const language = typeof terminal.lang === 'string' && terminal.lang.length > 0
         ? terminal.lang
         : 'unknown';
-      const solvedAt = new Date();  // captured for retry-safety (pure helper downstream).
       await applySolveTimeFrontmatter(this.app, ctx.file, {
-        solvedAt,
         language,
         currentPassTags: tagContribution,
       });

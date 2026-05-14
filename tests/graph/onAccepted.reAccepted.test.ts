@@ -64,10 +64,9 @@ describe('KnowledgeGraphWriter.onAccepted — re-AC (D-24)', () => {
     const fm = deps.vault.getFrontmatter('LeetCode/1-two-sum.md')!;
     // D-24: overwrite the surviving fields with latest. Phase 5.3 D-01/D-02:
     // legacy runtime/memory frontmatter writes are no longer emitted.
+    // UAT 2026-05-13: lc-solved-date write removed — no production reader.
     expect(fm['lc-language']).toBe('java');
     expect(fm['lc-status']).toBe('accepted');
-    expect(fm['lc-solved-date']).toMatch(
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/,
-    );
+    expect(fm['lc-solved-date']).toBeUndefined();
   });
 });

@@ -148,9 +148,9 @@ describe('Integration: AC pipeline (section A — detail-ac fixture)', () => {
     expect(fm['lc-status']).toBe('accepted');
     // Phase 5.3 D-01/D-02: legacy runtime/memory frontmatter writes removed —
     // display path reads runtime/memory fresh from LC GraphQL on demand.
+    // UAT 2026-05-13: lc-solved-date write removed — no production reader.
     expect(fm['lc-language']).toBe('java');
-    expect(typeof fm['lc-solved-date']).toBe('string');
-    expect(fm['lc-solved-date']).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    expect(fm['lc-solved-date']).toBeUndefined();
 
     // ── Assertion 2: lc/{slug} tags union-merged (Phase 2 D-05 carry) ─────
     const tags = Array.isArray(fm['tags']) ? (fm['tags'] as string[]) : [];

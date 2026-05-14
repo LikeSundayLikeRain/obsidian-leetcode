@@ -312,37 +312,17 @@ export async function applyFrontmatter(
 
 /** Input for the solve-time frontmatter writer.
  *
- * Phase 5.3 D-01/D-02: solve-time runtime + memory inputs removed. The display
- * path uses fresh GraphQL via `SubmissionDetailModal.runtimeDisplay`, so the
- * legacy frontmatter keys for those values had no production reader and are
- * dropped entirely. */
+ * Phase 5.3 D-01/D-02: solve-time runtime + memory inputs removed.
+ * UAT 2026-05-13: solve-time `solvedAt` input removed alongside the
+ * `lc-solved-date` write — the field had no production reader (the
+ * Submissions modal reads `submittedAt` fresh from LC GraphQL) and
+ * stayed silently stale on re-AC. Narrowed frontmatter surface. */
 export interface SolveTimeFrontmatterInput {
-  /** Solve timestamp as a captured Date (caller owns the clock for retry-safety). */
-  solvedAt: Date;
   /** LC langSlug the submission used (python3, java, cpp, …). */
   language: string;
   /** Plugin-derived tags to union into the frontmatter's tags array — e.g.
    *  ['lc/hash-table', 'lc/array']. Caller maps topic slugs → `lc/{slug}`. */
   currentPassTags: string[];
-}
-
-/** ISO-8601 local-tz formatter. Matches src/graph/dateFormat.ts (Plan 04-02).
- *  Duplicated here as a private local rather than creating a new import —
- *  keeps NoteTemplate.ts's import surface unchanged (SSoT module already owns
- *  formatting concerns; Plan 04-02's exported helper is available to
- *  KnowledgeGraphWriter for non-frontmatter paths). */
-function formatIsoLocalTz(d: Date): string {
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  const offsetMin = -d.getTimezoneOffset();
-  const sign = offsetMin >= 0 ? '+' : '-';
-  const abs = Math.abs(offsetMin);
-  const oh = Math.floor(abs / 60);
-  const om = abs % 60;
-  return (
-    d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-    'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) +
-    sign + pad(oh) + ':' + pad(om)
-  );
 }
 
 /**
@@ -353,7 +333,6 @@ function formatIsoLocalTz(d: Date): string {
  *   lc-status: 'accepted' — overwrites any existing status including
  *              'accepted' itself (re-AC case; D-24 keeps frontmatter reflective
  *              of the latest submission).
- *   lc-solved-date — ISO-8601 local-tz (D-10). Always written.
  *   lc-language — overwrites with the submission's language (D-24: reflect
  *                 latest, not best; the user may have switched languages).
  *   tags — union-merge input.currentPassTags with existing tags. Preserves
@@ -363,6 +342,10 @@ function formatIsoLocalTz(d: Date): string {
  * those keys were write-only and never read by display code (which uses
  * fresh GraphQL via `SubmissionDetailModal.runtimeDisplay`). Removing the
  * writes eliminates stale-data risk and narrows the frontmatter surface.
+ *
+ * UAT 2026-05-13: `lc-solved-date` write deleted for the same reason —
+ * no production reader; staleness risk on re-AC. The Past-Submissions
+ * modal renders `submittedAt` from fresh GraphQL.
  *
  * Non-lc-* user keys: untouched.
  */
@@ -374,10 +357,6 @@ export async function applySolveTimeFrontmatter(
   await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
     // Status — always 'accepted' on AC. D-24: re-AC still fires this.
     fm['lc-status'] = 'accepted';
-    // Solved date — ISO-8601 local-tz (D-10). Always written.
-    fm['lc-solved-date'] = formatIsoLocalTz(input.solvedAt);
-    // Phase 5.3 D-01/D-02: legacy runtime/memory frontmatter writes removed.
-    // Display path reads fresh runtime/memory from LC GraphQL on demand.
     // Language — overwrites (D-24).
     fm['lc-language'] = input.language;
 

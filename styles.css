@@ -534,13 +534,24 @@
     animation: lc-spin 1s linear infinite;
   }
 }
-.leetcode-verdict .leetcode-verdict-subtitle {
-  font-size: 12px;
-  color: var(--text-muted);
-  text-align: center;
-}
 .leetcode-verdict .leetcode-verdict-body {
   color: var(--text-normal);
+}
+/* UAT 2026-05-13 — pending state has only the spinner + a single
+   "Running tests…" line. Center the column vertically so it doesn't
+   hug the modal top while the lower half of the modal is empty.
+   Scoped to the pending modifier so terminal-verdict renderers (which
+   reuse .leetcode-verdict-body) keep their normal block layout. */
+.leetcode-verdict .leetcode-verdict-body--pending {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+}
+.leetcode-verdict .leetcode-verdict-body--pending p {
+  text-align: center;
+  margin: 8px 0 0 0;
 }
 .leetcode-verdict .leetcode-verdict-section {
   margin-bottom: 12px;

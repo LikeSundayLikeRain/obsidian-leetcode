@@ -72,7 +72,7 @@ export class VerdictModal extends Modal {
     addClass(contentEl, 'leetcode-verdict-pending');
     titleEl.textContent = 'Running…';
 
-    const body = appendEl(contentEl, 'div', 'leetcode-verdict-body');
+    const body = appendEl(contentEl, 'div', 'leetcode-verdict-body leetcode-verdict-body--pending');
     body.setAttribute('aria-live', 'polite');
 
     const spinnerWrap = appendEl(body, 'div', 'leetcode-verdict-spinner');
@@ -81,10 +81,7 @@ export class VerdictModal extends Modal {
     setIcon(spinnerWrap, 'loader');
 
     const primary = appendEl(body, 'p');
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "LeetCode" is the product name, not a sentence-initial word
-    primary.textContent = 'Polling LeetCode for verdict…';
-    const subtitle = appendEl(body, 'p', 'leetcode-verdict-subtitle');
-    subtitle.textContent = 'Backoff: 1s → 2s → 4s → 8s';
+    primary.textContent = 'Running tests…';
 
     const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
     const cancelBtn = appendEl(footer, 'button');
