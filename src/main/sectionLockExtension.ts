@@ -39,6 +39,7 @@
 // Same suppression pattern as src/main/codeActionsEditorExtension.ts.
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
+  EditorSelection,
   EditorState,
   RangeSetBuilder,
   Transaction,
@@ -149,25 +150,42 @@ export function computeLockedRanges(
           : state.doc.line(total).to;
       out.push(headFrom, bodyTo);
     } else if (cur.kind === 'code') {
-      // Heading line locked unconditionally (D-08).
-      out.push(headFrom, headTo);
       // D-09: locate the fence opener + closer via the Phase 5.1 SSoT
-      // detector. When it returns null (malformed / unterminated), skip the
-      // opener and closer pushes — body falls through to editable.
+      // detector. When it returns null (malformed / unterminated), only
+      // the heading line is locked — body falls through to editable.
       const fence = findCodeFence(state);
       if (fence) {
+        // UAT 2026-05-13 — extend the heading lock through the fence
+        // opener so blank lines between `## Code` and the opener (Phase 2
+        // template emits a blank line there) are also locked. Without
+        // this, users could click on the blank line and type — and
+        // arrow-up from the blank line would land in ## Problem (the
+        // adjacent merged lock) since the blank line itself wasn't part
+        // of any lock cluster.
         const opener = state.doc.line(fence.openerLine);
         const closer = state.doc.line(fence.closerLine);
         const openerTo =
           fence.openerLine < total
             ? state.doc.line(fence.openerLine + 1).from
             : opener.to;
-        out.push(opener.from, openerTo);
-        const closerTo =
-          fence.closerLine < total
-            ? state.doc.line(fence.closerLine + 1).from
-            : closer.to;
-        out.push(closer.from, closerTo);
+        out.push(headFrom, openerTo);
+
+        // Lock from the closing fence through the next canonical heading
+        // (or EOF) so blank lines between the closer and the next
+        // section are also locked. This prevents the same "editable
+        // surface gap" between the closer and `## Techniques`.
+        const nextHeadingLine =
+          h + 1 < headings.length
+            ? (headings[h + 1] as HeadingHit).line
+            : total + 1;
+        const closerLockTo =
+          nextHeadingLine <= total
+            ? state.doc.line(nextHeadingLine).from
+            : state.doc.line(total).to;
+        out.push(closer.from, closerLockTo);
+      } else {
+        // Malformed fence — only heading locked.
+        out.push(headFrom, headTo);
       }
     } else {
       // techniques | notes — heading line only (D-03). Body editable.
@@ -179,27 +197,74 @@ export function computeLockedRanges(
 }
 
 /**
- * Build a RangeSet over the same locked ranges so `EditorView.atomicRanges`
- * can skip cursor over them on arrow-key motion (RESEARCH Pattern 3). The
- * decoration class is internal-only — atomicRanges only consults the
- * `[from, to]` bounds; the class string lets a future styles.css polish
- * pass dim the locked ranges if/when Plan 04 chooses to enable visual dim.
+ * Coalesce a flat `[from, to, from, to, ...]` range list (the shape
+ * `computeLockedRanges` returns) into a sorted list of disjoint
+ * `[from, to]` tuples. Adjacent ranges (where `from <= last.to`) are
+ * merged into a single tuple.
+ *
+ * Pure helper; exported for testing. The transactionFilter snap logic
+ * relies on the merged shape so that snapping past a locked cluster
+ * lands on a position guaranteed to be outside ALL locks (without this
+ * step, snapping past `## Problem` would land at the start of `## Code`
+ * heading lock, requiring another snap pass).
  */
-function buildAtomicRangeSet(state: EditorStateType): DecorationSet {
-  const ranges = computeLockedRanges(state);
-  const b = new RangeSetBuilder<Decoration>();
-  for (let i = 0; i < ranges.length; i += 2) {
-    const from = ranges[i] as number;
-    const to = ranges[i + 1] as number;
-    if (from < to) {
-      b.add(
-        from,
-        to,
-        Decoration.mark({ class: 'leetcode-section-locked-atomic' }),
-      );
+export function mergeLockedRanges(
+  flatRanges: readonly number[],
+): ReadonlyArray<readonly [number, number]> {
+  const merged: Array<[number, number]> = [];
+  for (let i = 0; i < flatRanges.length; i += 2) {
+    const from = flatRanges[i] as number;
+    const to = flatRanges[i + 1] as number;
+    const last = merged[merged.length - 1];
+    if (last && from <= last[1]) {
+      last[1] = Math.max(last[1], to);
+    } else {
+      merged.push([from, to]);
     }
   }
-  return b.finish();
+  return merged;
+}
+
+/**
+ * Compute the snap target for a cursor that landed inside `lockFrom..lockTo`.
+ * Pure helper; exported for testing.
+ *
+ * Decision tree (UAT 2026-05-13 derived):
+ * - `prevHead < lockFrom` → forward motion FROM before the lock; snap to
+ *   `lockTo` (escape past the cluster).
+ * - `prevHead >= lockTo` → backward motion FROM after the lock; try to
+ *   snap to `lockFrom - 1` if that position is itself editable. If
+ *   not (e.g., it's inside another cluster or before doc-start), the
+ *   user is "trapped" — return `prevHead` so the cursor stays put
+ *   instead of teleporting to an unreachable pocket.
+ * - else (`prevHead` is INSIDE `[lockFrom, lockTo)` — typically a click
+ *   on the heading itself with no prior editable cursor) → snap forward.
+ *
+ * `merged` is the full list of merged locked clusters; `backTarget`
+ * editability is checked against ALL clusters and against doc-start.
+ */
+export function computeSnapTarget(
+  prevHead: number,
+  lockFrom: number,
+  lockTo: number,
+  merged: ReadonlyArray<readonly [number, number]>,
+): number {
+  if (prevHead < lockFrom) {
+    return lockTo;
+  }
+  if (prevHead >= lockTo) {
+    const backTarget = lockFrom - 1;
+    const backTargetUnreachable =
+      backTarget < 0 ||
+      merged.some(([f, t]) => backTarget >= f && backTarget < t) ||
+      // First-cluster guard: if this cluster is at the start of the
+      // merged list, anything before it is unreachable (frontmatter
+      // pocket above ## Problem in our layout).
+      (merged.length > 0 && merged[0]?.[0] === lockFrom);
+    return backTargetUnreachable ? prevHead : backTarget;
+  }
+  // prevHead INSIDE the cluster — escape forward by default.
+  return lockTo;
 }
 
 /**
@@ -271,13 +336,39 @@ function buildLockedDecorations(state: EditorStateType): DecorationSet {
 export function buildSectionLockExtension(plugin: Plugin): Extension {
   return [
     EditorState.changeFilter.of((tr) => {
+      const ev = tr.annotation(Transaction.userEvent);
+
+      // Gate 0 — UAT 2026-05-13 regression fix (vault-sync corruption):
+      // ONLY suppress changes for known user-input categories. CM6 + Obsidian
+      // dispatch many programmatic transactions WITHOUT a `userEvent` (vault
+      // file-sync reloads triggered by `vault.process` / external file
+      // changes; structural rewrites; collab merges; etc.). The previous
+      // filter blocked these too, which corrupted the buffer when copyToCode
+      // wrote the file and Obsidian's sync dispatch tried to splice the new
+      // content in — overlapping changes were dropped, leaving the buffer
+      // mid-merge and producing duplicated/missing sections.
+      //
+      // CM6's documented user-input userEvents are 'input.type', 'input.paste',
+      // 'input.drop', 'delete.backward', 'delete.forward', 'delete.selection',
+      // 'delete.cut', and 'undo' / 'redo'. We only fire the lock when the
+      // transaction matches one of these prefixes — programmatic dispatches
+      // (no userEvent, or annotations like 'sync', 'load', etc.) pass through
+      // unchanged.
+      const isUserInput =
+        typeof ev === 'string' &&
+        (ev.startsWith('input.') ||
+          ev.startsWith('delete.') ||
+          ev === 'undo' ||
+          ev === 'redo');
+      if (!isUserInput) return true;
+
       // Gate 1 — D-04 + Pitfall 5: plugin-side dispatches with userEvent
       // starting `'leetcode.'` bypass the lock so the chevron switch
       // (Phase 5.3) and any future plugin-driven CM6 dispatch keeps working.
-      // Cheapest check — do this first to avoid the metadataCache lookup
-      // on every plugin-internal transaction.
-      const ev = tr.annotation(Transaction.userEvent);
-      if (typeof ev === 'string' && ev.startsWith('leetcode.')) {
+      // (Currently unreachable because Gate 0 already exits on non-input
+      // userEvents, but kept as defense-in-depth — a future plugin path
+      // might dispatch with a 'leetcode.*'-prefixed input userEvent.)
+      if (ev.startsWith('leetcode.')) {
         return true;
       }
 
@@ -302,14 +393,113 @@ export function buildSectionLockExtension(plugin: Plugin): Extension {
       // NoteWriter populates the canonical sections). Returning the flat
       // number[] is the documented CM6 suppression form per
       // @codemirror/state JSDoc.
+      //
+      // Boundary fix (UAT 2026-05-13): CM6's changeFilter is exclusive at
+      // boundaries — a pure insertion at position `lockFrom` does not
+      // strictly overlap `[lockFrom, lockTo]` so the change passes through.
+      // This let users place the cursor at the start of `## Problem` and
+      // type before the `##`. Extending each lock's `from` backward by 1
+      // (clamped at 0) makes such boundary insertions fall strictly inside
+      // the suppressed range. Insertions at the END of a lock (e.g., start
+      // of the editable fence body) remain allowed because the upstream
+      // boundary stays exclusive.
       const ranges = computeLockedRanges(tr.startState);
-      return ranges.length === 0 ? true : ranges;
+      if (ranges.length === 0) return true;
+      const expanded: number[] = [];
+      for (let i = 0; i < ranges.length; i += 2) {
+        expanded.push(Math.max(0, (ranges[i] as number) - 1));
+        expanded.push(ranges[i + 1] as number);
+      }
+      return expanded;
     }),
-    // RESEARCH Pattern 3 — atomicRanges for cursor-skip on arrow-key motion.
-    // Mouse clicks still land anywhere; only keyboard motion glides past
-    // the locked region. This pairs with the changeFilter above: cursor can
-    // enter a locked range via click, but keystrokes drop silently.
-    EditorView.atomicRanges.of((view) => buildAtomicRangeSet(view.state)),
+    // UAT 2026-05-13: atomicRanges removed in favor of the
+    // transactionFilter below. atomicRanges performs CM6-internal cursor
+    // adjustment that doesn't always thread through user-space filters,
+    // resulting in the cursor "settling" at lockFrom on the first arrow
+    // keypress and only snapping out on the second. The transactionFilter
+    // alone covers all motions (arrow, click, column-step, word-step)
+    // because it runs on every selection-changing transaction.
+    // UAT 2026-05-13 — selection-snap transaction filter.
+    //
+    // CM6's atomicRanges only governs *some* cursor motions; it does NOT
+    // prevent click-to-position or column-step arrow keys from landing
+    // inside a locked range. This filter inspects every transaction that
+    // moves the selection and, when the resulting selection head lands
+    // inside a locked range, rewrites the transaction to snap the cursor
+    // to the boundary outside the range (forward when motion came from
+    // before, backward when from after).
+    //
+    // Returns a transaction-spec array on rewrite. CM6 reapplies filters
+    // to the rewritten output, but our snap target is always OUTSIDE all
+    // locked ranges so the second pass is a no-op (no infinite loop).
+    EditorState.transactionFilter.of((tr) => {
+      if (!tr.selection) return tr;
+
+      const file = tr.startState.field(editorInfoField)?.file;
+      if (!file) return tr;
+      const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter as
+        | Record<string, unknown>
+        | undefined;
+      const slug = fm?.['lc-slug'];
+      if (typeof slug !== 'string' || slug.length === 0) return tr;
+
+      const flatRanges = computeLockedRanges(tr.state);
+      if (flatRanges.length === 0) return tr;
+
+      // Merge adjacent / overlapping locked ranges so snap doesn't
+      // ping-pong between them. ## Problem body ends at the same offset
+      // ## Code heading begins; without merging, snapping past Problem
+      // lands inside Code lock and snapping back lands inside Problem.
+      const merged = mergeLockedRanges(flatRanges);
+
+      const prevHead = tr.startState.selection.main.head;
+      const sel = tr.selection;
+
+      // UAT 2026-05-13: only snap on cursor (collapsed) selections.
+      // When the user is selecting (head !== anchor — shift-arrow,
+      // drag-select), we leave the selection alone so they can copy
+      // locked text. The changeFilter still prevents edits to the
+      // selection if they try to type — selection-only is harmless.
+      const isCollapsedCursor = sel.ranges.every((r) => r.head === r.anchor);
+      if (!isCollapsedCursor) return tr;
+
+      let needsRewrite = false;
+      const newHeads: number[] = [];
+
+      for (const r of sel.ranges) {
+        const head = r.head;
+        let snappedHead = head;
+        for (const [lockFrom, lockTo] of merged) {
+          // Inside or at the upstream boundary. UAT: clicking at column 0
+          // of a locked heading lands head === lockFrom; visually that's
+          // "on the heading," so we snap. The downstream boundary
+          // (head === lockTo) is the natural transition into the next
+          // editable line — leaving it as a valid resting position.
+          if (head >= lockFrom && head < lockTo) {
+            needsRewrite = true;
+            snappedHead = computeSnapTarget(prevHead, lockFrom, lockTo, merged);
+            break;
+          }
+        }
+        newHeads.push(snappedHead);
+      }
+
+      if (!needsRewrite) return tr;
+
+      // Use the main range's snapped head for both anchor and head
+      // (collapse selection on snap — preserves no-op for non-locked
+      // selections, drops any unintentional shift-select INTO the lock).
+      const mainHead = newHeads[sel.mainIndex] ?? newHeads[0] ?? 0;
+      // Returning a TransactionSpec rewrites the current transaction with
+      // the snapped selection. We carry over the original transaction's
+      // changes/effects so we don't drop user input or annotations.
+      return {
+        changes: tr.changes,
+        selection: EditorSelection.cursor(mainHead),
+        effects: tr.effects,
+        scrollIntoView: tr.scrollIntoView,
+      };
+    }),
     // Phase 05.5 D-04 (planner discretion / RESEARCH Open Q4 recommendation):
     // visual-dim locked ranges for discoverability. CSS in styles.css uses
     // var(--background-secondary). Without this, users only learn the lock

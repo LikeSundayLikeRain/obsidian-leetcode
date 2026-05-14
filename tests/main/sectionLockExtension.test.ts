@@ -49,7 +49,9 @@ vi.mock('obsidian', async () => {
 import {
   computeLockedRanges,
   buildSectionLockExtension,
+  computeSnapTarget,
   LOCKED_HEADINGS,
+  mergeLockedRanges,
 } from '../../src/main/sectionLockExtension';
 
 // ────────────────────────────────────────────────────────────────────────
@@ -594,14 +596,16 @@ describe('buildSectionLockExtension — changeFilter behavior', () => {
     metadataCache = createFakeMetadataCache();
   });
 
-  it('returns suppression-range array when transaction touches a locked range — anchor D-04/Filter-drops', () => {
+  it('returns suppression-range array when user-input transaction touches a locked range — anchor D-04/Filter-drops', () => {
     metadataCache.setFrontmatter(filePath, { 'lc-slug': 'two-sum' });
     const plugin = createFakePlugin({ metadataCache });
     const state = makeStateForLockTests({
       body: canonicalNoteBody(),
       filePath,
     });
-    const tr = makeFakeTransaction(state); // userEvent undefined
+    // UAT 2026-05-13 regression fix: filter only fires on user-input
+    // userEvents (input.* / delete.* / undo / redo). 'input.type' = typing.
+    const tr = makeFakeTransaction(state, { userEvent: 'input.type' });
 
     const ext = buildSectionLockExtension(plugin as never);
     const filter = extractChangeFilterCallback(ext);
@@ -615,6 +619,29 @@ describe('buildSectionLockExtension — changeFilter behavior', () => {
     expect((result as number[]).length).toBeGreaterThanOrEqual(2);
     // Sanity: pairs must be even count.
     expect((result as number[]).length % 2).toBe(0);
+  });
+
+  it('returns true for transactions with no userEvent (vault-sync regression fix) — anchor UAT/Gate-0', () => {
+    // UAT 2026-05-13: copyToCode dispatched vault.process write; Obsidian
+    // synced the change back into CM6 buffer via a programmatic dispatch
+    // with NO userEvent. The previous filter blocked it as "user input"
+    // touching a locked range, dropping the changes and corrupting the
+    // buffer (duplicated sections, missing closing fence). Gate 0 now
+    // requires a known user-input userEvent before suppression fires;
+    // programmatic dispatches pass through.
+    metadataCache.setFrontmatter(filePath, { 'lc-slug': 'two-sum' });
+    const plugin = createFakePlugin({ metadataCache });
+    const state = makeStateForLockTests({
+      body: canonicalNoteBody(),
+      filePath,
+    });
+    const tr = makeFakeTransaction(state); // userEvent undefined — programmatic
+
+    const ext = buildSectionLockExtension(plugin as never);
+    const filter = extractChangeFilterCallback(ext);
+    const result = filter(tr);
+
+    expect(result).toBe(true);
   });
 
   it("returns true when transaction has userEvent starting with 'leetcode.' — anchor D-04/UserEvent-bypass", () => {
@@ -678,5 +705,131 @@ describe('buildSectionLockExtension — changeFilter behavior', () => {
     const result = filter(tr);
 
     expect(result).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Pure helper tests — mergeLockedRanges + computeSnapTarget
+// (UAT 2026-05-13 hardening — these helpers were extracted from the
+//  transactionFilter so the snap behavior could be unit-tested without
+//  driving a full EditorView. Documents the snap decision tree.)
+// ────────────────────────────────────────────────────────────────────────
+
+describe('mergeLockedRanges — pure coalesce helper', () => {
+  it('returns empty for empty input', () => {
+    expect(mergeLockedRanges([])).toEqual([]);
+  });
+
+  it('returns single tuple for single range', () => {
+    expect(mergeLockedRanges([10, 20])).toEqual([[10, 20]]);
+  });
+
+  it('keeps disjoint ranges separate', () => {
+    expect(mergeLockedRanges([10, 20, 30, 40])).toEqual([
+      [10, 20],
+      [30, 40],
+    ]);
+  });
+
+  it('merges adjacent ranges (from === last.to)', () => {
+    // Real-world case: ## Problem body ends at the same offset where
+    // ## Code heading begins. Both must coalesce into one cluster so
+    // snap doesn't ping-pong.
+    expect(mergeLockedRanges([10, 30, 30, 50])).toEqual([[10, 50]]);
+  });
+
+  it('merges overlapping ranges', () => {
+    expect(mergeLockedRanges([10, 30, 20, 50])).toEqual([[10, 50]]);
+  });
+
+  it('handles three-way merge', () => {
+    expect(mergeLockedRanges([10, 20, 20, 30, 30, 40])).toEqual([[10, 40]]);
+  });
+});
+
+describe('computeSnapTarget — snap-direction decision tree', () => {
+  // Setup: two disjoint locked clusters at [10, 30) and [50, 70).
+  // Editable region between them: [30, 50). Editable region after: [70, ...).
+  // Editable region before [10) — UNLESS the test marks cluster 0 as
+  // "first cluster" (frontmatter pocket guard).
+  const merged: ReadonlyArray<readonly [number, number]> = [[10, 30], [50, 70]];
+
+  it('forward snap: prevHead before lockFrom → snap to lockTo', () => {
+    // User typing/clicking from the start of the doc forward into a
+    // locked range; escape past it.
+    expect(computeSnapTarget(5, 10, 30, merged)).toBe(30);
+  });
+
+  it('backward snap: prevHead past lockTo, backTarget editable → snap to lockFrom - 1', () => {
+    // User came from after the second cluster (e.g., editable area at
+    // pos 75), pressed Up into cluster [50, 70). backTarget = 49 lands
+    // in the editable [30, 50) gap.
+    expect(computeSnapTarget(75, 50, 70, merged)).toBe(49);
+  });
+
+  it('stay-put: prevHead past lockTo, backTarget falls in another cluster → return prevHead', () => {
+    // 3-cluster scenario where backTarget = 49 IS inside cluster [40, 60).
+    // The middle cluster has no editable space behind it.
+    const triple: ReadonlyArray<readonly [number, number]> = [
+      [10, 30], [40, 60], [70, 90],
+    ];
+    // prevHead = 95 (past third cluster), motion lands in third cluster.
+    // backTarget = 69. Inside [70, 90)? No, 69 < 70. So this snap is
+    // valid. Test the inner stay-put scenario instead:
+    // prevHead = 65 (inside [40, 60)? No, between [40,60) and [70,90)).
+    // Actually let's test the documented scenario: motion lands in a
+    // cluster whose backTarget falls in an EARLIER cluster.
+    // prevHead = 70 (at start of third cluster, motion goes backward
+    // into second cluster's reach), motion lands at 50 inside [40,60).
+    // backTarget = 39. 39 < 40, but 39 >= 10 && 39 < 30? No, 39 > 30. So
+    // 39 is in editable [30,40). Not unreachable. Need merged where
+    // backTarget IS captured:
+    const adjacent: ReadonlyArray<readonly [number, number]> = [
+      [10, 50], [50, 70],
+    ];
+    // After mergeLockedRanges, this would coalesce, but for this unit
+    // test we deliberately pass non-merged input to exercise the
+    // unreachable-backTarget branch.
+    // prevHead = 75 (past second cluster), motion into [50, 70).
+    // backTarget = 49. Inside [10, 50)? 49 >= 10 && 49 < 50 → YES.
+    // Stay put → return prevHead.
+    expect(computeSnapTarget(75, 50, 70, adjacent)).toBe(75);
+  });
+
+  it('first-cluster guard: backward motion into the first cluster → stay put (frontmatter pocket)', () => {
+    // Real-world: ## Problem cluster sits at the top of the doc; nothing
+    // editable above it (frontmatter is not user-reachable from the
+    // editor body). prevHead = 35 (in editable gap), motion into
+    // [10, 30) cluster.
+    expect(computeSnapTarget(35, 10, 30, merged)).toBe(35);
+  });
+
+  it('inside cluster (click): prevHead inside [lockFrom, lockTo) → snap forward', () => {
+    // Click landed directly on the heading text; no prior cursor outside
+    // the cluster. Default forward snap.
+    expect(computeSnapTarget(15, 10, 30, merged)).toBe(30);
+  });
+
+  it('boundary: prevHead === lockTo → backward branch (not forward)', () => {
+    // prevHead === lockTo is "right at the downstream boundary." Treat
+    // as "from after" so Up-arrow from fence body line 1 (= opener.to)
+    // tries the backward branch first; the first-cluster guard then
+    // kicks in for the Problem cluster.
+    expect(computeSnapTarget(30, 10, 30, merged)).toBe(30); // first-cluster stay-put
+    // For a non-first cluster, backTarget = 49 IS in editable gap.
+    expect(computeSnapTarget(70, 50, 70, merged)).toBe(49);
+  });
+
+  it('boundary: prevHead === lockFrom → forward branch (not in lock yet)', () => {
+    // prevHead === lockFrom means cursor was AT the upstream boundary,
+    // about to enter. We treat this as "before" → forward escape.
+    // (head < lockFrom is false but head < lockFrom is also false at
+    // boundary; the changeFilter expansion compensates with from-1 in
+    // the boundary fix. For snap, prevHead === lockFrom means we treat
+    // it as motion from before.)
+    // Note: prevHead < lockFrom is FALSE when ===. So we hit the else
+    // branch. To avoid this edge being a regression, document with a
+    // test:
+    expect(computeSnapTarget(10, 10, 30, merged)).toBe(30);
   });
 });
