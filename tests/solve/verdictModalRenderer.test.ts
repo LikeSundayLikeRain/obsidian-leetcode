@@ -48,7 +48,7 @@ vi.mock('obsidian', async () => {
   };
 });
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- RED until Plan 06
+ 
 import { renderVerdict } from '../../src/solve/verdictModalRenderer';
 
 function renderFixture(fixture: unknown): { titleEl: HTMLElement; contentEl: HTMLElement } {

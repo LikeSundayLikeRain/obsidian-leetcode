@@ -153,7 +153,7 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: picker chain-dismiss on copy', () => {
     // Drive the load + render, then synthesize a click on the first row.
     await (modal as unknown as { loadAndRender(): Promise<void> }).loadAndRender();
     const contentEl = (modal as unknown as { contentEl: HTMLElement }).contentEl;
-    const firstRow = contentEl.querySelector('.leetcode-submissions-row') as HTMLElement | null;
+    const firstRow = contentEl.querySelector('.leetcode-submissions-row');
     expect(firstRow).not.toBeNull();
 
     firstRow!.dispatchEvent(new Event('click', { bubbles: true }));
@@ -173,7 +173,7 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: picker chain-dismiss on copy', () => {
 
     await (modal as unknown as { loadAndRender(): Promise<void> }).loadAndRender();
     const contentEl = (modal as unknown as { contentEl: HTMLElement }).contentEl;
-    const firstRow = contentEl.querySelector('.leetcode-submissions-row') as HTMLElement | null;
+    const firstRow = contentEl.querySelector('.leetcode-submissions-row');
     expect(firstRow).not.toBeNull();
     firstRow!.dispatchEvent(new Event('click', { bubbles: true }));
 
@@ -190,7 +190,7 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: picker chain-dismiss on copy', () => {
 
     await (modal as unknown as { loadAndRender(): Promise<void> }).loadAndRender();
     const contentEl = (modal as unknown as { contentEl: HTMLElement }).contentEl;
-    const firstRow = contentEl.querySelector('.leetcode-submissions-row') as HTMLElement | null;
+    const firstRow = contentEl.querySelector('.leetcode-submissions-row');
     expect(firstRow).not.toBeNull();
 
     const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });

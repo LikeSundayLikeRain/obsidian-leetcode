@@ -118,23 +118,14 @@ export class LeetCodeClient {
    *  and shows an appropriate Notice).
    */
   async getProblemDetail(slug: string): Promise<LeetCodeProblemDetail | null> {
-    // Intentional try/catch: the explicit re-throw documents the D-13 contract —
-    // NoteWriter's error dispatch (Shared Pattern C) decides between the
-    // session-expired notice and the generic couldn't-fetch notice. Lint rule
-    // `no-useless-catch` can't see the documentation load the block carries.
-    // eslint-disable-next-line no-useless-catch
-    try {
-      const q = await (this.lc as unknown as {
-        problem: (s: string) => Promise<LeetCodeProblemDetail | null>;
-      }).problem(slug);
-      if (!q || !q.questionFrontendId) return null;
-      return q;
-    } catch (err) {
-      // Re-throw so NoteWriter's error dispatch (D-13 + Shared Pattern C) can
-      // decide between the session-expired notice and the generic couldn't-fetch
-      // notice.
-      throw err;
-    }
+    // Re-throw is implicit (no try/catch) — NoteWriter's error dispatch
+    // (D-13 + Shared Pattern C) decides between session-expired and the
+    // generic couldn't-fetch notice based on `isSessionExpired(err)`.
+    const q = await (this.lc as unknown as {
+      problem: (s: string) => Promise<LeetCodeProblemDetail | null>;
+    }).problem(slug);
+    if (!q || !q.questionFrontendId) return null;
+    return q;
   }
 }
 

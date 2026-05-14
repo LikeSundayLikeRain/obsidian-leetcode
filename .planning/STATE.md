@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-07)
 Phase: Milestone v1.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-05-14 — Milestone v1.0 completed and archived
+Last activity: 2026-05-14 — Completed quick task 260514-k39: Fix Obsidian plugin store auto-review ESLint errors and warnings
 
 ### Resume path
 
@@ -140,6 +140,12 @@ None yet.
 
 - Phase 3 has a research/spike dependency: LC REST endpoint response shapes for all verdict types must be captured against the live service before implementation. This is the highest-risk phase.
 - BrowserWindow cookie extraction must be tested manually on macOS, Windows, and Linux during Phase 1 — timing and partition issues are platform-specific.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260514-k39 | Fix Obsidian plugin store auto-review ESLint errors and warnings | 2026-05-14 | cecebcd | [260514-k39-fix-obsidian-plugin-store-auto-review-es](./quick/260514-k39-fix-obsidian-plugin-store-auto-review-es/) |
 
 ## Deferred Items
 

@@ -427,7 +427,7 @@ describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
     const dropdown = findDropdown();
     expect(dropdown).not.toBeNull();
     expect(dropdown!.parentElement).toBe(document.body);
-    expect(wrapper.contains(dropdown!)).toBe(false);
+    expect(wrapper.contains(dropdown)).toBe(false);
 
     button!.click();
   });

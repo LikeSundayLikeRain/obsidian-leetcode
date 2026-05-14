@@ -176,13 +176,13 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: onSuccess callback', () => {
     await modal.onOpen();
     const copyBtn = modal.contentEl.querySelector(
       'button.mod-cta',
-    ) as HTMLButtonElement | null;
+    );
     expect(copyBtn).not.toBeNull();
 
     // Click the Copy button. The handler IIFE awaits handleCopyToCode then
     // invokes deps.onSuccess?.() on the success branch. Wait two microtask
     // turns for the awaited copyToCode + onSuccess invocation to settle.
-    copyBtn!.click();
+    (copyBtn as HTMLButtonElement).click();
     await Promise.resolve();
     await Promise.resolve();
     await new Promise((r) => setTimeout(r, 0));

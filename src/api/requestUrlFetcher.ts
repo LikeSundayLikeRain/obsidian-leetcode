@@ -151,24 +151,22 @@ export async function throttledRequestUrl(
 
 // --- Internal helpers (Phase 5 Wave 2) --------------------------------------
 
-/** Delay without blocking the event loop. Uses global setTimeout so
- *  vi.useFakeTimers() + vi.advanceTimersByTimeAsync() drives it in tests. */
+/** Delay without blocking the event loop. Routes through `activeWindow` so the
+ *  same path works in popouts and in vitest's happy-dom env (vi.useFakeTimers
+ *  patches the active window's timer functions). */
 function delay(ms: number): Promise<void> {
-  // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global setTimeout, not activeWindow.setTimeout
-  return new Promise((r) => { setTimeout(r, ms); });
+  return new Promise((r) => { activeWindow.setTimeout(r, ms); });
 }
 
 /** Race a promise against a TimeoutError. Clears the pending timer in `finally`
  *  so the event loop doesn't stay alive after the race settles. */
 function raceWithTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: number | undefined;
   const timeout = new Promise<T>((_, reject) => {
-    // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global setTimeout, not activeWindow.setTimeout
-    timer = setTimeout(() => { reject(new TimeoutError()); }, ms);
+    timer = activeWindow.setTimeout(() => { reject(new TimeoutError()); }, ms);
   });
   return Promise.race<T>([p, timeout]).finally(() => {
-    // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global clearTimeout, not activeWindow.clearTimeout
-    if (timer !== undefined) clearTimeout(timer);
+    if (timer !== undefined) activeWindow.clearTimeout(timer);
   });
 }
 

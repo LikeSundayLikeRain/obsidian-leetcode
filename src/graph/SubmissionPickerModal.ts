@@ -209,8 +209,8 @@ export class SubmissionPickerModal extends Modal {
   }
 
   private renderRow(row: SubmissionRow): HTMLElement {
-    // eslint-disable-next-line obsidianmd/prefer-active-doc -- happy-dom fallback for tests
-    const el = (this.contentEl.ownerDocument ?? document).createElement('div');
+    const ownerDoc = this.contentEl.ownerDocument as unknown as Document;
+    const el = ownerDoc.createElement('div');
     el.className = 'leetcode-submissions-row';
     el.setAttribute('role', 'listitem');
     el.setAttribute('tabindex', '0');
@@ -293,14 +293,11 @@ export class SubmissionPickerModal extends Modal {
    * calls don't clobber existing elements.
    */
   private ensureDomContainers(): void {
-    // eslint-disable-next-line obsidianmd/prefer-active-doc -- happy-dom fallback for tests
-    const doc = (globalThis as { document?: Document }).document;
-    if (!doc) return;
     if (!this.contentEl) {
-      this.contentEl = doc.createElement('div');
+      this.contentEl = activeDocument.createDiv();
     }
     if (!this.titleEl) {
-      this.titleEl = doc.createElement('div');
+      this.titleEl = activeDocument.createDiv();
     }
   }
 }
@@ -313,8 +310,7 @@ function clear(el: HTMLElement | null | undefined): void {
 }
 
 function appendEl(parent: HTMLElement, tag: string, cls?: string): HTMLElement {
-  // eslint-disable-next-line obsidianmd/prefer-active-doc -- happy-dom fallback for tests
-  const doc = parent.ownerDocument ?? document;
+  const doc = parent.ownerDocument as unknown as Document;
   const el = doc.createElement(tag);
   if (cls) el.className = cls;
   parent.appendChild(el);
@@ -365,12 +361,11 @@ function pad2(n: number): string {
  *  tests/solve/SessionExpiredNotice.test.ts + tests/graph/SubmissionPickerModal.test.ts
  *  already does this). The Notice copy stays LOCKED to CF-04. */
 function fireSessionExpiredNotice(login: () => void | Promise<void> = () => undefined): void {
-  // First honor any test-spy wired onto globalThis.Notice — older tests still
+  // First honor any test-spy wired onto activeWindow.Notice — older tests still
   // assert on the plain-string form. If that path throws (not a spy, or is
-  // the obsidian-mock class which doesn't match the globalThis shape) we fall
+  // the obsidian-mock class which doesn't match the runtime shape) we fall
   // back to the D-21 helper.
-  // eslint-disable-next-line obsidianmd/prefer-active-doc -- test-suite spy hook
-  const NoticeGlobal = (globalThis as { Notice?: unknown }).Notice;
+  const NoticeGlobal = (activeWindow as unknown as { Notice?: unknown }).Notice;
   if (typeof NoticeGlobal === 'function') {
     try {
       const Ctor = NoticeGlobal as unknown as new (msg: unknown, timeout: number) => unknown;
@@ -378,15 +373,12 @@ function fireSessionExpiredNotice(login: () => void | Promise<void> = () => unde
       // spy receives a frame identical to the production helper's. Tests can
       // introspect the fragment via the captured arg. See
       // src/solve/SessionExpiredNotice.ts for the matching production shape.
-      // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createFragment polyfill
-      const frag = document.createDocumentFragment();
-      // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createEl polyfill on fragments
-      const copy = document.createElement('span');
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
+      const frag = activeDocument.createFragment();
+      const copy = activeDocument.createSpan();
+
       copy.textContent = 'LeetCode session expired. Log in again.';
       frag.appendChild(copy);
-      // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createEl polyfill on fragments
-      const btn = document.createElement('button');
+      const btn = activeDocument.createEl('button');
       btn.className = 'leetcode-notice-action mod-cta';
       btn.textContent = 'Log in';
       btn.addEventListener('click', () => { void Promise.resolve(login()).catch(() => undefined); });

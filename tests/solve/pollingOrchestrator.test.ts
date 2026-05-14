@@ -10,10 +10,10 @@
 //     here via vi.fn()) so production code can route through Plugin.registerInterval
 //
 // Driven by vi.useFakeTimers() so we advance time deterministically.
-/* eslint-disable obsidianmd/prefer-active-window-timers -- tests run in Node; no activeWindow */
+ 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeFakeFetcher } from './mocks/fakeFetcher';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- RED until Plan 05
+ 
 import {
   pollSubmission,
   JudgeTimeoutError,

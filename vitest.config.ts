@@ -11,6 +11,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     exclude: ['node_modules', 'main.js', 'dist'],
     reporters: ['default'],
+    setupFiles: ['./tests/helpers/setup.ts'],
   },
   resolve: {
     alias: {

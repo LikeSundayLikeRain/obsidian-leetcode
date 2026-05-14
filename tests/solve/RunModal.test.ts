@@ -117,9 +117,9 @@ describe('Phase 5 RunModal (D-03 / D-05 / D-06 / D-07)', () => {
 
     const resetBtn = modal.contentEl.querySelector(
       'button.leetcode-run-reset',
-    ) as HTMLButtonElement | null;
+    );
     expect(resetBtn).not.toBeNull();
-    resetBtn!.click();
+    (resetBtn as HTMLButtonElement).click();
 
     expect(store.resetToSamples).toHaveBeenCalledWith('two-sum', '[1]\n2\n\n[3]\n4', undefined);
   });
@@ -148,15 +148,15 @@ describe('Phase 5 RunModal (D-03 / D-05 / D-06 / D-07)', () => {
     // Activate the second tab (index 1 → INPUT_B).
     const tabButtons = Array.from(
       modal.contentEl.querySelectorAll('.leetcode-run-tab'),
-    ) as HTMLElement[];
+    );
     expect(tabButtons.length).toBe(3);
     (tabButtons[1] as HTMLButtonElement).click();
 
     const runBtn = modal.contentEl.querySelector(
       'button.leetcode-run-submit, button.leetcode-run-run',
-    ) as HTMLButtonElement | null;
+    );
     expect(runBtn).not.toBeNull();
-    runBtn!.click();
+    (runBtn as HTMLButtonElement).click();
 
     expect(onRun).toHaveBeenCalledTimes(1);
     const passed = onRun.mock.calls[0]![0] as string;
@@ -189,9 +189,9 @@ describe('Phase 5 RunModal (D-03 / D-05 / D-06 / D-07)', () => {
 
     const runBtn = modal.contentEl.querySelector(
       'button.leetcode-run-submit, button.leetcode-run-run',
-    ) as HTMLButtonElement | null;
+    );
     expect(runBtn).not.toBeNull();
-    runBtn!.click();
+    (runBtn as HTMLButtonElement).click();
 
     expect(onRun).toHaveBeenCalledTimes(1);
     const passed = onRun.mock.calls[0]![0] as string;
@@ -219,12 +219,12 @@ describe('Phase 5 RunModal (D-03 / D-05 / D-06 / D-07)', () => {
 
     const deleteButtons = Array.from(
       modal.contentEl.querySelectorAll('.leetcode-run-tab-delete'),
-    ) as HTMLElement[];
+    );
     // All delete buttons should be hidden (either not rendered, or styled
     // `display: none`). Either empty array OR every button offsetParent=null.
     const visibleDeletes = deleteButtons.filter((d) => {
       const style = window.getComputedStyle(d);
-      return style.display !== 'none' && !d.hidden;
+      return style.display !== 'none' && !(d as HTMLElement).hidden;
     });
     expect(visibleDeletes.length).toBe(0);
   });

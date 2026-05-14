@@ -74,7 +74,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         if (loggedIn) {
           // AUTH-05: immediate logout, no confirmation modal (UI-SPEC.md § Destructive actions).
           b.setButtonText('Logout')
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages: "LeetCode" is a LOCKED proper-noun brand name
+             
             .setTooltip('Log out of LeetCode')
             .onClick(async () => {
               await this.plugin.auth.logout();
@@ -96,7 +96,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // =============================
     new Setting(containerEl)
       .setName('Manual cookie (fallback)')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Settings tab strings LOCKED: "LeetCode" is a proper-noun brand name
+       
       .setDesc("Paste your LeetCode session cookies if the embedded login doesn't work on your system.")
       .setHeading();
 
@@ -112,7 +112,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Settings tab strings LOCKED: HTTP cookie field name, not user-facing copy
+       
       .setName('csrftoken')
       .addText((t) => {
         t.inputEl.type = 'password';
@@ -152,7 +152,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       .setName('Problems folder')
       .setDesc('Vault folder where problem notes are created.')
       .addText((t) => t
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- D-10 default value LOCKED: "LeetCode" is a proper-noun brand name
+         
         .setPlaceholder('LeetCode/')
         .setValue(this.plugin.settings.getProblemsFolder())
         .onChange(async (v) => {
@@ -179,8 +179,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // Accent-modifier grep-gate preserved: no call-to-action modifier in
     // this block (the single accent invocation is the Authentication login
     // button above — see the top-of-file grep gate).
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Knowledge Graph" is a locked user-facing feature name per 05-CONTEXT D-14
-    new Setting(containerEl).setName('Knowledge Graph').setHeading();
+    new Setting(containerEl).setName('Knowledge graph').setHeading();
 
     // D-15: technique folder visible override with derived default. Placeholder
     // is computed LIVE from the current `problemsFolder` setting so users see
@@ -203,8 +202,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // D-16 / D-32: auto-backlink toggle (behavior-first copy LOCKED).
     // Bound to the Phase 4 D-21 persistence field.
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "Accepted" is an LC verdict proper noun
-      .setName('Auto-create technique backlinks on Accepted')
+      .setName('Auto-create technique backlinks on accepted')
        
       .setDesc('When enabled, an Accepted submission writes a ## Techniques section and creates stub notes for each LC topic tag. When disabled, only frontmatter tags (lc/{slug}) are written; no ## Techniques heading, no stubs.')
       .addToggle((t) => t

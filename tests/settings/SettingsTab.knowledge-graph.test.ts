@@ -86,7 +86,7 @@ vi.mock('obsidian', () => {
       return this;
     }
     addText(cb: (t: { inputEl: HTMLInputElement; setPlaceholder(p: string): { setValue(v: string): { onChange(fn: (v: string) => void): unknown } }; setValue(v: string): unknown; onChange(fn: (v: string) => void): unknown }) => void) {
-      const inputEl = this.controlEl.createEl('input', { type: 'text' }) as HTMLInputElement;
+      const inputEl = this.controlEl.createEl('input', { type: 'text' });
       const api = {
         inputEl,
         setPlaceholder(p: string) {
@@ -181,8 +181,9 @@ describe('SettingsTab — Knowledge Graph section (Phase 5 D-14 / D-15 / D-16)',
     vi.resetModules();
   });
 
-  it('renders a Knowledge Graph heading', async () => {
-    // D-14: the new third section is labeled exactly `Knowledge Graph`.
+  it('renders a Knowledge graph heading', async () => {
+    // D-14: the new third section is labeled exactly `Knowledge graph`.
+    // (Sentence case mandated by obsidianmd/ui/sentence-case.)
     const { LeetCodeSettingTab } = await import('../../src/settings/SettingsTab');
     const settings = makeFakeSettingsStore() as unknown as KnowledgeGraphCapableStore;
     const plugin = makeFakePluginForSettingsTab(settings);
@@ -190,9 +191,9 @@ describe('SettingsTab — Knowledge Graph section (Phase 5 D-14 / D-15 / D-16)',
     tab.display();
     const headings = Array.from(
       tab.containerEl.querySelectorAll('h3, h2, h4'),
-    ) as HTMLElement[];
+    );
     const knowledgeGraphHeading = headings.find(
-      (h) => h.textContent === 'Knowledge Graph',
+      (h) => h.textContent === 'Knowledge graph',
     );
     expect(knowledgeGraphHeading).toBeDefined();
   });
@@ -226,7 +227,7 @@ describe('SettingsTab — Knowledge Graph section (Phase 5 D-14 / D-15 / D-16)',
     tab.display();
     const toggles = Array.from(
       tab.containerEl.querySelectorAll('.checkbox-container'),
-    ) as HTMLElement[];
+    );
     const disabledToggle = toggles.find(
       (t) => t.getAttribute('data-value') === 'false',
     );

@@ -60,7 +60,7 @@ describe('NoteWriter starter-code retrofit (D-06, D-07, D-09, Pitfall 6)', () =>
     const writer = new NoteWriter(m.app as never, client as never, makeEmptySettings() as never);
     await writer.openProblem('two-sum');
     // Find the created note's body.
-    const createdPath = m.spies.create.mock.calls[0]?.[0] as string | undefined;
+    const createdPath = m.spies.create.mock.calls[0]?.[0];
     expect(createdPath).toBeDefined();
     const body = m.getContent(createdPath!) ?? '';
     expect(body).toContain('## Problem');

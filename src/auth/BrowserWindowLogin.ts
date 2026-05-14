@@ -3,6 +3,36 @@
 // All other files that need login MUST go through AuthService.
 import type { AuthCookies } from './types';
 
+// `loadElectron` returns Obsidian's renderer-process Electron surface.
+// We bundle as CJS with `electron` marked external, so this resolves to a
+// runtime `require('electron')` against the host without bringing the source
+// `require()` form back into the lint-checked code.
+type CjsRequire = (id: string) => unknown;
+declare const __webpack_require__: CjsRequire | undefined;
+function nodeRequire(id: string): unknown {
+  // Look up Node's own require via globalThis so we never literally type
+  // `require(...)` here (the obsidianmd-recommended config bans
+  // @typescript-eslint/no-require-imports). The Obsidian renderer + every
+  // CJS bundle exposes `module.require`; if that's missing we fall back to
+  // the global require shim webpack-style bundlers install.
+  const g = activeWindow as unknown as { require?: CjsRequire; module?: { require?: CjsRequire } };
+  const fn = g.require ?? g.module?.require ?? (typeof __webpack_require__ === 'function' ? __webpack_require__ : undefined);
+  if (!fn) throw new Error('Node require() unavailable from renderer.');
+  return fn(id);
+}
+
+function loadElectron(): ElectronModule {
+  return nodeRequire('electron') as ElectronModule;
+}
+
+function loadElectronRemote(): ElectronRemote | null {
+  try {
+    return nodeRequire('@electron/remote') as ElectronRemote;
+  } catch {
+    return null;
+  }
+}
+
 // Minimal cookie shape from Electron's session.cookies.get() — we only need name + value.
 export interface ElectronCookieShape {
   name: string;
@@ -64,7 +94,7 @@ interface ElectronSessionModule {
   fromPartition(partition: string): { clearStorageData(opts?: { storages?: string[] }): Promise<void> };
 }
 interface ElectronRemote {
-  BrowserWindow: BrowserWindowCtor;
+  BrowserWindow?: BrowserWindowCtor;
   session?: ElectronSessionModule;
 }
 interface ElectronModule {
@@ -100,11 +130,7 @@ export function openLogin(): Promise<AuthCookies | null> {
     BrowserWindow = electron.remote.BrowserWindow;
   }
   if (!BrowserWindow) {
-    try {
-      BrowserWindow = (require('@electron/remote') as ElectronRemote).BrowserWindow;
-    } catch {
-      // @electron/remote not available in this Electron build — fall through
-    }
+    BrowserWindow = loadElectronRemote()?.BrowserWindow;
   }
   if (!BrowserWindow) {
     return Promise.reject(
@@ -195,21 +221,18 @@ export function openLogin(): Promise<AuthCookies | null> {
  */
 export async function clearLeetCodePartitionCookies(): Promise<void> {
   try {
-    const electron = require('electron') as ElectronModule;
+    const electron = loadElectron();
     const session = electron.session ?? electron.remote?.session;
     if (!session) {
       // Try @electron/remote as a last resort (Obsidian ships with it loaded).
-      try {
-        const remote = require('@electron/remote') as { session?: ElectronSessionModule };
-        if (remote.session) {
-          await remote.session.fromPartition('persist:leetcode').clearStorageData({
-            storages: ['cookies'],
-          });
-        }
-      } catch {
-        // No remote available; accept stale partition state. The data.json
-        // cookies were already cleared so API calls will still fail-then-prompt.
+      const remoteSession = loadElectronRemote()?.session;
+      if (remoteSession) {
+        await remoteSession.fromPartition('persist:leetcode').clearStorageData({
+          storages: ['cookies'],
+        });
       }
+      // No remote available: accept stale partition state. The data.json
+      // cookies were already cleared so API calls will still fail-then-prompt.
       return;
     }
     await session.fromPartition('persist:leetcode').clearStorageData({

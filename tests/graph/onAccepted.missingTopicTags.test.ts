@@ -117,7 +117,7 @@ describe('KnowledgeGraphWriter.onAccepted — missing topicTags cache (Pitfall 1
 
     // Stubs created at the derived names.
     expect(deps.vault.spies.create).toHaveBeenCalled();
-    const stubPaths = deps.vault.spies.create.mock.calls.map((c) => c[0] as string);
+    const stubPaths = deps.vault.spies.create.mock.calls.map((c) => c[0]);
     expect(stubPaths).toEqual(
       expect.arrayContaining([
         expect.stringMatching(/Techniques\/Hash Table\.md$/),

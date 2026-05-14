@@ -15,10 +15,28 @@ export default tseslint.config(
     },
   },
   ...obsidianmd.configs.recommended,
-  // Disable obsidianmd rules in tests — those rules target plugin runtime
-  // behavior (popout-window timers, vault interactions), not pure logic.
-  // Test files run under vitest with happy-dom and don't have access to
-  // Obsidian's `activeDocument` / `activeWindow` shims.
+  // Plugin-wide rule tuning. `LeetCode` is a brand name (capital C) so the
+  // sentence-case rule must treat it like Obsidian's own default brands; the
+  // recommended config doesn't ship with LC pre-loaded.
+  {
+    plugins: { obsidianmd },
+    rules: {
+      'obsidianmd/ui/sentence-case': [
+        'error',
+        {
+          enforceCamelCaseLower: true,
+          brands: ['LeetCode', 'LEETCODE_SESSION', 'csrftoken'],
+        },
+      ],
+    },
+  },
+  // Test files run under vitest with happy-dom. Production rules (sentence
+  // case, popout-window timers, vault casts) target plugin runtime behaviour
+  // and don't apply to pure unit tests. The type-checked `no-unsafe-*` rules
+  // and `no-deprecated` also don't pull their weight against vi.fn() mocks
+  // that return `any` by design. Note: obsidianmd/rule-custom-message is
+  // intentionally NOT disabled here — the plugin store rejects any disable
+  // of that rule across the project.
   {
     files: ['tests/**/*.ts'],
     plugins: { obsidianmd },
@@ -29,8 +47,14 @@ export default tseslint.config(
       'obsidianmd/no-tfile-tfolder-cast': 'off',
       'obsidianmd/no-static-styles-assignment': 'off',
       'obsidianmd/ui/sentence-case': 'off',
-      'obsidianmd/rule-custom-message': 'off',
       'obsidianmd/commands/no-plugin-id-in-command-id': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
+      '@typescript-eslint/no-deprecated': 'off',
     },
   },
   globalIgnores([

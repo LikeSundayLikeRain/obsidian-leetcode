@@ -18,8 +18,7 @@ export function registerCodeBlockActionProcessor(
     if (!pre) return;
     if (pre.nextElementSibling?.classList.contains('leetcode-code-actions')) return;
 
-    // eslint-disable-next-line obsidianmd/prefer-active-doc -- ownerDocument fallback for tests
-    const doc: Document = pre.ownerDocument ?? document;
+    const doc: Document = pre.ownerDocument as unknown as Document;
     const row = buildCodeBlockButtonRow(doc, plugin);
     pre.insertAdjacentElement('afterend', row);
   });

@@ -28,7 +28,7 @@ export class AuthService {
     if (!cookies) {
       // D-04 silent cancel: exactly ONE Notice, no modal stacking, no auto-pivot to paste.
       // UI-SPEC.md Notice table — LOCKED copy; "LeetCode" is a proper-noun brand name.
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages LOCKED
+       
       new Notice('LeetCode login cancelled.', 4000);
       return false;
     }
@@ -40,7 +40,7 @@ export class AuthService {
     const who = await this.client.fetchWhoami();
     await this.settings.setUsername(who?.username ?? null);
     await this.settings.setIsPremium(who?.isPremium ?? null);
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages LOCKED
+     
     new Notice('Logged in to LeetCode.', 4000);
     return true;
   }
@@ -70,7 +70,7 @@ export class AuthService {
     await this.settings.setIsPremium(null);
     await this.client.reauthenticate();
     await clearLeetCodePartitionCookies();
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages LOCKED
+     
     new Notice('Logged out of LeetCode.', 4000);
   }
 

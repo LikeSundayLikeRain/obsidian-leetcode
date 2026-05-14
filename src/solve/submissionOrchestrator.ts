@@ -159,7 +159,7 @@ export class SubmissionOrchestrator {
   async submit(): Promise<void> {
     // Gate 1 — active problem note required.
     if (!this.deps.slug) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name
+       
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }

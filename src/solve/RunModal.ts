@@ -251,10 +251,8 @@ function clear(el: HTMLElement | null | undefined): void {
 }
 
 function appendEl(parent: HTMLElement, tag: string, cls?: string): HTMLElement {
-  // eslint-disable-next-line obsidianmd/prefer-active-doc -- happy-dom fallback for tests
-  const doc = parent.ownerDocument ?? (globalThis as { document?: Document }).document;
-  // eslint-disable-next-line obsidianmd/prefer-active-doc -- happy-dom fallback for tests
-  const el = (doc ?? document).createElement(tag);
+  const doc = parent.ownerDocument as unknown as Document;
+  const el = doc.createElement(tag);
   if (cls) el.className = cls;
   parent.appendChild(el);
   return el;

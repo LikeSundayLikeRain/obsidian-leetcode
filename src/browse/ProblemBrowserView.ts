@@ -54,9 +54,10 @@ export function computeFilterBadgeCount(f: CompoundFilter | null): number {
 
 const SEARCH_DEBOUNCE_MS = 150;
 const THROTTLE_FOOTER_DELAY_MS = 2000;   // D-13: only surface indicator if queue > 0 for > 2s
-const _SESSION_EXPIRED_NOTICE_MS = 8000;  // UI-SPEC Notice table — kept for documentation; rendering path migrated to showSessionExpiredNotice (Phase 5 D-21)
-// NOTE: RATE_LIMIT_NOTICE_MS (6000 per UI-SPEC § Notice table / D-14) is inlined at the
-// Notice call site as a literal to satisfy the acceptance grep `, 6000)` in Plan 06.
+// SESSION_EXPIRED_NOTICE_MS (8000ms per UI-SPEC § Notice table) is owned by
+// `showSessionExpiredNotice`. RATE_LIMIT_NOTICE_MS (6000ms per UI-SPEC §
+// Notice table / D-14) is inlined at the Notice call site as a literal to
+// satisfy Plan 06's acceptance grep `, 6000)`.
 
 export class ProblemBrowserView extends ItemView {
   private index: IndexedProblem[] = [];
@@ -80,7 +81,7 @@ export class ProblemBrowserView extends ItemView {
   }
 
   getViewType(): string { return BROWSER_VIEW_TYPE; }
-  // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "LeetCode" is a proper-noun brand name
+   
   getDisplayText(): string { return 'LeetCode problems'; }
   getIcon(): string { return 'code-2'; }
 
@@ -226,7 +227,7 @@ export class ProblemBrowserView extends ItemView {
       // honored retry-after. Our job is the one-shot Notice; copy + duration LOCKED
       // by UI-SPEC.md § Notice table / PATTERNS.md Shared Pattern 4.
       if (err instanceof RateLimitError) {
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Notice messages LOCKED
+         
         new Notice('LeetCode rate-limited — slowing down.', 6000); // RATE_LIMIT_NOTICE_MS — literal retained for acceptance grep
         return;
       }
@@ -502,7 +503,6 @@ export class ProblemBrowserView extends ItemView {
         if (this.throttleFooterTimer === null && !this.throttleFooterEl) {
           this.throttleFooterTimer = setWindowTimeout(() => {
             this.throttleFooterEl = root.createDiv({ cls: 'lc-footer' });
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "LeetCode" is a proper-noun brand name
             this.throttleFooterEl.setText('⋯ Fetching from LeetCode…');
             this.throttleFooterTimer = null;
           }, THROTTLE_FOOTER_DELAY_MS);

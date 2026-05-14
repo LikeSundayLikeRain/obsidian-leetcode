@@ -29,7 +29,7 @@ export class CookiePasteModal extends Modal {
     contentEl.createEl('h2', { text: 'Manual cookie (fallback)' });
     contentEl.createEl('p', {
       // UI-SPEC.md § Settings tab — LOCKED copy; "LeetCode" is a proper-noun brand name.
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Settings tab LOCKED
+       
       text: "Paste your LeetCode session cookies if the embedded login doesn't work on your system.",
       cls: 'setting-item-description',
     });
@@ -43,7 +43,7 @@ export class CookiePasteModal extends Modal {
     });
 
     // Literal HTTP cookie field name, not user-facing title — matches LC's own header casing.
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- HTTP cookie field name (LC protocol)
+     
     new Setting(contentEl).setName('csrftoken').addText((t) => {
       t.inputEl.type = 'password';
       t.inputEl.addClass('lc-cookie-input');

@@ -38,30 +38,23 @@ import { Notice } from 'obsidian';
 export function showSessionExpiredNotice(
   login: () => void | Promise<void>,
 ): Notice {
-  // We use standard DOM methods (`document.createDocumentFragment`,
-  // `document.createElement`) rather than Obsidian's createFragment / createEl
-  // helpers because happy-dom (the test runtime) does not polyfill the latter
-  // on DocumentFragment. Standard DOM methods produce byte-identical fragments
-  // and survive both runtimes. The obsidianmd/prefer-create-el rule doesn't
-  // account for the test-runtime constraint; suppressed inline.
-  // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createFragment polyfill
-  const frag = document.createDocumentFragment();
+  // Use Obsidian's DOM helpers off `activeDocument` so popout windows wire
+  // their fragments into the right document; the test setup polyfills the
+  // helpers onto happy-dom's document so this same path runs in unit tests.
+  const frag = activeDocument.createFragment();
   // CF-04 LOCKED copy — do NOT paraphrase. A trailing space separates copy
   // from the Log in button in the sticky notice. "LeetCode" is a proper-noun
-  // brand name so the sentence-case lint is suppressed.
-  // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createEl polyfill on fragments
-  const copy = document.createElement('span');
-  // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED: "LeetCode" proper-noun brand name (CF-04)
+  // brand name (sentence-case rule's brand allowlist permits it).
+  const copy = activeDocument.createSpan();
+
   copy.textContent = 'LeetCode session expired. Log in again.';
   frag.appendChild(copy);
 
-  // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createEl polyfill on fragments
-  const spacer = document.createElement('span');
+  const spacer = activeDocument.createSpan();
   spacer.textContent = ' ';
   frag.appendChild(spacer);
 
-  // eslint-disable-next-line obsidianmd/prefer-create-el, obsidianmd/prefer-active-doc -- happy-dom lacks createEl polyfill on fragments
-  const btn = document.createElement('button');
+  const btn = activeDocument.createEl('button');
   btn.className = 'leetcode-notice-action mod-cta';
   btn.textContent = 'Log in';
   frag.appendChild(btn);

@@ -3,11 +3,12 @@
  * MUST be used for any contextual logging that might carry auth objects.
  * Direct `console.*` calls with auth values are forbidden (enforced by grep gate).
  *
- * Note: this file is the canonical logging wrapper — the obsidianmd/no-console
- * rule is intentionally disabled here because the whole point of the module is
- * to funnel console output through a redacting facade.
+ * This file is the canonical logging wrapper — every level routes through
+ * `console.warn` / `console.error` / `console.debug` (the three console
+ * methods the recommended config's `no-console` allowlist permits). The
+ * historical `info` level is kept as a public API but maps to `console.debug`
+ * so the wrapper itself never invokes a forbidden console method.
  */
-/* eslint-disable obsidianmd/rule-custom-message */
 const REDACT = /session|csrf|cookie|token/i;
 // Value-level redaction pattern: auth-ish kv pairs embedded in error messages,
 // stack traces, or config/request/response strings. e.g. "LEETCODE_SESSION=xyz"
@@ -59,7 +60,9 @@ export const logger = {
     console.debug(`[leetcode] ${msg}`, ctx !== undefined ? redact(ctx) : '');
   },
   info: (msg: string, ctx?: unknown): void => {
-    console.info(`[leetcode] ${msg}`, ctx !== undefined ? redact(ctx) : '');
+    // Routed through console.debug — `console.info` is outside the
+    // recommended config's no-console allowlist (warn / error / debug only).
+    console.debug(`[leetcode] ${msg}`, ctx !== undefined ? redact(ctx) : '');
   },
   warn: (msg: string, ctx?: unknown): void => {
     console.warn(`[leetcode] ${msg}`, ctx !== undefined ? redact(ctx) : '');

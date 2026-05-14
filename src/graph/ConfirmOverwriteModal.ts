@@ -92,14 +92,11 @@ export class ConfirmOverwriteModal extends Modal {
   }
 
   private ensureDomContainers(): void {
-    // eslint-disable-next-line obsidianmd/prefer-active-doc -- happy-dom fallback for tests
-    const doc = (globalThis as { document?: Document }).document;
-    if (!doc) return;
     if (!this.contentEl) {
-      this.contentEl = doc.createElement('div');
+      this.contentEl = activeDocument.createDiv();
     }
     if (!this.titleEl) {
-      this.titleEl = doc.createElement('div');
+      this.titleEl = activeDocument.createDiv();
     }
   }
 }
@@ -112,8 +109,7 @@ function clear(el: HTMLElement | null | undefined): void {
 }
 
 function appendEl(parent: HTMLElement, tag: string, cls?: string): HTMLElement {
-  // eslint-disable-next-line obsidianmd/prefer-active-doc -- happy-dom fallback for tests
-  const doc = parent.ownerDocument ?? document;
+  const doc = parent.ownerDocument as unknown as Document;
   const el = doc.createElement(tag);
   if (cls) el.className = cls;
   parent.appendChild(el);

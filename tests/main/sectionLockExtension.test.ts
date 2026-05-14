@@ -770,7 +770,7 @@ describe('computeSnapTarget — snap-direction decision tree', () => {
   it('stay-put: prevHead past lockTo, backTarget falls in another cluster → return prevHead', () => {
     // 3-cluster scenario where backTarget = 49 IS inside cluster [40, 60).
     // The middle cluster has no editable space behind it.
-    const triple: ReadonlyArray<readonly [number, number]> = [
+    const _triple: ReadonlyArray<readonly [number, number]> = [
       [10, 30], [40, 60], [70, 90],
     ];
     // prevHead = 95 (past third cluster), motion lands in third cluster.

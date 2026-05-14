@@ -106,7 +106,7 @@ describe('NoteWriter.openProblem status plumbing (GAP-2a, NOTE-03, D-04)', () =>
     await writer.openProblem('two-sum', 'untouched');
 
     // Let the background refresh promise settle.
-    // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test-only; matches the pattern already in re-open-silent-offline.test.ts + cache-ttl.test.ts
+     
     await new Promise((r) => setTimeout(r, 20));
 
     const fm = m.getFrontmatter('LeetCode/1-two-sum.md');

@@ -225,7 +225,7 @@ export default class LeetCodePlugin extends Plugin {
       new ProblemBrowserView(leaf, this));
 
     // Step 6b — ribbon icon (BROWSE-01). Lucide name from UI-SPEC.md § Icons.
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC.md § Copywriting LOCKED: "LeetCode" is a proper-noun brand name
+     
     this.addRibbonIcon('code-2', 'Open LeetCode browser', () => {
       void this.activateBrowser();
     });
@@ -234,11 +234,10 @@ export default class LeetCodePlugin extends Plugin {
     //   - id does NOT contain the plugin id ('leetcode') or the word 'command'
     //   - name is sentence case and does NOT start with the plugin name
     //   - NO hotkeys field (commands/no-default-hotkeys)
-    // Plan 06 acceptance criterion LOCKS the 'open-leetcode-browser' id verbatim;
-    // Obsidian prefixes it at runtime with the plugin id.
+    // Obsidian prefixes the user-visible palette label with the plugin name
+    // ("LeetCode: Open problem browser"), so the id is kept generic.
     this.addCommand({
-      // eslint-disable-next-line obsidianmd/commands/no-plugin-id-in-command-id -- Plan 06 acceptance grep pins this id verbatim
-      id: 'open-leetcode-browser',
+      id: 'open-problem-browser',
       name: 'Open problem browser',
       callback: () => { void this.activateBrowser(); },
     });
@@ -566,7 +565,7 @@ export default class LeetCodePlugin extends Plugin {
   async submitFromActive(): Promise<void> {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+       
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
@@ -669,12 +668,12 @@ export default class LeetCodePlugin extends Plugin {
         try { modal.close(); } catch { /* headless */ }
       } else if (isNetworkError(err)) {
         // D-19 LOCKED copy + D-22 command-palette Notice surface.
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+         
         new Notice("Couldn't reach LeetCode. Check your connection.", 8000);
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof TimeoutError || (err as Error).name === 'TimeoutError') {
         // D-20 LOCKED copy + D-22 command-palette Notice surface.
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+         
         new Notice('LeetCode is slow to respond. Try again.', 8000);
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof RateLimitError) {
@@ -701,7 +700,7 @@ export default class LeetCodePlugin extends Plugin {
   async runFromActive(): Promise<void> {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+       
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
@@ -856,7 +855,7 @@ export default class LeetCodePlugin extends Plugin {
   private openRunModalWithSeedAppended(seedInput: string): void {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+       
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
@@ -967,12 +966,12 @@ export default class LeetCodePlugin extends Plugin {
         try { modal.close(); } catch { /* headless */ }
       } else if (isNetworkError(err)) {
         // D-19 LOCKED copy + D-22 command-palette Notice surface.
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+         
         new Notice("Couldn't reach LeetCode. Check your connection.", 8000);
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof TimeoutError || (err as Error).name === 'TimeoutError') {
         // D-20 LOCKED copy + D-22 command-palette Notice surface.
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+         
         new Notice('LeetCode is slow to respond. Try again.', 8000);
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof RateLimitError) {
@@ -1001,7 +1000,7 @@ export default class LeetCodePlugin extends Plugin {
   private async openSubmissionPickerFromActive(): Promise<void> {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+       
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
@@ -1056,13 +1055,13 @@ export default class LeetCodePlugin extends Plugin {
       }
       if (isNetworkError(err)) {
         // D-19 LOCKED copy + D-22 command-palette Notice surface.
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+         
         new Notice("Couldn't reach LeetCode. Check your connection.", 8000);
         return;
       }
       if (err instanceof TimeoutError || (err as Error).name === 'TimeoutError') {
         // D-20 LOCKED copy + D-22 command-palette Notice surface.
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC LOCKED
+         
         new Notice('LeetCode is slow to respond. Try again.', 8000);
         return;
       }

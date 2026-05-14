@@ -1,4 +1,4 @@
-/* eslint-disable obsidianmd/prefer-active-window-timers -- tests run in Node; no activeWindow */
+ 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Throttle } from '../src/api/throttle';
 

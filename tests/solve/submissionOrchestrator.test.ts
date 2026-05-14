@@ -22,7 +22,7 @@ vi.mock('obsidian', async () => {
   };
 });
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- RED until Plan 05
+ 
 import { SubmissionOrchestrator } from '../../src/solve/submissionOrchestrator';
 
 describe('submissionOrchestrator (D-24, D-04, D-27, SOLVE-09)', () => {

@@ -138,7 +138,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
 
     const actionsDiv = root.querySelector('.leetcode-code-actions');
     expect(actionsDiv).not.toBeNull();
-    const buttons = Array.from(actionsDiv!.querySelectorAll('button')) as HTMLButtonElement[];
+    const buttons = Array.from(actionsDiv!.querySelectorAll('button'));
     expect(buttons.length).toBe(2);
     expect(buttons[0]!.textContent).toBe('Run');
     expect(buttons[1]!.textContent).toBe('Submit');
@@ -224,13 +224,13 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
 
     const [runBtn, submitBtn] = Array.from(
       root.querySelectorAll('.leetcode-code-actions button'),
-    ) as HTMLButtonElement[];
+    );
 
-    runBtn!.click();
+    (runBtn as HTMLButtonElement).click();
     expect(runFromActive).toHaveBeenCalledTimes(1);
     expect(submitFromActive).not.toHaveBeenCalled();
 
-    submitBtn!.click();
+    (submitBtn as HTMLButtonElement).click();
     expect(submitFromActive).toHaveBeenCalledTimes(1);
   });
 });

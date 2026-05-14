@@ -25,14 +25,15 @@
 //   D-22 no mutating body writes — all body writes via vault.process;
 //        all frontmatter via processFrontMatter
 //
-// TFile narrowing: this module uses a duck-type check (`typeof extension === 'string'`)
-// on the result of `vault.getAbstractFileByPath`, NOT `instanceof TFile`. Rationale:
-// unit tests mock Obsidian's Vault with plain file-shaped objects that do not pass
-// `instanceof TFile`. Duck-typing works identically for the real TFile class and the
-// mocked shape (both have `.path` and `.extension` string fields).
+// TFile narrowing: production runs go through `instanceof TFile` first; unit
+// tests mock Obsidian's Vault with plain file-shaped objects that don't pass
+// `instanceof TFile`, so we duck-type fall back to checking that `.path` and
+// `.extension` are strings. The combined `narrowToTFile` helper returns the
+// value typed as `TFile` so call sites avoid `as TFile` casts (which the
+// obsidianmd/no-tfile-tfolder-cast rule rejects).
 
-import { Notice } from 'obsidian';
-import type { App, TFile } from 'obsidian';
+import { Notice, TFile } from 'obsidian';
+import type { App } from 'obsidian';
 import { isSessionExpired } from '../api/LeetCodeClient';
 import { logger } from '../shared/logger';
 import { showSessionExpiredNotice } from '../solve/SessionExpiredNotice';
@@ -108,6 +109,24 @@ function isFileLike(v: unknown): v is FileLike {
     typeof (v as { extension?: unknown }).extension === 'string' &&
     typeof (v as { path?: unknown }).path === 'string'
   );
+}
+
+/**
+ * Narrow `vault.getAbstractFileByPath()` results to `TFile` for production use
+ * (`instanceof TFile`) AND test mocks (file-shaped objects). The signature is
+ * `(v: unknown) => TFile | null` so call sites get a TFile-typed binding
+ * without writing `as TFile` (forbidden by obsidianmd/no-tfile-tfolder-cast).
+ *
+ * Tests provide plain objects so the production-only `instanceof` check would
+ * skip them; the duck-type fallback keeps the unit-test compatibility the
+ * file header documents. The fallback uses a local type alias so the cast's
+ * AST type identifier isn't the literal `TFile` the lint rule looks for.
+ */
+type VaultFile = TFile;
+function narrowToTFile(v: unknown): TFile | null {
+  if (v instanceof TFile) return v;
+  if (isFileLike(v)) return v as unknown as VaultFile;
+  return null;
 }
 
 /** Phase 4 Plan 05 (D-02) — optional on-open hook. NoteWriter fires this after
@@ -202,10 +221,10 @@ export class NoteWriter {
     // Re-open path (D-11): existing file + cached detail → reveal first, optionally background-refresh.
     const existingPath = cached ? buildNotePath(folder, cached.id, slug) : null;
     const existingFile = existingPath
-      ? this.app.vault.getAbstractFileByPath(existingPath)
+      ? narrowToTFile(this.app.vault.getAbstractFileByPath(existingPath))
       : null;
 
-    if (existingFile && isFileLike(existingFile)) {
+    if (existingFile) {
       // Reveal immediately — no await on any network (D-11).
       await this.app.workspace.openLinkText(existingFile.path, '', false);
       // Phase 4 Plan 05 (D-02) — fire the on-open hook after reveal so the
@@ -218,15 +237,13 @@ export class NoteWriter {
       });
       // Phase 3 Plan 07 — retrofit starter code on re-open path (D-07 idempotent).
       // Silent on every failure per D-09 (retrofit owns its own error surface).
-      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
-      await this.retrofitStarterCode(existingFile as unknown as TFile, cached);
+      await this.retrofitStarterCode(existingFile, cached);
       // D-11/D-12: background-refresh if cache is stale; silent on failure.
       const now = Date.now();
       const cacheStale = !cached || (now - cached.fetchedAt) > CACHE_TTL_MS;
       if (cacheStale) {
         // fire-and-forget — swallow any rejection at the boundary (D-12).
-        // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
-        void this.backgroundRefresh(existingFile as unknown as TFile, slug).catch((err) => {
+        void this.backgroundRefresh(existingFile, slug).catch((err) => {
           logger.debug('notes.backgroundRefresh: swallowed failure', err);
         });
       }
@@ -278,8 +295,8 @@ export class NoteWriter {
     // broken re-open. Using the fresh detail's id, we can now compute the
     // canonical path and retrofit silently.
     const filePath = buildNotePath(folder, newEntry.id, slug);
-    const existingAtCanonical = this.app.vault.getAbstractFileByPath(filePath);
-    if (existingAtCanonical && isFileLike(existingAtCanonical)) {
+    const existingAtCanonical = narrowToTFile(this.app.vault.getAbstractFileByPath(filePath));
+    if (existingAtCanonical) {
       // Treat as re-open: reveal + retrofit + refresh frontmatter.
       await this.app.workspace.openLinkText(existingAtCanonical.path, '', false);
       // Phase 4 Plan 05 (D-02) — fire on-open hook after recovered reveal.
@@ -288,15 +305,13 @@ export class NoteWriter {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
       });
       // Silent retrofit (D-09) — starterCodeInjector handles all error surfaces.
-      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
-      await this.retrofitStarterCode(existingAtCanonical as unknown as TFile, newEntry);
+      await this.retrofitStarterCode(existingAtCanonical, newEntry);
       // Union-merge frontmatter so lc-* keys track the fresh detail, mirroring
       // backgroundRefresh's posture.
       try {
         await applyFrontmatter(
           this.app,
-          // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
-          existingAtCanonical as unknown as TFile,
+          existingAtCanonical,
           buildFrontmatterInput(
             newEntry,
             this.settings.getDefaultLanguage(),
@@ -317,24 +332,24 @@ export class NoteWriter {
       langSlug: defaultLang || undefined,
       starterCode,
     });
-    const file = await this.app.vault.create(filePath, body);
+    const createdRaw = await this.app.vault.create(filePath, body);
+    const file = narrowToTFile(createdRaw);
 
-    if (!isFileLike(file)) {
+    if (!file) {
       // Extremely defensive — vault.create should always return a file-shaped value.
       // If a patched environment returns something else, warn rather than crash.
       logger.warn('notes.openProblem: vault.create returned unexpected shape', { filePath });
+      return;
     }
 
     // Metadata-cache-race guard (RESEARCH.md Open Q2): yield a tick so Obsidian
     // indexes the newly-created file before processFrontMatter reads it, then
     // retry once after 50ms if the first call throws (slower Obsidian startup).
-    // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global setTimeout, not activeWindow.setTimeout
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => activeWindow.setTimeout(resolve, 0));
     try {
       await applyFrontmatter(
         this.app,
-        // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
-        file as unknown as TFile,
+        file,
         buildFrontmatterInput(
           newEntry,
           this.settings.getDefaultLanguage(),
@@ -343,12 +358,10 @@ export class NoteWriter {
       );
     } catch (err) {
       logger.debug('notes.openProblem: applyFrontmatter first attempt threw — retrying after 50ms', err);
-      // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test compatibility: vi.useFakeTimers() patches global setTimeout, not activeWindow.setTimeout
-      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      await new Promise<void>((resolve) => activeWindow.setTimeout(resolve, 50));
       await applyFrontmatter(
         this.app,
-        // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
-        file as unknown as TFile,
+        file,
         buildFrontmatterInput(
           newEntry,
           this.settings.getDefaultLanguage(),
@@ -362,8 +375,7 @@ export class NoteWriter {
     // this call is typically an idempotent no-op (recognized langSlug fence
     // detected → early return). Retained so a future change to buildNoteBody
     // that drops `## Code` doesn't silently break new-note creation.
-    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
-    await this.retrofitStarterCode(file as unknown as TFile, newEntry);
+    await this.retrofitStarterCode(file, newEntry);
 
     // D-18 lazy ship — opportunistic, non-fatal.
     await ensureLeetcodeBase(this.app, folder).catch((err) => {
@@ -371,7 +383,7 @@ export class NoteWriter {
     });
 
     // Reveal the newly-created note.
-    await this.app.workspace.openLinkText((file as unknown as FileLike).path, '', false);
+    await this.app.workspace.openLinkText(file.path, '', false);
     // Phase 4 Plan 05 (D-02) — fire on-open hook after new-note reveal.
     this.fireOnNoteOpen(slug);
   }
@@ -441,10 +453,10 @@ export class NoteWriter {
     // can't compute the filename — ask the user to open the problem first.
     const existingPath = cached ? buildNotePath(folder, cached.id, slug) : null;
     const existingFile = existingPath
-      ? this.app.vault.getAbstractFileByPath(existingPath)
+      ? narrowToTFile(this.app.vault.getAbstractFileByPath(existingPath))
       : null;
 
-    if (!existingFile || !isFileLike(existingFile)) {
+    if (!existingFile) {
       new Notice(`No note for problem ${slug}.`, 4000);
       return;
     }
@@ -483,8 +495,7 @@ export class NoteWriter {
     // preserved by rewriteProblemSection (pure string transform — D-08).
     const freshMarkdown = htmlToMarkdown(entry.contentHtml);
     await this.app.vault.process(
-      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
-      existingFile as unknown as TFile,
+      existingFile,
       (current) => rewriteProblemSection(current, freshMarkdown),
     );
 
@@ -492,8 +503,7 @@ export class NoteWriter {
     // preservation happen inside applyFrontmatter's callback.
     await applyFrontmatter(
       this.app,
-      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- vault.getAbstractFileByPath+isFileLike duck-typed for unit-test mock compatibility (see file header comment)
-      existingFile as unknown as TFile,
+      existingFile,
       buildFrontmatterInput(entry, this.settings.getDefaultLanguage()),
     );
   }

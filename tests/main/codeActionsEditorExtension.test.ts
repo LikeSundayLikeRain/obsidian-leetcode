@@ -11,7 +11,7 @@
 // the module). When Wave 1 (Plan 02) creates the real module with typed exports,
 // TypeScript will infer concrete types, the no-unsafe-* cascade will evaporate,
 // and these disables can be removed.
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unnecessary-type-assertion, obsidianmd/prefer-active-doc -- Wave 0 RED-state scaffolding; removed when Wave 1 ships the implementation module */
+ 
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {

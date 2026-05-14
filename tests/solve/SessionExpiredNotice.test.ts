@@ -92,9 +92,9 @@ describe('Phase 5 SessionExpiredNotice (D-21 + CF-04)', () => {
     const notice = capturedNotices[0]!;
     const button = notice.messageEl.querySelector(
       'button.leetcode-notice-action.mod-cta',
-    ) as HTMLButtonElement | null;
+    );
     expect(button).not.toBeNull();
-    button!.click();
+    (button as HTMLButtonElement).click();
     expect(login).toHaveBeenCalledTimes(1);
   });
 
@@ -115,9 +115,9 @@ describe('Phase 5 SessionExpiredNotice (D-21 + CF-04)', () => {
     });
     const button = notice.messageEl.querySelector(
       'button.leetcode-notice-action.mod-cta',
-    ) as HTMLButtonElement | null;
+    );
     expect(button).not.toBeNull();
-    button!.click();
+    (button as HTMLButtonElement).click();
     expect(sequence).toEqual(['hide', 'login']);
   });
 });

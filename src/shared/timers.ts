@@ -1,28 +1,19 @@
 // Popout-window-safe timer helpers (WR-02).
 // Obsidian injects `activeWindow` as the currently-focused window (including
-// popouts); its `setTimeout` binds timers to that window's event loop.
-// In Node-hosted unit tests `activeWindow` is undefined, so we fall back to
-// the platform `setTimeout`. Resolution happens per-call so that vitest's
-// `useFakeTimers()` (which swaps the platform timer functions after module
-// load) still works, and so that a view that moves between the main window
-// and a popout still wires its timers into the right loop.
-declare const activeWindow: Window | undefined;
+// popouts); its `setTimeout` binds timers to that window's event loop. In
+// happy-dom (vitest) `activeWindow` is the global window so the same path
+// works for tests too. We always route through `activeWindow.*Timeout` to
+// satisfy the obsidianmd/prefer-active-window-timers rule and to keep timers
+// wired to the correct event loop when the consumer view moves between the
+// main window and a popout. The global is declared in
+// `src/types/obsidian-globals.d.ts`.
 
 export type TimerHandle = ReturnType<typeof setTimeout>;
 
 export function setWindowTimeout(fn: () => void, ms: number): TimerHandle {
-  if (typeof activeWindow !== 'undefined' && activeWindow) {
-    return activeWindow.setTimeout(fn, ms) as unknown as TimerHandle;
-  }
-  // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test fallback; activeWindow branch is the runtime path
-  return setTimeout(fn, ms);
+  return activeWindow.setTimeout(fn, ms) as unknown as TimerHandle;
 }
 
 export function clearWindowTimeout(handle: TimerHandle): void {
-  if (typeof activeWindow !== 'undefined' && activeWindow) {
-    activeWindow.clearTimeout(handle as unknown as number);
-    return;
-  }
-  // eslint-disable-next-line obsidianmd/prefer-active-window-timers -- test fallback; activeWindow branch is the runtime path
-  clearTimeout(handle);
+  activeWindow.clearTimeout(handle as unknown as number);
 }

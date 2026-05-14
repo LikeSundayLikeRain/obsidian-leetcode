@@ -83,8 +83,9 @@ function formatTopicLabel(slug: string): string {
  *  directly (see tests/browse/FilterModal.test.ts Wave 0 D-04 shell). */
 export function stripAutoDefaults(rules: FilterRule[]): FilterRule[] {
   return rules.map((r) => {
-    const { __autoDefault: _m, ...rest } = r as FilterRule & { __autoDefault?: boolean };
-    return rest as FilterRule;
+    const copy = { ...r } as FilterRule & { __autoDefault?: boolean };
+    delete copy.__autoDefault;
+    return copy as FilterRule;
   });
 }
 
@@ -254,7 +255,6 @@ export class FilterModal extends Modal {
       return;
     }
     if (rule.field === 'premium') {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'is' is a filter operator label (not a sentence); keep lowercase to match LeetCode's filter UI convention
       cell.setText('is');
       return;
     }
