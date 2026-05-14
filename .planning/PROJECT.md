@@ -8,33 +8,40 @@ An Obsidian community plugin that fetches LeetCode problems, lets users write an
 
 Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
 
+## Current State
+
+**v1.0 MVP shipped 2026-05-14.** 10 phases, 61 plans, 76 tasks, ~163 KB production bundle, 652 tests passing.
+
+The plugin is functionally complete and ship-ready. Plan 07 (GitHub release / community-plugins.json PR) is documented as a deferred manual step in `.planning/milestones/v1.0-phases/05-polish-ship/05-07-SUMMARY.md` — version bump + tag + release artifacts are ready to execute whenever the user is.
+
 ## Requirements
 
 ### Validated
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+- ✓ Browse and search LeetCode problems from inside Obsidian — v1.0 (Phase 01–02)
+- ✓ Authenticate with leetcode.com via embedded login window (preferred) with cookie-paste fallback — v1.0 (Phase 01)
+- ✓ Open a problem as a note in the vault (one note per problem, markdown) — v1.0 (Phase 02)
+- ✓ Write solution code in the note editor in any LeetCode-supported language — v1.0 (Phase 02 + 05.3 chevron-driven language switch)
+- ✓ Run code against LeetCode's sample/custom test cases (remote) — v1.0 (Phase 03 + 05.4 multi-case Run modal)
+- ✓ Submit code to LeetCode's judge and display verdict — v1.0 (Phase 03 + 05.4 verdict polish)
+- ✓ Auto-import LeetCode's problem tags (difficulty, topics) as Obsidian tags — v1.0 (Phase 02 + 04)
+- ✓ Support user-added personal tags (e.g. `#revisit`, `#tricky`, `#interview-asked`) — v1.0 (Phase 02 union-merge frontmatter)
+- ✓ On accepted submission: solution code already lives in `## Code` (no append needed — D-01 GRAPH-01 revised) — v1.0 (Phase 04)
+- ✓ On accepted submission: update note frontmatter with language + status (solved date / runtime / memory dropped — no production reader, staleness risk; runtime/memory render fresh from GraphQL) — v1.0 (Phase 04 + UAT trim 05.5)
+- ✓ On accepted submission: create/update backlinks to technique notes (e.g. `[[Two Pointers]]`) — v1.0 (Phase 04)
+- ✓ Cached problems are readable offline — v1.0 (Phase 02)
+- ✓ Settings UI: login, default language, vault folder for problems — v1.0 (Phase 01 + 05)
+- ✓ Graceful error handling: LC downtime, expired session, rate limits — v1.0 (Phase 03 + 05.4)
+- ✓ README with install, usage, screenshots — ready for community plugin submission — v1.0 (Phase 05)
+- ✓ Plugin-owned regions structurally locked to prevent accidental edits — v1.0 (Phase 05.5; emerged during dogfood)
 
 ### Active
 
-<!-- v1 scope. Building toward these. -->
+<!-- v2+ scope. Empty — v1 shipped. -->
 
-- [ ] Browse and search LeetCode problems from inside Obsidian
-- [ ] Authenticate with leetcode.com via embedded login window (preferred) with cookie-paste fallback
-- [ ] Open a problem as a note in the vault (one note per problem, markdown)
-- [ ] Write solution code in the note editor in any LeetCode-supported language
-- [ ] Run code against LeetCode's sample/custom test cases (remote)
-- [ ] Submit code to LeetCode's judge and display verdict
-- [ ] Auto-import LeetCode's problem tags (difficulty, topics) as Obsidian tags
-- [ ] Support user-added personal tags (e.g. `#revisit`, `#tricky`, `#interview-asked`)
-- [ ] On accepted submission: append solution code into the problem note
-- [ ] On accepted submission: update note frontmatter with solved date, runtime, memory, language
-- [ ] On accepted submission: create/update backlinks to technique notes (e.g. `[[Two Pointers]]`)
-- [ ] Cached problems are readable offline
-- [ ] Settings UI: login, default language, vault folder for problems
-- [ ] Graceful error handling: LC downtime, expired session, rate limits
-- [ ] README with install, usage, screenshots — ready for community plugin submission
+(None — awaiting v1.1 milestone scoping)
 
 ### Out of Scope
 
@@ -70,13 +77,17 @@ Every LeetCode problem you solve becomes a first-class note in your Obsidian vau
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Desktop-only in v1 | Unlocks embedded login window, simpler architecture, mobile is not the primary LC solving surface anyway | — Pending |
-| leetcode.com only in v1 | Different API/auth surface than leetcode.cn; scope control for first ship | — Pending |
-| One note per problem (not problem + separate code file) | Graph-native, simpler, solution lives with notes and tags | — Pending |
-| All LC languages supported for submission (not just Java/Python) | Remote submission is a language-agnostic API call; rejecting languages locks out users | — Pending |
-| No spaced repetition in v1 | Defer to v2; graph/tags already answer "what should I revisit?" adequately | — Pending |
-| Embedded login preferred, cookie-paste fallback | Smooth UX when possible, works-everywhere fallback when not | — Pending |
-| Auto-update note on accepted submission (solution, metadata, backlinks) | Captures the win immediately; turns solving into knowledge automatically | — Pending |
+| Desktop-only in v1 | Unlocks embedded login window, simpler architecture, mobile is not the primary LC solving surface anyway | ✓ Good — `isDesktopOnly: true` in manifest; no mobile bug reports during dogfood |
+| leetcode.com only in v1 | Different API/auth surface than leetcode.cn; scope control for first ship | ✓ Good — clean ship; .cn can come in v2 |
+| One note per problem (not problem + separate code file) | Graph-native, simpler, solution lives with notes and tags | ✓ Good — single-file model is the sweet spot; `## Problem` / `## Code` / `## Techniques` / `## Notes` template proven in dogfood |
+| All LC languages supported for submission (not just Java/Python) | Remote submission is a language-agnostic API call; rejecting languages locks out users | ✓ Good — chevron switch (05.3) makes it discoverable |
+| No spaced repetition in v1 | Defer to v2; graph/tags already answer "what should I revisit?" adequately | ✓ Good — graph is a sufficient v1 review surface |
+| Embedded login preferred, cookie-paste fallback | Smooth UX when possible, works-everywhere fallback when not | ✓ Good — embedded BrowserWindow path is the default, fallback rarely needed |
+| Auto-update note on accepted submission (solution, metadata, backlinks) | Captures the win immediately; turns solving into knowledge automatically | ✓ Good — `KnowledgeGraphWriter.onAccepted` is the linchpin of the graph value-prop |
+| **vault.process not cm.dispatch for plugin writes** (CF-06) | Vault-layer writes are retry-safe and bypass CM6's transactionFilter; cm.dispatch interferes with section-lock | ✓ Good — section-lock (05.5) shipped on top of this without breaking copyToCode |
+| **`'leetcode.*'` userEvent annotation** as the convention for plugin-internal CM6 dispatches | Single bypass channel for the section-lock; documented in CLAUDE.md | ✓ Good — chevron switch + lock filter co-exist cleanly |
+| **Drop `lc-solved-date` / `lc-runtime-ms` / `lc-memory-mb` from frontmatter** | No production reader; staleness risk on re-AC. Display reads fresh from GraphQL | ✓ Good — narrower frontmatter surface |
+| **Section locking via `EditorState.changeFilter`** (05.5) | User edits to plugin-owned regions get clobbered on next plugin write; lock prevents the divergence at the keystroke level | ✓ Good — emerged during dogfood; cleaner than divergence detection |
 
 ## Evolution
 
@@ -96,4 +107,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-07 after initialization*
+*Last updated: 2026-05-14 after v1.0 milestone*
