@@ -1019,10 +1019,11 @@
   border-color: var(--text-muted);
 }
 .leetcode-language-chevron-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: 4px;
+  /* G-DROPDOWN-CLIPPED — portal pattern. Dropdown is appended to doc.body
+   * while open, so it lives outside the cm-content paint container.
+   * position:fixed is needed so the viewport-relative top/left coords set
+   * by positionDropdown() (via setProperty) are interpreted correctly. */
+  position: fixed;
   min-width: 140px;
   padding: 4px 0;
   border-radius: 4px;
@@ -1036,6 +1037,9 @@
    * isolation so we don't get re-trapped by an ancestor. */
   z-index: 9999;
   isolation: isolate;
+}
+.leetcode-language-chevron-dropdown.is-hidden {
+  display: none;
 }
 .leetcode-language-chevron-item {
   display: block;

@@ -25,7 +25,7 @@
 // focus management) around this renderer's output.
 
 import { classifyStatus, type VerdictKind } from './statusMap';
-import { parseMetaData, deriveArity, splitInput, splitOutput } from './runArity';
+import { parseMetaData, splitInput, splitOutput } from './runArity';
 import type { RunCheckResponse, SubmitCheckResponse } from './types';
 
 /** Payload hand-shaped by the orchestrator (Plan 05) into the 3 "synthetic"

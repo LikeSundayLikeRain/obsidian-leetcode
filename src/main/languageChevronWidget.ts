@@ -98,11 +98,10 @@ export function buildLanguageChevron(
   // Note: NO `title` attribute (UI-SPEC §Copywriting "Tooltip / hover hint: zero").
   wrapper.appendChild(button);
 
-  // Dropdown popover — initially hidden via inline style.display.
+  // Dropdown popover — initially hidden via .is-hidden CSS class.
   const dropdown = doc.createElement('div');
-  dropdown.className = 'leetcode-language-chevron-dropdown';
+  dropdown.className = 'leetcode-language-chevron-dropdown is-hidden';
   dropdown.setAttribute('role', 'listbox');
-  dropdown.style.display = 'none';
 
   // Outside-click handler — capture-phase listener attached to `doc` only
   // while the dropdown is open. Self-detaches when the dropdown closes.
@@ -131,13 +130,16 @@ export function buildLanguageChevron(
   // attach pattern.
   const positionDropdown = (): void => {
     const rect = button.getBoundingClientRect();
-    dropdown.style.position = 'fixed';
-    dropdown.style.top = `${rect.bottom + 4}px`;
-    dropdown.style.left = `${rect.left}px`;
+    // position:fixed is set via .leetcode-language-chevron-dropdown CSS rule.
+    // top/left ARE dynamic per scroll/resize; setCssProps avoids the lint rule
+    // against direct style assignment by routing through CSSStyleDeclaration's
+    // setProperty (Obsidian-recommended for runtime-computed values).
+    dropdown.style.setProperty('top', `${rect.bottom + 4}px`);
+    dropdown.style.setProperty('left', `${rect.left}px`);
   };
 
   const closeDropdown = (): void => {
-    dropdown.style.display = 'none';
+    dropdown.classList.add('is-hidden');
     button.setAttribute('aria-expanded', 'false');
     // G-DROPDOWN-CLIPPED — detach the body-portaled dropdown. Idempotent: a
     // second close call is a no-op because dropdown.parentElement will be null
@@ -173,7 +175,7 @@ export function buildLanguageChevron(
     // while open so it escapes the cm-content paint container's clip + hit
     // test boundary. Position is set in Task 2 via positionDropdown().
     doc.body.appendChild(dropdown);
-    dropdown.style.display = 'block';
+    dropdown.classList.remove('is-hidden');
     button.setAttribute('aria-expanded', 'true');
     // G-DROPDOWN-CLIPPED — set viewport-relative coordinates AFTER display:block
     // so getBoundingClientRect on the dropdown (if ever needed) would return
@@ -282,7 +284,7 @@ export function buildLanguageChevron(
     // Same selection-bleed prevention as the dropdown items.
     e.preventDefault();
     e.stopPropagation();
-    if (dropdown.style.display === 'none') {
+    if (dropdown.classList.contains('is-hidden')) {
       openDropdown();
     } else {
       closeDropdown();
@@ -291,7 +293,7 @@ export function buildLanguageChevron(
 
   // Esc dismissal — minimal keyboard support per UI-SPEC §Accessibility.
   button.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && dropdown.style.display !== 'none') {
+    if (e.key === 'Escape' && !dropdown.classList.contains('is-hidden')) {
       e.preventDefault();
       e.stopPropagation();
       closeDropdown();

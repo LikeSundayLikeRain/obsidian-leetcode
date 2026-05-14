@@ -54,7 +54,7 @@ export function computeFilterBadgeCount(f: CompoundFilter | null): number {
 
 const SEARCH_DEBOUNCE_MS = 150;
 const THROTTLE_FOOTER_DELAY_MS = 2000;   // D-13: only surface indicator if queue > 0 for > 2s
-const SESSION_EXPIRED_NOTICE_MS = 8000;  // UI-SPEC Notice table
+const _SESSION_EXPIRED_NOTICE_MS = 8000;  // UI-SPEC Notice table — kept for documentation; rendering path migrated to showSessionExpiredNotice (Phase 5 D-21)
 // NOTE: RATE_LIMIT_NOTICE_MS (6000 per UI-SPEC § Notice table / D-14) is inlined at the
 // Notice call site as a literal to satisfy the acceptance grep `, 6000)` in Plan 06.
 

@@ -94,7 +94,7 @@ export async function copyToCode(
   // Mirror switchFenceLanguage Step C (src/main.ts:801-803). Errors
   // propagate naturally — caller (SubmissionDetailModal.performCopy) closes
   // the modal after the await; the fence body has already landed.
-  await app.fileManager.processFrontMatter(file, (fmObj) => {
+  await app.fileManager.processFrontMatter(file, (fmObj: Record<string, unknown>) => {
     fmObj['lc-language'] = langSlug;
   });
 }

@@ -101,7 +101,7 @@ export class JudgeTimeoutError extends Error {
  * 2xx response (even if the body is still PENDING). 3 in a row → JudgeTimeoutError.
  */
 export function pollSubmission(args: PollSubmissionArgs): Promise<TerminalCheckResponse> {
-  const { fetcher, submissionId, slug, registerInterval, abortSignal, headers } = args;
+  const { fetcher, submissionId, registerInterval, abortSignal, headers } = args;
   const startedAt = Date.now();
 
   const p = createPollPromise();

@@ -53,7 +53,7 @@ import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorEx
 // `view.editor.cm as EditorView` is the canonical (undocumented internal) path
 // for plugins reaching CM6 from a click handler — RESEARCH §Pitfall 6 +
 // CLAUDE.md acknowledged.
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+ 
 import type { EditorView } from '@codemirror/view';
 import { interpretSolution, authHeaders } from './solve/leetcodeRest';
 import {
@@ -781,7 +781,7 @@ export default class LeetCodePlugin extends Plugin {
       const detail = await this.client.getProblemDetail(lcSlug);
       snippet = detail?.codeSnippets?.find((s) => s.langSlug === newSlug)?.code ?? '';
     } catch {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- UI-SPEC §Copywriting LOCKED
+       
       new Notice(`Couldn't fetch starter code for ${newLabel}.`, 6000);
       return;
     }
@@ -835,7 +835,7 @@ export default class LeetCodePlugin extends Plugin {
     // by then `buildDecorations` reads the correctly-flushed `lc-language`
     // and the override-payload path becomes unnecessary. The two refresh
     // paths converge to the same DOM state.
-    await this.app.fileManager.processFrontMatter(file, (fmObj) => {
+    await this.app.fileManager.processFrontMatter(file, (fmObj: Record<string, unknown>) => {
       fmObj['lc-language'] = newSlug;
     });
   }

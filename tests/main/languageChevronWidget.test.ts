@@ -149,7 +149,7 @@ describe('buildLanguageChevron DOM render', () => {
     button!.click();
     const dropdown = findDropdown();
     expect(dropdown).not.toBeNull();
-    expect(dropdown!.style.display).toBe('block');
+    expect(dropdown!.classList.contains('is-hidden')).toBe(false);
     expect(dropdown!.getAttribute('role')).toBe('listbox');
 
     // Cleanup.
@@ -210,7 +210,7 @@ describe('buildLanguageChevron click toggles dropdown', () => {
     button!.click();
     const dropdown = findDropdown();
     expect(dropdown).not.toBeNull();
-    expect(dropdown!.style.display).toBe('block');
+    expect(dropdown!.classList.contains('is-hidden')).toBe(false);
     button!.click();
     // After close: dropdown detached from body.
     expect(findDropdown()).toBeNull();
@@ -284,7 +284,7 @@ describe('buildLanguageChevron item click', () => {
     button!.click();
     let dropdown = findDropdown();
     expect(dropdown).not.toBeNull();
-    expect(dropdown!.style.display).toBe('block');
+    expect(dropdown!.classList.contains('is-hidden')).toBe(false);
 
     const items = Array.from(
       dropdown!.querySelectorAll<HTMLButtonElement>('button.leetcode-language-chevron-item'),
@@ -312,7 +312,7 @@ describe('Esc dismissal (C6)', () => {
     button!.click();
     const dropdown = findDropdown();
     expect(dropdown).not.toBeNull();
-    expect(dropdown!.style.display).toBe('block');
+    expect(dropdown!.classList.contains('is-hidden')).toBe(false);
     expect(button!.getAttribute('aria-expanded')).toBe('true');
 
     // Dispatch Escape on document (NOT on the button — focus may have moved).
@@ -449,19 +449,10 @@ describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
     expect(stale).toBeNull();
   });
 
-  it("dropdown.style.position === 'fixed' when open", () => {
-    const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
-    document.body.appendChild(wrapper);
-
-    const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
-    button!.click();
-
-    const dropdown = findDropdown()!;
-    expect(dropdown.style.position).toBe('fixed');
-
-    button!.click();
-  });
+  // UAT 2026-05-14 — position:fixed migrated from inline style to the
+  // .leetcode-language-chevron-dropdown CSS rule (eslint-plugin-obsidianmd
+  // no-static-styles-assignment). top/left remain inline (runtime-computed
+  // from getBoundingClientRect on every scroll/resize).
 
   it('dropdown.style.top is set from button.getBoundingClientRect().bottom + 4 when open', () => {
     const { plugin } = makeHost();

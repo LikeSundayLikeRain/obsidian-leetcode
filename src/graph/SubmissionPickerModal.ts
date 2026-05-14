@@ -28,7 +28,7 @@
 // constructs SubmissionDetailModal + calls .open(). Keeps the picker testable
 // without pulling in the detail modal's dependencies.
 
-import { Modal, Notice, type App, type TFile } from 'obsidian';
+import { Modal, type App, type TFile } from "obsidian";
 import { SessionExpiredError } from '../shared/errors';
 import { classifyStatus } from '../solve/statusMap';
 import { showSessionExpiredNotice } from '../solve/SessionExpiredNotice';

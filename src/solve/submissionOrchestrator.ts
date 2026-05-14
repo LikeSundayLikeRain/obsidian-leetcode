@@ -33,7 +33,7 @@ import {
   AbortError as PollAbortError,
   type AbortLike,
   type Fetcher,
-  type TerminalCheckResponse,
+
 } from './pollingOrchestrator';
 
 const BASE_URL = 'https://leetcode.com';

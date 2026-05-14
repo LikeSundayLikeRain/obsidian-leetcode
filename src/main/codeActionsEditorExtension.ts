@@ -289,7 +289,7 @@ export function buildDecorations(
     anchor,
     anchor,
     Decoration.widget({
-      widget: new CodeActionsWidget(plugin, file as TFile, currentSlug),
+      widget: new CodeActionsWidget(plugin, file, currentSlug),
       side,
       block: true,
     }),
