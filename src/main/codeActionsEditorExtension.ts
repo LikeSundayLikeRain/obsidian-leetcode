@@ -100,7 +100,16 @@ type PluginHost = Plugin & LanguageChevronHost & {
  * property panel manually) — so PATH A also closes that secondary refresh
  * gap automatically.
  */
-export const languageRefreshEffect = StateEffect.define<void>();
+/**
+ * Phase 05.5 chevron-staleness hardening: the effect now carries an optional
+ * override slug. When a dispatcher already knows the new `lc-language` value
+ * (e.g., the chevron switch path knows it post-processFrontMatter), it passes
+ * the slug directly so `buildDecorations` doesn't have to re-read a cold
+ * metadataCache. Callers that don't know (e.g., the metadataCache 'changed'
+ * subscription, where the cache IS the source of truth) pass `undefined` and
+ * the read-from-frontmatter path in `buildDecorations` still applies.
+ */
+export const languageRefreshEffect = StateEffect.define<string | undefined>();
 
 /**
  * Inline widget that paints a chevron + Run + Submit row. Reuses the shipped
@@ -229,6 +238,7 @@ export function findCodeFence(
 export function buildDecorations(
   state: EditorState,
   plugin: PluginHost,
+  overrideSlug?: string,
 ): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
@@ -250,11 +260,19 @@ export function buildDecorations(
   // frontmatter; falls back to the user's default language when absent
   // (cold-cache mitigation per RESEARCH §Pitfall 3 — keeps the chevron from
   // briefly painting "▼ undefined" the first ~100 ms after file open).
+  //
+  // Phase 05.5 chevron-staleness fix: when an `overrideSlug` is supplied (the
+  // chevron switch path knows the new slug after processFrontMatter resolves
+  // but BEFORE metadataCache flushes), it wins over the frontmatter read.
+  // This eliminates the "metadataCache lag → chevron paints old language
+  // until user types" regression.
   const lcLanguageRaw = fm?.['lc-language'];
   const currentSlug =
-    typeof lcLanguageRaw === 'string' && lcLanguageRaw.length > 0
-      ? lcLanguageRaw
-      : plugin.settings.getDefaultLanguage();
+    overrideSlug && overrideSlug.length > 0
+      ? overrideSlug
+      : typeof lcLanguageRaw === 'string' && lcLanguageRaw.length > 0
+        ? lcLanguageRaw
+        : plugin.settings.getDefaultLanguage();
 
   // G-LAYOUT-V2 fix (gap-closure post-Plan 06): BLOCK widget anchored at
   // end of closer-fence line with side: 1. A block widget renders as its
@@ -317,7 +335,21 @@ export function buildCodeActionsEditorExtension(
           // `view.editor.cm` is the same undocumented internal handle the
           // chevron switch path uses (see src/main.ts switchFenceLanguage).
           const cm = (view.editor as unknown as { cm: EditorView }).cm;
-          cm.dispatch({ effects: languageRefreshEffect.of(undefined) });
+          // Phase 05.5 chevron-staleness fix: pass the fresh `lc-language`
+          // value directly as the effect payload. By the time `'changed'`
+          // fires Obsidian's cache reflects the new frontmatter — but
+          // `buildDecorations`'s subsequent re-read may race against any
+          // intermediate listener; threading the value through the effect
+          // payload guarantees the right slug regardless of read ordering.
+          const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter as
+            | Record<string, unknown>
+            | undefined;
+          const lcLanguageRaw = fm?.['lc-language'];
+          const freshSlug =
+            typeof lcLanguageRaw === 'string' && lcLanguageRaw.length > 0
+              ? lcLanguageRaw
+              : undefined;
+          cm.dispatch({ effects: languageRefreshEffect.of(freshSlug) });
         } catch {
           // Silently ignore — the editor may be in teardown, the active view
           // may not be a MarkdownView, or `editor.cm` may be missing in test
@@ -340,9 +372,19 @@ export function buildCodeActionsEditorExtension(
         tr.startState.field(editorLivePreviewField);
       // G-LABEL-LAG: rebuild when the manual refresh effect lands, in
       // addition to the existing docChanged + modeFlipped triggers.
-      const refreshEffect = tr.effects.some((e) => e.is(languageRefreshEffect));
+      // Phase 05.5: when the effect carries an override slug payload, pass
+      // it through to buildDecorations so the chevron paints the new
+      // language immediately even if metadataCache hasn't flushed yet.
+      let overrideSlug: string | undefined;
+      for (const e of tr.effects) {
+        if (e.is(languageRefreshEffect)) {
+          overrideSlug = e.value;
+        }
+      }
+      const refreshEffect = overrideSlug !== undefined ||
+        tr.effects.some((e) => e.is(languageRefreshEffect));
       if (tr.docChanged || modeFlipped || refreshEffect) {
-        return buildDecorations(tr.state, plugin);
+        return buildDecorations(tr.state, plugin, overrideSlug);
       }
       return old.map(tr.changes);
     },

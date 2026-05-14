@@ -48,7 +48,7 @@ import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug, lcSlugToFenceTag, LC_LANG_DISPLAY_LABELS } from './solve/languages';
 // Phase 5.3 D-13 parity — chevron's atomic dispatch reuses Phase 5.1's exported
 // `findCodeFence` so fence detection has one source of truth.
-import { findCodeFence } from './main/codeActionsEditorExtension';
+import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorExtension';
 // @codemirror/view is a transitive peer of obsidian@1.12.3; external in esbuild.
 // `view.editor.cm as EditorView` is the canonical (undocumented internal) path
 // for plugins reaching CM6 from a click handler — RESEARCH §Pitfall 6 +
@@ -808,16 +808,33 @@ export default class LeetCodePlugin extends Plugin {
     const bodyStart = openerLine.to + 1; // newline after opener
     const bodyEnd = closerLine.from;
 
-    // Single dispatch — both edits land in one undo step (D-08 atomicity).
+    // Single dispatch — both edits + the chevron-refresh effect land in one
+    // transaction. D-08 atomicity (one undo step) is preserved because
+    // CM6 only counts `changes` toward the undo history; the effect rides
+    // along without creating an extra undo entry.
+    //
+    // Phase 05.5 chevron-refresh hardening: the effect carries `newSlug` as
+    // payload so `buildDecorations` paints the correct language immediately
+    // even though the metadataCache's `lc-language` value won't reflect the
+    // new slug until `processFrontMatter` (Step C) resolves AND Obsidian's
+    // metadataCache subscriber fires `'changed'`. Without this payload, the
+    // chevron's StateField would re-read stale frontmatter and paint the
+    // old label until the user typed in the fence body.
     cm.dispatch({
       changes: [
         { from: openerLine.from, to: openerLine.to, insert: newOpenerText },
         { from: bodyStart, to: bodyEnd, insert: snippet + '\n' },
       ],
+      effects: languageRefreshEffect.of(newSlug),
       userEvent: 'leetcode.lang-switch',
     });
 
     // Step C — frontmatter write (separate undo stack — Pitfall 1 accepted).
+    // The metadataCache `'changed'` listener will fire later and dispatch a
+    // second `languageRefreshEffect.of(undefined)` once the cache is fresh;
+    // by then `buildDecorations` reads the correctly-flushed `lc-language`
+    // and the override-payload path becomes unnecessary. The two refresh
+    // paths converge to the same DOM state.
     await this.app.fileManager.processFrontMatter(file, (fmObj) => {
       fmObj['lc-language'] = newSlug;
     });

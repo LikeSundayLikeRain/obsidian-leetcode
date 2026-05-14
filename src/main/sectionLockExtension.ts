@@ -203,30 +203,33 @@ function buildAtomicRangeSet(state: EditorStateType): DecorationSet {
 }
 
 /**
- * Phase 05.5 D-04 (planner discretion / RESEARCH Open Q4 recommendation):
- * visual-dim Decoration.mark over each locked range so users discover the
- * lock by SEEING that plugin-owned regions look different — without it,
- * users only learn the lock exists by typing into a locked region and
- * seeing nothing happen. The class `leetcode-section-locked` is the user-
- * facing class targeted by `styles.css`'s `.cm-editor .leetcode-section-locked`
- * rule (which sets `background: var(--background-secondary)` per CONTEXT
- * D-04 + Phase 5.4 D-06 — Obsidian semantic CSS variables only, no
- * hardcoded colors). The class is distinct from the atomic-only
- * `leetcode-section-locked-atomic` class above so future styling decisions
- * can target either layer independently.
+ * Phase 05.5 — heading-line decoration for marker hiding.
+ *
+ * Emits `Decoration.line` ranges over each canonical heading line in the
+ * document. `styles.css` uses `.leetcode-locked-heading-line` to hide the
+ * Obsidian `cm-formatting-header` tokens (the `## ` prefix) on those lines
+ * so locked headings render parity with Reading Mode regardless of cursor
+ * position. The lock makes editing impossible anyway; hiding the marker
+ * removes the only visual cue that suggested otherwise.
+ *
+ * Decoration.line REQUIRES emitting a zero-length range at the line's
+ * start position (`line.from`). Decoration.line ranges that span any
+ * extent throw at runtime in CM6.
  */
 function buildLockedDecorations(state: EditorStateType): DecorationSet {
-  const ranges = computeLockedRanges(state);
   const b = new RangeSetBuilder<Decoration>();
-  for (let i = 0; i < ranges.length; i += 2) {
-    const from = ranges[i] as number;
-    const to = ranges[i + 1] as number;
-    if (from < to) {
-      b.add(
-        from,
-        to,
-        Decoration.mark({ class: 'leetcode-section-locked' }),
-      );
+  const total = state.doc.lines;
+  if (total === 0) return b.finish();
+  const lineDeco = Decoration.line({ class: 'leetcode-locked-heading-line' });
+  for (let i = 1; i <= total; i++) {
+    const text = state.doc.line(i).text;
+    if (
+      text === PROBLEM_HEADING_LINE ||
+      text === CODE_HEADING_LINE ||
+      text === TECHNIQUES_HEADING_LINE ||
+      text === NOTES_HEADING_LINE
+    ) {
+      b.add(state.doc.line(i).from, state.doc.line(i).from, lineDeco);
     }
   }
   return b.finish();

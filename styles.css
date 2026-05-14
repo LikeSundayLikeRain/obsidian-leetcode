@@ -917,10 +917,21 @@
   padding-top: 8px !important;
 }
 
-/* Phase 05.5 (POLISH) — section-lock visual dim per CONTEXT D-04.
- * Only Obsidian semantic CSS vars; no hardcoded colors (CLAUDE.md §Conventions, Phase 5.4 D-06). */
-.cm-editor .leetcode-section-locked {
-  background: var(--background-secondary);
+/* Phase 05.5 (POLISH) — section-lock heading-marker hide.
+ *
+ * Lines decorated with .leetcode-locked-heading-line are heading lines whose
+ * `## ` markup we want hidden (matching Reading Mode) since the lock makes
+ * editing impossible anyway. Obsidian's Live Preview normally shows the
+ * `## ` markers when the cursor sits on the heading line; this rule hides
+ * them unconditionally on locked headings.
+ *
+ * Targets the cm-formatting-header tokens that Obsidian injects on heading
+ * lines. Setting display:none collapses the marker run; the heading text
+ * after the space is the only visible content (parity with Reading Mode).
+ * No hardcoded colors (CLAUDE.md §Conventions, Phase 5.4 D-06). */
+.cm-editor .leetcode-locked-heading-line .cm-formatting-header,
+.cm-editor .leetcode-locked-heading-line .cm-formatting-header-2 {
+  display: none;
 }
 .leetcode-code-actions .leetcode-code-action-run {
   margin-left: auto;
