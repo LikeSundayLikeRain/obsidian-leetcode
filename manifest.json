@@ -3,7 +3,7 @@
 	"name": "LeetCode",
 	"version": "1.0.0",
 	"minAppVersion": "1.10.0",
-	"description": "Browse, solve, and note LeetCode problems inside your Obsidian vault.",
+	"description": "Browse, solve, and note LeetCode problems inside your vault.",
 	"author": "Mo Xu",
 	"authorUrl": "https://github.com/LikeSundayLikeRain",
 	"isDesktopOnly": true

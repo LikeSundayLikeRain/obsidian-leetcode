@@ -1,7 +1,7 @@
 {
   "name": "obsidian-leetcode",
   "version": "1.0.0",
-  "description": "Browse, solve, and note LeetCode problems inside your Obsidian vault.",
+  "description": "Browse, solve, and note LeetCode problems inside your vault.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
