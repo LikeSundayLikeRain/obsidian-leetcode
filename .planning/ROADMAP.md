@@ -156,7 +156,7 @@ Plans:
 - [x] 05-06-PLAN.md — LICENSE (MIT) + `scripts/prerelease-check.sh` (12 mechanical gates) + README with 10 D-25 sections + 4 screenshot checkpoint (human-verify) + `versions.json` correction to `1.10.0` — D-23, D-24, D-25, D-26, D-27
 
 **Wave 5b — Community-store submission** *(blocked on Plan 06)*
-- [ ] 05-07-PLAN.md — Version-triple consistency verify + production build + prerelease re-run + `0.1.0` tag push + GitHub release checkpoint (main.js + manifest.json + styles.css assets) + community-plugin PR checkpoint (`Add plugin: LeetCode` PR to `obsidianmd/obsidian-releases`) — D-23, D-28, POLISH-06
+- [x] 05-07-PLAN.md — Version-triple consistency verify + production build + prerelease re-run + `0.1.0` tag push + GitHub release checkpoint (main.js + manifest.json + styles.css assets) + community-plugin PR checkpoint (`Add plugin: LeetCode` PR to `obsidianmd/obsidian-releases`) — D-23, D-28, POLISH-06
 **UI hint**: yes
 
 ## Progress
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 **Goal:** Plugin-owned regions of `lc-slug` notes (`## Problem` entire region; `## Code` heading + fence opener + closing fence; `## Techniques` heading; `## Notes` heading) become read-only in Edit Mode via a CM6 `EditorState.changeFilter`, so user edits cannot accidentally land in regions the plugin overwrites on background-refresh / chevron-switch / on-AC. Lock is gated on `lc-slug` frontmatter (D-06) + Edit Mode (D-07); plugin-side dispatches with `userEvent: 'leetcode.*'` bypass the lock so the Phase 5.3 chevron switch keeps working (RESEARCH Pitfall 5).
 **Requirements**: POLISH bracket — no formal REQ-ID assigned; behavioral anchors are CONTEXT decisions D-01..D-09
 **Depends on:** Phase 5
-**Plans:** 4/4 plans complete
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 0 — Test scaffolding** *(RED-state TDD; precondition for Wave 1)*
