@@ -25,7 +25,7 @@ so practice builds a knowledge graph instead of scattered code files.
 
 ### Manual install (from release assets, pre-acceptance)
 
-1. Download `manifest.json`, `main.js`, and `styles.css` from the latest [GitHub release](https://github.com/moxu/obsidian-leetcode/releases)
+1. Download `manifest.json`, `main.js`, and `styles.css` from the latest [GitHub release](https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases)
 2. Copy them into `.obsidian/plugins/leetcode/` inside your vault
 3. Open Obsidian → Settings → Community plugins → enable `LeetCode`
 
@@ -41,7 +41,7 @@ so practice builds a knowledge graph instead of scattered code files.
 
    ![Problem note](docs/problem-note.png)
 
-5. Write your solution in the `## Code` fenced block. In Reading mode, `Run` and `Submit` buttons appear directly below the code block. In Live Preview, use the command palette (`LeetCode: Run`, `LeetCode: Submit`).
+5. Write your solution in the `## Code` fenced block. `Run` and `Submit` buttons appear inline directly below the code block in both Reading mode and Edit mode (Live Preview + Source). The command palette (`LeetCode: Run`, `LeetCode: Submit`) also works.
 6. When you are ready, click `Submit`. The verdict modal shows the result, runtime, memory, and percentile:
 
    ![Verdict — Accepted](docs/verdict-accepted.png)
@@ -70,7 +70,7 @@ Open Settings → LeetCode. Three sections:
 - `LeetCode is rate limiting us. Try again in a moment.` — LC returned HTTP 429. The plugin auto-retries once after a short backoff; if you see this twice in a row, wait a few seconds and retry manually.
 - `Couldn't reach LeetCode. Check your connection.` — your machine cannot reach `leetcode.com` (offline, DNS issue, firewall). Plugin does not auto-retry network failures.
 - `LeetCode is slow to respond. Try again.` — LC did not answer within 10 seconds. Judge or network latency; retry manually.
-- Run/Submit buttons don't appear — buttons are rendered in Reading mode only. In Live Preview, use the command palette.
+- Run/Submit buttons don't appear — verify the note has `lc-slug` in its frontmatter (only LC-problem notes show the buttons). The buttons render in both Reading mode and Edit mode (Live Preview + Source). If they still don't appear after toggling the plugin off and on, check the developer console (Cmd-Option-I) for errors.
 
 ### Section Locking
 
@@ -98,7 +98,7 @@ Problem notes (any note with an `lc-slug` frontmatter entry) make plugin-owned r
 
 **Switching languages:** the fence opener line (e.g. ` ```python `) is locked, so you cannot rename the language by typing into the fence tag. Use the chevron dropdown next to the Run/Submit buttons — it rewrites the opener atomically (Cmd-Z reverts the change) and updates the `lc-language` frontmatter.
 
-**Cursor behavior:** you can still click anywhere — including inside locked regions — but typing will silently drop. Arrow-key cursor motion glides past locked regions automatically.
+**Cursor behavior:** when the cursor lands inside a locked region (via click or arrow), it automatically snaps to the nearest editable position outside. You can still select across locked regions to copy text — only typing into a locked region is suppressed.
 
 ## License
 
@@ -106,4 +106,16 @@ Released under the [MIT License](LICENSE).
 
 ## Contributing
 
-Issues and pull requests welcome at [github.com/moxu/obsidian-leetcode](https://github.com/moxu/obsidian-leetcode).
+Issues and pull requests welcome at [github.com/LikeSundayLikeRain/obsidian-leetcode](https://github.com/LikeSundayLikeRain/obsidian-leetcode).
+
+### Development
+
+```bash
+git clone https://github.com/LikeSundayLikeRain/obsidian-leetcode
+cd obsidian-leetcode
+npm install
+npm run dev   # esbuild watch mode → main.js
+npm test      # vitest
+```
+
+For local testing, copy `main.js`, `manifest.json`, and `styles.css` into `<your-vault>/.obsidian/plugins/leetcode/` and reload the plugin.
