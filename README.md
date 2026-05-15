@@ -7,6 +7,7 @@ so practice builds a knowledge graph instead of scattered code files.
 ## Features
 
 - Browse the LeetCode problem list with search + difficulty/status filters
+- Preview any problem in a read-only tab before committing — single-click previews by default; shift-click still opens the note directly
 - Open any problem as an Obsidian note with locked frontmatter and a `## Problem` statement rendered as Markdown
 - Write solutions in a native fenced code block — no custom editor, no separate editor pane
 - Run your code against sample or custom test cases with `LeetCode: Run`
@@ -49,6 +50,16 @@ so practice builds a knowledge graph instead of scattered code files.
 7. On Accepted, the plugin writes `[[Technique Name]]` wikilinks under a `## Techniques` section and creates stub technique notes. Open Obsidian's Graph view to see the knowledge graph forming:
 
    ![Graph view](docs/graph-view.png)
+
+## Previewing problems
+
+Single-click on a problem in the LeetCode browser previews it in a new tab. Shift-click opens the note directly. The preview tab is read-only — it shows the problem statement, difficulty, and topic chips with a sticky `Start Problem` button at the top, and creates no `.md` file in your vault until you click `Start Problem` (or shift-click the row in the browser).
+
+- **Right-click** any problem in the browser and pick `Preview problem` to preview regardless of your default click behavior.
+- Run `Open in preview` from the command palette while viewing a problem note to re-open the preview tab for that problem.
+- Open Settings → Preview → Click behavior. Choose `Preview first` (default) or `Open note directly` to restore v1.0 behavior. The setting persists across reloads.
+
+Only one preview tab is open at a time — clicking another problem reuses the same tab. After you click `Start Problem`, the preview detaches itself and the new note takes focus.
 
 ## Network usage
 
@@ -108,7 +119,7 @@ Released under the [MIT License](LICENSE).
 
 Issues and pull requests welcome at [github.com/LikeSundayLikeRain/obsidian-leetcode](https://github.com/LikeSundayLikeRain/obsidian-leetcode).
 
-### Development
+## Development
 
 ```bash
 git clone https://github.com/LikeSundayLikeRain/obsidian-leetcode
@@ -119,3 +130,19 @@ npm test      # vitest
 ```
 
 For local testing, copy `main.js`, `manifest.json`, and `styles.css` into `<your-vault>/.obsidian/plugins/leetcode/` and reload the plugin.
+
+### Bundle size
+
+The production bundle (`main.js`) is gated by a portable Node script, `scripts/check-bundle-size.mjs`, which runs as the last step of `.github/workflows/ci.yml` (after lint, test, and build).
+
+- **Hard ceiling: 500 KB.** PRs that push `main.js` over 500,000 bytes fail CI and cannot be merged.
+- **Soft warning: 400 KB.** Builds between 400 KB and 500 KB log a warning but still pass — treat warnings as a signal to investigate before the next release.
+- **Current baseline: ~165.0 KB (168,953 bytes)** at v1.1 entry — well under the soft warning, with substantial headroom for future AI/contest features.
+
+Run the gate locally before pushing:
+
+```bash
+npm run build && npm run check:bundle-size
+```
+
+Thresholds are hardcoded constants in the script (no baseline file is committed); CI is the source of truth.
