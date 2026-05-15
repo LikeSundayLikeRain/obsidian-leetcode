@@ -8,6 +8,7 @@
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
+    "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "grep:vault": "./scripts/grep-no-vault-modify.sh",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
   },

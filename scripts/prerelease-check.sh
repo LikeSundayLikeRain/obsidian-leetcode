@@ -26,7 +26,7 @@
 #   9. README.md present; contains "leetcode.com"; >=4 image links
 #  10. npm run lint exit 0
 #  11. npm test -- --run exit 0
-#  12. main.js <= 250 kB (Phase 5.3 Plan 04 D-13/Q7; delegated to scripts/check-bundle-size.sh; warn at 200 kB)
+#  12. main.js <= 500 kB (Phase 06 FOUND-02 — delegated to scripts/check-bundle-size.mjs; warn at 400 kB)
 #
 set -eo pipefail
 
@@ -235,15 +235,17 @@ fi
 ok "gate 11 — npm test clean"
 
 # ---------------------------------------------------------------------------
-# Gate 12: main.js <= 250 kB (Phase 5.3 Plan 04 D-13/Q7 bundle cap; delegated
-# to scripts/check-bundle-size.sh so the ceiling is a single source of truth.
-# Cap tightened from 700/600 to 250/200 after the failed-implementation
-# revert; chevron+remap baseline is ~155 KB.).
+# Gate 12: main.js <= 500 kB (Phase 06 FOUND-02 bundle cap; delegated to
+# scripts/check-bundle-size.mjs so the ceiling is a single source of truth.
+# Cap loosened from 250/200 to 500/400 KB at v1.1 milestone start to allow
+# headroom for AI/contest features; baseline at HEAD is ~163 KB. Cross-OS
+# portable (Node) — replaces the old bash version that used GNU-only `du`/
+# `wc -c`.).
 # ---------------------------------------------------------------------------
-if ! bash scripts/check-bundle-size.sh; then
-  fail "check-bundle-size.sh failed (see output above)"
+if ! node scripts/check-bundle-size.mjs; then
+  fail "check-bundle-size.mjs failed (see output above)"
 fi
-ok "gate 12 — main.js within 250 KB budget"
+ok "gate 12 — main.js within 500 KB budget"
 
 echo ""
 echo "PRERELEASE OK: all 12 gates passed."
