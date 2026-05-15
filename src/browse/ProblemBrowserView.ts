@@ -630,12 +630,12 @@ export class ProblemBrowserView extends ItemView {
       void this.plugin.routeProblemClick(p.slug, p.status, intent);
     });
 
-    // Phase 06 Plan 03 PREVIEW-01 — right-click context menu with a single
-    // `Preview problem` entry. The `force: true` flag bypasses the user's
-    // `Click behavior` setting (CONTEXT.md decision A: right-click intent is
-    // explicit, not the default click affordance). `e.preventDefault()`
-    // suppresses the browser's default context menu so only the Obsidian
-    // Menu shows. Menu accessibility is owned by Obsidian itself.
+    // Phase 06 Plan 03 PREVIEW-01 — right-click context menu. Two items:
+    // `Preview problem` and `Open problem` (the v1.0 create-or-open path).
+    // Both use `force: true` so the user's `Click behavior` setting cannot
+    // suppress the explicit menu choice (CONTEXT.md decision A: right-click
+    // intent is explicit, not the default click affordance).
+    // `e.preventDefault()` suppresses the browser's default context menu.
     row.addEventListener('contextmenu', (e: MouseEvent) => {
       e.preventDefault();
       const menu = new Menu();
@@ -645,6 +645,14 @@ export class ProblemBrowserView extends ItemView {
           .setIcon('eye')
           .onClick(() => {
             void this.plugin.routeProblemClick(p.slug, p.status, 'preview', { force: true });
+          }),
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle('Open problem')
+          .setIcon('file-text')
+          .onClick(() => {
+            void this.plugin.routeProblemClick(p.slug, p.status, 'open', { force: true });
           }),
       );
       menu.showAtMouseEvent(e);
