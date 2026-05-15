@@ -84,7 +84,27 @@ Plans:
   4. README's "Network use" section enumerates every endpoint the plugin can contact (leetcode.com plus each AI provider's base URL).
   5. AI calls go through a single `obsidianFetch(mode)` adapter — `electron.net.fetch` for streaming when available, `requestUrl` otherwise — and all leetcode.com calls remain on `requestUrl` (v1.0 convention preserved absolutely).
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 07-01-PLAN.md — Foundation types + PluginData schema + shape-guards + logger redaction (gates 02–06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 07-02-PLAN.md — `obsidianFetch(mode)` adapter + `AIClient` facade + 5 provider adapters + pricing table + bundle-size CI gate verification + LC-isolation regression (grep gate + runtime test)
+
+**Wave 3** *(blocked on Waves 1–2 completion)*
+
+- [ ] 07-03-PLAN.md — AIClient onload wiring (Step 5.9) + AI Settings section (heading + active-provider dropdown + provider-conditional sub-form + masked password key input + Test connection placeholder button)
+
+**Wave 4** *(blocked on Wave 3 completion — three parallel plans)*
+
+- [ ] 07-04-PLAN.md — Test connection wiring: `testActiveAIConnection` + `test-ai-connection` palette command + per-provider probe matrix unit tests (OpenAI/OpenRouter/Ollama/Anthropic/Custom-fallback)
+- [ ] 07-05-PLAN.md — `AIDisclosureModal` + `DISCLOSURE_BASE_COPY` shared constant + AIClient probe/invoke disclosure gate + `reset-ai-disclosures` palette command
+- [ ] 07-06-PLAN.md — `clear-ai-key` palette command + README ## Network usage section (5 AI provider hosts + leetcode.com + Authentication + Cost expectations stub) + README CI grep gate
+
 **UI hint**: yes
 
 ### Phase 08: AI Debug
