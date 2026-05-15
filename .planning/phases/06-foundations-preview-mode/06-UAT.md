@@ -1,14 +1,14 @@
 ---
-status: partial
+status: complete
 phase: 06-foundations-preview-mode
 source: [06-01-SUMMARY.md, 06-02-SUMMARY.md, 06-03-SUMMARY.md, 06-04-SUMMARY.md, 06-VERIFICATION.md]
 started: 2026-05-15T19:30:00Z
-updated: 2026-05-15T20:15:00Z
+updated: 2026-05-15T22:00:00Z
 ---
 
 ## Current Test
 
-[testing paused — gap closure planned for preview body & header chrome]
+[testing complete — all 8 items pass]
 
 ## Tests
 
@@ -32,18 +32,20 @@ result: pass
 
 ### 4a. SEPARATE BUG (out of phase 06 scope) — HTML tables flatten to vertical text
 expected: Problems whose statement contains an HTML <table> (e.g., LC #12 Integer to Roman has a Symbol/Value table) should render as a GFM Markdown table both in the preview tab AND in v1.0 notes' ## Problem section.
-result: issue
-reported: "Preview body for LC #12 shows 'Symbol', 'Value', 'I', '1', 'V', '5', ...' as vertical lines instead of a 2-column table. Same issue affects v1.0 notes since they share src/notes/htmlToMarkdown.ts."
-severity: major
-notes: "Root cause: turndown-plugin-gfm is not installed; default Turndown strips <table> structure. Fix: npm install turndown-plugin-gfm + wire `service.use(tables)` in src/notes/htmlToMarkdown.ts. Affects both new previews AND v1.0 problem notes — should be a separate plan since it crosses phase 06's scope."
+result: pass
+notes: "Fixed by installing turndown-plugin-gfm + service.use(tables). Affects both preview and v1.0 notes via shared src/notes/htmlToMarkdown.ts. Existing notes with flat text need a 'Refresh current problem' to pick up the new rendering. Commit d393c5f."
 
 ### 5. Open Problem jumps to existing note without overwriting
 expected: Preview a problem you HAVE already created a note for (e.g., one of your previously solved problems). Action button reads "Open Problem" (neutral, no accent). Click it. Existing note tab opens. The note's content (your code, notes, frontmatter) is unchanged.
-result: [pending]
+result: pass
 
 ### 6. Tab reuse — only one preview at a time
 expected: Single-click problem A → preview tab opens for A. Single-click problem B (different slug) → SAME preview tab updates to B (header + body re-render). At no point do two preview tabs coexist. `workspace.getLeavesOfType('leetcode-preview').length === 1` throughout.
-result: [pending]
+result: pass
+
+### 7. Command palette "Open in preview" gates on lc-slug
+expected: Open a problem note that has `lc-slug` in frontmatter → run command palette → "Open in preview" appears and opens the preview tab for that slug, even if Click behavior = "Open note directly". Open any non-LeetCode note (no `lc-slug`) → "Open in preview" does NOT appear in the palette.
+result: pass
 
 ### 7. Command palette "Open in preview" gates on lc-slug
 expected: Open a problem note that has `lc-slug` in frontmatter → run command palette → "Open in preview" appears and opens the preview tab for that slug, even if Click behavior = "Open note directly". Open any non-LeetCode note (no `lc-slug`) → "Open in preview" does NOT appear in the palette.
@@ -51,14 +53,14 @@ result: [pending]
 
 ### 8. Network error fallback shows retry UI
 expected: Trigger an offline preview (e.g., disable network or kill a previously-cached entry). Preview a problem. The body shows an empty/error state with a "Couldn't load problem" message and a Retry button. A Notice fires (~4 second toast). Re-enabling network and clicking Retry loads the problem.
-result: [pending]
+result: pass
 
 ## Summary
 
 total: 8
-passed: 2
+passed: 8
 issues: 0
-pending: 6
+pending: 0
 skipped: 0
 blocked: 0
 
