@@ -1,0 +1,24 @@
+# Phase 06 FOUND-02 — first GitHub Actions workflow in the repo.
+# Adopted verbatim from .planning/phases/06-foundations-preview-mode/06-RESEARCH.md
+# §Code Examples §Example 7. Step order is locked by 06-CONTEXT.md §E and is
+# asserted by tests/foundations/ci-workflow.test.ts.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm run check:bundle-size
