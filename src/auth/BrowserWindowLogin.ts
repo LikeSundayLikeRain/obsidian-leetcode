@@ -130,7 +130,6 @@ export function openLogin(): Promise<AuthCookies | null> {
   // dependency). `import electron from 'electron'` does not work in
   // Obsidian's bundled renderer — only the dynamic `require` resolves the
   // host-injected Electron surface.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const electron = require('electron') as ElectronModule;
   let BrowserWindow: BrowserWindowCtor | undefined = electron.BrowserWindow;
   if (!BrowserWindow && electron.remote) {
