@@ -27,6 +27,14 @@ import { LeetCodeClient } from './api/LeetCodeClient';
 import { AuthService } from './auth/AuthService';
 import { ProblemListService } from './browse/ProblemListService';
 import { ProblemBrowserView, BROWSER_VIEW_TYPE } from './browse/ProblemBrowserView';
+// Phase 06 Plan 03 — preview view + tab-reuse router. Static imports keep
+// the module graph deterministic; cyclic-type risk is avoided because both
+// preview modules type-import from `./main` rather than runtime-importing.
+import {
+  ProblemPreviewView,
+  PREVIEW_VIEW_TYPE,
+} from './preview/ProblemPreviewView';
+import { openOrReusePreview } from './preview/previewRouter';
 import { NoteWriter } from './notes/NoteWriter';
 import { isLegacyLeetcodeBaseV010 } from './notes/BaseFile';
 import { LeetCodeSettingTab } from './settings/SettingsTab';
@@ -224,6 +232,14 @@ export default class LeetCodePlugin extends Plugin {
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
       new ProblemBrowserView(leaf, this));
 
+    // Phase 06 Plan 03 — register the preview view. View type
+    // 'leetcode-preview' is the canonical SSoT (PREVIEW_VIEW_TYPE constant);
+    // tab-reuse + setViewState in `previewRouter.ts` rely on it. The factory
+    // wires the plugin instance through to the view so action-button clicks
+    // can call `plugin.openProblem(slug)` (existing v1.0 path).
+    this.registerView(PREVIEW_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
+      new ProblemPreviewView(leaf, this));
+
     // Step 6b — ribbon icon (BROWSE-01). Lucide name from UI-SPEC.md § Icons.
      
     this.addRibbonIcon('code-2', 'Open LeetCode browser', () => {
@@ -250,6 +266,33 @@ export default class LeetCodePlugin extends Plugin {
     //   - id does NOT contain the plugin id 'leetcode' (no-plugin-id-in-command-id)
     //   - name is sentence case and does NOT start with the plugin name
     //   - NO hotkeys field (commands/no-default-hotkeys)
+    // Phase 06 Plan 03 FOUND-03 — clean-ID palette command for
+    // `Open in preview`. Mirrors the editorCheckCallback shape from
+    // `refresh-current-problem` below: gates on the active note having an
+    // `lc-slug` frontmatter entry via `isValidSlug`. Action calls
+    // `routeProblemClick(slug, undefined, 'preview', { force: true })` so the
+    // command works even when the user has set `Click behavior = open`
+    // (palette is an explicit user action, not a default affordance —
+    // matches the right-click escape contract). ID has NO plugin-id prefix,
+    // NO `command` substring, NO hotkey — passes `obsidianmd/commands/no-*`
+    // lint rules introduced by 06-01's eslint-plugin-obsidianmd@0.3.0 bump.
+    this.addCommand({
+      id: 'open-in-preview',
+      name: 'Open in preview',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm: Record<string, unknown> | undefined = cache?.frontmatter;
+        const slug = fm?.['lc-slug'];
+        if (!isValidSlug(slug)) return false;
+        if (!checking) {
+          void this.routeProblemClick(slug, undefined, 'preview', { force: true });
+        }
+        return true;
+      },
+    });
+
     this.addCommand({
       id: 'refresh-current-problem',
       // Name deliberately omits "LeetCode" — Obsidian's command palette already
@@ -492,10 +535,11 @@ export default class LeetCodePlugin extends Plugin {
    *      user has opted into v1.0 click-to-open behavior.
    *   4. intent === 'preview'  → preview path.
    *
-   * Plan 06-02 ships a placeholder `Notice` for the preview path so the
-   * routing seam is observable in dev without standing up the view. Plan
-   * 06-03 lands `ProblemPreviewView` and swaps the Notice for
-   * `openOrReusePreview(this, slug)` at the marked TODO.
+   * Plan 06-02 shipped a placeholder `Notice` for the preview path so the
+   * routing seam was observable in dev without standing up the view; Plan
+   * 06-03 (this commit) lands `ProblemPreviewView` and swaps the Notice for
+   * `await openOrReusePreview(this, slug)` — the preview leaf is reused if
+   * one is already open, otherwise a new center tab opens.
    */
   async routeProblemClick(
     slug: string,
@@ -510,11 +554,11 @@ export default class LeetCodePlugin extends Plugin {
     if (!opts?.force && this.settings.getPreviewClickBehavior() === 'open') {
       return this.openProblem(slug, status);
     }
-    // TODO(06-03): swap this placeholder for `await openOrReusePreview(this, slug)`
-    // once src/preview/previewRouter.ts and ProblemPreviewView land. Notice
-    // copy is sentence case per obsidianmd/ui/sentence-case lint rule; the
-    // tests pin the substring "06-03" so the swap site stays grep-able.
-    new Notice('Preview view will land in plan 06-03', 4000);
+    // Phase 06 Plan 03 — preview path. Reuses an existing leetcode-preview
+    // leaf (via `getLeavesOfType` + `setViewState`) or opens a new center
+    // tab; either way the new slug renders into the SAME leaf. Replaces
+    // Plan 06-02's placeholder Notice (#TODO(06-03) anchor).
+    return openOrReusePreview(this, slug);
   }
 
   /** GAP-11: force-refresh the `## Problem` body of the currently-open note,

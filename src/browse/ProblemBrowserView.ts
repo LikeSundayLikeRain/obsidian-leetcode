@@ -2,7 +2,7 @@
 // Right-sidebar ItemView for browsing LeetCode problems (D-06).
 // All DOM via createEl / createDiv — never via raw HTML injection (Shared Pattern 3).
 // All strings LOCKED by UI-SPEC.md § Copywriting Contract.
-import { ItemView, WorkspaceLeaf, Notice, setIcon } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, setIcon, Menu } from 'obsidian';
 import type LeetCodePlugin from '../main';
 import type { IndexedProblem } from './types';
 import type { CompoundFilter, FilterRule } from '../settings/SettingsStore';
@@ -628,6 +628,26 @@ export class ProblemBrowserView extends ItemView {
       // open path.
       const intent = decideClickIntent(e);
       void this.plugin.routeProblemClick(p.slug, p.status, intent);
+    });
+
+    // Phase 06 Plan 03 PREVIEW-01 — right-click context menu with a single
+    // `Preview problem` entry. The `force: true` flag bypasses the user's
+    // `Click behavior` setting (CONTEXT.md decision A: right-click intent is
+    // explicit, not the default click affordance). `e.preventDefault()`
+    // suppresses the browser's default context menu so only the Obsidian
+    // Menu shows. Menu accessibility is owned by Obsidian itself.
+    row.addEventListener('contextmenu', (e: MouseEvent) => {
+      e.preventDefault();
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item
+          .setTitle('Preview problem')
+          .setIcon('eye')
+          .onClick(() => {
+            void this.plugin.routeProblemClick(p.slug, p.status, 'preview', { force: true });
+          }),
+      );
+      menu.showAtMouseEvent(e);
     });
   }
 }

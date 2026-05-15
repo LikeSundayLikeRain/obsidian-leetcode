@@ -1,26 +1,32 @@
 // tests/preview/router.test.ts
-// Phase 06 Plan 02 — RED until LeetCodePlugin.routeProblemClick is wired.
-// Target: PREVIEW-02 routing seam — the 8-cell decision matrix for
-// (intent ∈ {preview, open}) × (opts.force ∈ {undefined, true}) ×
-// (setting ∈ {preview, open}).
+// Phase 06 Plan 03 — REVISED from Plan 06-02. The 8-cell decision matrix is
+// unchanged (intent × opts.force × setting), but the preview-path branch now
+// resolves to `openOrReusePreview(plugin, slug)` instead of the placeholder
+// Notice that Plan 06-02 shipped. Tests assert on the openOrReusePreview
+// spy where they previously asserted on noticeCalls; the matrix shape stays
+// identical.
 //
 // Decision flow per 06-PLAN <interfaces> + 06-RESEARCH §Example 2:
 //   1. intent === 'open'                    → openProblem(slug, status)
-//   2. intent === 'preview' && opts.force   → preview path (Notice placeholder)
+//   2. intent === 'preview' && opts.force   → openOrReusePreview(plugin, slug)
 //   3. intent === 'preview' && setting==='open' → openProblem(slug, status)
-//   4. intent === 'preview'                 → preview path (Notice placeholder)
-//
-// Plan 06-02 ships the placeholder Notice for the preview path. Plan 06-03
-// will swap the Notice for `openOrReusePreview(this, slug)`.
+//   4. intent === 'preview'                 → openOrReusePreview(plugin, slug)
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Capture every Notice constructor call across the suite. The mocked
-// `Notice` class is wired below to push `(message, timeout)` tuples into
-// this array; tests reset it in beforeEach. This is the obsidianmd-test
-// idiom — vi.mock at module scope, mutate a shared capture array per test.
-const noticeCalls: Array<[string, number | undefined]> = [];
+// Capture every openOrReusePreview call. vi.mock the preview-router module
+// so the spy intercepts the call regardless of how main.ts imported it
+// (static import binding is replaced at the module-graph level).
+const previewCalls: Array<[unknown, string]> = [];
+vi.mock('../../src/preview/previewRouter', () => ({
+  openOrReusePreview: vi.fn(async (plugin: unknown, slug: string) => {
+    previewCalls.push([plugin, slug]);
+  }),
+}));
 
+// Capture Notice constructor calls — kept around so any leftover Notice
+// surface (e.g. an error path) is still visible to assertions.
+const noticeCalls: Array<[string, number | undefined]> = [];
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
   class Notice {
@@ -81,6 +87,7 @@ async function makeRouterPlugin(opts: {
 describe('LeetCodePlugin.routeProblemClick — decision matrix (Phase 06 PREVIEW-02)', () => {
   beforeEach(() => {
     noticeCalls.length = 0;
+    previewCalls.length = 0;
   });
 
   // ─── intent === 'open' branch (always opens, regardless of setting) ───
@@ -109,15 +116,13 @@ describe('LeetCodePlugin.routeProblemClick — decision matrix (Phase 06 PREVIEW
 
   // ─── intent === 'preview', no force ───
 
-  it("intent='preview' + setting='preview' → preview path (Notice placeholder)", async () => {
+  it("intent='preview' + setting='preview' → openOrReusePreview fires", async () => {
     const { plugin, openProblemSpy } = await makeRouterPlugin({ setting: 'preview' });
     await plugin.routeProblemClick('two-sum', 'untouched', 'preview');
     expect(openProblemSpy).not.toHaveBeenCalled();
-    expect(noticeCalls).toHaveLength(1);
-    // Plan 06-02 ships the placeholder; Plan 06-03 swaps it.
-    // Plan 06-02 ships sentence-case copy ("plan 06-03"); the substring
-    // "06-03" is the swap-site marker that survives any future copy edits.
-    expect(noticeCalls[0]?.[0]).toMatch(/06-03/);
+    expect(noticeCalls).toHaveLength(0);
+    expect(previewCalls).toHaveLength(1);
+    expect(previewCalls[0]?.[1]).toBe('two-sum');
   });
 
   it("intent='preview' + setting='open' → openProblem fires (user opted into v1.0 behavior)", async () => {
@@ -129,22 +134,26 @@ describe('LeetCodePlugin.routeProblemClick — decision matrix (Phase 06 PREVIEW
 
   // ─── intent === 'preview' WITH opts.force=true (right-click escape; Plan 06-04) ───
 
-  it("intent='preview' + opts.force=true + setting='preview' → preview path (Notice)", async () => {
+  it("intent='preview' + opts.force=true + setting='preview' → openOrReusePreview fires", async () => {
     const { plugin, openProblemSpy } = await makeRouterPlugin({ setting: 'preview' });
     await plugin.routeProblemClick('two-sum', 'untouched', 'preview', { force: true });
     expect(openProblemSpy).not.toHaveBeenCalled();
-    expect(noticeCalls).toHaveLength(1);
+    expect(noticeCalls).toHaveLength(0);
+    expect(previewCalls).toHaveLength(1);
+    expect(previewCalls[0]?.[1]).toBe('two-sum');
   });
 
-  it("intent='preview' + opts.force=true + setting='open' → preview path STILL fires (force overrides setting)", async () => {
+  it("intent='preview' + opts.force=true + setting='open' → openOrReusePreview STILL fires (force overrides setting)", async () => {
     // Right-click → Preview must work even when the user has set
     // click-behavior to 'open'. (CONTEXT.md decision A: right-click intent
-    // is explicit, not the default click affordance.) Plan 06-04 wires
-    // right-click to call routeProblemClick(..., 'preview', { force: true }).
+    // is explicit, not the default click affordance.) Plan 06-03 / 06-04
+    // wire right-click to call routeProblemClick(..., 'preview', { force: true }).
     const { plugin, openProblemSpy } = await makeRouterPlugin({ setting: 'open' });
     await plugin.routeProblemClick('two-sum', 'attempted', 'preview', { force: true });
     expect(openProblemSpy).not.toHaveBeenCalled();
-    expect(noticeCalls).toHaveLength(1);
+    expect(noticeCalls).toHaveLength(0);
+    expect(previewCalls).toHaveLength(1);
+    expect(previewCalls[0]?.[1]).toBe('two-sum');
   });
 
   // ─── opts.force=false treated same as undefined ───
