@@ -31,6 +31,7 @@ import {
   ItemView,
   MarkdownRenderer,
   Notice,
+  Scope,
   type ViewStateResult,
   type WorkspaceLeaf,
 } from 'obsidian';
@@ -188,6 +189,12 @@ export class ProblemPreviewView extends ItemView {
    *  view in between (avoids late-resolving fetches painting stale DOM). */
   private renderToken = 0;
   private rootEl: HTMLElement | null = null;
+  /** The currently-rendered action button (Start Problem / Open Problem),
+   *  or null when the view is in a non-rendered state (loading, error,
+   *  empty, post-close). The Enter-key Scope handler reads this field so
+   *  it always targets the live button — see `onOpen` for the registration.
+   *  Closes 06-UAT gap #3 (keyboard activation). */
+  private activeAction: HTMLButtonElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, private readonly plugin: LeetCodePlugin) {
     super(leaf);
@@ -218,6 +225,27 @@ export class ProblemPreviewView extends ItemView {
     root.empty();
     root.addClass('leetcode-preview');
     this.rootEl = root;
+
+    // Enter activates the visible action button. `this.activeAction?.click()`
+    // reuses the existing click handler — same disable/label/openProblem/
+    // detach pipeline as a real mouse click. Null-check guards loading,
+    // error, and empty states. Returning false stops propagation to the
+    // workspace's default Enter handler. Obsidian releases the scope
+    // registration automatically when the view closes (Component.onunload).
+    // Closes 06-UAT gap #3 (keyboard activation).
+    //
+    // View.scope defaults to null per obsidian.d.ts §View; the canonical
+    // pattern (per the docstring example) is to allocate a new Scope
+    // chained off the app scope. Tests that pre-attach a stub Scope keep
+    // their handler array intact because we only allocate when null.
+    if (this.scope == null) {
+      this.scope = new Scope(this.app.scope);
+    }
+    this.scope.register([], 'Enter', () => {
+      this.activeAction?.click();
+      return false;
+    });
+
     if (this.slug != null) {
       await this.renderForSlug(this.slug);
     } else {
@@ -237,6 +265,10 @@ export class ProblemPreviewView extends ItemView {
     }
     this.renderToken += 1;
     this.rootEl = null;
+    // Defensive — Obsidian also releases the scope registration via
+    // Component.onunload, but clearing activeAction makes the Enter handler
+    // a no-op even if a stray invocation slips through.
+    this.activeAction = null;
   }
 
   async setState(state: unknown, _result: ViewStateResult): Promise<void> {
@@ -345,6 +377,8 @@ export class ProblemPreviewView extends ItemView {
    */
   private renderLoading(root: HTMLElement, slug: string): void {
     root.empty();
+    // No action button rendered → Enter is a no-op while loading.
+    this.activeAction = null;
     const cached = this.plugin.settings.getProblemDetail(slug);
     const display = cached
       ? `${String(cached.id)}. ${cached.title}`
@@ -363,6 +397,10 @@ export class ProblemPreviewView extends ItemView {
    */
   private renderError(root: HTMLElement, slug: string): void {
     root.empty();
+    // No header action button rendered in the error state → Enter is a
+    // no-op (the [Retry] button is the only button on screen and is wired
+    // via its own click handler, not via Enter-on-view).
+    this.activeAction = null;
     const cached = this.plugin.settings.getProblemDetail(slug);
     const display = cached
       ? `${String(cached.id)}. ${cached.title}`
@@ -386,6 +424,7 @@ export class ProblemPreviewView extends ItemView {
   /** Helper for the no-state-yet placeholder (rare). */
   private renderEmpty(root: HTMLElement, heading: string): void {
     root.empty();
+    this.activeAction = null;
     const wrap = root.createDiv({ cls: 'lc-empty' });
     wrap.createEl('h3', { text: heading });
   }
@@ -412,6 +451,11 @@ export class ProblemPreviewView extends ItemView {
     // independently. Returns the action button so we can wire its click.
     const headerEl = root.createDiv();
     const actionBtn = renderHeader(headerEl, detail, noteExists);
+    // Track the live button so the Enter-key Scope handler always targets
+    // the rendered surface (gap-closure 06-05). Cleared in
+    // renderLoading/renderError/renderEmpty/onClose so Enter is a no-op
+    // outside the rendered state.
+    this.activeAction = actionBtn;
 
     // Body — MarkdownRenderer.render(this.app, md, body, '', this).
     // RESEARCH §Pattern 3 — `this` is the ItemView, satisfying

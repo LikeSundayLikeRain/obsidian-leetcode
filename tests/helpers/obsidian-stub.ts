@@ -91,7 +91,50 @@ export class Setting {}
 export class WorkspaceLeaf {}
 export class App {}
 export class MarkdownView {}
-export class ItemView {}
+
+// Phase 06 Plan 05 (gap closure) — Scope stub for the preview's Enter-key
+// registration. The real Obsidian `Scope` exposes `register(modifiers, key,
+// callback)` that returns a handler reference; tests can introspect the
+// captured `handlers` array (and pull the Enter callback by `key`) to drive
+// the keyboard-activation paths without standing up a real Workspace.
+// Additive only — existing tests that never touch `scope` remain unaffected.
+export interface ScopeHandler {
+  mods: string[];
+  key: string;
+  cb: (evt?: KeyboardEvent) => unknown;
+}
+export class Scope {
+  handlers: ScopeHandler[] = [];
+  // The real Scope constructor accepts an optional parent scope; tests
+  // never inspect it, so we accept-and-ignore for shape compatibility.
+  constructor(_parent?: Scope) {
+    /* no-op stub */
+  }
+  register(
+    mods: string[],
+    key: string,
+    cb: (evt?: KeyboardEvent) => unknown,
+  ): ScopeHandler {
+    const handler: ScopeHandler = { mods, key, cb };
+    this.handlers.push(handler);
+    return handler;
+  }
+  unregister(_handler: unknown): void {
+    /* no-op stub; tests reset handlers directly when needed */
+  }
+}
+
+// Phase 06 Plan 05 — ItemView gains a `scope` field so production code can
+// call `this.scope.register(...)` from the test path. The real Obsidian
+// ItemView inherits scope from View → Component; mirroring it here keeps
+// `this.scope` defined even when the view is constructed via
+// `Object.create(prototype)` (the start-button + enter-key test patterns).
+// Existing tests that never touch scope remain unaffected because they
+// also never construct an ItemView via `new`.
+export class ItemView {
+  scope: Scope = new Scope();
+}
+
 export class FileManager {}
 export class Vault {}
 
