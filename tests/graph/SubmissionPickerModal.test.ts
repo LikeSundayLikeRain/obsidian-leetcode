@@ -44,7 +44,7 @@ describe('SubmissionPickerModal (D-03, D-05, D-06)', () => {
       captured.push({ arg, timeout });
       return { hide: vi.fn() };
     });
-    (globalThis as { Notice?: unknown }).Notice = NoticeSpy;
+    (window as { Notice?: unknown }).Notice = NoticeSpy;
 
     const fetchHistory = vi.fn(async () => {
       throw new SessionExpiredError();

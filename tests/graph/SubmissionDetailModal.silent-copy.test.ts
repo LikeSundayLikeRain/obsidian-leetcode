@@ -185,7 +185,7 @@ describe('G-PICKER-MODAL-NOCLOSE-ON-COPY: onSuccess callback', () => {
     (copyBtn as HTMLButtonElement).click();
     await Promise.resolve();
     await Promise.resolve();
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => window.setTimeout(r, 0));
 
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
