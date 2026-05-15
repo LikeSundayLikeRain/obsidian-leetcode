@@ -1230,9 +1230,13 @@
  * parallel cluster to the v1.0 .leetcode-browser .lc-diff--* rules at
  * styles.css:184-186 — Phase 06 MUST NOT modify those v1.0 rules.
  * ───────────────────────────────────────────────────────────────────────── */
+/* Gap-closure 06-05: chrome font-size lifted off the root selector and onto
+   the header only, so the rendered body (`.leetcode-preview__body
+   markdown-rendered`) inherits Obsidian's reading-mode font cascade instead
+   of the chrome's `--font-ui-small` shrink. Closes 06-UAT gap #1 (body
+   parity). */
 .leetcode-preview {
   padding: 0;
-  font-size: var(--font-ui-small);
 }
 
 .leetcode-preview__header {
@@ -1245,6 +1249,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  font-size: var(--font-ui-small);
 }
 
 .leetcode-preview__title {
@@ -1288,17 +1293,11 @@
   background: color-mix(in srgb, var(--color-red) 15%, transparent);
 }
 
-.leetcode-preview__topic {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 10px;
-  background: var(--background-secondary);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
+/* Gap-closure 06-05: `.leetcode-preview__topic` rule deleted. Topic chips
+   were dropped from `renderHeader` per user override of CONTEXT.md decision
+   C — the sticky header collapses to a single horizontal strip (title +
+   difficulty pill + action button). Topic-chip surfacing remains a deferred
+   backlog candidate. */
 
 .leetcode-preview__action {
   margin-left: auto;

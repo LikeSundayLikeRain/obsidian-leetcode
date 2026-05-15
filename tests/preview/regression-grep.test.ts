@@ -14,10 +14,12 @@
 // loud rather than silently corrupting user notes.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const PREVIEW_SRC_DIR = resolve(__dirname, '../../src/preview');
+const SRC_DIR = resolve(__dirname, '../../src');
+const STYLES_CSS = resolve(__dirname, '../../styles.css');
 
 function readAllPreviewSources(): Array<{ name: string; src: string }> {
   return readdirSync(PREVIEW_SRC_DIR)
@@ -26,6 +28,28 @@ function readAllPreviewSources(): Array<{ name: string; src: string }> {
       name: f,
       src: readFileSync(resolve(PREVIEW_SRC_DIR, f), 'utf8'),
     }));
+}
+
+/** Recursively collect every `.ts` file under `src/`. Used by GATE 8 to
+ *  prove no production source mentions `.lc-preview__topic`. */
+function readAllTsFilesUnderSrc(): Array<{ path: string; src: string }> {
+  const out: Array<{ path: string; src: string }> = [];
+  const stack: string[] = [SRC_DIR];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    for (const entry of readdirSync(dir)) {
+      const full = resolve(dir, entry);
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (entry.endsWith('.ts')) {
+        out.push({ path: full, src: readFileSync(full, 'utf8') });
+      }
+    }
+  }
+  return out;
 }
 
 describe('Phase 06 Plan 03 preview regression-grep gates (UI-SPEC §Acceptance)', () => {
@@ -100,5 +124,21 @@ describe('Phase 06 Plan 03 preview regression-grep gates (UI-SPEC §Acceptance)'
       /getLeavesOfType\(\s*PREVIEW_VIEW_TYPE\s*\)|getLeavesOfType\(\s*['"]leetcode-preview['"]\s*\)/.test(f.src),
     );
     expect(found, 'no preview file calls getLeavesOfType — tab-reuse primitive missing').toBe(true);
+  });
+
+  it('GATE 8: NO source file under src/ references `lc-preview__topic` (gap-closure 06-05)', () => {
+    // Topic chips were dropped from the sticky header per user override of
+    // CONTEXT.md decision C. Lock the deletion at the source-tree level so
+    // any future regression that re-adds the topic-chip class (in a .ts
+    // file or in styles.css) fails CI before it ships.
+    const tsFiles = readAllTsFilesUnderSrc();
+    expect(tsFiles.length).toBeGreaterThan(0);
+    for (const { path, src } of tsFiles) {
+      expect(src, `${path} references the deleted lc-preview__topic class`)
+        .not.toMatch(/lc-preview__topic/);
+    }
+    const css = readFileSync(STYLES_CSS, 'utf8');
+    expect(css, 'styles.css references the deleted lc-preview__topic class')
+      .not.toMatch(/lc-preview__topic/);
   });
 });

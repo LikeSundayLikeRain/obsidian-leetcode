@@ -146,4 +146,32 @@ describe('Preview action button click — Start Problem branch (Phase 06 Plan 03
   it('PREVIEW_VIEW_TYPE constant is "leetcode-preview" (sanity for the start-button file)', () => {
     expect(PREVIEW_VIEW_TYPE).toBe('leetcode-preview');
   });
+
+  it('body container carries `markdown-rendered` class for reading-mode parity (gap-closure 06-05)', async () => {
+    // Mounts the view via the same containerEl/setState pattern as the
+    // click-flow test above. The body's class list must include
+    // `markdown-rendered` so Obsidian's reading-mode CSS cascade
+    // (code-block backgrounds, copy buttons, prose typography) applies —
+    // closes 06-UAT gap #1 (body parity).
+    const fakeLeaf: FakeLeaf = { detach: vi.fn() };
+    const containerEl = document.createElement('div');
+    containerEl.appendChild(document.createElement('div'));
+    const root = document.createElement('div');
+    containerEl.appendChild(root);
+
+    const detail = makeDetail();
+    const stub = makePluginStub({ detail, noteFile: null });
+
+    const view = Object.create(ProblemPreviewView.prototype) as ProblemPreviewView;
+    (view as unknown as { containerEl: HTMLElement }).containerEl = containerEl;
+    (view as unknown as { leaf: FakeLeaf }).leaf = fakeLeaf;
+    (view as unknown as { app: typeof stub.plugin.app }).app = stub.plugin.app;
+    (view as unknown as { plugin: typeof stub.plugin }).plugin = stub.plugin;
+
+    await view.setState({ slug: 'two-sum' }, { history: false } as Parameters<ProblemPreviewView['setState']>[1]);
+
+    const body = root.querySelector('.leetcode-preview__body');
+    expect(body).not.toBeNull();
+    expect(body?.classList.contains('markdown-rendered')).toBe(true);
+  });
 });
