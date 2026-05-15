@@ -84,6 +84,15 @@ export interface PluginData {
    *  (T-05-02-01 mitigation). UI layer trims trailing slashes before set;
    *  setter accepts raw. */
   techniquesFolderOverride: string;
+  /** Phase 06 PREVIEW-02 — click-default behavior for ProblemBrowserView rows.
+   *  'preview' = single-click previews (default for fresh installs and v1.1
+   *  upgraders alike — CONTEXT.md decision A; no upgrader-detection branch);
+   *  'open' = single-click creates/opens the note (v1.0 behavior). Shift-click
+   *  always opens regardless of this setting (CONTEXT.md decision A).
+   *  Shape-guard (RESEARCH §Pitfall 7) collapses anything that isn't literally
+   *  the string 'open' to 'preview' — fresh install, missing field, wrong
+   *  type, typo all fall through to the safe default. */
+  previewClickBehavior: 'preview' | 'open';
 }
 
 /** Compound filter matching LC's "Match All/Any of the following" UI. Each
@@ -118,6 +127,8 @@ const DEFAULT_DATA: PluginData = {
   legacyBaseNoticeShown: false,
   autoBacklinksEnabled: true,  // D-21 default ON
   techniquesFolderOverride: '',  // D-15 '' = use derived default
+  // CONTEXT.md decision A — single default for fresh installs and v1.1 upgraders.
+  previewClickBehavior: 'preview',
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -323,6 +334,12 @@ export class SettingsStore {
       techniquesFolderOverride: typeof raw.techniquesFolderOverride === 'string'
         ? raw.techniquesFolderOverride
         : DEFAULT_DATA.techniquesFolderOverride,
+      // Phase 06 PREVIEW-02 — locked schema (RESEARCH §Pitfall 7). Anything
+      // that isn't literally the string 'open' falls through to 'preview':
+      // fresh install (missing field), wrong type (number / object / null),
+      // case-mismatch typos ('OPEN'), unknown future enum values — all
+      // collapse to the safe single-default per CONTEXT.md decision A.
+      previewClickBehavior: raw.previewClickBehavior === 'open' ? 'open' : 'preview',
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -399,6 +416,21 @@ export class SettingsStore {
    *  Phase 4; the Settings UI control lands in Phase 5 POLISH-01. */
   async setAutoBacklinksEnabled(v: boolean): Promise<void> {
     this.data.autoBacklinksEnabled = v;
+    await this.persist();
+  }
+
+  /** Phase 06 PREVIEW-02 — read the row-click default behavior. CONTEXT.md
+   *  decision A: 'preview' = single-click previews (default); 'open' =
+   *  v1.0 click-to-open behavior. Shift-click always opens regardless of
+   *  this setting (override lives in routeProblemClick on LeetCodePlugin). */
+  getPreviewClickBehavior(): 'preview' | 'open' {
+    return this.data.previewClickBehavior;
+  }
+
+  /** Phase 06 PREVIEW-02 — persist the row-click default. Bound to the new
+   *  Settings tab `Preview › Click behavior` dropdown (06-UI-SPEC). */
+  async setPreviewClickBehavior(v: 'preview' | 'open'): Promise<void> {
+    this.data.previewClickBehavior = v;
     await this.persist();
   }
 
