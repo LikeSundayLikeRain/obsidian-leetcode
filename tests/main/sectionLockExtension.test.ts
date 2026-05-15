@@ -770,9 +770,10 @@ describe('computeSnapTarget — snap-direction decision tree', () => {
   it('stay-put: prevHead past lockTo, backTarget falls in another cluster → return prevHead', () => {
     // 3-cluster scenario where backTarget = 49 IS inside cluster [40, 60).
     // The middle cluster has no editable space behind it.
-    const _triple: ReadonlyArray<readonly [number, number]> = [
-      [10, 30], [40, 60], [70, 90],
-    ];
+    // (Phase 06 FOUND-01: dropped the original `_triple` draft fixture
+    // — the test was rewritten below to use `adjacent` instead, and
+    // 0.3.0's `@typescript-eslint/no-unused-vars` flags `_`-prefixed
+    // local consts.)
     // prevHead = 95 (past third cluster), motion lands in third cluster.
     // backTarget = 69. Inside [70, 90)? No, 69 < 70. So this snap is
     // valid. Test the inner stay-put scenario instead:

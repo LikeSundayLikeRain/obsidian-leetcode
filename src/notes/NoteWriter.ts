@@ -345,7 +345,7 @@ export class NoteWriter {
     // Metadata-cache-race guard (RESEARCH.md Open Q2): yield a tick so Obsidian
     // indexes the newly-created file before processFrontMatter reads it, then
     // retry once after 50ms if the first call throws (slower Obsidian startup).
-    await new Promise<void>((resolve) => activeWindow.setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     try {
       await applyFrontmatter(
         this.app,
@@ -358,7 +358,7 @@ export class NoteWriter {
       );
     } catch (err) {
       logger.debug('notes.openProblem: applyFrontmatter first attempt threw — retrying after 50ms', err);
-      await new Promise<void>((resolve) => activeWindow.setTimeout(resolve, 50));
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
       await applyFrontmatter(
         this.app,
         file,

@@ -7,7 +7,7 @@
 // createSpan, createEl) on the document and HTMLElement prototype so source
 // modules can call them without runtime-pathway divergence between
 // production and tests.
-const g = globalThis as unknown as {
+const g = window as unknown as {
   document?: Document;
   window?: Window;
   activeDocument?: Document;

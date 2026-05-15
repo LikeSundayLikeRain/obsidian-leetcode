@@ -503,7 +503,7 @@ export class ProblemBrowserView extends ItemView {
         if (this.throttleFooterTimer === null && !this.throttleFooterEl) {
           this.throttleFooterTimer = setWindowTimeout(() => {
             this.throttleFooterEl = root.createDiv({ cls: 'lc-footer' });
-            this.throttleFooterEl.setText('⋯ Fetching from LeetCode…');
+            this.throttleFooterEl.setText('⋯ fetching from LeetCode…');
             this.throttleFooterTimer = null;
           }, THROTTLE_FOOTER_DELAY_MS);
         }

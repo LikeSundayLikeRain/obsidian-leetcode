@@ -32,7 +32,7 @@ describe('pollingOrchestrator.pollSubmission (D-23, D-26, Pattern 2)', () => {
       { status: 200, json: { state: 'STARTED' } },
       { status: 200, json: acceptedFixture },
     ]);
-    const reg = vi.fn((fn: () => void, _ms: number) => setTimeout(fn, _ms));
+    const reg = vi.fn((fn: () => void, _ms: number) => window.setTimeout(fn, _ms));
     const promise = pollSubmission({
       fetcher: ff.fetcher,
       submissionId: '42',
@@ -57,7 +57,7 @@ describe('pollingOrchestrator.pollSubmission (D-23, D-26, Pattern 2)', () => {
       { status: 200, json: { state: 'STARTED' } },
       { status: 200, json: acceptedFixture },
     ]);
-    const reg = vi.fn((fn: () => void, ms: number) => setTimeout(fn, ms));
+    const reg = vi.fn((fn: () => void, ms: number) => window.setTimeout(fn, ms));
     const promise = pollSubmission({
       fetcher: ff.fetcher,
       submissionId: '42',
@@ -79,7 +79,7 @@ describe('pollingOrchestrator.pollSubmission (D-23, D-26, Pattern 2)', () => {
       fetcher: ff.fetcher,
       submissionId: '42',
       slug: 'two-sum',
-      registerInterval: (fn, ms) => setTimeout(fn, ms),
+      registerInterval: (fn, ms) => window.setTimeout(fn, ms),
       abortSignal: { aborted: false },
     });
     await vi.advanceTimersByTimeAsync(65000);
@@ -97,7 +97,7 @@ describe('pollingOrchestrator.pollSubmission (D-23, D-26, Pattern 2)', () => {
       fetcher: ff.fetcher,
       submissionId: '42',
       slug: 'two-sum',
-      registerInterval: (fn, ms) => setTimeout(fn, ms),
+      registerInterval: (fn, ms) => window.setTimeout(fn, ms),
       abortSignal: { aborted: false },
     });
     await vi.advanceTimersByTimeAsync(30000);
@@ -115,7 +115,7 @@ describe('pollingOrchestrator.pollSubmission (D-23, D-26, Pattern 2)', () => {
       fetcher: ff.fetcher,
       submissionId: '42',
       slug: 'two-sum',
-      registerInterval: (fn, ms) => setTimeout(fn, ms),
+      registerInterval: (fn, ms) => window.setTimeout(fn, ms),
       abortSignal: signal,
     });
     // Advance through the first poll, then flip abort BEFORE the second.
@@ -131,7 +131,7 @@ describe('pollingOrchestrator.pollSubmission (D-23, D-26, Pattern 2)', () => {
       { status: 200, json: { state: 'STARTED' } },
       { status: 200, json: acceptedFixture },
     ]);
-    const reg = vi.fn((fn: () => void, ms: number) => setTimeout(fn, ms));
+    const reg = vi.fn((fn: () => void, ms: number) => window.setTimeout(fn, ms));
     const promise = pollSubmission({
       fetcher: ff.fetcher,
       submissionId: '42',

@@ -11,9 +11,9 @@
 export type TimerHandle = ReturnType<typeof setTimeout>;
 
 export function setWindowTimeout(fn: () => void, ms: number): TimerHandle {
-  return activeWindow.setTimeout(fn, ms) as unknown as TimerHandle;
+  return window.setTimeout(fn, ms) as unknown as TimerHandle;
 }
 
 export function clearWindowTimeout(handle: TimerHandle): void {
-  activeWindow.clearTimeout(handle as unknown as number);
+  window.clearTimeout(handle as unknown as number);
 }

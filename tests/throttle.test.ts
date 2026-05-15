@@ -53,7 +53,7 @@ describe('Throttle (BROWSE-05)', () => {
         await t.acquire();
         inFlight++;
         peak = Math.max(peak, inFlight);
-        await new Promise<void>((r) => setTimeout(r, 5));
+        await new Promise<void>((r) => window.setTimeout(r, 5));
         inFlight--;
         t.release();
       })
@@ -83,7 +83,7 @@ describe('Throttle.release — over-release guard (CR-04)', () => {
         await t.acquire();
         inFlight++;
         peak = Math.max(peak, inFlight);
-        await new Promise<void>((r) => setTimeout(r, 5));
+        await new Promise<void>((r) => window.setTimeout(r, 5));
         inFlight--;
         t.release();
       }),

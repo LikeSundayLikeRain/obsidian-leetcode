@@ -45,7 +45,7 @@ describe('NoteWriter re-open offline (D-12 silent policy)', () => {
     // Reveal happens.
     expect(m.spies.openLinkText).toHaveBeenCalled();
     // Give background-refresh promise a tick to settle.
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => window.setTimeout(r, 10));
     // D-12: NO Notice on offline background-refresh failure.
     const offlineNotices = noticeSpy.mock.calls.filter(([msg]) => /couldn.t fetch|offline|network/i.test(String(msg)));
     expect(offlineNotices).toHaveLength(0);

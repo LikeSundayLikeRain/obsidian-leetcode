@@ -5,12 +5,17 @@ import { globalIgnores } from "eslint/config";
 
 export default tseslint.config(
   {
+    // Type-checked rules need parserOptions only on TS/TSX files. Scoping
+    // here (instead of the root) prevents the obsidianmd recommended config
+    // from trying to apply typed rules (e.g., `no-plugin-as-component`) to
+    // `package.json` — which the plugin handles in its own JSON block via
+    // `language: 'json/json'` and `tseslint.configs.disableTypeChecked`.
+    files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
     languageOptions: {
       globals: { ...globals.browser },
       parserOptions: {
-        projectService: { allowDefaultProject: ['eslint.config.js', 'eslint.config.mts', 'vitest.config.ts', 'manifest.json'] },
+        projectService: { allowDefaultProject: ['vitest.config.ts'] },
         tsconfigRootDir: import.meta.dirname,
-        extraFileExtensions: ['.json'],
       },
     },
   },
@@ -59,6 +64,18 @@ export default tseslint.config(
   },
   globalIgnores([
     "node_modules", "dist", "esbuild.config.mjs", "eslint.config.js",
+    "eslint.config.mts",
     "version-bump.mjs", "versions.json", "main.js",
+    "scripts/**",
+    // Phase 06 FOUND-01 — eslint-plugin-obsidianmd@^0.3.0 hybrid config
+    // applies typed rules (e.g., `no-plugin-as-component`) to ALL files
+    // because the outer hybrid config block has no `files:` filter, while
+    // its embedded JSON-parser block targets only `package.json` via
+    // `language: 'json/json'`. Routing `package.json` through the TS
+    // parser then dies inside the typed rule's getParserServices call.
+    // We rely on the project's own `validate-manifest.json` test
+    // (`tests/manifest-version.test.ts`) and `prerelease-check.sh`
+    // gate 6 for the manifest contract, so ignoring JSON for lint is safe.
+    "package.json", "manifest.json", "package-lock.json", "tsconfig.json",
   ]),
 );

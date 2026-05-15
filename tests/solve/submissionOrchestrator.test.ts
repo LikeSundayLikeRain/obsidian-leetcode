@@ -115,7 +115,7 @@ describe('submissionOrchestrator (D-24, D-04, D-27, SOLVE-09)', () => {
     currentBody = '## Code\n\n```python3\nnew\n```\n';
     void orch.submit();
     // Allow the submit call to land.
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => window.setTimeout(r, 0));
     const submitCall = ff.spy.mock.calls.find(([p]) =>
       typeof p.url === 'string' && p.url.endsWith('/submit/')
     );
