@@ -5,6 +5,7 @@
 import type { Plugin } from 'obsidian';
 import type { AuthCookies } from '../auth/types';
 import type { IndexedProblem, ProblemIndex } from '../browse/types';
+import type { AIProvider, ProviderConfig, AICostLedger } from '../ai/types';
 import { logger } from '../shared/logger';
 
 export type { AuthCookies } from '../auth/types';
@@ -84,6 +85,23 @@ export interface PluginData {
    *  (T-05-02-01 mitigation). UI layer trims trailing slashes before set;
    *  setter accepts raw. */
   techniquesFolderOverride: string;
+  /** Phase 07 AIPROV-01 — currently-active AI provider, null when no
+   *  provider is selected. Switching this value preserves all prior
+   *  providers' apiKey/baseUrl/model/disclosureAcknowledged via the
+   *  per-provider `providerConfigs` map below (T-07-01 invariant). */
+  activeAIProvider: AIProvider | null;
+  /** Phase 07 AIPROV-01 — per-provider credential + endpoint config, keyed by
+   *  AIProvider. All 5 entries always present after `SettingsStore.load`
+   *  (fresh installs and corrupt-data recovery alike). Each entry has the
+   *  Vercel-AI-SDK-shape required fields apiKey/baseUrl/model and the
+   *  disclosure boolean (D-A). Shape-guard `sanitizeProviderConfig` at load
+   *  collapses every malformed field to its per-provider default. */
+  providerConfigs: Record<AIProvider, ProviderConfig>;
+  /** Phase 07 AIPROV-06 + decision F — daily AI spend tally. Day-rollover
+   *  happens on read inside `addCostLedger` (when local-day differs from
+   *  `date`, ledger resets BEFORE adding). No cap enforcement, no UI in
+   *  Phase 07. */
+  aiCostLedger: AICostLedger;
   /** Phase 06 PREVIEW-02 — click-default behavior for ProblemBrowserView rows.
    *  'preview' = single-click previews (default for fresh installs and v1.1
    *  upgraders alike — CONTEXT.md decision A; no upgrader-detection branch);
@@ -114,6 +132,44 @@ export type FilterRule =
   // and 'non-premium'; values=[] is a no-op in the evaluator.
   | { field: 'premium'; op: 'is'; values: string[] };
 
+/** Phase 07 Plan 01 — per-provider defaults locked by CONTEXT decision C
+ *  (D-C). Used by both DEFAULT_DATA and the `sanitizeProviderConfig`
+ *  fallback path inside `load`. Iteration order matches the AIProvider
+ *  union in src/ai/types.ts. */
+const DEFAULT_PROVIDER_CONFIGS: Record<AIProvider, ProviderConfig> = {
+  anthropic: {
+    apiKey: '',
+    baseUrl: 'https://api.anthropic.com/v1',
+    model: 'claude-haiku-4-5',
+    disclosureAcknowledged: false,
+  },
+  openai: {
+    apiKey: '',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-5-mini',
+    disclosureAcknowledged: false,
+  },
+  openrouter: {
+    apiKey: '',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    // DOT, not dash — OpenRouter slug for Anthropic Haiku 4.5 (D-C).
+    model: 'anthropic/claude-haiku-4.5',
+    disclosureAcknowledged: false,
+  },
+  ollama: {
+    apiKey: '',
+    baseUrl: 'http://localhost:11434/v1',
+    model: 'llama3.2',
+    disclosureAcknowledged: false,
+  },
+  custom: {
+    apiKey: '',
+    baseUrl: '',
+    model: '',
+    disclosureAcknowledged: false,
+  },
+};
+
 const DEFAULT_DATA: PluginData = {
   version: 1,
   auth: null,
@@ -129,6 +185,12 @@ const DEFAULT_DATA: PluginData = {
   techniquesFolderOverride: '',  // D-15 '' = use derived default
   // CONTEXT.md decision A — single default for fresh installs and v1.1 upgraders.
   previewClickBehavior: 'preview',
+  // Phase 07 Plan 01 — AI defaults. activeAIProvider is null until the user
+  // picks one in the Settings tab; providerConfigs holds all 5 defaults so
+  // switching providers never loses prior keys (T-07-01 invariant).
+  activeAIProvider: null,
+  providerConfigs: DEFAULT_PROVIDER_CONFIGS,
+  aiCostLedger: { date: new Date().toISOString().slice(0, 10), usdToday: 0 },
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -292,6 +354,73 @@ function sanitizeProblemDetails(raw: unknown): Record<string, DetailCacheEntry> 
   return out;
 }
 
+// --- Phase 07 AI shape-guards ---------------------------------------------
+// T-07-01 mitigation: every new field has a one-direction guard with safe
+// per-provider default fallback. Mirror the strict posture of
+// previewClickBehavior at load: anything that isn't literally the known
+// shape collapses to a default (no exceptions thrown).
+
+const VALID_AI_PROVIDERS: ReadonlySet<AIProvider> = new Set<AIProvider>([
+  'anthropic',
+  'openai',
+  'openrouter',
+  'ollama',
+  'custom',
+]);
+
+/** Strict membership test for the AIProvider union. Anything outside the
+ *  locked 5-entry set (typos, legacy values, non-strings) returns false so
+ *  the load path collapses `activeAIProvider` to null. */
+function isValidProviderId(v: unknown): v is AIProvider {
+  return typeof v === 'string' && VALID_AI_PROVIDERS.has(v as AIProvider);
+}
+
+/** Per-field shape-guard for ProviderConfig. `defaults` is the per-provider
+ *  default config so each malformed field falls back to the right baseline
+ *  (e.g. http://localhost for ollama, https://api.anthropic.com/v1 for
+ *  anthropic). All-or-nothing: if `raw` is null or non-object, returns
+ *  `defaults` whole. */
+function sanitizeProviderConfig(
+  raw: unknown,
+  defaults: ProviderConfig,
+): ProviderConfig {
+  if (!raw || typeof raw !== 'object') return { ...defaults };
+  const r = raw as Partial<Record<keyof ProviderConfig, unknown>>;
+  // baseUrl: must match http(s):// — admits Ollama's http://localhost path
+  // alongside https:// for cloud providers. Anything else (ftp://, mailto:,
+  // empty string) falls through to the per-provider default.
+  const baseUrl =
+    typeof r.baseUrl === 'string' && /^https?:\/\//.test(r.baseUrl)
+      ? r.baseUrl
+      : defaults.baseUrl;
+  return {
+    apiKey: typeof r.apiKey === 'string' ? r.apiKey : '',
+    baseUrl,
+    model: typeof r.model === 'string' && r.model.length > 0 ? r.model : defaults.model,
+    // Strict-true only (mirrors `legacyBaseNoticeShown` at load): the boolean
+    // must be literally `true`; 'yes', 1, truthy strings, etc. all collapse
+    // to false so a corrupt data.json cannot silently flip a user past the
+    // disclosure gate (T-07-05).
+    disclosureAcknowledged: r.disclosureAcknowledged === true,
+  };
+}
+
+/** Shape-guard for AICostLedger. Date must be YYYY-MM-DD; usdToday must be
+ *  a finite, non-negative number. Any malformed input collapses to today's
+ *  local-day with usdToday=0 (D-F). */
+function sanitizeAICostLedger(raw: unknown): AICostLedger {
+  const today = new Date().toISOString().slice(0, 10);
+  if (!raw || typeof raw !== 'object') return { date: today, usdToday: 0 };
+  const r = raw as { date?: unknown; usdToday?: unknown };
+  const dateOk = typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date);
+  const usdOk =
+    typeof r.usdToday === 'number' && Number.isFinite(r.usdToday) && r.usdToday >= 0;
+  // T-07-01: when EITHER field is malformed, BOTH reset together so a corrupt
+  // ledger can't carry a stale usdToday under a bogus date label.
+  if (!dateOk || !usdOk) return { date: today, usdToday: 0 };
+  return { date: r.date as string, usdToday: r.usdToday as number };
+}
+
 export class SettingsStore {
   private constructor(private plugin: Plugin, private data: PluginData) {}
 
@@ -340,6 +469,36 @@ export class SettingsStore {
       // case-mismatch typos ('OPEN'), unknown future enum values — all
       // collapse to the safe single-default per CONTEXT.md decision A.
       previewClickBehavior: raw.previewClickBehavior === 'open' ? 'open' : 'preview',
+      // Phase 07 Plan 01 — AI fields hydrate via per-field shape-guards
+      // (T-07-01 mitigation per CONTEXT line 226). isValidProviderId returns
+      // false for unknown enum values, so corrupt activeAIProvider collapses
+      // to null. Every providerConfigs[provider] is rebuilt from the raw map
+      // with its provider-specific default as fallback so a malformed entry
+      // for one provider doesn't poison the others.
+      activeAIProvider: isValidProviderId(raw.activeAIProvider) ? raw.activeAIProvider : null,
+      providerConfigs: {
+        anthropic: sanitizeProviderConfig(
+          (raw.providerConfigs as Record<string, unknown> | undefined)?.anthropic,
+          DEFAULT_PROVIDER_CONFIGS.anthropic,
+        ),
+        openai: sanitizeProviderConfig(
+          (raw.providerConfigs as Record<string, unknown> | undefined)?.openai,
+          DEFAULT_PROVIDER_CONFIGS.openai,
+        ),
+        openrouter: sanitizeProviderConfig(
+          (raw.providerConfigs as Record<string, unknown> | undefined)?.openrouter,
+          DEFAULT_PROVIDER_CONFIGS.openrouter,
+        ),
+        ollama: sanitizeProviderConfig(
+          (raw.providerConfigs as Record<string, unknown> | undefined)?.ollama,
+          DEFAULT_PROVIDER_CONFIGS.ollama,
+        ),
+        custom: sanitizeProviderConfig(
+          (raw.providerConfigs as Record<string, unknown> | undefined)?.custom,
+          DEFAULT_PROVIDER_CONFIGS.custom,
+        ),
+      },
+      aiCostLedger: sanitizeAICostLedger(raw.aiCostLedger),
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -509,6 +668,60 @@ export class SettingsStore {
     }
     if (pruned > 0) await this.persist();
     return pruned;
+  }
+
+  // --- Phase 07 AI ---------------------------------------------------------
+  // AIPROV-01 + AIPROV-06 surface. Setters re-sanitize any incoming
+  // ProviderConfig so a buggy command-layer caller in Plan 07-06 cannot
+  // poison data.json (T-07-01-b). All setters persist via this.persist().
+
+  /** Phase 07 AIPROV-01 — currently-active AI provider, null when none. */
+  getActiveAIProvider(): AIProvider | null {
+    return this.data.activeAIProvider;
+  }
+
+  /** Phase 07 AIPROV-01 — set the active provider. Switching from X→Y leaves
+   *  `providerConfigs[X]` byte-for-byte unchanged (T-07-01 invariant). */
+  async setActiveAIProvider(p: AIProvider | null): Promise<void> {
+    this.data.activeAIProvider = p;
+    await this.persist();
+  }
+
+  /** Phase 07 AIPROV-01 — read the per-provider config. Always returns a
+   *  defined ProviderConfig because load hydrates all 5 entries. */
+  getProviderConfig(p: AIProvider): ProviderConfig {
+    return this.data.providerConfigs[p];
+  }
+
+  /** Phase 07 AIPROV-01 — persist a per-provider config. Re-sanitizes the
+   *  incoming value against the per-provider default so a buggy caller cannot
+   *  poison data.json (T-07-01-b). */
+  async setProviderConfig(p: AIProvider, cfg: ProviderConfig): Promise<void> {
+    this.data.providerConfigs[p] = sanitizeProviderConfig(cfg, DEFAULT_PROVIDER_CONFIGS[p]);
+    await this.persist();
+  }
+
+  /** Phase 07 AIPROV-06 + decision F — read the daily AI cost ledger. NOTE:
+   *  this getter does NOT roll over; rollover happens on write via
+   *  `addCostLedger`. Callers reading for display should compare `date` to
+   *  today's local-day if they want a "rolled-over view" without writing. */
+  getAICostLedger(): AICostLedger {
+    return this.data.aiCostLedger;
+  }
+
+  /** Phase 07 AIPROV-06 + decision F — accumulate an AI call's USD cost into
+   *  today's ledger. Day-rollover-on-read: when local-day differs from the
+   *  ledger date, ledger resets to `{ today, 0 }` BEFORE adding `usd`.
+   *  Non-finite or negative values are silently ignored (matches v1.0
+   *  throttle posture: malformed input is a no-op, not an error). */
+  async addCostLedger(usd: number): Promise<void> {
+    if (!Number.isFinite(usd) || usd < 0) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.data.aiCostLedger.date !== today) {
+      this.data.aiCostLedger = { date: today, usdToday: 0 };
+    }
+    this.data.aiCostLedger.usdToday += usd;
+    await this.persist();
   }
 
   private async persist(): Promise<void> {
