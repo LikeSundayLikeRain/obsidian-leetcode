@@ -128,55 +128,55 @@ Explicitly excluded for v1.1.
 
 Filled by the roadmapper.
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| FOUND-01 | (TBD) | Pending |
-| FOUND-02 | (TBD) | Pending |
-| FOUND-03 | (TBD) | Pending |
-| PREVIEW-01 | (TBD) | Pending |
-| PREVIEW-02 | (TBD) | Pending |
-| PREVIEW-03 | (TBD) | Pending |
-| PREVIEW-04 | (TBD) | Pending |
-| PREVIEW-05 | (TBD) | Pending |
-| AIPROV-01 | (TBD) | Pending |
-| AIPROV-02 | (TBD) | Pending |
-| AIPROV-03 | (TBD) | Pending |
-| AIPROV-04 | (TBD) | Pending |
-| AIPROV-05 | (TBD) | Pending |
-| AIPROV-06 | (TBD) | Pending |
-| AIPROV-07 | (TBD) | Pending |
-| AIDBG-01 | (TBD) | Pending |
-| AIDBG-02 | (TBD) | Pending |
-| AIDBG-03 | (TBD) | Pending |
-| AIREV-01 | (TBD) | Pending |
-| AIREV-02 | (TBD) | Pending |
-| AIREV-03 | (TBD) | Pending |
-| AIREV-04 | (TBD) | Pending |
-| AIREV-05 | (TBD) | Pending |
-| AIREV-06 | (TBD) | Pending |
-| CONTEST-01 | (TBD) | Pending |
-| CONTEST-02 | (TBD) | Pending |
-| CONTEST-03 | (TBD) | Pending |
-| CONTEST-04 | (TBD) | Pending |
-| CONTEST-05 | (TBD) | Pending |
-| CONTEST-06 | (TBD) | Pending |
-| CONTEST-07 | (TBD) | Pending |
-| CONTEST-08 | (TBD) | Pending |
-| AIKG-01 | (TBD) | Pending |
-| AIKG-02 | (TBD) | Pending |
-| AIKG-03 | (TBD) | Pending |
-| AIKG-04 | (TBD) | Pending |
-| AIKG-05 | (TBD) | Pending |
-| AIKG-06 | (TBD) | Pending |
-| AIKG-07 | (TBD) | Pending |
+| Requirement | Phase    | Status  |
+|-------------|----------|---------|
+| FOUND-01    | Phase 06 | Pending |
+| FOUND-02    | Phase 06 | Pending |
+| FOUND-03    | Phase 06 | Pending |
+| PREVIEW-01  | Phase 06 | Pending |
+| PREVIEW-02  | Phase 06 | Pending |
+| PREVIEW-03  | Phase 06 | Pending |
+| PREVIEW-04  | Phase 06 | Pending |
+| PREVIEW-05  | Phase 06 | Pending |
+| AIPROV-01   | Phase 07 | Pending |
+| AIPROV-02   | Phase 07 | Pending |
+| AIPROV-03   | Phase 07 | Pending |
+| AIPROV-04   | Phase 07 | Pending |
+| AIPROV-05   | Phase 07 | Pending |
+| AIPROV-06   | Phase 07 | Pending |
+| AIPROV-07   | Phase 07 | Pending |
+| AIDBG-01    | Phase 08 | Pending |
+| AIDBG-02    | Phase 08 | Pending |
+| AIDBG-03    | Phase 08 | Pending |
+| AIREV-01    | Phase 09 | Pending |
+| AIREV-02    | Phase 09 | Pending |
+| AIREV-03    | Phase 09 | Pending |
+| AIREV-04    | Phase 09 | Pending |
+| AIREV-05    | Phase 09 | Pending |
+| AIREV-06    | Phase 09 | Pending |
+| CONTEST-01  | Phase 10 | Pending |
+| CONTEST-02  | Phase 10 | Pending |
+| CONTEST-03  | Phase 10 | Pending |
+| CONTEST-04  | Phase 10 | Pending |
+| CONTEST-05  | Phase 10 | Pending |
+| CONTEST-06  | Phase 10 | Pending |
+| CONTEST-07  | Phase 10 | Pending |
+| CONTEST-08  | Phase 10 | Pending |
+| AIKG-01     | Phase 11 | Pending |
+| AIKG-02     | Phase 11 | Pending |
+| AIKG-03     | Phase 11 | Pending |
+| AIKG-04     | Phase 11 | Pending |
+| AIKG-05     | Phase 11 | Pending |
+| AIKG-06     | Phase 11 | Pending |
+| AIKG-07     | Phase 11 | Pending |
 
 **Coverage:**
 
 - v1.1 requirements: 39 total
-- Mapped to phases: 0 (filled by roadmapper)
-- Unmapped: 39 ⚠️ (will be 0 after roadmap)
+- Mapped to phases: 39 ✓
+- Unmapped: 0
 
 ---
 
 *Requirements defined: 2026-05-15*
-*Last updated: 2026-05-15 — initial v1.1 scoping*
+*Last updated: 2026-05-15 — roadmap derivation: all 39 requirements mapped to Phases 06–11 (Phase 12 is operational/release-prep with no v1.1 base reqs)*
