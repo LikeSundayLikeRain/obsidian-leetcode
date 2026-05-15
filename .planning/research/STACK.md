@@ -1,443 +1,231 @@
 # Stack Research
 
-**Domain:** Obsidian community plugin — LeetCode integration (desktop, Electron-based)
-**Researched:** 2026-05-07
-**Confidence:** HIGH (all major choices verified against official docs, npm registry, and primary source code)
+**Domain:** Obsidian community plugin — LeetCode integration (desktop, Electron-based) — v1.1 milestone (Contest, AI Coach, Preview)
+**Researched:** 2026-05-14
+**Confidence:** HIGH (all v1.1 additions verified against Context7/official docs, npm registry timestamps within 6 months, real-world Obsidian-plugin reference implementations, and locally-installed `node_modules` type definitions)
+
+> **Scope note.** This document focuses on **STACK CHANGES needed for v1.1**. The v1.0 baseline (TypeScript 5.8.3, esbuild 0.25.5, `obsidian` API, CodeMirror 6 externals, `@leetnotion/leetcode-api` 3.0.0, hand-rolled REST for run/submit, `requestUrl`, `turndown` 7.2.4, `vitest` 4.1.5) is unchanged and remains validated. See git history for the original (pre-v1.1) STACK.md.
 
 ---
 
-## Recommended Stack
+## v1.1 New Stack Summary (TL;DR)
 
-### Core Technologies
+| Capability | Add | Version | Why |
+|------------|-----|---------|-----|
+| Multi-provider LLM client | `ai` | `6.37.0` (2026-05-12) | Single TS API across all providers, supports per-provider custom `fetch`, validated in production by 6+ Obsidian plugins (Caret, Anker, llmsider, wordwise, ai-canvas, intuition) |
+| OpenAI-compatible adapter (covers OpenRouter, Ollama remote, vLLM, custom base URLs) | `@ai-sdk/openai-compatible` | `2.0.47` (2026-05-13) | Native `baseURL` + `apiKey` + `fetch` options; one provider for all OpenAI-shape endpoints |
+| OpenAI provider | `@ai-sdk/openai` | `3.0.77` (2026-05-13) | First-party OpenAI provider; honors `fetch` override |
+| Anthropic provider | `@ai-sdk/anthropic` | `3.0.63` (2026-05-13) | First-party Anthropic provider; honors `fetch` override; needed because Anthropic's wire format is not OpenAI-compatible |
+| Amazon Bedrock provider | `@ai-sdk/amazon-bedrock` | `4.0.105` (2026-05-13) | First-party AWS Bedrock provider; supports SigV4 + custom `fetch` |
+| Zod (peer dep of ai-sdk) | `zod` | `4.4.3` (2026-05-04) | Required peer dep of `@ai-sdk/provider-utils@4.0.27` (`^3.25.76 \|\| ^4.1.8`); used for tool/output schemas |
+| Streaming transport (SSE-capable, CORS-bypass) | `electron.net.fetch` (Electron built-in, no npm dep) | bundled with Obsidian's Electron host | True streaming `Response.body` ReadableStream; CORS-free; pattern proven by `your-papa/obsidian-Smart2Brain` |
+| Buffered fallback transport | `requestUrl` (Obsidian built-in, no npm dep) | bundled with Obsidian | Already in v1.0; falls back when `electron.net.fetch` is unavailable; **no streaming** but works for non-streaming AI calls (review, knowledge-graph) |
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| TypeScript | `^5.8.3` | Plugin language | Obsidian sample-plugin uses it; required for `obsidian.d.ts` types; strict null checks catch runtime errors early |
-| obsidian (npm) | `latest` (1.12.3 as of 2026-02-23) | Type definitions + runtime API | Official type package; always pin to `latest` so `minAppVersion` can be set accurately |
-| esbuild | `0.25.5` | Bundler | Official sample-plugin bundler; produces CJS output required by Obsidian; 10–100x faster than Rollup for watch mode; `electron` and `obsidian` stay external |
-| @codemirror/state | `6.6.0` | CodeMirror peer dep | Obsidian 1.12.x peer-requires this exact major; must stay external in esbuild |
-| @codemirror/view | `6.42.1` | CodeMirror peer dep | Same — external in esbuild; accessed via `view.editor.cm as EditorView` at runtime |
+**No new bundler config required** — `ai`, `@ai-sdk/*`, and `zod` bundle cleanly into the existing esbuild CJS output. Estimated bundle delta: **~80–110 KB minified+gzipped** (ai-sdk core + 3 providers + zod-mini path), bringing the bundle from ~163 KB to ~245–275 KB. Within plugin-store norms (Smart Connections, Caret, Smart2Brain are all 300 KB–2 MB).
 
-### LeetCode API
+---
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| `@leetnotion/leetcode-api` | `3.0.0` (2026-04-03) | Problem list, problem detail, submissions, user auth | Fork of `leetcode-query` actively maintained in 2026; ESM + CJS dual; covers all read operations needed. **Does NOT cover run/submit — see hand-rolled section below.** |
-| Hand-rolled REST for run/submit | — | `interpret_solution`, `submit`, `check` endpoints | No npm library covers these three LC REST endpoints; must be implemented directly using `requestUrl` |
+## Recommended Stack — v1.1 Additions
 
-### HTTP Client
-
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| `requestUrl` (Obsidian built-in) | built-in | All HTTP calls to leetcode.com | Bypasses Electron's CORS restrictions that block `fetch` from plugin context; idiomatic for Obsidian plugins; no extra dependency |
-
-### HTML → Markdown
+### LLM Client
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| `turndown` | `7.2.4` (2026-04-03) | Convert LC problem HTML content to Markdown | Actively maintained; handles code blocks, tables, lists; lightweight; tree-shakeable |
+| `ai` (Vercel AI SDK) | `6.37.0` (2026-05-12) | Unified `streamText` / `generateText` / `generateObject` API across all providers | The de-facto standard in 2026 Obsidian AI plugins. Caret, Anker, llmsider, wordwise, ai-canvas, intuition, vibesidian — all on `ai`. Single API surface means all 5 providers share the same code path, so AI Debug streaming, AI ACed-review, and AI graph maintenance all work the same way. ESM + CJS dual; tree-shakes well; peer-deps only on zod. |
+| `@ai-sdk/openai` | `3.0.77` (2026-05-13) | OpenAI provider | First-party; ships with `createOpenAI({ baseURL, apiKey, fetch, headers })`. Required for native OpenAI calls; also usable for Azure OpenAI by overriding `baseURL`. |
+| `@ai-sdk/anthropic` | `3.0.63` (2026-05-13) | Anthropic provider | First-party; same option shape as openai. Anthropic's wire format (`/v1/messages`, `anthropic-version` header) is NOT OpenAI-compatible, so the dedicated provider is required — `@ai-sdk/openai-compatible` will not work for Anthropic. |
+| `@ai-sdk/openai-compatible` | `2.0.47` (2026-05-13) | OpenRouter, Ollama (remote), vLLM, LM Studio, NVIDIA NIM, any custom OpenAI-shape endpoint | One provider covers everything that exposes the OpenAI chat-completions schema. `createOpenAICompatible({ name, baseURL, apiKey, fetch })`. Instead of bundling separate community packages for OpenRouter / Ollama / etc., we use this single adapter — cuts bundle size and reduces dependency surface. **Pattern proven by `jcollingj/caret`** which uses it for the user's "custom" provider slot. |
+| `@ai-sdk/amazon-bedrock` | `4.0.105` (2026-05-13) | AWS Bedrock provider | First-party; handles SigV4 auth and the Bedrock InvokeModel/ConverseStream wire format. Required because Bedrock is NOT OpenAI-compatible. Honors custom `fetch`. |
+| `zod` | `4.4.3` (2026-05-04) | Schema validation peer-dep | Hard peer-dep of `@ai-sdk/provider-utils@4.0.27` (`^3.25.76 \|\| ^4.1.8`). Used internally by ai-sdk for tool / structured-output schemas. Pin to v4 to match what ai-sdk treeshakes most aggressively. Already used by `jcollingj/caret`'s LLM layer. |
 
-### Supporting Libraries
+### Streaming Transport
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| `eventemitter3` | (transitive via `@leetnotion/leetcode-api`) | Event bus for LC credential refresh | Only needed if extending the API client |
-| `@codemirror/language` | per Obsidian peer | Language support for CM6 code blocks | If adding syntax highlighting to solution code blocks in notes |
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `electron.net.fetch` | bundled (no dep) | Streaming HTTP transport for AI Debug live token feed | **Obsidian/Electron's `requestUrl` returns a fully-buffered `RequestUrlResponse` with `text`/`json`/`arrayBuffer` — confirmed in `node_modules/obsidian/obsidian.d.ts` — there is NO `ReadableStream` body.** That kills `streamText` token-by-token UX if you only have `requestUrl`. The fix is `electron.net.fetch` — exposed via `require('electron').net.fetch` (or `electron.remote.net.fetch` on older builds). It is CORS-free (`net.fetch` runs in the main process via the chromium net stack) AND returns a real `Response` with a `body` ReadableStream. **Confirmed real-world pattern by `your-papa/obsidian-Smart2Brain` (`src/lib/aiTransport.ts`).** Resolution order: `globalThis.require('electron').net.fetch` → `globalThis.require('electron').remote.net.fetch` → `import('electron').net.fetch`. |
+| `requestUrl` (Obsidian) | bundled (no dep) | Buffered fallback when streaming transport is unavailable + all non-streaming AI calls | Already in use for v1.0 LeetCode calls. For AI: ACed-solution review, knowledge-graph cluster naming, and graph-edge generation all use `generateText` / `generateObject` (one shot, no streaming) — `requestUrl` is fine for these. Only AI Debug needs `electron.net.fetch`. |
 
-### Development Tools
+**Pattern:** Build one `obsidianFetch(mode: 'stream' | 'buffered')` adapter. In `'stream'` mode it uses `electron.net.fetch`. In `'buffered'` mode it uses `requestUrl`. The adapter is passed to each provider via the `fetch` option — same call site, different transport.
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| `esbuild` watch mode (`npm run dev`) | Hot-compile on save | Outputs `main.js` into plugin folder; requires manual Obsidian reload or hot-reload plugin |
-| `pjeby/hot-reload` (Obsidian community plugin) | Auto-reload plugin in dev vault without full Obsidian restart | v0.3.0 (2025-08-14); install in dev vault only; not a npm dep |
-| `typescript-eslint` + `eslint-plugin-obsidianmd` | Lint for plugin-specific anti-patterns | `eslint-plugin-obsidianmd` 0.1.9 catches `innerHTML` misuse, `workspace.activeLeaf` direct access, etc. |
-| `vitest` | `4.1.5` (2026-05-05) | Unit testing for pure logic (API wrappers, markdown conversion, cache, frontmatter helpers) | Use for business logic only — Obsidian plugin lifecycle cannot be unit tested without a live Obsidian instance |
+### Contest Data API
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `@leetnotion/leetcode-api` | `3.0.0` (2026-04-03) — **already installed** | Past contests list, contest problem set, user contest history | **VERIFIED in `node_modules/@leetnotion/leetcode-api/lib/index.d.ts`**: the library already exposes `getPastContests({ limit, skip })` (returns `PastContests` = `{ totalNum, contests: PastContest[] }` where each `PastContest` has `titleSlug, title, startTime, duration, totalQuestions, solved`), `getContestQuestions(contestSlug)` (returns `ContestQuestions = { questions: ContestQuestion[] }` where each has `title, title_slug, credit, difficulty`), and `user_contest_info(username)` (returns `UserContestInfo` = ranking + history). **No new dependency needed for contest data.** The underlying GraphQL queries are `contestV2HistoryContests`, `contestQuestionList`, and `userContestRanking + userContestRankingHistory` (verified in upstream `codewithsathya/leetcode-api/src/graphql/*.graphql`). |
+| Hand-rolled REST for `interpret_solution`/`submit`/`check` | — (already implemented in v1.0) | Run/submit code during virtual contest | Reused as-is. Contest mode submits exactly the same way as a normal problem; the only contest-specific concern is that LC's contest pages live at `/contest/{slug}/problems/{problem-slug}/` but `submit` still posts to `/problems/{slug}/submit/`. |
+
+**Per-contest user submission summary** is NOT a single endpoint. The strategy: when a virtual contest ends, query the user's recent submissions (`recent_user_submissions(username, limit=20)`, already in `@leetnotion/leetcode-api`) and filter by `titleSlug ∈ contest.questions[*].titleSlug` and `timestamp ∈ [contestStart, contestEnd]`. Verified pattern.
+
+### Virtual Timer & Persistence
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `setInterval` + `Plugin.registerInterval()` | bundled (Obsidian) | 90/100-min contest countdown + UI tick | Already the v1.0 pattern for submission polling. **Do not** add a state-machine library — virtual contest is a 4-state FSM (idle → running → paused → ended); a 30-line discriminated union is more maintainable than xstate's 60 KB+ runtime. Persistence: serialize `{ contestSlug, startedAt, durationSec, pausedSec, endedAt? }` into `data.json` via `loadData/saveData`. On plugin reload, recompute remaining time from `Date.now() - startedAt - pausedSec`. No timer libs survive Obsidian reloads anyway — only persisted timestamps do. |
+
+### Preview Rendering
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `ItemView` + `MarkdownRenderer.render()` | bundled (Obsidian) | Read-mode preview tab for "Start Problem" CTA | **VERIFIED in `node_modules/obsidian/obsidian.d.ts`**: `MarkdownRenderer.render(app, markdown, el, sourcePath, component)` is the static, current API (the older `renderMarkdown` is `@deprecated`). The idiomatic pattern: register a custom `ItemView` (e.g. `LC_PREVIEW_VIEW_TYPE = "leetcode-preview"`) via `this.registerView(...)`, open it via `workspace.getLeaf(false).setViewState({ type: LC_PREVIEW_VIEW_TYPE, state: { slug } })`. In `onOpen`, call `MarkdownRenderer.render()` to inject the converted problem markdown. Add a "Start Problem" / "Open Problem" button via `addAction()` (toolbar) or `containerEl.createEl('button', ...)` (inline). No note creation happens until the button is clicked. **No new dependencies — entirely native Obsidian API.** |
+
+### Forward-Looking Wikilinks (Look-ahead Edges)
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| Native Obsidian `[[wikilinks]]` + `app.metadataCache.unresolvedLinks` | bundled (Obsidian) | AI-emitted look-ahead edges to UNSOLVED problems | **VERIFIED in `obsidian.d.ts`**: `MetadataCache.unresolvedLinks: Record<string, Record<string, number>>` already maps every dangling `[[Two Sum II]]` reference, even if the target note doesn't exist. Obsidian renders them dimly out of the box. **No new dependency required.** When the user later solves the problem and the note is created, the link auto-resolves on `metadataCache.on('resolve')`. This means: write `[[Two Sum II]]` literally into a hub note's `## Related (Look-ahead)` section, and Obsidian's graph picks it up immediately. The `obsidian-graph-analysis` plugin is irrelevant — its niche is graph metrics, not edge creation. |
 
 ---
 
 ## Installation
 
 ```bash
-# Core (matches obsidian-sample-plugin baseline)
-npm install obsidian@latest
-
-# LeetCode API
-npm install @leetnotion/leetcode-api
-
-# HTML -> Markdown
-npm install turndown
-npm install --save-dev @types/turndown
-
-# Dev dependencies (matches official sample)
-npm install -D typescript@^5.8.3 esbuild@0.25.5 tslib@2.4.0
-npm install -D @types/node@^16.11.6
-npm install -D typescript-eslint@8.35.1 eslint-plugin-obsidianmd@0.1.9 @eslint/js@9.30.1 globals@14.0.0 jiti@2.6.1
-npm install -D vitest
+# v1.1 LLM stack (only what's not already installed)
+npm install ai@6.37.0
+npm install @ai-sdk/openai@3.0.77
+npm install @ai-sdk/anthropic@3.0.63
+npm install @ai-sdk/openai-compatible@2.0.47
+npm install @ai-sdk/amazon-bedrock@4.0.105
+npm install zod@4.4.3
 ```
+
+**No new dev-dependencies.** The existing `vitest@4.1.5` + esbuild stack handles AI-provider unit tests fine (mock the `fetch` override).
+
+**No new esbuild externals.** `ai`, `@ai-sdk/*`, and `zod` all bundle cleanly. Keep the existing externals list (`obsidian`, `electron`, `@codemirror/*`, `@lezer/*`, Node builtins) untouched. **Important: `electron` MUST stay in the externals list** — it is provided by Obsidian's runtime; bundling it would break `electron.net.fetch` resolution.
 
 ---
 
-## Detailed Decision Rationale
+## Detailed Decision Rationale — v1.1
 
-### 1. Obsidian Plugin Baseline
+### 1. Why Vercel AI SDK over alternatives
 
-**Template:** `obsidian-sample-plugin` (official). Clone it directly — it ships the correct `manifest.json` shape, `esbuild.config.mjs`, `tsconfig.json`, `version-bump.mjs`, and `versions.json`.
+**Considered:**
 
-**Bundler: esbuild (not Rollup, not webpack)**
-esbuild is the official sample-plugin choice. The config marks `obsidian`, `electron`, all `@codemirror/*` packages, and Node builtins as `external` — they are provided by the Obsidian runtime and must NOT be bundled. Output format is `cjs` (CommonJS), which Obsidian's plugin loader requires. The `target: "es2018"` matches Obsidian's Electron JS engine.
+| Option | Verdict | Reason |
+|--------|---------|--------|
+| `ai` (Vercel AI SDK) v6.37.0 | **WINNER** | Single TypeScript API for all providers. `streamText`, `generateText`, `generateObject`. Per-provider custom `fetch` (verified — see code samples). Real-world proven in 6+ Obsidian plugins. Maintenance: published 2026-05-12 (2 days before research date). |
+| `langchain` v1.4.0 (2026-05-05) | Reject | Heavy (multiple sub-packages, 100+ KB minified for the parts you'd actually use). Not idiomatic for "lightweight plugin call site." Useful for agent orchestration, overkill for AI Debug + ACed review. |
+| `openai` (official SDK) v6.37.0 | Reject | OpenAI-only. Forces hand-rolling Anthropic + Bedrock + Ollama. Worse: the official SDK depends on `ws` for some transports, ships with Node-specific patterns, and historically has had bundling friction in Electron renderer (multiple Obsidian plugin issues filed against it). The community has converged on ai-sdk specifically to escape this. |
+| `@anthropic-ai/sdk` v0.96.0 | Reject (as primary) | Anthropic-only; same multi-provider problem. Could be a fallback if `@ai-sdk/anthropic` ever lags Anthropic API features, but no current reason. |
+| `@aws-sdk/client-bedrock-runtime` v3.1047.0 | Reject (as primary) | AWS SDK v3 alone is ~150 KB minified — too heavy for what we need. `@ai-sdk/amazon-bedrock` is 25 KB and uses the same SigV4 logic. |
+| `ollama` v0.6.3 (Nov 2025) | Reject | Last published 2025-11-19 — six months stale by 2026-05. `@ai-sdk/openai-compatible` covers Ollama via its OpenAI-compatible endpoint at `http://localhost:11434/v1` (verified by ai-sdk docs). |
+| Raw `requestUrl` + hand-rolled provider clients | Reject | 5 providers × 2 modes (stream/buffered) × per-provider wire-format quirks (Anthropic's `messages` shape, Bedrock's `ConverseStream` event stream, OpenAI's SSE `data: ...` lines, Ollama's NDJSON) = 2,000+ lines of provider-handling code. Not where this project should spend complexity budget. ai-sdk is exactly this code, maintained by Vercel. |
 
-**TypeScript config key settings:**
-- `"module": "ESNext"` (for esbuild consumption), `"target": "ES6"`
-- `"moduleResolution": "node"` (not `bundler` — esbuild handles resolution)
-- `"strictNullChecks": true`, `"noImplicitAny": true` — essential for vault/API safety
-- `"isolatedModules": true` — matches esbuild's single-file transform model
+### 2. Why custom `fetch` per provider, not a global override
 
-**manifest.json required fields:**
-```json
-{
-  "id": "obsidian-leetcode",
-  "name": "LeetCode",
-  "author": "...",
-  "description": "...",
-  "version": "0.1.0",
-  "minAppVersion": "1.2.0",
-  "isDesktopOnly": true
-}
-```
-`isDesktopOnly: true` is **mandatory** — this plugin uses `electron` (BrowserWindow for login) and Node.js APIs (`fs`/path for file caching). The Obsidian reviewer will flag its absence.
+ai-sdk providers (`createOpenAI`, `createAnthropic`, `createOpenAICompatible`, `createAmazonBedrock`) each accept a `fetch` option that defaults to `globalThis.fetch`. Don't shim global `fetch` — that breaks unrelated Obsidian core code that relies on the real `fetch`. Pass the adapter explicitly:
 
-**Hot-reload dev workflow:**
-1. Symlink or copy the plugin folder into a dev vault's `.obsidian/plugins/obsidian-leetcode/`.
-2. Install the community plugin `pjeby/hot-reload` in the dev vault.
-3. Run `npm run dev` (esbuild watch). Changes trigger auto-reload via hot-reload plugin.
+```ts
+import { createOpenAI } from '@ai-sdk/openai';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 
-**Testing framework: vitest (not jest)**
-Jest + `ts-jest` works (obsidian-dataview uses it) but vitest is faster, natively ESM-compatible, and has identical API surface. Neither framework can test Obsidian plugin lifecycle (no JSDOM for Obsidian's workspace). Test pure functions only: LC API wrappers, markdown conversion, cache logic, frontmatter helpers, polling logic.
-
----
-
-### 2. LeetCode API Integration
-
-**Winner: `@leetnotion/leetcode-api` v3.0.0 for read operations + hand-rolled REST for run/submit**
-
-**Coverage matrix:**
-
-| Operation | `@leetnotion/leetcode-api` | `leetcode-query` | Hand-rolled |
-|-----------|--------------------------|------------------|-------------|
-| Problems list (with filters) | YES | YES | — |
-| Problem detail by slug | YES | YES | — |
-| Daily challenge | YES | YES | — |
-| User submissions (authenticated) | YES | YES | — |
-| Submission detail (code, percentiles) | YES | YES | — |
-| User profile | YES | YES | — |
-| **Run code** (`interpret_solution`) | NO | NO | **REQUIRED** |
-| **Submit code** | NO | NO | **REQUIRED** |
-| **Poll submission status** (`check`) | NO | NO | **REQUIRED** |
-
-`@leetnotion/leetcode-api` vs `leetcode-query`:
-- `@leetnotion/leetcode-api` is a maintained fork of `leetcode-query` published 2026-04-03 (vs `leetcode-query` 2025-07-11). At 184 downloads/week vs 1,955, it has lower community adoption but is newer and the maintainer actively updates it for breaking LC API changes.
-- Both libraries use identical architecture: `Credential` class accepting `LEETCODE_SESSION` cookie + `csrftoken`, `graphql()` base method, optional in-memory TTL cache, rate limiter (20 req/10 s), EventEmitter for CSRF refresh.
-- The custom fetcher API (`fetcher.set(...)`) in both libraries lets you swap in `requestUrl` from Obsidian — critical for CORS bypass in the plugin context.
-- Neither library wraps the three REST endpoints needed for code execution. These must be hand-rolled.
-
-**Hand-rolled run/submit endpoints (verified from vsc-leetcode-cli source):**
-```
-POST https://leetcode.com/problems/{slug}/interpret_solution/   → returns { interpret_id, interpret_expected_id }
-POST https://leetcode.com/problems/{slug}/submit/               → returns { submission_id }
-GET  https://leetcode.com/submissions/detail/{id}/check/        → poll until state != "STARTED"
-```
-
-Request body for run/submit:
-```json
-{
-  "lang": "python3",
-  "question_id": 1,
-  "test_mode": false,
-  "typed_code": "class Solution:\n    ..."
-}
-```
-All three require session cookie + `x-csrftoken` header. Poll `check/` every ~2 s until `state` is `"SUCCESS"` or `"FAILURE"`.
-
-**What NOT to use:**
-- `leetcode-cli` / `vsc-leetcode-cli` npm packages — these are CLI tools, not libraries; v2.6.2 last published 2019.
-- `leetcode.js` — does not exist on npm.
-- Direct `fetch()` in plugin context — blocked by Electron CORS for cross-origin requests to `leetcode.com`. Use `requestUrl` instead.
-
----
-
-### 3. Authentication
-
-**Primary: Embedded Electron BrowserWindow (desktop-only)**
-**Fallback: Cookie paste (Settings UI text field)**
-
-Obsidian plugins can access Electron's APIs at runtime via `require('electron')` because `electron` is listed as `external` in esbuild — it's provided by the Obsidian host process. Access pattern:
-
-```typescript
-// In plugin code — electron is external, resolved at runtime by Obsidian
-const { BrowserWindow } = require('electron') as typeof import('electron');
-
-const win = new BrowserWindow({
-  width: 480,
-  height: 700,
-  webPreferences: {
-    partition: 'persist:lc-session',  // isolated session, not shared with Obsidian
-    nodeIntegration: false,
-    contextIsolation: true,
-  },
-  show: false,
+const openai = createOpenAI({
+  apiKey: settings.openai.key,
+  baseURL: settings.openai.baseUrl ?? 'https://api.openai.com/v1',
+  fetch: createObsidianFetch({ mode: 'stream' }),  // or 'buffered'
 });
+```
 
-win.once('ready-to-show', () => win.show());
+This pattern is verified in `gnuhpc/obsidian-llmsider`, `AlexW00/anker`, `ckt1031/obsidian-wordwise-plugin`, `0xIntuition/intuition-obsidian-plugin`, `testy-cool/obsidian-ai-canvas`.
 
-win.webContents.on('did-navigate', (_event, url) => {
-  if (url.startsWith('https://leetcode.com/') && !url.includes('/accounts/login/')) {
-    // Logged in — extract cookies
-    win.webContents.session.cookies
-      .get({ domain: '.leetcode.com' })
-      .then(cookies => {
-        const session = cookies.find(c => c.name === 'LEETCODE_SESSION')?.value;
-        const csrf   = cookies.find(c => c.name === 'csrftoken')?.value;
-        // store in plugin data.json
-        win.close();
-      });
+### 3. The streaming transport problem (binding constraint)
+
+Obsidian's `RequestUrlResponse` (verified in local `node_modules/obsidian/obsidian.d.ts`):
+
+```ts
+export interface RequestUrlResponse {
+    status: number;
+    headers: Record<string, string>;
+    arrayBuffer: ArrayBuffer;
+    json: any;
+    text: string;
+}
+```
+
+**No `body` ReadableStream.** No incremental read. The full response is available only after the entire body has been buffered. This is fine for `generateText` / `generateObject` (one-shot) but **breaks `streamText`** — calling `streamText` with a buffered fetch produces a `textStream` that emits all tokens at once when the response completes, not as the model generates them. UX-wise this looks like a 3–10 second hang then a wall of text appears.
+
+**The fix** is `electron.net.fetch`, exposed by Electron's main-process `net` module. It:
+- Runs in the chromium net stack (CORS-free for cross-origin requests from plugin context).
+- Returns a real Web `Response` whose `body` is a `ReadableStream<Uint8Array>`.
+- Is reachable from the renderer via `require('electron').net.fetch` (recent builds) or `require('electron').remote.net.fetch` (older builds with `@electron/remote` or pre-Electron-14 hosts).
+
+Resolution order (from `your-papa/obsidian-Smart2Brain/src/lib/aiTransport.ts`, verified pattern):
+
+```ts
+async function getElectronNetFetch(): Promise<typeof fetch | null> {
+  const requireFn = (globalThis as any).require ?? (window as any).require;
+  if (typeof requireFn === 'function') {
+    try {
+      const electron = requireFn('electron');
+      // Try main-process net.fetch first
+      if (typeof electron?.net?.fetch === 'function') {
+        return electron.net.fetch.bind(electron.net);
+      }
+      // Fall back to remote.net.fetch (older builds)
+      if (typeof electron?.remote?.net?.fetch === 'function') {
+        return electron.remote.net.fetch.bind(electron.remote.net);
+      }
+    } catch { /* fall through */ }
   }
-});
-
-win.loadURL('https://leetcode.com/accounts/login/');
-```
-
-The `remote` module approach (used by older plugins like `obsidian-kindle-plugin`) is **deprecated** — `remote` was removed from Electron and requires `@electron/remote` shim. Use `require('electron')` directly with `BrowserWindow` from the main process API, which Obsidian exposes to renderer plugins.
-
-**Cookie-paste fallback:** A settings tab text field for `LEETCODE_SESSION` cookie value. Users copy it from browser DevTools → Application → Cookies. This is the only path that works if LC ever restricts the embedded browser flow.
-
-**What to store:** Only `LEETCODE_SESSION` + `csrftoken` in `data.json`. Never log, never transmit to any endpoint except `leetcode.com`. This satisfies both the developer policy (no telemetry) and the disclosure requirement (network use limited to LC).
-
-**What NOT to use:**
-- `vscode-leetcode`'s `authorize-login/vscode/` endpoint — bespoke LC-VSCode integration that redirects to `vscode://` URI scheme; no equivalent for Obsidian.
-- OAuth/PKCE flows — LC does not offer a public OAuth API.
-- `@electron/remote` shim — unnecessary in current Electron; adds a dependency for deprecated behavior.
-
----
-
-### 4. HTTP Client
-
-**Winner: Obsidian's built-in `requestUrl`**
-
-```typescript
-import { requestUrl } from 'obsidian';
-
-const response = await requestUrl({
-  url: 'https://leetcode.com/graphql',
-  method: 'POST',
-  headers: {
-    'content-type': 'application/json',
-    'cookie': `LEETCODE_SESSION=${session}; csrftoken=${csrf}`,
-    'x-csrftoken': csrf,
-    'origin': 'https://leetcode.com',
-    'referer': 'https://leetcode.com',
-  },
-  body: JSON.stringify({ query, variables }),
-  throw: false,  // handle non-2xx manually for graceful error UX
-});
-```
-
-**Why `requestUrl` over alternatives:**
-- `fetch()` — blocked by Electron's CORS policy for cross-origin requests from plugin renderer context to `leetcode.com`. This is the single most common mistake in new Obsidian plugins that call external APIs.
-- `axios` — adds ~14 kB to bundle; same CORS problem as `fetch`; no benefit over `requestUrl`.
-- `node-fetch` / `cross-fetch` — also subject to Electron CORS; bundling adds weight.
-- `requestUrl` is Obsidian's own HTTP primitive, designed specifically to bypass Electron's CORS restrictions for plugin use. It is synchronous-API-compatible (returns a typed `RequestUrlResponse`) and handles both JSON and binary responses.
-
-**Integrating with `@leetnotion/leetcode-api`:** Override the library's fetcher to use `requestUrl`:
-
-```typescript
-import { fetcher } from '@leetnotion/leetcode-api';
-import { requestUrl } from 'obsidian';
-
-fetcher.set(async (url, init) => {
-  const res = await requestUrl({
-    url: String(url),
-    method: (init?.method as string) || 'GET',
-    headers: init?.headers as Record<string, string>,
-    body: init?.body as string,
-    throw: false,
-  });
-  return new Response(res.text, {
-    status: res.status,
-    headers: res.headers,
-  });
-});
-```
-
----
-
-### 5. Offline Cache
-
-**Where data lives:**
-- **Plugin settings + session credentials:** `this.loadData()` / `this.saveData()` — stored in `.obsidian/plugins/obsidian-leetcode/data.json`. Use for: auth tokens, user preferences, problem metadata index (slug→id mapping), cached problem HTML/content, solved status.
-- **Problem notes:** Markdown files in a user-configured vault folder (e.g., `LeetCode/problems/`). Created/updated via `app.vault.create()` and `app.vault.modify()`. These are first-class vault citizens — searchable, linkable, offline-readable.
-- **Do NOT use:** Separate files under `.obsidian/plugins/` for content that users should read — they are hidden from the vault UI.
-
-**Cache invalidation strategy:**
-- Problem content (HTML, metadata): Cache in `data.json` with a `cachedAt` timestamp. Re-fetch if older than 7 days or on explicit user refresh command.
-- Problem list index (slug→title, difficulty, topics): Refresh on plugin load if older than 24 hours.
-- Submission status: Never cache — always live poll.
-- Session cookie: Store indefinitely; invalidate on 401/403 response and prompt re-login.
-
-**`data.json` structure sketch:**
-```typescript
-interface PluginData {
-  auth: { session: string; csrf: string } | null;
-  settings: { language: string; problemsFolder: string };
-  problemCache: Record<string, { content: string; cachedAt: number; metadata: ProblemMeta }>;
-  problemIndex: { slugToId: Record<string, number>; updatedAt: number } | null;
+  return null;  // caller falls back to requestUrl
 }
 ```
 
-**Size concern:** LC has ~3,000 problems. Full content cache would be large (~30–100 MB). Cache only viewed problems on-demand; do not pre-warm all 3,000.
+If `electron.net.fetch` is unavailable (very old Obsidian builds), AI Debug should gracefully degrade to non-streaming mode using `requestUrl` and `generateText` — the suggestions still arrive, just all at once.
 
----
+`isDesktopOnly: true` in the manifest is already set by v1.0, which is required for `electron` access.
 
-### 6. Markdown Rendering
+### 4. Why `@ai-sdk/openai-compatible` instead of dedicated OpenRouter / Ollama packages
 
-**Strategy: Convert LC HTML to Markdown at cache time, store in note**
+`@openrouter/ai-sdk-provider` (separate package) exists, and `ollama-ai-provider` exists. We could install both. We don't, because:
 
-LeetCode problem `content` is returned as HTML. Convert it once on fetch using `turndown`, store the Markdown in the note. Do not attempt to render HTML directly in the note.
+- `@ai-sdk/openai-compatible` works for both, plus vLLM, LM Studio, NVIDIA NIM, DeepInfra, Together, Groq's OpenAI-compatible endpoint, and any user-supplied custom base URL.
+- One package. One bundle entry. One Settings UI surface ("Custom OpenAI-compatible: base URL + key").
+- Verified in ai-sdk official docs: "Any endpoint that conforms to the OpenAI API shape ... should work by pointing `baseURL` at it." Examples in docs include OpenRouter and Ollama directly.
+- `jcollingj/caret`'s production code uses `createOpenAICompatible` for the user's "custom" provider slot — exactly our use case.
 
-```typescript
-import TurndownService from 'turndown';
+If a future user reports OpenRouter-specific feature drift (e.g. routing preferences, OpenRouter headers like `HTTP-Referer`, `X-Title`), pass them via the `headers` option on `createOpenAICompatible` — no new package needed.
 
-const td = new TurndownService({
-  codeBlockStyle: 'fenced',
-  fence: '```',
-});
+### 5. Why `@ai-sdk/amazon-bedrock` instead of `@aws-sdk/client-bedrock-runtime`
 
-// Preserve <pre><code> blocks as fenced code blocks
-td.addRule('codeBlock', {
-  filter: ['pre'],
-  replacement: (_content, node) => {
-    const code = (node as HTMLElement).querySelector('code');
-    const lang = code?.className.match(/language-(\w+)/)?.[1] ?? '';
-    return `\`\`\`${lang}\n${code?.textContent ?? ''}\n\`\`\`\n`;
-  },
-});
+| Concern | `@ai-sdk/amazon-bedrock` | `@aws-sdk/client-bedrock-runtime` |
+|---------|--------------------------|-----------------------------------|
+| Bundle size | ~25 KB | ~150 KB minified (multi-package SDK) |
+| API consistency | Same `streamText({ model: bedrock(...) })` as other providers | Bespoke `BedrockRuntimeClient` + `InvokeModelCommand` |
+| Custom fetch | YES | Different surface (custom `requestHandler`) |
+| SigV4 | Built-in | Built-in (via `@aws-sdk/signature-v4`) |
+| Streaming | YES (`ConverseStream`) | YES |
 
-const markdown = td.turndown(html);
-```
+ai-sdk's Bedrock provider wraps the same SigV4 logic but exposes it through the unified `streamText` API. No reason to ship the full AWS SDK in a 270 KB plugin.
 
-**For rendering existing Markdown within a custom view** (e.g., a problem browser pane), use Obsidian's `MarkdownRenderer.render()`:
-```typescript
-import { MarkdownRenderer } from 'obsidian';
-await MarkdownRenderer.render(app, markdownContent, containerEl, sourcePath, component);
-```
+### 6. Why NOT a state-machine library for the contest timer
 
-**What NOT to use:**
-- `innerHTML` for LC HTML — explicitly forbidden by the Obsidian plugin guidelines; XSS risk.
-- `marked` / `remark` — wrong direction (Markdown → HTML); LC sends HTML that needs to go to Markdown.
-- `rehype` pipeline — correct direction but heavier; `turndown` is sufficient for LC's HTML subset.
+xstate v5.31.1 (2026-05-10) is excellent for stateful UI but is overkill for the contest FSM. The contest has 4 states (idle, running, paused, ended) and ~6 transitions (start, pause, resume, tick, finish, abort). A discriminated union of 30 lines plus `setInterval` is simpler, smaller (saves ~60 KB), and more debuggable than an actor model. **Persistence is the real problem, not state modeling.** What survives plugin reload is `data.json` — so persist `{ contestSlug, startedAt: ms, durationSec, pausedSec, lastTickAt }` and recompute remaining time on re-init. `Plugin.registerInterval()` (already used for v1.0 submission polling) auto-cleans on unload.
 
----
+### 7. Why native `[[wikilinks]]` for look-ahead edges
 
-### 7. Code Editor Inside Notes
+The user's question is "any Obsidian pattern for wikilinks to notes that don't exist yet?" — Obsidian's answer is **the default behavior**. Writing `[[Two Sum II]]` into a hub note's `## Related (Look-ahead)` section produces an unresolved link that:
+- Renders dimly in reading mode (visual hint that target doesn't exist).
+- Appears as a "ghost" node in the graph view.
+- Auto-resolves the moment the target note is created.
+- Is queryable via `app.metadataCache.unresolvedLinks` (verified type in `obsidian.d.ts`).
+- Surfaces in the file's "Linked mentions" pane after creation.
 
-**Recommendation: Use the note's native code block — do not embed a separate editor**
+No plugin needed. The AI knowledge-graph maintenance feature just emits the wikilink; Obsidian handles the rest. If desired, on-create stub generation (creating an empty placeholder note with frontmatter `lc-status: not-yet-attempted`) is a 20-line vault-write — but the v1.0 convention is `app.fileManager.processFrontMatter` for structured writes, not creating empty stubs. **Recommendation: ship dangling links first, evaluate stub-creation in a later phase based on dogfood feedback.**
 
-The problem note contains a fenced code block for the solution. Users write code directly in Obsidian's standard editor. This is the correct Obsidian-native pattern.
+### 8. Provider-specific wire format constraints
 
-For the problem note template:
-```markdown
----
-title: "Two Sum"
-difficulty: Easy
-topics: [Array, Hash Table]
-status: unsolved
----
+| Provider | Endpoint shape | Streaming format | OpenAI-compatible? |
+|----------|---------------|------------------|---------------------|
+| OpenAI | `/v1/chat/completions` | SSE `data: {...}` | Native |
+| Anthropic | `/v1/messages` with `anthropic-version` header | SSE with named events (`message_start`, `content_block_delta`, ...) | NO |
+| OpenRouter | OpenAI-compatible | SSE | Yes |
+| Ollama (`/v1/`) | OpenAI-compatible | SSE | Yes |
+| Ollama (native `/api/chat`) | NDJSON | NDJSON streaming | NO — but use the `/v1/` endpoint |
+| AWS Bedrock | `/model/{id}/converse-stream` (SigV4) | AWS event stream | NO |
 
-## Problem
-
-{problem content as markdown}
-
-## Solution
-
-```python
-# Write your solution here
-```
-
-## Notes
-
-```
-
-**Why not a custom CodeMirror editor pane:**
-- Obsidian's editor IS CodeMirror 6. The note's code block already has CM6 syntax highlighting via the `@codemirror/language` infrastructure.
-- Building a separate editor pane duplicates Obsidian's editor, fights the UX model, and adds significant complexity.
-- Access to CM6 `EditorView` from a plugin is possible (`view.editor.cm as EditorView`) but is undocumented/internal.
-
-**For the problem browser sidebar** (listing problems, showing metadata): use `ItemView` with standard Obsidian DOM helpers (`createEl`, `createDiv`). No React, no custom framework — keeps bundle small and avoids conflicts with Obsidian's own DOM management.
-
----
-
-### 8. Community Plugin Store Requirements
-
-**Mandatory checklist for submission:**
-
-| Requirement | Detail |
-|-------------|--------|
-| `manifest.json` valid | `id`, `name`, `author`, `description` (≤250 chars, ends with `.`), `version` (semver), `minAppVersion`, `isDesktopOnly: true` |
-| `README.md` | Describes purpose, usage, screenshots; must explain network use (LeetCode API) |
-| `LICENSE` file | Must be present |
-| GitHub release | Tag must match `manifest.json` version; `main.js` + `manifest.json` attached as release assets |
-| `community-plugins.json` PR | Add entry to `obsidianmd/obsidian-releases` with matching `id`, `name`, `author`, `description`, `repo` |
-| No telemetry | No client-side analytics, tracking pixels, or data collection without explicit disclosure |
-| No remote code eval | No `eval()`, `new Function()`, or dynamic `<script>` injection |
-| No `innerHTML` with user data | Use `createEl()` / DOM API instead |
-| No obfuscated code | Source must be readable |
-| No auto-update mechanism | Obsidian handles plugin updates via GitHub releases |
-| Network use disclosed | README must state: "This plugin communicates with leetcode.com to fetch problems and submit solutions." |
-| No "obsidian" in plugin ID | Plugin ID cannot contain the word "obsidian" |
-| No default hotkeys | Do not set default keyboard shortcuts for commands |
-| Electron/Node APIs require `isDesktopOnly: true` | BrowserWindow usage mandates this flag |
-| Resource cleanup | All event listeners registered via `registerEvent()`; custom views cleanup on `onClose()` |
-| Use `this.app` not global `app` | Access app via plugin instance, not global |
-
-**CSP:** Obsidian does not use a restrictive Content Security Policy in the plugin sandbox — inline scripts and styles work — but `innerHTML` with untrusted content is still a security anti-pattern flagged during review.
-
----
-
-### 9. Knowledge Graph Integration
-
-**Wikilinks:** Write `[[Two Pointers]]` literally into note Markdown content. Obsidian's metadata cache automatically indexes all `[[...]]` links — no API call needed. Just write the Markdown file with wikilinks and the graph updates on next vault scan.
-
-```typescript
-// Generate backlinks section programmatically
-const techniqueLinks = topics.map(t => `[[${t}]]`).join(', ');
-const content = `...\n\n## Techniques\n\n${techniqueLinks}\n`;
-await app.vault.modify(file, content);
-```
-
-**Frontmatter / Tags:** Use `app.fileManager.processFrontMatter()` for atomic frontmatter updates (avoids race conditions with concurrent saves):
-
-```typescript
-await app.fileManager.processFrontMatter(file, (fm) => {
-  fm['title'] = problem.title;
-  fm['difficulty'] = problem.difficulty;
-  fm['tags'] = problem.topicTags.map(t => t.slug);
-  fm['status'] = 'solved';
-  fm['solved-date'] = new Date().toISOString().split('T')[0];
-  fm['language'] = lang;
-  fm['runtime'] = `${runtime}ms`;
-  fm['memory'] = `${memory}MB`;
-});
-```
-
-Frontmatter tags (YAML list) are picked up by Obsidian's tag pane automatically. For user-added personal tags like `#revisit`, they can edit the note normally — no plugin intervention needed.
-
-**Backlinks:** Backlinks to `[[Two Pointers]]`, `[[Binary Search]]`, etc. are created by writing the wikilink to the note file. Obsidian resolves them in the graph even if the target note doesn't exist yet (shows as unresolved link, creates when user clicks).
-
-**MetadataCache API for reading existing notes:**
-```typescript
-const cache = app.metadataCache.getFileCache(file);
-const tags = cache?.frontmatter?.tags ?? [];
-const links = cache?.links ?? [];
-```
+This is exactly the parsing complexity ai-sdk eliminates. The `streamText` call site stays identical across all 5 providers — the provider plugin handles wire-format decoding.
 
 ---
 
@@ -445,15 +233,15 @@ const links = cache?.links ?? [];
 
 | Recommended | Alternative | Why Not |
 |-------------|-------------|---------|
-| `@leetnotion/leetcode-api` + hand-rolled REST | Pure hand-rolled GraphQL | Hand-rolling all queries is viable but adds 200–400 lines of boilerplate for operations the library covers well (problems, submissions, user profile) |
-| `@leetnotion/leetcode-api` + hand-rolled REST | `leetcode-query` alone | `leetcode-query` also lacks run/submit; `@leetnotion/leetcode-api` is more recently maintained (April 2026 vs July 2025) |
-| `requestUrl` (Obsidian built-in) | `axios` | Same CORS issue as `fetch`; adds bundle weight; no advantage in plugin context |
-| `requestUrl` (Obsidian built-in) | `node-fetch` | Electron CORS applies to Node's `fetch` equivalent from renderer too; not idiomatic |
-| `esbuild` | `rollup` | Both work; esbuild is faster and is the official sample-plugin default since 2022 |
-| `turndown` | `rehype-remark` (unified) | Correct direction but heavier; `turndown` is 7 kB gzipped and handles all LC HTML patterns |
-| Note's native code block | Custom CodeMirror editor pane | Enormous complexity; fights Obsidian's UX; CM6 is already there via note editor |
-| `vitest` for unit tests | `jest` + `ts-jest` | Both work; vitest is faster, natively ESM, and doesn't require `ts-jest` config ceremony |
-| Electron `require('electron').BrowserWindow` | `@electron/remote` | `remote` module is deprecated; direct `require('electron')` works in Obsidian's Electron host |
+| `ai` v6.37.0 | `langchain` v1.4.0 | Heavier, agent-oriented; we need single-shot completions and one streaming call; ai-sdk fits better |
+| `ai` + per-provider packages | `openai` (official SDK) only | OpenAI-only; multi-provider requires hand-rolling Anthropic, Bedrock, Ollama wire formats |
+| `@ai-sdk/openai-compatible` for OpenRouter/Ollama | `@openrouter/ai-sdk-provider` + `ollama-ai-provider` | Two extra packages for the same outcome; openai-compatible covers both via base URL |
+| `@ai-sdk/amazon-bedrock` v4.0.105 | `@aws-sdk/client-bedrock-runtime` v3.1047.0 | 150 KB vs 25 KB; different API surface from other providers |
+| `electron.net.fetch` for streaming | `eventsource-parser` + manual `requestUrl` polling | requestUrl returns full body once — there's nothing to parse incrementally; `eventsource-parser` cannot rescue a buffered transport |
+| `electron.net.fetch` for streaming | Hidden `<webview>` proxy | Adds DOM complexity, IPC, lifecycle management; net.fetch is cleaner |
+| `setInterval` + `data.json` persistence | `xstate` v5.31.1 | 60 KB+ for a 4-state FSM; persistence is what matters and xstate doesn't solve that |
+| Native `[[wikilinks]]` + `unresolvedLinks` | `obsidian-graph-analysis` (third-party) | graph-analysis is for graph metrics, not edge creation; native API covers the use case |
+| Native `MarkdownRenderer.render()` + `ItemView` | Custom DOM rendering with `createEl` | MarkdownRenderer already handles wikilinks, embeds, math, code blocks consistently with the rest of Obsidian; reinventing the renderer is anti-pattern |
 
 ---
 
@@ -461,36 +249,55 @@ const links = cache?.links ?? [];
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| `fetch()` / `axios` for LC API calls | Blocked by Electron CORS in plugin renderer context; silent network failures | `requestUrl` from `obsidian` |
-| `innerHTML` with LC HTML content | Flagged by `eslint-plugin-obsidianmd`; XSS risk; will fail plugin review | `turndown` to convert to Markdown; `createEl()` for UI elements |
-| `@electron/remote` | Deprecated Electron API; requires extra shim package; older plugins used it, new ones should not | `require('electron')` directly — Electron is external, provided by Obsidian host |
-| `eval()` or `new Function()` | Forbidden by Obsidian developer policies; causes immediate rejection from store | Build logic at compile time |
-| Global `app` object | Considered a debugging API; may be removed; flagged in plugin review | `this.app` from `Plugin` instance |
-| Pre-warming the full problem cache | 3,000+ problems × ~10–50 kB HTML = 30–150 MB; destroys `data.json` usability | Fetch on demand; index only (slug, id, title, difficulty, tags) |
-| `workspace.activeLeaf` direct access | Deprecated pattern; flagged in plugin review | `app.workspace.getActiveViewOfType(MarkdownView)` |
-| Bundling `obsidian` or `@codemirror/*` | They are runtime-provided by Obsidian; bundling them causes version conflicts and bloat | Mark as `external` in esbuild config (already done by sample-plugin) |
-| `rollup` bundler | Not wrong, but not the official baseline; switching adds friction if contributors expect sample-plugin conventions | `esbuild` |
+| `fetch()` global override (shimming `globalThis.fetch`) | Breaks Obsidian core / other plugins that legitimately use the platform `fetch`; surfaces as random unrelated bugs | Pass `fetch` explicitly to each provider via the `fetch` option |
+| `requestUrl` for AI Debug streaming | Returns fully-buffered response — `streamText` will emit all tokens at once; UX hangs then dumps text | `electron.net.fetch` for AI Debug; `requestUrl` only for non-streaming AI calls |
+| `openai` (official npm package) as the multi-provider client | OpenAI-only; previously had Electron-renderer bundling friction (Node-specific transports); forces hand-rolling other providers | `ai` + `@ai-sdk/openai` |
+| `@aws-sdk/client-bedrock-runtime` directly | 6× the bundle size of `@ai-sdk/amazon-bedrock` for equivalent functionality; different API surface from other providers | `@ai-sdk/amazon-bedrock` |
+| `langchain` for AI Debug | Heavier than needed; agent/chain abstractions are wrong tool for "send code + problem + error → stream suggestions" | `ai-sdk` `streamText` directly |
+| `xstate` for the contest timer | 60 KB+ runtime for a 4-state FSM; doesn't solve the actual hard problem (reload-survival) | Discriminated-union FSM + `data.json` persisted timestamps |
+| `ollama` (npm package, last published 2025-11) | Stale by 6 months; not idiomatic for ai-sdk pattern | `@ai-sdk/openai-compatible` pointed at Ollama's `/v1/` endpoint |
+| `eventsource-parser` v3.0.8 | Useless without an actual streaming transport; with `electron.net.fetch` you already get a `ReadableStream` and ai-sdk handles SSE parsing internally | Not needed |
+| New esbuild externals for `electron` | `electron` is ALREADY in the externals list (v1.0 esbuild config line 19); bundling it would shadow the runtime-provided module and break `net.fetch` resolution | Keep externals list as-is |
+| Stub-note creation for every look-ahead wikilink | Premature; pollutes vault with empty notes; user might never solve some look-ahead targets | Emit dangling `[[wikilink]]`; let `unresolvedLinks` do the work; revisit stubs after dogfood |
+| Telemetry or proxying AI calls through any third-party endpoint | Plugin-store rejection guaranteed (no telemetry; disclose all network endpoints in README) | BYO key + direct provider call only; document this in README |
+| Storing API keys in plain `data.json` without redaction in error logs | Credential leak risk in error-reporting paths | Re-use the v1.0 pattern: store in `data.json` (no other option in Obsidian); redact key in any console.log / Notice / error path |
 
 ---
 
 ## Stack Patterns by Variant
 
-**For the problem browser sidebar (ItemView):**
-- Use `ItemView` + DOM helpers (`createEl`, `createDiv`)
-- No React, no Svelte — keeps bundle under 50 kB
-- Register via `this.registerView(VIEW_TYPE, leaf => new ProblemBrowserView(leaf))`
+**For AI Debug (streaming):**
+- `electron.net.fetch` if available, fall back to `requestUrl` (non-streaming).
+- `streamText({ model: provider(modelId), messages, abortSignal })` — pipe `result.textStream` (`AsyncIterable<string>`) into the inline UI, appending tokens to a `<div>` as they arrive.
+- Wire an `AbortController` to a "Cancel" button so the user can stop generation.
+- On non-streaming fallback, use `generateText` and render the full response when it arrives, with a "Generating..." Notice while waiting.
 
-**For the settings tab:**
-- Use `PluginSettingTab` + `Setting` API
-- Fields: login button, default language (dropdown), problems folder path, clear cache
+**For AI ACed-solution review (non-streaming):**
+- `requestUrl` is fine; no streaming UX.
+- `generateObject({ model, schema, messages })` with a zod schema for `{ approach, efficiency, codeStyle }` — guarantees structured output for the 3-dimensions render, no parser brittleness.
 
-**For submission status polling:**
-- Use `setInterval` / `clearInterval` via `this.registerInterval()` so it auto-cleans on plugin unload
-- Poll `check/` every 2 s; abort after 30 s (LC judge timeout)
+**For AI knowledge-graph maintenance (non-streaming, batched):**
+- `requestUrl` is fine.
+- `generateObject` with a zod schema for `{ clusterName, members[], difficultyEdges[], lookAheadEdges[] }`.
+- Write the resulting wikilinks via `app.fileManager.processFrontMatter` (for tags/cluster name in frontmatter) and `app.vault.process(...)` (for the `## Pattern Cluster` / `## Related Variants` / `## Related (Look-ahead)` body sections — preserves the Phase 05.5 section-lock convention).
 
-**For frontmatter updates on accepted submission:**
-- Use `app.fileManager.processFrontMatter()` — atomic, handles YAML parse errors
-- Do NOT use `Vault.modify()` on active file — loses cursor position
+**For Preview tab (read-mode):**
+- `ItemView` subclass `LeetCodePreviewView` registered via `this.registerView(LC_PREVIEW_VIEW_TYPE, leaf => new LeetCodePreviewView(leaf))`.
+- In `onOpen()`: fetch problem detail (cached if available), call `MarkdownRenderer.render(this.app, markdown, this.contentEl, '', this)`.
+- Add "Start Problem" button via `this.addAction('plus', 'Start problem', () => this.createNote())`.
+- `setViewState({ type: LC_PREVIEW_VIEW_TYPE, state: { titleSlug } })` opens it in a tab.
+
+**For Virtual Contest (FSM + persistence):**
+- Discriminated-union state: `type ContestState = { kind: 'idle' } | { kind: 'running'; contestSlug; startedAt; durationSec } | { kind: 'paused'; ...; pausedAt } | { kind: 'ended'; ...; endedAt }`.
+- Persist on every transition to `data.json`.
+- `Plugin.registerInterval()` for the 1-second tick that updates the toolbar timer widget.
+- On plugin load, hydrate from `data.json`; if `kind === 'running'` and `Date.now() > startedAt + durationSec * 1000`, transition to `ended` immediately.
+
+**For Settings UI (multi-provider):**
+- `PluginSettingTab` (already in v1.0) — add new section "AI Provider".
+- `Setting` with `addDropdown` for provider (openai/anthropic/openai-compatible/bedrock).
+- Conditional `Setting` rows: base URL (compat only), AWS region (bedrock only), API key (all), model ID (all, with sensible defaults per provider).
+- API key field: `Setting.addText().inputEl.type = 'password'` to mask. Same convention as v1.0's session cookie field.
 
 ---
 
@@ -498,28 +305,33 @@ const links = cache?.links ?? [];
 
 | Package | Compatible With | Notes |
 |---------|-----------------|-------|
-| `obsidian@1.12.3` | `@codemirror/state@6.5.0`, `@codemirror/view@6.38.6` | Peer deps declared in `obsidian` npm package; mark both as external in esbuild |
-| `esbuild@0.25.5` | `typescript@^5.8.3` | No direct dep; esbuild transpiles TS independently |
-| `@leetnotion/leetcode-api@3.0.0` | Node ESM + browser fetch | Uses ESM; esbuild handles bundling; swap fetcher for `requestUrl` |
-| `turndown@7.2.4` | Browser + Node | CJS/ESM dual; no peer deps |
-| `vitest@4.1.5` | `typescript@^5.8.3` | Dev-only; not bundled into plugin |
+| `ai@6.37.0` | `@ai-sdk/provider@3.0.10`, `@ai-sdk/provider-utils@4.0.27`, `@ai-sdk/gateway@3.0.114` (transitive); `zod ^3.25.76 \|\| ^4.1.8` (peer) | Transitive deps pinned within the ai package; no manual install needed |
+| `@ai-sdk/openai@3.0.77` | `ai@6.37.0`, `@ai-sdk/provider@3.0.10`, `zod ^3.25.76 \|\| ^4.1.8` | Match major version with `ai` |
+| `@ai-sdk/anthropic@3.0.63` | Same as @ai-sdk/openai | — |
+| `@ai-sdk/openai-compatible@2.0.47` | `ai@6.37.0`, `@ai-sdk/provider@3.0.10`, `zod ^3.25.76 \|\| ^4.1.8` | Major v2 is current; bumped from v1 in early 2026 |
+| `@ai-sdk/amazon-bedrock@4.0.105` | `ai@6.37.0`, `@ai-sdk/provider@3.0.10`, `zod ^3.25.76 \|\| ^4.1.8` | Major v4 is current |
+| `zod@4.4.3` | `ai@6.37.0` peer (`^3.25.76 \|\| ^4.1.8`) | v4 satisfies; can downgrade to `zod@3.25.76+` if any Obsidian-side code conflicts arise |
+| `electron.net.fetch` | Obsidian Electron host (any modern build) | Available in Electron 21+ as `net.fetch`; older builds use `remote.net.fetch`; both paths handled by the resolver |
+| `@leetnotion/leetcode-api@3.0.0` | Already-installed; provides `getPastContests`, `getContestQuestions`, `user_contest_info`, `recent_user_submissions` for v1.1 contest features | No upgrade needed for v1.1 |
 
 ---
 
 ## Sources
 
-- `obsidianmd/obsidian-sample-plugin` — esbuild config, tsconfig, package.json (fetched 2026-05-07, confirmed current)
-- `obsidianmd/obsidian-api` obsidian.d.ts — API surface, `requestUrl`, `MarkdownRenderer`, `FileManager.processFrontMatter` (fetched 2026-05-07)
-- `obsidianmd/obsidian-developer-docs` via Context7 `/obsidianmd/obsidian-developer-docs` — `RequestUrlParam`, `Plugin.loadData/saveData`, `ItemView`, `processFrontMatter`, submission requirements (HIGH confidence)
-- `obsidianmd/obsidian-releases` plugin-review.md + Developer policies raw GitHub — security requirements, no telemetry, no innerHTML, isDesktopOnly, manifest requirements (fetched 2026-05-07)
-- `skygragon/leetcode-cli` lib/config.js — LC REST endpoints for interpret_solution, submit, check (MEDIUM confidence — this tool is old but endpoints are stable; corroborated by community usage)
-- `codewithsathya/leetcode-api` README + source tree — API coverage matrix, custom fetcher API (fetched 2026-05-07, HIGH confidence)
-- `JacobLinCool/LeetCode-Query` base-leetcode.ts — GraphQL architecture, credential model (fetched 2026-05-07)
-- `hadynz/obsidian-kindle-plugin` — Electron BrowserWindow pattern (MEDIUM confidence — uses deprecated `remote` API; updated to direct `require('electron')` recommendation)
-- npm registry — version/publish dates for all packages (verified 2026-05-07)
-- npm download API — `leetcode-query` 1,955/week, `@leetnotion/leetcode-api` 184/week (verified 2026-05-07)
+- `node_modules/obsidian/obsidian.d.ts` — verified `RequestUrlResponse` shape (no streaming body), `MarkdownRenderer.render`, `ItemView`, `unresolvedLinks` (HIGH confidence — local file)
+- `node_modules/@leetnotion/leetcode-api/lib/index.d.ts` — verified `getPastContests`, `getContestQuestions`, `user_contest_info`, `recent_user_submissions` exist in installed v3.0.0 (HIGH confidence — local file)
+- `codewithsathya/leetcode-api` (the upstream of `@leetnotion/leetcode-api` — confirmed via `npm view repository.url`) — verified contest GraphQL files: `src/graphql/contest.graphql` (`userContestRanking + userContestRankingHistory`), `src/graphql/past-contests.graphql` (`contestV2HistoryContests`); `contestQuestionList` corroborated in `NikkyAmresh/lcex/src/modules/LeetCode.ts` and `noogler-eng/ContestTracker/backend/src/controllers/contests.ts` (HIGH confidence)
+- `your-papa/obsidian-Smart2Brain/src/lib/aiTransport.ts` — verified `electron.net.fetch` resolution pattern with fallback to `electron.remote.net.fetch` and `requestUrl` (HIGH confidence — production Obsidian plugin)
+- `jcollingj/caret/llm_calls.ts` — verified `streamText` + `createOpenAICompatible` + `createOpenAI/Anthropic/Groq` Obsidian plugin pattern (HIGH confidence — production code; ai-sdk in real Obsidian use)
+- `0xIntuition/intuition-obsidian-plugin/src/utils/obsidian-fetch.ts` — verified canonical `obsidianFetch` adapter pattern with explicit "No streaming support (Obsidian buffers entire response)" comment (HIGH confidence — production code)
+- `AlexW00/anker/src/services/AiService.ts`, `gnuhpc/obsidian-llmsider/src/providers/openai-provider.ts`, `ckt1031/obsidian-wordwise-plugin/src/provider/openai.ts`, `testy-cool/obsidian-ai-canvas/src/utils/ai.ts` — corroborating Obsidian + ai-sdk + requestUrl pattern across multiple production plugins (HIGH confidence)
+- ai-sdk official docs `https://ai-sdk.dev/providers/ai-sdk-providers/openai-compatible` — verified `createOpenAICompatible({ baseURL, apiKey, fetch })` API surface, Ollama / OpenRouter / vLLM examples (HIGH confidence — official source)
+- ai-sdk official docs `https://ai-sdk.dev/providers/ai-sdk-providers/openai` — verified `createOpenAI` `fetch` option (HIGH confidence — official source)
+- ai-sdk official docs `https://ai-sdk.dev/docs/ai-sdk-core/generating-text` — verified `streamText` returns `result.textStream` as `ReadableStream + AsyncIterable` (HIGH confidence — official source)
+- npm registry — verified package versions and last-published timestamps as of 2026-05-14 for `ai@6.37.0` (2026-05-12), `@ai-sdk/openai@3.0.77` (2026-05-13), `@ai-sdk/anthropic@3.0.63` (2026-05-13), `@ai-sdk/openai-compatible@2.0.47` (2026-05-13), `@ai-sdk/amazon-bedrock@4.0.105` (2026-05-13), `zod@4.4.3` (2026-05-04), `langchain@1.4.0` (2026-05-05), `openai@6.37.0` (2026-05-12), `@anthropic-ai/sdk@0.96.0` (2026-05-13), `@aws-sdk/client-bedrock-runtime@3.1047.0` (2026-05-14), `xstate@5.31.1` (2026-05-10), `ollama@0.6.3` (2025-11-19 — STALE) (HIGH confidence — registry source-of-truth)
+- `skygragon/leetcode-cli/lib/config.js` — verified LC REST endpoints (`interpret_solution`, `submit`, `submissions/detail/{id}/check`) — note this CLI does NOT cover contest endpoints, so contest API came from `codewithsathya/leetcode-api` and `@leetnotion/leetcode-api` directly (MEDIUM confidence on contest endpoint stability — verified by multiple recent third-party clients)
 
 ---
 
-*Stack research for: Obsidian community plugin — LeetCode integration*
-*Researched: 2026-05-07*
+*Stack research for: Obsidian community plugin — LeetCode integration — v1.1 milestone (Contest, AI Coach, Preview)*
+*Researched: 2026-05-14*
