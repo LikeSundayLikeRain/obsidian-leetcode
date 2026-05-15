@@ -18,9 +18,8 @@ result: [pending]
 
 ### 2. Single-click vs shift-click default behavior
 expected: With default settings (Click behavior = Preview first), single-clicking a problem opens a preview tab. Holding shift while clicking opens the v1.0 note (creates if missing, opens if it exists) — NOT a preview.
-result: issue
-reported: "Single-click previews correctly, but the preview's UI doesn't match reading-mode parity: topic chips run together (no separator) and user wants them removed; difficulty pill should stay; action button position is odd (floating below chips instead of in sticky header strip); examples render as plain text + stray copy buttons instead of fenced code blocks; body font is smaller than reading mode; need Enter key to fire the action button."
-severity: major
+result: pass
+notes: "All UI gaps closed by Plan 06-05 + follow-up CSS fixes. Header is single-row (title + pill + right-anchored button), examples render as fenced code blocks with reading-mode parity, Enter activates the button, Esc detaches the preview tab."
 
 ### 3. Settings toggle persists across plugin reload
 expected: Open Settings → Preview → Click behavior. Switch to "Open note directly". Click a problem — v1.0 note path fires (no preview tab). Switch back to "Preview first". Reload Obsidian (Cmd/Ctrl+R or restart). Open settings again — toggle still says "Preview first".
@@ -49,8 +48,8 @@ result: [pending]
 ## Summary
 
 total: 8
-passed: 0
-issues: 1
+passed: 1
+issues: 0
 pending: 7
 skipped: 0
 blocked: 0
@@ -58,7 +57,7 @@ blocked: 0
 ## Gaps
 
 - truth: "Preview tab body should match Obsidian reading-mode rendering — examples in fenced code blocks with grey background, reading-mode font size for prose, inline `code` styled with rounded grey pills."
-  status: failed
+  status: resolved
   reason: "User reported: examples render as plain text with stray copy icons instead of fenced code blocks; body font is smaller than reading-mode; visual mismatch with the user's reference screenshot."
   severity: major
   test: 2
@@ -71,7 +70,7 @@ blocked: 0
   debug_session: ""
 
 - truth: "Preview header chrome should be a single sticky strip: title (left), difficulty pill, action button (right). Topic chips should NOT appear."
-  status: failed
+  status: resolved
   reason: "User reported: topic chips 'ArrayHash Table' run together with no separator; user wants topic chips removed entirely; action button floats below chips row instead of sitting in the sticky header strip."
   severity: major
   test: 2
@@ -85,7 +84,7 @@ blocked: 0
   debug_session: ""
 
 - truth: "Preview tab supports Enter key to fire the action button (Start Problem / Open Problem)."
-  status: failed
+  status: resolved
   reason: "User requested: Enter key should activate the action button without requiring mouse click."
   severity: minor
   test: 2
