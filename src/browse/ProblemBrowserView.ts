@@ -22,6 +22,21 @@ import {
 
 export const BROWSER_VIEW_TYPE = 'leetcode-browser';
 
+/** Phase 06 PREVIEW-02 — pure helper that maps a mouse-event-shaped object
+ *  to a click intent. Shift-key held → 'open' (CONTEXT.md decision A:
+ *  shift-click ALWAYS bypasses preview, regardless of the click-behavior
+ *  setting); otherwise 'preview' (the row hand-off lets `routeProblemClick`
+ *  on the plugin decide whether to honor the user's setting flip).
+ *
+ *  Exported so unit tests can pin the shift-key contract directly without
+ *  standing up the full ItemView (analog: `computeFilterBadgeCount` below;
+ *  see `tests/preview/click-behavior.test.ts`). The defensive `?? false`
+ *  fallback handles synthetic events from polyfills that don't carry the
+ *  property — treat absence as no-shift. */
+export function decideClickIntent(e: { shiftKey?: boolean }): 'preview' | 'open' {
+  return (e.shiftKey ?? false) ? 'open' : 'preview';
+}
+
 /** Phase 5.2 D-04 — compute the user-visible filter-badge count from a
  *  compound filter. A rule counts toward the badge only when it is both:
  *   1. NOT carrying the `__autoDefault: true` marker (stamped on the
@@ -602,10 +617,17 @@ export class ProblemBrowserView extends ItemView {
       text: diffLabel,
     });
 
-    row.addEventListener('click', () => {
-      // GAP-2a: forward the row's IndexedProblem.status so the on-first-write
-      // lc-status reflects the user's real LC submission status.
-      void this.plugin.openProblem(p.slug, p.status);
+    row.addEventListener('click', (e) => {
+      // Phase 06 PREVIEW-02 — delegate to the plugin's single row-activation
+      // entry point. Shift-click always opens (intent='open' bypasses the
+      // user's click-behavior setting per CONTEXT.md decision A); plain
+      // left-click defers the preview-vs-open decision to the router, which
+      // reads `getPreviewClickBehavior()`. The row still forwards
+      // IndexedProblem.status (GAP-2a) so on-first-write lc-status reflects
+      // the user's real LC submission status when the router lands on the
+      // open path.
+      const intent = decideClickIntent(e);
+      void this.plugin.routeProblemClick(p.slug, p.status, intent);
     });
   }
 }

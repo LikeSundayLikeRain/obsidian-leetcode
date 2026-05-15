@@ -475,6 +475,48 @@ export default class LeetCodePlugin extends Plugin {
     return this.notes.openProblem(slug, initialStatus);
   }
 
+  /**
+   * Phase 06 PREVIEW-02 — single row-activation entry point. ProblemBrowserView's
+   * row click handler delegates here; future surfaces (right-click context
+   * menu in Plan 06-04, palette `Open in preview` command, Phase 10 contest
+   * mode) reuse the same router.
+   *
+   * Decision flow (06-PLAN <interfaces> + 06-RESEARCH §Code Examples §Example 2;
+   * CONTEXT.md decision A locks the precedence):
+   *   1. intent === 'open'  → ALWAYS opens the note. Shift-click bypass + the
+   *      `Click behavior = open` setting both land here.
+   *   2. intent === 'preview' && opts?.force  → preview path. Right-click ->
+   *      Preview (Plan 06-04) sets force=true so the user's setting can't
+   *      suppress an explicit menu choice.
+   *   3. intent === 'preview' && setting === 'open'  → opens the note. The
+   *      user has opted into v1.0 click-to-open behavior.
+   *   4. intent === 'preview'  → preview path.
+   *
+   * Plan 06-02 ships a placeholder `Notice` for the preview path so the
+   * routing seam is observable in dev without standing up the view. Plan
+   * 06-03 lands `ProblemPreviewView` and swaps the Notice for
+   * `openOrReusePreview(this, slug)` at the marked TODO.
+   */
+  async routeProblemClick(
+    slug: string,
+    status: 'solved' | 'attempted' | 'untouched' | undefined,
+    intent: 'preview' | 'open',
+    opts?: { force?: boolean },
+  ): Promise<void> {
+    if (intent === 'open') {
+      return this.openProblem(slug, status);
+    }
+    // intent === 'preview' from here on.
+    if (!opts?.force && this.settings.getPreviewClickBehavior() === 'open') {
+      return this.openProblem(slug, status);
+    }
+    // TODO(06-03): swap this placeholder for `await openOrReusePreview(this, slug)`
+    // once src/preview/previewRouter.ts and ProblemPreviewView land. Notice
+    // copy is sentence case per obsidianmd/ui/sentence-case lint rule; the
+    // tests pin the substring "06-03" so the swap site stays grep-able.
+    new Notice('Preview view will land in plan 06-03', 4000);
+  }
+
   /** GAP-11: force-refresh the `## Problem` body of the currently-open note,
    *  bypassing the 7-day cache TTL. Invoked by the "Refresh current problem"
    *  command palette entry. Delegates to NoteWriter.forceRefresh which owns
