@@ -1,11 +1,14 @@
 // tests/preview/header-render.test.ts
 //
-// Phase 06 Plan 03 — DOM contract for ProblemPreviewView's sticky header
-// (06-UI-SPEC §Layout). Asserts:
+// Phase 06 Plan 03 (with gap-closure 06-05) — DOM contract for the
+// ProblemPreviewView sticky header (06-UI-SPEC §Layout, amended by
+// 06-UAT.md). Asserts:
 //   - <h2 class="lc-preview__title"> with `{id}. {title}` text.
 //   - one `.lc-diff--{difficulty.toLowerCase()}` element.
-//   - N `.lc-preview__topic` chips matching topicSlugs.length (with title-case
-//     display labels — 'hash-table' → 'Hash Table').
+//   - ZERO `.lc-preview__topic` chips regardless of topicSlugs (gap-closure
+//     06-05: topic chips dropped from header per user override of decision C).
+//   - the action button is a child of `.lc-preview__chips` so the strip
+//     collapses to title + pill + button on one line.
 //   - one `<button>` with class `.lc-preview__action` carrying the
 //     `is-primary` accent class iff `noteExists === false`.
 //   - 06-UI-SPEC §Copywriting: button reads `Start Problem` (no note) /
@@ -55,7 +58,12 @@ describe('renderHeader (Phase 06 Plan 03 sticky header DOM contract)', () => {
     expect(medium[0]?.textContent).toBe('Medium');
   });
 
-  it('emits N topic chips equal to topicSlugs.length with title-case display labels', () => {
+  it('emits ZERO .lc-preview__topic chips regardless of topicSlugs (gap-closure 06-05)', () => {
+    // Topic chips were dropped from the sticky header per user override of
+    // CONTEXT.md decision C. The header is now a single-strip layout
+    // (title + difficulty pill + action button). This test locks the
+    // deletion at the DOM level even when the detail carries a non-empty
+    // topicSlugs array.
     const container = document.createElement('div');
     renderHeader(
       container,
@@ -63,10 +71,31 @@ describe('renderHeader (Phase 06 Plan 03 sticky header DOM contract)', () => {
       false,
     );
     const chips = container.querySelectorAll('.lc-preview__topic');
-    expect(chips.length).toBe(3);
-    expect(chips[0]?.textContent).toBe('Array');
-    expect(chips[1]?.textContent).toBe('Hash Table');
-    expect(chips[2]?.textContent).toBe('Two Pointers');
+    expect(chips.length).toBe(0);
+  });
+
+  it('action button sits inside the chip row inside the header strip (single-strip layout)', () => {
+    // Gap-closure 06-05 — assert the containment chain the user UAT calls
+    // out: title and chip row are siblings under the header container, the
+    // action button is a direct child of `.lc-preview__chips`. The CSS
+    // `margin-left: auto` on `.lc-preview__action` then pushes it to the
+    // right edge of the strip.
+    const container = document.createElement('div');
+    const btn = renderHeader(
+      container,
+      makeDetail({ topicSlugs: ['array', 'hash-table'] }),
+      false,
+    );
+    const chipRow = container.querySelector('.lc-preview__chips');
+    expect(chipRow).not.toBeNull();
+    expect(btn.parentElement).toBe(chipRow);
+
+    // The title and the chip row are siblings under the same outer
+    // container (which becomes the sticky header strip in the live view).
+    const title = container.querySelector('h2.lc-preview__title');
+    expect(title).not.toBeNull();
+    expect(title?.parentElement).toBe(container);
+    expect(chipRow?.parentElement).toBe(container);
   });
 
   it('emits a Start Problem button with .is-primary when noteExists === false (accent CTA)', () => {

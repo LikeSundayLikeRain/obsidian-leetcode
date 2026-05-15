@@ -91,23 +91,29 @@ interface PreviewViewState {
 }
 
 /**
- * Public for testing — Task 1's tests/preview/header-render.test.ts calls
- * this directly without standing up the full view. Renders the sticky header
- * (title + chip row with difficulty pill + topic chips + Start/Open action
- * button) into the supplied container. Returns the action button so callers
- * can wire its click handler.
+ * Public for testing — tests/preview/header-render.test.ts calls this
+ * directly without standing up the full view. Renders the sticky header
+ * (single-strip layout: title + chip row with difficulty pill + Start/Open
+ * action button) into the supplied container. Returns the action button so
+ * callers can wire its click handler.
+ *
+ * Single-strip header (gap-closure 06-05): title, difficulty pill, action
+ * button. Topic chips dropped per user override of CONTEXT.md decision C
+ * (PREVIEW-03 reduced from "difficulty + topic chips" to "difficulty pill
+ * only" for v1.1; topic-chip surfacing remains a deferred backlog candidate).
  *
  * Contract:
  *   - container is emptied before render (idempotent re-render is the
  *     caller's responsibility — header-only).
  *   - Difficulty pill class is `lc-diff lc-diff--{difficulty.toLowerCase()}`
  *     so the existing UI-SPEC `color-mix` background rules apply.
- *   - Topic chips are plain `<span class="lc-preview__topic">` — non-
- *     interactive in v1.1 base ship (CONTEXT.md decision C).
  *   - Action button receives `lc-preview__action.is-primary` iff
  *     `noteExists === false` (Start Problem is the accent CTA; Open Problem
  *     is neutral). Locked by 06-UI-SPEC § Color "Accent reserved EXCLUSIVELY
  *     for Start Problem".
+ *   - The action button stays inside the chip row (single horizontal strip);
+ *     `margin-left: auto` on `.lc-preview__action` pushes it to the right
+ *     edge so the visual collapses to title + pill + button on one line.
  *
  * The function does NOT wire the click handler — the caller (renderForSlug)
  * handles disable + label transition + openProblem await + post-action
@@ -129,7 +135,7 @@ export function renderHeader(
     text: titleText,
   });
 
-  // Chip row — pill, topic chips, action button.
+  // Chip row — pill + action button. Topic chips removed (gap-closure 06-05).
   const chipRow = container.createDiv({ cls: 'lc-preview__chips' });
 
   const difficulty = detail.difficulty;
@@ -138,13 +144,6 @@ export function renderHeader(
     cls: difficultyClass,
     text: difficulty,
   });
-
-  for (const topic of detail.topicSlugs ?? []) {
-    chipRow.createSpan({
-      cls: 'lc-preview__topic',
-      text: topicSlugToDisplay(topic),
-    });
-  }
 
   // Action button — Start Problem (accent) when no note exists, Open Problem
   // (neutral) otherwise. The class application and `is-primary` decision is
@@ -164,17 +163,6 @@ export function renderHeader(
     `${verb} problem ${String(detail.id)}: ${detail.title}`,
   );
   return button;
-}
-
-/** Convert a topic slug ('hash-table') into a display label ('Hash Table').
- *  Matches the convention used in v1.0's filter modal topic chips. Pure
- *  function. */
-function topicSlugToDisplay(slug: string): string {
-  return slug
-    .split('-')
-    .filter((word) => word.length > 0)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
 }
 
 /**
@@ -430,7 +418,13 @@ export class ProblemPreviewView extends ItemView {
     // obsidianmd/no-plugin-as-component (the rule rejects passing the
     // plugin as Component; ItemView extends Component so passing the view
     // is the canonical pattern).
-    const body = root.createDiv({ cls: 'leetcode-preview__body' });
+    //
+    // The `markdown-rendered` class co-applied alongside `leetcode-preview__body`
+    // pulls Obsidian's reading-mode CSS cascade onto the rendered body
+    // (code-block backgrounds, copy buttons, prose typography). Without it
+    // the body inherits no font cascade and examples fall back to plain
+    // prose at the chrome's `--font-ui-small` size — see 06-UAT.md gap #1.
+    const body = root.createDiv({ cls: 'leetcode-preview__body markdown-rendered' });
     const md = htmlToMarkdown(detail.contentHtml);
     void MarkdownRenderer.render(this.app, md, body, '', this);
 
