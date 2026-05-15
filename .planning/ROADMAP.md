@@ -93,7 +93,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07-02-PLAN.md — `obsidianFetch(mode)` adapter + `AIClient` facade + 5 provider adapters + pricing table + bundle-size CI gate verification + LC-isolation regression (grep gate + runtime test)
+- [x] 07-02-PLAN.md — `obsidianFetch(mode)` adapter + `AIClient` facade + 5 provider adapters + pricing table + bundle-size CI gate verification + LC-isolation regression (grep gate + runtime test)
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
@@ -196,7 +196,7 @@ Plans:
 | 05.4. Run-verdict UX button polish       | v1.0      | 5/5            | Complete    | 2026-05-14  |
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
-| 07. AI Provider Foundation               | v1.1      | 1/6 | In Progress|  |
+| 07. AI Provider Foundation               | v1.1      | 2/6 | In Progress|  |
 | 08. AI Debug                             | v1.1      | -/-            | Not Started | -           |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
 status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-05-15T23:31:51.085Z"
-last_activity: 2026-05-15 -- Completed 07-01 (AI Provider Foundation) — types + SettingsStore AI fields + logger redaction
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-05-15T23:47:16.166Z"
+last_activity: 2026-05-15 -- Completed 07-02 (AI Provider runtime core — obsidianFetch + AIClient + 4 provider adapters + LC-isolation regression)
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 11
-  completed_plans: 6
+  completed_plans: 7
   percent: 14
 ---
 
@@ -26,15 +26,15 @@ See: .planning/PROJECT.md (updated 2026-05-15 — v1.1 milestone opened)
 ## Current Position
 
 Phase: 07 (AI Provider Foundation) — EXECUTING
-Plan: 2 of 6
-Status: 07-01 complete; 07-02 next
-Last activity: 2026-05-15 -- Completed 07-01 (AI Provider Foundation foundation layer)
+Plan: 3 of 6
+Status: 07-02 complete; 07-03 next
+Last activity: 2026-05-15 -- Completed 07-02 (AI Provider runtime core)
 
 ### Resume path
 
-1. Review and approve `.planning/ROADMAP.md` v1.1 section (Phases 06–12).
-2. Run `/gsd-plan-phase 6` to decompose Phase 06 (Foundations + Preview Mode) into executable plans.
-3. Phase 06 must complete before any v1.1 feature code lands — `eslint-plugin-obsidianmd@^0.3.0` bump and CI bundle-size gate are gating dependencies for Phases 07–12.
+1. Execute `.planning/phases/07-ai-provider-foundation/07-03-PLAN.md` (Settings UI + main.ts wiring).
+2. Plan 07-03 may now construct `new AIClient(this.settings)` in main.ts:onload after Step 5.8 (EphemeralTabStore) and render the Active-AI-provider dropdown + per-provider sub-form in SettingsTab.
+3. Plan 07-04 (probe wiring) and Plan 07-05 (disclosure gate) follow after 07-03 ships the Settings surface.
 
 ### v1.1 Phase Map
 
@@ -66,7 +66,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 **Velocity (v1.0 cumulative):**
 
 - Total plans completed: 65 across v1.0
-- v1.1 plans completed: 1 (07-01)
+- v1.1 plans completed: 2 (07-01, 07-02)
 - v1.1 phases completed: 0/7
 
 **v1.0 plan-level history archived in `.planning/milestones/v1.0-ROADMAP.md`.**
@@ -76,6 +76,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 07    | 01   | 7m 38s   | 3     | 7     |
+| 07    | 02   | 11m 6s   | 3     | 14    |
 
 ## Accumulated Context
 
@@ -95,6 +96,12 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 - **07-01:** AIRequest/AIResponse ship as empty-but-named interfaces (lint-disabled inline) — named brand types stabilize Plan 07-02's AIClient.invoke signature; Phase 08 expands shape.
 - **07-01:** BEARER_VALUE_PATTERN runs BEFORE SECRET_VALUE_PATTERN in `redactString` so `Authorization: Bearer sk-xyz` redacts at both layers (no secret survival).
 - **07-01:** `sanitizeAICostLedger` resets BOTH date AND usdToday together when either is malformed — corrupt ledger cannot carry stale spend under a bogus date.
+- **07-02:** Bundle landed at 168.9 KB / 331.1 KB headroom under 500 KB ceiling — no dynamic-import escape hatch triggered (well below 450 KB threshold). Static imports as planned.
+- **07-02:** obsidianFetch loads electron via the activeWindow.require / module.require / __webpack_require__ shim (mirroring src/auth/BrowserWindowLogin.ts:nodeRequire) — literal `require('electron')` call site forbidden by `@typescript-eslint/no-require-imports`.
+- **07-02:** Both obsidianFetch branches enforce `credentials: 'omit'` (T-07-02 cookie-leak mitigation); stream branch overrides caller's `'include'` at runtime even if explicitly set.
+- **07-02:** AIPROV-05 LC-isolation gate wired as `prelint` hook (fail-fast before eslint), backed by 4 fs-walk runtime tests as layer-2 defense against silent CI gate disablement.
+- **07-02:** OpenRouter slug uses DOT not dash (`anthropic/claude-haiku-4.5`) — locked by regression test (RESEARCH Assumption A4).
+- **07-02:** resolveAdapter ships exhaustive switch with Phase-08-stub `invoke` throwing `'AIClient.invoke: Phase 08 wires the real call'` — surfaces forgotten wiring loudly during Phase 08.
 
 ### v1.1 Decisions Locked at Roadmap Time
 
@@ -137,9 +144,9 @@ None yet — awaiting `/gsd-plan-phase 6`.
 
 ## Session Continuity
 
-Last session: 2026-05-15T23:31:27.089Z
-Stopped at: Completed 07-01-PLAN.md (Wave 1 foundation: types + SettingsStore + logger)
-Resume file: .planning/phases/07-ai-provider-foundation/07-02-PLAN.md
+Last session: 2026-05-15T23:47:07.886Z
+Stopped at: Completed 07-02-PLAN.md
+Resume file: .planning/phases/07-ai-provider-foundation/07-03-PLAN.md
 
 ## Operator Next Steps
 
