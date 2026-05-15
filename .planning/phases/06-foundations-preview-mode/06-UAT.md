@@ -13,8 +13,9 @@ updated: 2026-05-15T20:15:00Z
 ## Tests
 
 ### 1. Right-click → Preview problem
-expected: Right-click any problem row → context menu shows "Preview problem" → clicking opens a `leetcode-preview` tab → no new file in `LeetCode/` (or your configured problems folder).
-result: [pending]
+expected: Right-click any problem row → context menu shows "Preview problem" + "Open problem" → "Preview problem" opens the preview tab → no new file in `LeetCode/`. ("Open problem" item added in follow-up to give the menu a non-trivial second option.)
+result: pass
+notes: "User asked for a second menu item so the right-click menu wasn't a single-option list. Added `Open problem` (file-text icon) that calls routeProblemClick(... 'open', { force: true }) — fires the v1.0 create-or-open pipeline."
 
 ### 2. Single-click vs shift-click default behavior
 expected: With default settings (Click behavior = Preview first), single-clicking a problem opens a preview tab. Holding shift while clicking opens the v1.0 note (creates if missing, opens if it exists) — NOT a preview.
@@ -23,11 +24,18 @@ notes: "All UI gaps closed by Plan 06-05 + follow-up CSS fixes. Header is single
 
 ### 3. Settings toggle persists across plugin reload
 expected: Open Settings → Preview → Click behavior. Switch to "Open note directly". Click a problem — v1.0 note path fires (no preview tab). Switch back to "Preview first". Reload Obsidian (Cmd/Ctrl+R or restart). Open settings again — toggle still says "Preview first".
-result: [pending]
+result: pass
 
 ### 4. Start Problem creates note + preview auto-detaches
 expected: Preview a problem you have NOT created a note for. Action button reads "Start Problem" with a primary accent. Click it. A note is created at `LeetCode/{id}-{slug}.md` (or your configured folder) via the v1.0 pipeline. Within ~100ms after the note tab takes focus, the preview tab disappears.
-result: [pending]
+result: pass
+
+### 4a. SEPARATE BUG (out of phase 06 scope) — HTML tables flatten to vertical text
+expected: Problems whose statement contains an HTML <table> (e.g., LC #12 Integer to Roman has a Symbol/Value table) should render as a GFM Markdown table both in the preview tab AND in v1.0 notes' ## Problem section.
+result: issue
+reported: "Preview body for LC #12 shows 'Symbol', 'Value', 'I', '1', 'V', '5', ...' as vertical lines instead of a 2-column table. Same issue affects v1.0 notes since they share src/notes/htmlToMarkdown.ts."
+severity: major
+notes: "Root cause: turndown-plugin-gfm is not installed; default Turndown strips <table> structure. Fix: npm install turndown-plugin-gfm + wire `service.use(tables)` in src/notes/htmlToMarkdown.ts. Affects both new previews AND v1.0 problem notes — should be a separate plan since it crosses phase 06's scope."
 
 ### 5. Open Problem jumps to existing note without overwriting
 expected: Preview a problem you HAVE already created a note for (e.g., one of your previously solved problems). Action button reads "Open Problem" (neutral, no accent). Click it. Existing note tab opens. The note's content (your code, notes, frontmatter) is unchanged.
@@ -48,9 +56,9 @@ result: [pending]
 ## Summary
 
 total: 8
-passed: 1
+passed: 2
 issues: 0
-pending: 7
+pending: 6
 skipped: 0
 blocked: 0
 
