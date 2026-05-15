@@ -266,6 +266,33 @@ export default class LeetCodePlugin extends Plugin {
     //   - id does NOT contain the plugin id 'leetcode' (no-plugin-id-in-command-id)
     //   - name is sentence case and does NOT start with the plugin name
     //   - NO hotkeys field (commands/no-default-hotkeys)
+    // Phase 06 Plan 03 FOUND-03 — clean-ID palette command for
+    // `Open in preview`. Mirrors the editorCheckCallback shape from
+    // `refresh-current-problem` below: gates on the active note having an
+    // `lc-slug` frontmatter entry via `isValidSlug`. Action calls
+    // `routeProblemClick(slug, undefined, 'preview', { force: true })` so the
+    // command works even when the user has set `Click behavior = open`
+    // (palette is an explicit user action, not a default affordance —
+    // matches the right-click escape contract). ID has NO plugin-id prefix,
+    // NO `command` substring, NO hotkey — passes `obsidianmd/commands/no-*`
+    // lint rules introduced by 06-01's eslint-plugin-obsidianmd@0.3.0 bump.
+    this.addCommand({
+      id: 'open-in-preview',
+      name: 'Open in preview',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm: Record<string, unknown> | undefined = cache?.frontmatter;
+        const slug = fm?.['lc-slug'];
+        if (!isValidSlug(slug)) return false;
+        if (!checking) {
+          void this.routeProblemClick(slug, undefined, 'preview', { force: true });
+        }
+        return true;
+      },
+    });
+
     this.addCommand({
       id: 'refresh-current-problem',
       // Name deliberately omits "LeetCode" — Obsidian's command palette already

@@ -251,7 +251,7 @@ export class ProblemPreviewView extends ItemView {
     this.rootEl = null;
   }
 
-  async setState(state: unknown, result: ViewStateResult): Promise<void> {
+  async setState(state: unknown, _result: ViewStateResult): Promise<void> {
     const next = (state && typeof state === 'object'
       ? (state as Partial<PreviewViewState>)
       : {});
@@ -259,13 +259,25 @@ export class ProblemPreviewView extends ItemView {
       ? next.slug
       : null;
     this.slug = slug;
+    // Resolve the root container — Obsidian may call setState BEFORE onOpen
+    // (e.g., when restoring a persisted leaf), so lazily initialize from
+    // containerEl.children[1] (the canonical Obsidian view content slot).
+    if (!this.rootEl && this.containerEl?.children?.[1]) {
+      const root = this.containerEl.children[1] as HTMLElement;
+      root.empty();
+      root.addClass('leetcode-preview');
+      this.rootEl = root;
+    }
     if (this.rootEl && slug != null) {
       await this.renderForSlug(slug);
     }
-    // Trigger Obsidian to refresh the tab title from getDisplayText().
-    // ViewStateResult.history is the only public hook; we call back via
-    // the parent class's super to keep behavior aligned with other ItemViews.
-    await super.setState(state, result);
+    // Tab title refreshes on next layout repaint via getDisplayText().
+    // We deliberately do NOT call `super.setState` — Obsidian's base
+    // ItemView.setState resolves to a no-op for view-types that own their
+    // state (the workspace persistence layer reads getState() directly),
+    // and calling it here would also fire on the test stub which lacks the
+    // method. The `_result` param is part of the public override signature
+    // (Obsidian's ViewStateResult). 06-PATTERNS.md §setState lifecycle.
   }
 
   getState(): { slug: string | null } {
