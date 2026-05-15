@@ -523,8 +523,18 @@ function pickStarterCode(entry: DetailCacheEntry, langSlug: string): string {
   return hit?.code ?? '';
 }
 
-/** Map LC's detail shape into the on-disk cache entry. */
-function toDetailCacheEntry(raw: NoteWriterDetail): DetailCacheEntry {
+/** Map LC's detail shape into the on-disk cache entry.
+ *
+ * Phase 06 Plan 03 — `export` keyword added so the new `ProblemPreviewView`
+ * cache-miss path (src/preview/ProblemPreviewView.ts) can call this helper to
+ * persist a freshly-fetched detail into SettingsStore. RESEARCH §A2: the
+ * underlying `LeetCodeClient.getProblemDetail` does NOT auto-persist into
+ * SettingsStore — the preview view itself must call `setProblemDetail(slug,
+ * toDetailCacheEntry(fetched))` after the fetch resolves. The body shape stays
+ * IDENTICAL to v1.0 (existing internal callers in this module — openProblem,
+ * backgroundRefresh, forceRefresh — keep working with the same in-module
+ * import resolution; only the keyword is added). */
+export function toDetailCacheEntry(raw: NoteWriterDetail): DetailCacheEntry {
   return {
     fetchedAt: Date.now(),
     id: Number(raw.questionFrontendId) || 0,
