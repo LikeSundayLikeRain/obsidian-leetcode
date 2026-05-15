@@ -173,6 +173,29 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       );
 
     // =============================
+    //   Preview section (Phase 06 PREVIEW-02)
+    // =============================
+    // Click-behavior toggle for ProblemBrowserView rows. CONTEXT.md decision A:
+    // 'preview' is the single default for fresh installs and v1.1 upgraders;
+    // shift-click always opens the note directly regardless of this setting.
+    // Copy is locked verbatim by 06-UI-SPEC §Copywriting Contract — paraphrasing
+    // is forbidden. Two-option `addOption(value, label)` chain (NOT `addOptions`
+    // with a Record literal) per the locked precedent in 06-UI-SPEC §Layout.
+    new Setting(containerEl).setName('Preview').setHeading();
+
+    new Setting(containerEl)
+      .setName('Click behavior')
+      .setDesc('What happens when you click a problem in the LeetCode browser. Shift-click always opens the note directly.')
+      .addDropdown((d) => d
+        .addOption('preview', 'Preview first')
+        .addOption('open', 'Open note directly')
+        .setValue(this.plugin.settings.getPreviewClickBehavior())
+        .onChange(async (v) => {
+          await this.plugin.settings.setPreviewClickBehavior(v as 'preview' | 'open');
+        }),
+      );
+
+    // =============================
     //   Knowledge Graph section (Phase 5 POLISH-01 D-14)
     // =============================
     // D-17: no Advanced / collapsible section — always visible.
