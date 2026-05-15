@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
 status: executing
-stopped_at: Phase 07 context gathered
-last_updated: "2026-05-15T23:21:16.735Z"
-last_activity: 2026-05-15 -- Phase 07 planning complete
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-05-15T23:31:51.085Z"
+last_activity: 2026-05-15 -- Completed 07-01 (AI Provider Foundation) — types + SettingsStore AI fields + logger redaction
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 11
-  completed_plans: 5
+  completed_plans: 6
   percent: 14
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-15 — v1.1 milestone opened)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** Phase 07 — ai provider foundation
+**Current focus:** Phase 07 — AI Provider Foundation
 
 ## Current Position
 
-Phase: 07
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-15 -- Phase 07 planning complete
+Phase: 07 (AI Provider Foundation) — EXECUTING
+Plan: 2 of 6
+Status: 07-01 complete; 07-02 next
+Last activity: 2026-05-15 -- Completed 07-01 (AI Provider Foundation foundation layer)
 
 ### Resume path
 
@@ -66,10 +66,16 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 **Velocity (v1.0 cumulative):**
 
 - Total plans completed: 65 across v1.0
-- v1.1 plans completed: 0
+- v1.1 plans completed: 1 (07-01)
 - v1.1 phases completed: 0/7
 
 **v1.0 plan-level history archived in `.planning/milestones/v1.0-ROADMAP.md`.**
+
+**v1.1 plan execution metrics:**
+
+| Phase | Plan | Duration | Tasks | Files |
+|-------|------|----------|-------|-------|
+| 07    | 01   | 7m 38s   | 3     | 7     |
 
 ## Accumulated Context
 
@@ -86,6 +92,9 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 - Plugin-internal CM6 dispatches use `userEvent: 'leetcode.*'` to bypass section-lock changeFilter.
 - `LOCKED_HEADINGS` lives in `src/notes/NoteTemplate.ts`; v1.1 will extend it with `## AI Review` (Phase 09) and `## Related Variants` (Phase 11).
 - Frontmatter additions require a documented production reader (lesson from v1.0 dropped `lc-solved-date`/`lc-runtime-ms`/`lc-memory-mb`).
+- **07-01:** AIRequest/AIResponse ship as empty-but-named interfaces (lint-disabled inline) — named brand types stabilize Plan 07-02's AIClient.invoke signature; Phase 08 expands shape.
+- **07-01:** BEARER_VALUE_PATTERN runs BEFORE SECRET_VALUE_PATTERN in `redactString` so `Authorization: Bearer sk-xyz` redacts at both layers (no secret survival).
+- **07-01:** `sanitizeAICostLedger` resets BOTH date AND usdToday together when either is malformed — corrupt ledger cannot carry stale spend under a bogus date.
 
 ### v1.1 Decisions Locked at Roadmap Time
 
@@ -128,9 +137,9 @@ None yet — awaiting `/gsd-plan-phase 6`.
 
 ## Session Continuity
 
-Last session: 2026-05-15T22:04:38.492Z
-Stopped at: Phase 07 context gathered
-Resume file: .planning/phases/07-ai-provider-foundation/07-CONTEXT.md
+Last session: 2026-05-15T23:31:27.089Z
+Stopped at: Completed 07-01-PLAN.md (Wave 1 foundation: types + SettingsStore + logger)
+Resume file: .planning/phases/07-ai-provider-foundation/07-02-PLAN.md
 
 ## Operator Next Steps
 

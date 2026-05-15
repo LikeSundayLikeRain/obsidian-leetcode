@@ -89,7 +89,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 07-01-PLAN.md — Foundation types + PluginData schema + shape-guards + logger redaction (gates 02–06)
+- [x] 07-01-PLAN.md — Foundation types + PluginData schema + shape-guards + logger redaction (gates 02–06)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -196,7 +196,7 @@ Plans:
 | 05.4. Run-verdict UX button polish       | v1.0      | 5/5            | Complete    | 2026-05-14  |
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
-| 07. AI Provider Foundation               | v1.1      | -/-            | Not Started | -           |
+| 07. AI Provider Foundation               | v1.1      | 1/6 | In Progress|  |
 | 08. AI Debug                             | v1.1      | -/-            | Not Started | -           |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
