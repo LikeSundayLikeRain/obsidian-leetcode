@@ -129,19 +129,18 @@ export function renderHeader(
   container.addClass('leetcode-preview__header');
   container.addClass('is-sticky');
 
-  // Title row — `<h2 class="lc-preview__title">{id}. {title}</h2>`
+  // Single-row layout: [title] [difficulty pill] [spacer] [action button].
+  // The header is one flex row; the button is anchored right via CSS
+  // `margin-left: auto`, mirroring LeetCode's own problem-header chrome.
   const titleText = `${String(detail.id)}. ${detail.title}`;
   container.createEl('h2', {
     cls: 'lc-preview__title',
     text: titleText,
   });
 
-  // Chip row — pill + action button. Topic chips removed (gap-closure 06-05).
-  const chipRow = container.createDiv({ cls: 'lc-preview__chips' });
-
   const difficulty = detail.difficulty;
   const difficultyClass = `lc-diff lc-diff--${difficulty.toLowerCase()}`;
-  chipRow.createSpan({
+  container.createSpan({
     cls: difficultyClass,
     text: difficulty,
   });
@@ -153,7 +152,7 @@ export function renderHeader(
   const actionCls = noteExists
     ? 'lc-preview__action'
     : 'lc-preview__action is-primary';
-  const button = chipRow.createEl('button', {
+  const button = container.createEl('button', {
     cls: actionCls,
     text: actionLabel,
   });
@@ -243,6 +242,15 @@ export class ProblemPreviewView extends ItemView {
     }
     this.scope.register([], 'Enter', () => {
       this.activeAction?.click();
+      return false;
+    });
+
+    // Escape detaches the preview leaf entirely — closes the tab rather than
+    // just blurring focus. Obsidian's default Esc behavior returns to the
+    // last visited tab but leaves the preview leaf attached, which doesn't
+    // match the user's expectation of a dismissable preview surface.
+    this.scope.register([], 'Escape', () => {
+      this.leaf.detach();
       return false;
     });
 

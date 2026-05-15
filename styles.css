@@ -1247,8 +1247,9 @@
   border-bottom: 1px solid var(--background-modifier-border);
   padding: 16px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
   font-size: var(--font-ui-small);
 }
 
@@ -1261,13 +1262,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.leetcode-preview__chips {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .leetcode-preview .lc-diff {

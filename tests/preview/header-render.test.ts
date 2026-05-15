@@ -74,28 +74,25 @@ describe('renderHeader (Phase 06 Plan 03 sticky header DOM contract)', () => {
     expect(chips.length).toBe(0);
   });
 
-  it('action button sits inside the chip row inside the header strip (single-strip layout)', () => {
-    // Gap-closure 06-05 — assert the containment chain the user UAT calls
-    // out: title and chip row are siblings under the header container, the
-    // action button is a direct child of `.lc-preview__chips`. The CSS
-    // `margin-left: auto` on `.lc-preview__action` then pushes it to the
-    // right edge of the strip.
+  it('title, difficulty pill, and action button are direct children of the header strip (single-row layout)', () => {
+    // Gap-closure 06-05 follow-up — single-row layout: header is a flex row
+    // with title, pill, and button as siblings. CSS `margin-left: auto` on
+    // `.lc-preview__action` pushes the button to the right edge.
     const container = document.createElement('div');
     const btn = renderHeader(
       container,
       makeDetail({ topicSlugs: ['array', 'hash-table'] }),
       false,
     );
-    const chipRow = container.querySelector('.lc-preview__chips');
-    expect(chipRow).not.toBeNull();
-    expect(btn.parentElement).toBe(chipRow);
-
-    // The title and the chip row are siblings under the same outer
-    // container (which becomes the sticky header strip in the live view).
     const title = container.querySelector('h2.lc-preview__title');
+    const pill = container.querySelector('.lc-diff');
     expect(title).not.toBeNull();
+    expect(pill).not.toBeNull();
     expect(title?.parentElement).toBe(container);
-    expect(chipRow?.parentElement).toBe(container);
+    expect(pill?.parentElement).toBe(container);
+    expect(btn.parentElement).toBe(container);
+    // No `.lc-preview__chips` wrapper anymore.
+    expect(container.querySelector('.lc-preview__chips')).toBeNull();
   });
 
   it('emits a Start Problem button with .is-primary when noteExists === false (accent CTA)', () => {
