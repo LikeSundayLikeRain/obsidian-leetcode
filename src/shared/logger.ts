@@ -9,15 +9,44 @@
  * historical `info` level is kept as a public API but maps to `console.debug`
  * so the wrapper itself never invokes a forbidden console method.
  */
-const REDACT = /session|csrf|cookie|token/i;
+// Phase 07 T-07-05 — extended to cover AI key field names (apiKey, api_key,
+// api-key, x-api-key) and Authorization-header tokens (bearer, authorization).
+// `api[_-]?key` covers all four common spellings; the case-insensitive flag
+// also handles camelCase (apiKey, ApiKey, APIKEY). Old v1.0 tokens stay in
+// the same order so existing logger-redact tests remain green.
+const REDACT = /session|csrf|cookie|token|apikey|api[_-]?key|bearer|authorization/i;
 // Value-level redaction pattern: auth-ish kv pairs embedded in error messages,
 // stack traces, or config/request/response strings. e.g. "LEETCODE_SESSION=xyz"
 // or "Cookie: csrftoken=abc". We redact the value while keeping the key visible
 // for debugging context (AUTH-06 — cookies never logged in plaintext).
-const SECRET_VALUE_PATTERN = /\b(LEETCODE_SESSION|csrftoken|session|csrf|cookie|token|authorization)\s*[=:]\s*[^\s;,"'&}\]]+/gi;
+//
+// Phase 07 T-07-05 extension:
+//   - apikey / api_key / api-key / x-api-key — AI provider header names
+//   - bearer — captures `Bearer sk-xyz` substrings that survive after the
+//     `authorization:` prefix has already been redacted (e.g. when the header
+//     value itself is logged separately or the prefix uses `:` followed by a
+//     space which the original token consumed before the value).
+//   The `bearer` alternate uses a SPACE separator (Authorization: Bearer xyz)
+//   in addition to `=`/`:` — see SECRET_VALUE_PATTERN below for the second
+//   regex covering that shape.
+const SECRET_VALUE_PATTERN = /\b(LEETCODE_SESSION|csrftoken|session|csrf|cookie|token|authorization|apikey|api[_-]?key|x-api-key)\s*[=:]\s*[^\s;,"'&}\]]+/gi;
+// Separate regex for the Bearer-token shape: `Bearer sk-xyz`. The space
+// separator distinguishes this from header-name=value pairs handled above.
+// Captures only the token suffix; the `Bearer` keyword is preserved.
+const BEARER_VALUE_PATTERN = /\b(bearer)\s+([^\s;,"'&}\]]+)/gi;
 
 function redactString(s: string): string {
-  return s.replace(SECRET_VALUE_PATTERN, (_m, key: string) => `${key}=[REDACTED]`);
+  // Order matters: BEARER first so a header value like
+  // `Authorization: Bearer sk-xyz` first becomes
+  // `Authorization: Bearer [REDACTED]`, then SECRET_VALUE_PATTERN's
+  // `authorization` alternate captures `Authorization: Bearer` as the
+  // header-name=value pair (the regex's `[^\s;,"'&}\]]+` consumes `Bearer`,
+  // which is now harmless because the secret has already been redacted).
+  // Net result: both the Bearer keyword's value AND the surrounding header
+  // name redact, with no secret survival.
+  return s
+    .replace(BEARER_VALUE_PATTERN, (_m, key: string) => `${key} [REDACTED]`)
+    .replace(SECRET_VALUE_PATTERN, (_m, key: string) => `${key}=[REDACTED]`);
 }
 
 function redact(obj: unknown, depth = 0): unknown {

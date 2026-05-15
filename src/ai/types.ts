@@ -53,14 +53,20 @@ export interface ProbeResult {
  * Phase 08 expands this — see Phase 07 plan_hints. Phase 07 ships an
  * empty-but-named interface so Plan 07-02's
  * `AIClient.invoke(req: AIRequest): Promise<AIResponse>` signature
- * type-checks without speculative fields.
+ * type-checks without speculative fields. Empty-interface lint suppression
+ * is intentional: a `type X = object` alias would not preserve the named
+ * brand that downstream plans import.
  */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface AIRequest {}
 
 /**
  * Phase 08 expands this — see Phase 07 plan_hints. Phase 07 ships an
  * empty-but-named interface so Plan 07-02's
  * `AIClient.invoke(req: AIRequest): Promise<AIResponse>` signature
- * type-checks without speculative fields.
+ * type-checks without speculative fields. Empty-interface lint suppression
+ * is intentional: a `type X = object` alias would not preserve the named
+ * brand that downstream plans import.
  */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface AIResponse {}
