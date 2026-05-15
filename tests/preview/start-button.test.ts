@@ -119,7 +119,7 @@ describe('Preview action button click — Start Problem branch (Phase 06 Plan 03
     await view.setState({ slug: 'two-sum' }, { history: false } as Parameters<ProblemPreviewView['setState']>[1]);
 
     // Locate the action button.
-    const btn = root.querySelector<HTMLButtonElement>('button.lc-preview__action');
+    const btn = root.querySelector<HTMLButtonElement>('button.leetcode-preview__action');
     expect(btn).not.toBeNull();
     expect(btn?.textContent).toBe('Start Problem');
 

@@ -108,12 +108,12 @@ interface PreviewViewState {
  *     caller's responsibility — header-only).
  *   - Difficulty pill class is `lc-diff lc-diff--{difficulty.toLowerCase()}`
  *     so the existing UI-SPEC `color-mix` background rules apply.
- *   - Action button receives `lc-preview__action.is-primary` iff
+ *   - Action button receives `leetcode-preview__action.is-primary` iff
  *     `noteExists === false` (Start Problem is the accent CTA; Open Problem
  *     is neutral). Locked by 06-UI-SPEC § Color "Accent reserved EXCLUSIVELY
  *     for Start Problem".
  *   - The action button stays inside the chip row (single horizontal strip);
- *     `margin-left: auto` on `.lc-preview__action` pushes it to the right
+ *     `margin-left: auto` on `.leetcode-preview__action` pushes it to the right
  *     edge so the visual collapses to title + pill + button on one line.
  *
  * The function does NOT wire the click handler — the caller (renderForSlug)
@@ -134,7 +134,7 @@ export function renderHeader(
   // `margin-left: auto`, mirroring LeetCode's own problem-header chrome.
   const titleText = `${String(detail.id)}. ${detail.title}`;
   container.createEl('h2', {
-    cls: 'lc-preview__title',
+    cls: 'leetcode-preview__title',
     text: titleText,
   });
 
@@ -150,8 +150,8 @@ export function renderHeader(
   // the ONE place 06-UI-SPEC §Acceptance allows the accent class to land.
   const actionLabel = noteExists ? COPY.openProblem : COPY.startProblem;
   const actionCls = noteExists
-    ? 'lc-preview__action'
-    : 'lc-preview__action is-primary';
+    ? 'leetcode-preview__action'
+    : 'leetcode-preview__action is-primary';
   const button = container.createEl('button', {
     cls: actionCls,
     text: actionLabel,

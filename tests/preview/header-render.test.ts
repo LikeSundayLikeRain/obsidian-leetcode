@@ -3,13 +3,13 @@
 // Phase 06 Plan 03 (with gap-closure 06-05) — DOM contract for the
 // ProblemPreviewView sticky header (06-UI-SPEC §Layout, amended by
 // 06-UAT.md). Asserts:
-//   - <h2 class="lc-preview__title"> with `{id}. {title}` text.
+//   - <h2 class="leetcode-preview__title"> with `{id}. {title}` text.
 //   - one `.lc-diff--{difficulty.toLowerCase()}` element.
 //   - ZERO `.lc-preview__topic` chips regardless of topicSlugs (gap-closure
 //     06-05: topic chips dropped from header per user override of decision C).
 //   - the action button is a child of `.lc-preview__chips` so the strip
 //     collapses to title + pill + button on one line.
-//   - one `<button>` with class `.lc-preview__action` carrying the
+//   - one `<button>` with class `.leetcode-preview__action` carrying the
 //     `is-primary` accent class iff `noteExists === false`.
 //   - 06-UI-SPEC §Copywriting: button reads `Start Problem` (no note) /
 //     `Open Problem` (note exists).
@@ -38,10 +38,10 @@ function makeDetail(overrides: Partial<DetailCacheEntry> = {}): DetailCacheEntry
 }
 
 describe('renderHeader (Phase 06 Plan 03 sticky header DOM contract)', () => {
-  it('emits the title heading as `{id}. {title}` inside an h2.lc-preview__title', () => {
+  it('emits the title heading as `{id}. {title}` inside an h2.leetcode-preview__title', () => {
     const container = document.createElement('div');
     renderHeader(container, makeDetail({ id: 1, title: 'Two Sum' }), false);
-    const h2 = container.querySelector('h2.lc-preview__title');
+    const h2 = container.querySelector('h2.leetcode-preview__title');
     expect(h2).not.toBeNull();
     expect(h2?.textContent).toBe('1. Two Sum');
   });
@@ -77,14 +77,14 @@ describe('renderHeader (Phase 06 Plan 03 sticky header DOM contract)', () => {
   it('title, difficulty pill, and action button are direct children of the header strip (single-row layout)', () => {
     // Gap-closure 06-05 follow-up — single-row layout: header is a flex row
     // with title, pill, and button as siblings. CSS `margin-left: auto` on
-    // `.lc-preview__action` pushes the button to the right edge.
+    // `.leetcode-preview__action` pushes the button to the right edge.
     const container = document.createElement('div');
     const btn = renderHeader(
       container,
       makeDetail({ topicSlugs: ['array', 'hash-table'] }),
       false,
     );
-    const title = container.querySelector('h2.lc-preview__title');
+    const title = container.querySelector('h2.leetcode-preview__title');
     const pill = container.querySelector('.lc-diff');
     expect(title).not.toBeNull();
     expect(pill).not.toBeNull();
@@ -99,7 +99,7 @@ describe('renderHeader (Phase 06 Plan 03 sticky header DOM contract)', () => {
     const container = document.createElement('div');
     const btn = renderHeader(container, makeDetail(), false);
     expect(btn.tagName).toBe('BUTTON');
-    expect(btn.className).toContain('lc-preview__action');
+    expect(btn.className).toContain('leetcode-preview__action');
     expect(btn.className).toContain('is-primary');
     expect(btn.textContent).toBe('Start Problem');
   });
@@ -108,7 +108,7 @@ describe('renderHeader (Phase 06 Plan 03 sticky header DOM contract)', () => {
     const container = document.createElement('div');
     const btn = renderHeader(container, makeDetail(), true);
     expect(btn.tagName).toBe('BUTTON');
-    expect(btn.className).toContain('lc-preview__action');
+    expect(btn.className).toContain('leetcode-preview__action');
     expect(btn.className).not.toContain('is-primary');
     expect(btn.textContent).toBe('Open Problem');
   });
@@ -124,9 +124,9 @@ describe('renderHeader (Phase 06 Plan 03 sticky header DOM contract)', () => {
     renderHeader(container, makeDetail(), false);
     renderHeader(container, makeDetail(), true);
     // After the second call, the first call's DOM is gone (container.empty()).
-    const titles = container.querySelectorAll('h2.lc-preview__title');
+    const titles = container.querySelectorAll('h2.leetcode-preview__title');
     expect(titles.length).toBe(1);
-    const buttons = container.querySelectorAll('button.lc-preview__action');
+    const buttons = container.querySelectorAll('button.leetcode-preview__action');
     expect(buttons.length).toBe(1);
     // The second call's "Open" state is the live one.
     expect(buttons[0]?.textContent).toBe('Open Problem');

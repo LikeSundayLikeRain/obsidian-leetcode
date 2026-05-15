@@ -75,7 +75,7 @@ describe('Preview post-Start detach (Phase 06 Plan 03 CONTEXT.md decision B)', (
 
     await view.setState({ slug: 'two-sum' }, { history: false } as Parameters<ProblemPreviewView['setState']>[1]);
 
-    const btn = root.querySelector<HTMLButtonElement>('button.lc-preview__action');
+    const btn = root.querySelector<HTMLButtonElement>('button.leetcode-preview__action');
     expect(btn).not.toBeNull();
     btn!.click();
     // Allow microtasks to drain: openProblem.await + post-await synchronous
@@ -131,7 +131,7 @@ describe('Preview post-Start detach (Phase 06 Plan 03 CONTEXT.md decision B)', (
 
     await view.setState({ slug: 'two-sum' }, { history: false } as Parameters<ProblemPreviewView['setState']>[1]);
 
-    const btn = root.querySelector<HTMLButtonElement>('button.lc-preview__action');
+    const btn = root.querySelector<HTMLButtonElement>('button.leetcode-preview__action');
     btn!.click();
     await Promise.resolve();
     await Promise.resolve();
