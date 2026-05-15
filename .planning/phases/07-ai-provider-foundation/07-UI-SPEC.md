@@ -1,7 +1,8 @@
 ---
 phase: 07
 slug: ai-provider-foundation
-status: draft
+status: approved
+reviewed_at: 2026-05-15T00:00:00Z
 shadcn_initialized: false
 preset: none
 created: 2026-05-15
