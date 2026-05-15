@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "prelint": "npm run check:lc-isolation",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
+    "check:lc-isolation": "bash scripts/check-no-obsidianfetch-in-lc.sh",
     "grep:vault": "./scripts/grep-no-vault-modify.sh",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
