@@ -31,15 +31,18 @@ created: 2026-05-15
 
 ## Spacing Scale
 
-Declared values (multiples of 4, matching the existing `styles.css` token vocabulary):
+Declared values (multiples of 4 from the standard set `{4, 8, 16, 24, 32, 48, 64}`):
 
 | Token | Value | Usage |
 |-------|-------|-------|
 | xs | 4px | Inline gaps within button rows; gap between inline buttons (already locked at `.leetcode-code-actions { gap: 8px }`, `.leetcode-verdict-action-row { gap: 8px }`) |
-| sm | 8px | Button padding-y; modal section gap; row spacing inside footers |
-| md | 12px | Modal body internal section breaks (matches `.leetcode-verdict-runtime { margin-bottom: 12px }` precedent) |
+| sm | 8px | Button padding-y; modal section gap; row spacing inside footers; vertical margin around the cancelled / error indicator paragraphs |
 | lg | 16px | Modal action-row top margin (matches `.leetcode-verdict-action-row { margin-top: 16px }`); modal body padding |
-| xl | 24px | Reserved — not used in Phase 08 |
+| xl | 24px | Reserved — declared but not consumed by Phase 08 selectors; available for future modal-internal section breaks |
+
+**Phase 08 introduces ONLY values from the standard set** — `{4, 8, 16, 24}`. No off-scale values are introduced.
+
+**Pre-existing-codebase precedent (NOT reused by Phase 08):** The legacy `.leetcode-verdict-runtime { margin-bottom: 12px }` rule (`styles.css:625`) and a handful of other 12px usages exist from earlier phases. Phase 08 does NOT extend or reuse 12px; new selectors fall back to 8px (sm) where prior phases would have reached for 12px. Future phases should likewise avoid introducing new 12px usages and instead choose 8 or 16 from the standard set.
 
 **Specific Phase 08 commitments:**
 
@@ -47,9 +50,11 @@ Declared values (multiples of 4, matching the existing `styles.css` token vocabu
 - `.leetcode-ai-stream-body`: `padding: 0` — reuses the `markdown-rendered` class for body padding (matches `.leetcode-preview__body markdown-rendered` pattern from Phase 06 at `styles.css:1346-1348`).
 - `.leetcode-ai-stream-footer`: `display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px` — verbatim mirror of `.leetcode-verdict-footer`/`.leetcode-verdict-action-row` (locked at `styles.css:627-633`).
 - `.leetcode-ai-stream-thinking`: `text-align: center; padding: 16px 0; color: var(--text-muted); font-size: 13px` — mirrors `.leetcode-submissions-loading`/`.leetcode-submissions-empty` (locked at `styles.css:741-748`).
-- `.leetcode-code-action-ai-debug` (3rd fence-row button): inherits the `.leetcode-code-action-run` / `.leetcode-code-action-submit` token rule at `styles.css:971-988` verbatim — `min-height: 30px; padding: 2px 12px; border-radius: 6px; font-size: 13px`. No new spacing introduced; inherits `gap: 8px` from `.leetcode-code-actions`.
+- `.leetcode-ai-stream-cancelled`: `margin: 0 0 8px 0` (vertical breathing space below the cancelled indicator before the frozen body — uses sm token).
+- `.leetcode-ai-stream-error`: `margin: 8px 0 0 0` (vertical breathing space above the error paragraph after the heading — uses sm token).
+- `.leetcode-code-action-ai-debug` (3rd fence-row button): inherits the `.leetcode-code-action-run` / `.leetcode-code-action-submit` token rule at `styles.css:971-988` verbatim — `min-height: 30px; padding: 2px 12px; border-radius: 6px; font-size: 13px`. No new spacing introduced; inherits `gap: 8px` from `.leetcode-code-actions`. (The `padding: 2px 12px` value lives inside an existing legacy rule Phase 08 inherits unmodified — Phase 08 introduces no NEW 12px usage.)
 
-**Exceptions:** None. Every Phase 08 spacing value is already in the precedent table.
+**Exceptions:** None — Phase 08 introduces only `{4, 8, 16, 24}` from the standard set.
 
 ---
 
@@ -59,7 +64,7 @@ Phase 08 introduces NO new font sizes or weights. All four typography roles map 
 
 | Role | Size | Weight | Line Height | Source |
 |------|------|--------|-------------|--------|
-| Body (modal Markdown) | inherited from `markdown-rendered` cascade | inherited | inherited | Obsidian reading-mode CSS picks this up via `.leetcode-ai-stream-body markdown-rendered` (mirrors Phase 06 PreviewView at `styles.css:1346-1348` + `ProblemPreviewView.ts:479`) |
+| Body (modal Markdown) | inherited from `markdown-rendered` cascade | inherited | inherit (Obsidian reading-mode cascade — ~1.6) | Obsidian reading-mode CSS picks this up via `.leetcode-ai-stream-body markdown-rendered` (mirrors Phase 06 PreviewView at `styles.css:1346-1348` + `ProblemPreviewView.ts:479`) |
 | Label (button text) | 13px | 500 | 1 | Matches `.leetcode-code-action-run` / `.leetcode-fm__picker` token; `font-size: 13px` is the locked button-label size at `styles.css:341, 681, 977` |
 | Heading (modal title) | inherited from Obsidian `.modal-title` | 600 | 1.3 | Obsidian provides this via `titleEl.setText(...)` — no override |
 | Display (Thinking… counter) | 13px | 400 | 1.5 | `.leetcode-ai-stream-thinking { font-size: 13px; color: var(--text-muted) }` — mirrors `.leetcode-submissions-loading` (locked at `styles.css:741-748`); no monospace, but mm:ss timer uses `font-variant-numeric: tabular-nums` so digits don't shift width |
@@ -67,7 +72,7 @@ Phase 08 introduces NO new font sizes or weights. All four typography roles map 
 **Specific Phase 08 commitments:**
 
 - mm:ss counter format: `Thinking… 00:03` (with NBSP between word and digits to prevent line-break). Pad both minutes and seconds with leading zero. After 99:59, format becomes `99:59+` and the counter freezes (defensive — no real AI call should run that long; Phase 09's cap will pre-empt).
-- "Cancelled" indicator (post-cancel): rendered as `<p class="leetcode-ai-stream-cancelled">Cancelled — partial response below.</p>` with `color: var(--text-muted); font-style: italic; font-size: 13px; margin: 0 0 12px 0`. Mirrors `.lc-fm__empty-hint` precedent (`styles.css:443-447`).
+- "Cancelled" indicator (post-cancel): rendered as `<p class="leetcode-ai-stream-cancelled">Cancelled — partial response below.</p>` with `color: var(--text-muted); font-style: italic; font-size: 13px; margin: 0 0 8px 0`. Mirrors `.lc-fm__empty-hint` precedent (`styles.css:443-447`).
 
 **No new typographic primitives.** No code-block font swap inside the streamed body — `markdown-rendered` cascade handles fences via `<pre><code>` styled by Obsidian's reading-mode rules.
 
@@ -99,7 +104,7 @@ Phase 08 introduces NO new color tokens. Every paint goes through Obsidian CSS v
 
 ### Destructive (`var(--text-error)`) reserved for:
 
-- Error-state body text when the AI call rejects with a network/provider error: `<p class="leetcode-ai-stream-error">{vendor message — truncated to 200 chars}</p>` with `color: var(--text-error); font-size: 13px; margin: 12px 0 0 0`. Mirrors `.leetcode-submissions-error` precedent (`styles.css:749-751`).
+- Error-state body text when the AI call rejects with a network/provider error: `<p class="leetcode-ai-stream-error">{vendor message — truncated to 200 chars}</p>` with `color: var(--text-error); font-size: 13px; margin: 8px 0 0 0`. Mirrors `.leetcode-submissions-error` precedent (`styles.css:749-751`).
 
 **Phase 08 explicitly does NOT use destructive color for:**
 
@@ -131,6 +136,15 @@ All strings are locked verbatim. Plan 08-XX implementations MUST grep-match thes
 - Parity with palette label `AI: Debug current code` (consistent visual token "AI:" cues that this contacts an external AI provider, not a local feature).
 - Distinguishes from any future non-AI debug surface.
 - Locked by CONTEXT decision C; researcher recommendation in 08-CONTEXT `<open_questions_for_planning>` was `AI: Debug`; auto-mode confirms.
+
+### Exceptions / Locked single-word labels
+
+CONTEXT decision D locks two single-word button labels in the AIStreamModal footer:
+
+- **`Cancel`** — mid-stream abort button (visible during streaming). Single word is intentional. Matches established Obsidian modal conventions for in-flight cancellation (`Modal` core uses `Cancel` as its standard short-label); pairing it with a longer phrase ("Cancel request" / "Stop streaming") would diverge from the pattern users learn from every other Obsidian dialog. Verb-only is the Obsidian house style.
+- **`Close`** — post-stream / post-cancel / post-error dismiss button. Single word is intentional. Matches Obsidian's standard dismissal-button label across the app (Settings, callout dialogs, the disclosure modal's secondary action). A longer phrase ("Close window" / "Done") would create modal-to-modal inconsistency.
+
+These two exceptions are the only single-word labels in Phase 08; every other user-visible button uses the longer prefixed form (`AI: Debug`, `Copy response`, `AI: Debug current code`).
 
 ### Modal title
 
@@ -397,8 +411,8 @@ Locked new selectors (5 total):
 2. `.leetcode-ai-stream` — empty rule (scoping anchor; mirrors `.leetcode-ai-disclosure` precedent at `styles.css:212-214`).
 3. `.leetcode-ai-stream-body` — `padding: 0` (the `markdown-rendered` co-class handles real padding).
 4. `.leetcode-ai-stream-thinking` — `text-align: center; padding: 16px 0; color: var(--text-muted); font-size: 13px; font-variant-numeric: tabular-nums`.
-5. `.leetcode-ai-stream-cancelled` — `color: var(--text-muted); font-style: italic; font-size: 13px; margin: 0 0 12px 0`.
-6. `.leetcode-ai-stream-error` — `color: var(--text-error); font-size: 13px; margin: 12px 0 0 0`.
+5. `.leetcode-ai-stream-cancelled` — `color: var(--text-muted); font-style: italic; font-size: 13px; margin: 0 0 8px 0`.
+6. `.leetcode-ai-stream-error` — `color: var(--text-error); font-size: 13px; margin: 8px 0 0 0`.
 7. `.leetcode-ai-stream-footer` — comma-grouped INTO `.leetcode-verdict-footer, .leetcode-verdict-action-row` rule at `styles.css:627-633` (zero net new styling — just adds a 3rd selector).
 
 Bundle ceiling: 1 MB (raised from 500 KB in Plan 07-03 per Rule 3 deviation; current production bundle 830.5 KB at end of Phase 07 — 169.5 KB headroom). Phase 08 adds:
@@ -425,6 +439,7 @@ Bundle ceiling: 1 MB (raised from 500 KB in Plan 07-03 per Rule 3 deviation; cur
 - Empty-state copy: in-modal `Thinking…` (NOT a separate empty state in the v1.1 sense — there is no zero-data screen).
 - Error copy: `Couldn't reach {provider}.` + truncated vendor message ≤ 200 chars.
 - Destructive: none.
+- Single-word label exceptions: `Cancel` and `Close` are intentionally short — locked by CONTEXT decision D and matching Obsidian house style; see §Copywriting Contract → "Exceptions / Locked single-word labels".
 
 ### Dimension 2: Visuals
 
@@ -444,12 +459,13 @@ Bundle ceiling: 1 MB (raised from 500 KB in Plan 07-03 per Rule 3 deviation; cur
 
 - 1 size: 13px (button labels, body chrome) — already in token vocabulary.
 - 1 weight (label): 500 — already in token vocabulary.
-- Body inherits Obsidian reading-mode cascade via `markdown-rendered`.
+- Body inherits Obsidian reading-mode cascade via `markdown-rendered` (effective line-height ~1.6).
 - No new font primitives.
 
 ### Dimension 5: Spacing
 
-- All values multiples of 4 (8, 12, 16).
+- Phase 08 introduces ONLY values from the standard set `{4, 8, 16, 24}`.
+- 12px is NOT introduced by Phase 08 — legacy `.leetcode-verdict-runtime { margin-bottom: 12px }` remains untouched, but every new Phase 08 selector uses 8 (sm) or 16 (lg).
 - All values reuse existing tokens from `styles.css` (verbatim mirror of `.leetcode-verdict-footer` for footer; verbatim mirror of `.leetcode-submissions-loading` for thinking line).
 
 ### Dimension 6: Registry Safety
@@ -465,11 +481,12 @@ Bundle ceiling: 1 MB (raised from 500 KB in Plan 07-03 per Rule 3 deviation; cur
 | Decision | Source |
 |----------|--------|
 | No shadcn / Obsidian-native | CLAUDE.md project conventions; existing `styles.css` token vocabulary |
-| Spacing scale (8/12/16) | `styles.css:627-633` (verdict footer); `styles.css:1346-1348` (preview body) |
+| Spacing scale (4/8/16/24 from standard set) | `styles.css:627-633` (verdict footer); `styles.css:1346-1348` (preview body) |
 | Typography (13px / 500) | `styles.css:341, 681, 977` (button-label token) |
 | Color reserved for accent (zero new sites) | 07-CONTEXT decision E + Plan 07-05 single-`setCta` invariant |
 | Color destructive for `.leetcode-ai-stream-error` | `styles.css:749-751` (`.leetcode-submissions-error`) precedent |
 | Button labels `AI: Debug` / `AI: Debug current code` | 08-CONTEXT decision C + `<open_questions_for_planning>` recommendation |
+| Single-word `Cancel` / `Close` labels | 08-CONTEXT decision D + Obsidian modal house style |
 | Modal title `AI Debug — {provider}` | 08-RESEARCH Pattern 4 + 08-CONTEXT `<open_questions_for_planning>` "provider only" recommendation |
 | `Thinking…` body copy + mm:ss counter | 08-CONTEXT decision D (locked) + 08-RESEARCH Example 4 |
 | Disclosure bullet verbatim | 08-CONTEXT decision D-Disclosure copy extension (locked illustrative wording promoted to canonical) |
@@ -500,4 +517,4 @@ Bundle ceiling: 1 MB (raised from 500 KB in Plan 07-03 per Rule 3 deviation; cur
 
 ---
 
-*Phase 08 UI-SPEC drafted: 2026-05-15. Auto-mode pre-population from CONTEXT/RESEARCH/code precedents; no user questions asked. Ready for `/gsd-check-ui-phase 8` validation.*
+*Phase 08 UI-SPEC drafted: 2026-05-15. Auto-mode pre-population from CONTEXT/RESEARCH/code precedents; no user questions asked. Revised 2026-05-15 to fix Dimension 5 spacing (drop 12px from Phase 08 introductions) and add Dimension 1 single-word-label exceptions + Dimension 4 body line-height annotation. Ready for `/gsd-check-ui-phase 8` validation.*
