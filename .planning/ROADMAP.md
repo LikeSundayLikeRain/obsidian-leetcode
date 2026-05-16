@@ -84,7 +84,7 @@ Plans:
   4. README's "Network use" section enumerates every endpoint the plugin can contact (leetcode.com plus each AI provider's base URL).
   5. AI calls go through a single `obsidianFetch(mode)` adapter — `electron.net.fetch` for streaming when available, `requestUrl` otherwise — and all leetcode.com calls remain on `requestUrl` (v1.0 convention preserved absolutely).
 
-**Plans**: 6 plans
+**Plans**: 7 plans (gap-closure 07-07 added 2026-05-16)
 
 Plans:
 **Wave 1**
@@ -104,6 +104,10 @@ Plans:
 - [x] 07-04-PLAN.md — Test connection wiring: `testActiveAIConnection` + `test-ai-connection` palette command + per-provider probe matrix unit tests (OpenAI/OpenRouter/Ollama/Anthropic/Custom-fallback)
 - [x] 07-05-PLAN.md — `AIDisclosureModal` + `DISCLOSURE_BASE_COPY` shared constant + AIClient probe/invoke disclosure gate + `reset-ai-disclosures` palette command
 - [x] 07-06-PLAN.md — `clear-ai-key` palette command + README ## Network usage section (5 AI provider hosts + leetcode.com + Authentication + Cost expectations stub) + README CI grep gate
+
+**Wave 5** *(gap-closure — blocked on Waves 1–4 completion)*
+
+- [x] 07-07-PLAN.md — Gap closure: CR-01 logger double-replacement + CR-02 probeCustom/probeOllama empty-baseUrl guards + WR-01 AIClient.invoke missing await + WR-02 DISCLOSURE_BASE_COPY freeze
 
 **UI hint**: yes
 
@@ -196,7 +200,7 @@ Plans:
 | 05.4. Run-verdict UX button polish       | v1.0      | 5/5            | Complete    | 2026-05-14  |
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
-| 07. AI Provider Foundation               | v1.1      | 5/6 | In Progress|  |
+| 07. AI Provider Foundation               | v1.1      | 7/7 | Complete   | 2026-05-16 |
 | 08. AI Debug                             | v1.1      | -/-            | Not Started | -           |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
