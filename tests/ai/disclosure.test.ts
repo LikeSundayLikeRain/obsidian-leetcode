@@ -439,6 +439,47 @@ describe('Phase 07 Plan 05 — Source file invariants', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
+//   Plan 07-07 Task 4 — WR-02 freeze regression
+//
+//   DISCLOSURE_BASE_COPY (and both inner arrays) must be frozen at module
+//   load so future-phase mutation cannot race with in-flight modal renders
+//   (07-PATTERNS.md Pattern 4 originally allowed Phase 08/09/11 to push
+//   bullets via `DISCLOSURE_BASE_COPY.willSend.push(...)` — WR-02 supersedes
+//   that with a composition-based extension contract).
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('Phase 07 Plan 07 — WR-02 freeze regression', () => {
+  it('Object.isFrozen(DISCLOSURE_BASE_COPY) === true', async () => {
+    const { DISCLOSURE_BASE_COPY } = await import('../../src/ai/disclosure');
+    expect(Object.isFrozen(DISCLOSURE_BASE_COPY)).toBe(true);
+  });
+
+  it('Object.isFrozen(DISCLOSURE_BASE_COPY.willSend) === true (deep freeze)', async () => {
+    const { DISCLOSURE_BASE_COPY } = await import('../../src/ai/disclosure');
+    expect(Object.isFrozen(DISCLOSURE_BASE_COPY.willSend)).toBe(true);
+  });
+
+  it('Object.isFrozen(DISCLOSURE_BASE_COPY.neverSends) === true (deep freeze)', async () => {
+    const { DISCLOSURE_BASE_COPY } = await import('../../src/ai/disclosure');
+    expect(Object.isFrozen(DISCLOSURE_BASE_COPY.neverSends)).toBe(true);
+  });
+
+  it('mutation attempts on willSend throw in strict mode (vitest default)', async () => {
+    const { DISCLOSURE_BASE_COPY } = await import('../../src/ai/disclosure');
+    expect(() => {
+      (DISCLOSURE_BASE_COPY.willSend as string[]).push('mutated-by-future-phase');
+    }).toThrow();
+  });
+
+  it('mutation attempts on neverSends throw in strict mode', async () => {
+    const { DISCLOSURE_BASE_COPY } = await import('../../src/ai/disclosure');
+    expect(() => {
+      (DISCLOSURE_BASE_COPY.neverSends as string[]).push('mutated-by-future-phase');
+    }).toThrow();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
 
 function makeCfg(overrides: Partial<{ baseUrl: string }> = {}): {
   apiKey: string;
