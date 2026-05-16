@@ -135,7 +135,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 08-02-PLAN.md — AIClient.invokeStream + per-provider streamText/generateText adapters + AbortSignal propagation tests + electron.net.fetch signal-honoring stub
+- [x] 08-02-PLAN.md — AIClient.invokeStream + per-provider streamText/generateText adapters + AbortSignal propagation tests + electron.net.fetch signal-honoring stub
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
@@ -224,7 +224,7 @@ Plans:
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
 | 07. AI Provider Foundation               | v1.1      | 8/8 | Complete    | 2026-05-16 |
-| 08. AI Debug                             | v1.1      | 1/5 | In Progress|  |
+| 08. AI Debug                             | v1.1      | 2/5 | In Progress|  |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
