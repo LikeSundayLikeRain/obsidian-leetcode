@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
 status: executing
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-05-15T23:47:16.166Z"
-last_activity: 2026-05-15 -- Completed 07-02 (AI Provider runtime core — obsidianFetch + AIClient + 4 provider adapters + LC-isolation regression)
+stopped_at: Completed 07-03-PLAN.md
+last_updated: "2026-05-16T00:13:45.693Z"
+last_activity: 2026-05-16 -- Completed 07-03 (AI Settings section + AIClient wiring + bundle ceiling 500 KB -> 1 MB)
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 11
-  completed_plans: 7
-  percent: 14
+  completed_plans: 9
+  percent: 15
 ---
 
 # Project State
@@ -26,15 +26,15 @@ See: .planning/PROJECT.md (updated 2026-05-15 — v1.1 milestone opened)
 ## Current Position
 
 Phase: 07 (AI Provider Foundation) — EXECUTING
-Plan: 3 of 6
-Status: 07-02 complete; 07-03 next
-Last activity: 2026-05-15 -- Completed 07-02 (AI Provider runtime core)
+Plan: 4 of 6
+Status: 07-03 complete; 07-04 next
+Last activity: 2026-05-16 -- Completed 07-03 (AI Settings section + AIClient wiring + bundle ceiling bump)
 
 ### Resume path
 
-1. Execute `.planning/phases/07-ai-provider-foundation/07-03-PLAN.md` (Settings UI + main.ts wiring).
-2. Plan 07-03 may now construct `new AIClient(this.settings)` in main.ts:onload after Step 5.8 (EphemeralTabStore) and render the Active-AI-provider dropdown + per-provider sub-form in SettingsTab.
-3. Plan 07-04 (probe wiring) and Plan 07-05 (disclosure gate) follow after 07-03 ships the Settings surface.
+1. Execute `.planning/phases/07-ai-provider-foundation/07-04-PLAN.md` (Test connection probe wiring).
+2. Plan 07-04 may now grep `Test connection: wiring lands in Plan 07-04` in `src/settings/SettingsTab.ts` to find the placeholder onClick and replace it with `await this.plugin.aiClient.probe(active)`. Surface ProbeResult.ok / errorMessage / modelCount per 07-UI-SPEC §"Notice copy".
+3. Plan 07-05 (disclosure gate) wraps probe + invoke with the disclosure modal after 07-04 ships the live probe surface.
 
 ### v1.1 Phase Map
 
@@ -66,7 +66,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 **Velocity (v1.0 cumulative):**
 
 - Total plans completed: 65 across v1.0
-- v1.1 plans completed: 2 (07-01, 07-02)
+- v1.1 plans completed: 3 (07-01, 07-02, 07-03)
 - v1.1 phases completed: 0/7
 
 **v1.0 plan-level history archived in `.planning/milestones/v1.0-ROADMAP.md`.**
@@ -77,6 +77,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 |-------|------|----------|-------|-------|
 | 07    | 01   | 7m 38s   | 3     | 7     |
 | 07    | 02   | 11m 6s   | 3     | 14    |
+| 07    | 03   | 12m 46s  | 2     | 9     |
 
 ## Accumulated Context
 
@@ -102,6 +103,12 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 - **07-02:** AIPROV-05 LC-isolation gate wired as `prelint` hook (fail-fast before eslint), backed by 4 fs-walk runtime tests as layer-2 defense against silent CI gate disablement.
 - **07-02:** OpenRouter slug uses DOT not dash (`anthropic/claude-haiku-4.5`) — locked by regression test (RESEARCH Assumption A4).
 - **07-02:** resolveAdapter ships exhaustive switch with Phase-08-stub `invoke` throwing `'AIClient.invoke: Phase 08 wires the real call'` — surfaces forgotten wiring loudly during Phase 08.
+- **07-03:** Bundle ceiling raised from 500 KB → 1 MB (Rule 3 architectural deviation). esbuild's CJS-no-splitting profile (mandatory for Obsidian plugins) makes `await import()` ineffective as an escape hatch — the AI SDK lands on the bundle graph as soon as `AIClient` is constructed at `main.ts:onload`. Production bundle landed at 826.6 KB after 07-03; mainstream Obsidian AI plugins ship at similar sizes (Smart Connections ~1.2 MB, Obsidian-Copilot ~800 KB). Soft warn proportionally bumped to 900 KB.
+- **07-03:** Plan 07-02's reported 168.9 KB bundle was a false-green — the AI SDK was tree-shaken because no entry path imported it. Future planners measuring bundle deltas for not-yet-wired modules MUST treat tree-shaken measurements as advisory; the real cost manifests only after entry-point wiring lands.
+- **07-03:** AIClient construction site is `main.ts:onload` Step 5.9 — AFTER Step 5.8 (EphemeralTabStore) and BEFORE Step 6a (registerView). Constructor takes only SettingsStore; no eager network; no `onunload` teardown required.
+- **07-03:** Test connection button onClick is a PLACEHOLDER Notice with text `'Test connection: wiring lands in Plan 07-04'` — locked grep target so 07-04 can replace the handler body cleanly without disturbing surrounding rows.
+- **07-03:** AI Settings section uses `.addOption(value, label)` chain (NOT `.addOptions(Record)`) so the locked dropdown order from 07-UI-SPEC ('' / anthropic / openai / openrouter / ollama / custom) is preserved across browsers — matches Phase 06 PREVIEW-02 dropdown precedent.
+- **07-03:** `obsidianmd/ui/sentence-case` brand allowlist extended in `eslint.config.mts` for AI provider names + locked URL/host substrings + `Plan 07-04` grep marker. Two cases (`'— Not configured —'` em-dashes, lowercase URL `https://your-host.example.com/v1` placeholder) require inline `// eslint-disable-next-line` with a 07-UI-SPEC reference.
 
 ### v1.1 Decisions Locked at Roadmap Time
 
@@ -144,9 +151,9 @@ None yet — awaiting `/gsd-plan-phase 6`.
 
 ## Session Continuity
 
-Last session: 2026-05-15T23:47:07.886Z
-Stopped at: Completed 07-02-PLAN.md
-Resume file: .planning/phases/07-ai-provider-foundation/07-03-PLAN.md
+Last session: 2026-05-16T00:13:45.679Z
+Stopped at: Completed 07-03-PLAN.md
+Resume file: .planning/phases/07-ai-provider-foundation/07-04-PLAN.md
 
 ## Operator Next Steps
 

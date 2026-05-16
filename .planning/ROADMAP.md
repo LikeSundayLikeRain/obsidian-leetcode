@@ -97,7 +97,7 @@ Plans:
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
-- [ ] 07-03-PLAN.md — AIClient onload wiring (Step 5.9) + AI Settings section (heading + active-provider dropdown + provider-conditional sub-form + masked password key input + Test connection placeholder button)
+- [x] 07-03-PLAN.md — AIClient onload wiring (Step 5.9) + AI Settings section (heading + active-provider dropdown + provider-conditional sub-form + masked password key input + Test connection placeholder button) + bundle ceiling 500 KB → 1 MB (Rule 3 deviation)
 
 **Wave 4** *(blocked on Wave 3 completion — three parallel plans)*
 
