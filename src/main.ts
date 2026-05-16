@@ -31,7 +31,12 @@ import { AIClient } from './ai/AIClient';
 // probes per provider per CONTEXT decision E + 07-UI-SPEC §"Test connection
 // — debouncing": single in-flight per provider, subsequent clicks are no-ops.
 import { prettyName } from './ai/types';
-import type { AIProvider, ProbeResult } from './ai/types';
+import type { AIProvider, ProbeResult, ProviderConfig } from './ai/types';
+// Phase 07 Plan 05 — disclosure modal (AIPROV-04). The plugin owns the
+// helper because the modal needs `this.app` + SettingsStore access; AIClient
+// gets the helper via constructor injection. AIDisclosureModal itself is
+// UI-only — see src/ai/disclosure.ts.
+import { AIDisclosureModal } from './ai/disclosure';
 import { AuthService } from './auth/AuthService';
 import { ProblemListService } from './browse/ProblemListService';
 import { ProblemBrowserView, BROWSER_VIEW_TYPE } from './browse/ProblemBrowserView';
@@ -253,10 +258,19 @@ export default class LeetCodePlugin extends Plugin {
     // Step 5.9 — Phase 07 AI client. Constructed AFTER SettingsStore.load
     // (settings are required by AIClient ctor) and BEFORE registerView (so any
     // future view that wants AIClient access can grab it from this.aiClient).
-    // Synchronous: AIClient ctor takes only SettingsStore, does no eager
-    // network — mirrors LeetCodeClient ctor at line 163. No onunload teardown:
-    // AIClient holds no listeners, no timers, no open sockets.
-    this.aiClient = new AIClient(this.settings);
+    // Synchronous: AIClient ctor takes only SettingsStore + the disclosure
+    // helper, does no eager network — mirrors LeetCodeClient ctor at line 163.
+    // No onunload teardown: AIClient holds no listeners, no timers, no open
+    // sockets.
+    //
+    // Plan 07-05 — inject `requireAIDisclosure` so AIClient.probe + invoke
+    // gate on `disclosureAcknowledged` BEFORE any HTTP. The arrow keeps
+    // `this` binding without `.bind`. The helper itself opens
+    // AIDisclosureModal and resolves on the user's button click.
+    this.aiClient = new AIClient(
+      this.settings,
+      (provider, cfg) => this.requireAIDisclosure(provider, cfg),
+    );
 
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
@@ -336,6 +350,19 @@ export default class LeetCodePlugin extends Plugin {
       id: 'test-ai-connection',
       name: 'Test AI connection',
       callback: () => { void this.testActiveAIConnection(); },
+    });
+
+    // Phase 07 Plan 05 — palette entry for AIPROV-04 reset escape hatch.
+    // Clears all 5 providers' `disclosureAcknowledged` flags so the
+    // AIDisclosureModal re-fires on the next AI call regardless of which
+    // provider is active. ID rules (eslint-plugin-obsidianmd commands/no-*
+    // family): no plugin-id prefix ('leetcode-'), no 'command' substring,
+    // no hotkey field. Sentence-case name does not start with the plugin
+    // name — Obsidian's palette already prefixes it with "LeetCode: ".
+    this.addCommand({
+      id: 'reset-ai-disclosures',
+      name: 'Reset AI provider disclosures',
+      callback: () => { void this.resetAIDisclosures(); },
     });
 
     this.addCommand({
@@ -782,6 +809,81 @@ export default class LeetCodePlugin extends Plugin {
     } finally {
       this.aiProbeInflight.delete(provider);
     }
+  }
+
+  /**
+   * Phase 07 Plan 05 — disclosure gate helper injected into AIClient. Opens
+   * AIDisclosureModal for the given (provider, cfg) pair and resolves with
+   * `true` on Continue, `false` on Cancel. AIClient.probe + invoke await
+   * this Promise BEFORE issuing any HTTP — Cancel short-circuits the call.
+   *
+   * Lives on the plugin (not in disclosure.ts) because it needs both the
+   * App reference (for `new AIDisclosureModal(this.app, ...)`) and the
+   * SettingsStore (so the cancel Notice can use locked verbatim copy).
+   * The `resolved` guard prevents double-resolution if both onCancel (from
+   * onClose Esc fallback) AND a direct button click somehow fire — defensive
+   * complement to the modal's own `acknowledged`/`decided` guard.
+   *
+   * Cancel fires the locked Notice 'AI call cancelled' (3000ms — 07-UI-SPEC
+   * §"Notice copy"). The Notice surfaces in addition to the Plan-07-04
+   * testActiveAIConnection failure Notice ('<provider name>: AI call
+   * cancelled'); the two are deliberately distinct so the user sees both
+   * the cancel acknowledgement AND the per-call disposition.
+   */
+  requireAIDisclosure(provider: AIProvider, cfg: ProviderConfig): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      let resolved = false;
+      const modal = new AIDisclosureModal(
+        this.app,
+        provider,
+        cfg,
+        () => {
+          if (!resolved) {
+            resolved = true;
+            resolve(true);
+          }
+        },
+        () => {
+          if (!resolved) {
+            resolved = true;
+
+            new Notice('AI call cancelled', 3000);
+            resolve(false);
+          }
+        },
+      );
+      modal.open();
+    });
+  }
+
+  /**
+   * Phase 07 Plan 05 — palette command implementation for
+   * `reset-ai-disclosures`. Iterates over all 5 AIProvider literals; when a
+   * provider's `disclosureAcknowledged` is true, persists a sanitized copy
+   * with the flag flipped to false. After the iteration completes, fires
+   * the locked Notice (07-UI-SPEC §"Notice copy", 4000ms duration).
+   *
+   * Idempotent skip path: providers whose flag is already false are NOT
+   * written. Avoids churning data.json on every reset (and the ledger
+   * day-rollover discipline relies on the setter being side-effect-free
+   * when no actual change is needed).
+   */
+  async resetAIDisclosures(): Promise<void> {
+    const providers: AIProvider[] = ['anthropic', 'openai', 'openrouter', 'ollama', 'custom'];
+    for (const p of providers) {
+      const cfg = this.settings.getProviderConfig(p);
+      if (cfg.disclosureAcknowledged) {
+        await this.settings.setProviderConfig(p, {
+          ...cfg,
+          disclosureAcknowledged: false,
+        });
+      }
+    }
+
+    new Notice(
+      'AI provider disclosures reset. The disclosure modal will show on the next AI call.',
+      4000,
+    );
   }
 
   /** Submit the active note via SubmissionOrchestrator (Plan 05). Opens a
