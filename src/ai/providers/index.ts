@@ -5,32 +5,60 @@
 // Exports:
 //   - shared helpers `extractFromJson` / `extractProviderError` (RESEARCH §OQ5)
 //   - per-provider `create*Model` + `probe*` re-exports
+//   - per-provider `stream*` + `invoke*Buffered` re-exports (Phase 08 Plan 02)
 //   - `resolveAdapter(provider, cfg, fetcher)` — exhaustive switch dispatch
 //
-// Phase 08 will replace the `invoke` stub with real call shapes; the signature
-// is shipped today so AIClient.invoke compiles.
-import type { AIProvider, ProviderConfig, AIRequest, AIResponse, ProbeResult } from '../types';
+// Phase 08 Plan 02 — replaces the Phase 07 invoke stub with real call shapes.
+// resolveAdapter now exposes `streamInvoke` + `bufferedInvoke` (the old
+// `invoke` is gone). AIClient consumes these from invokeStream + invoke.
+import type { AIProvider, ProviderConfig, ProbeResult } from '../types';
 import type { FetchFn } from '../obsidianFetch';
+import type { StreamTextResult } from 'ai';
 
-import { createAnthropicModel, probeAnthropic } from './anthropic';
-import { createOpenAIModel, probeOpenAI } from './openai';
+import {
+  createAnthropicModel,
+  probeAnthropic,
+  streamAnthropic,
+  invokeAnthropicBuffered,
+} from './anthropic';
+import {
+  createOpenAIModel,
+  probeOpenAI,
+  streamOpenAI,
+  invokeOpenAIBuffered,
+} from './openai';
 import {
   createOpenAICompatibleModel,
   probeOpenRouter,
   probeCustom,
+  streamOpenAICompatible,
+  invokeOpenAICompatibleBuffered,
 } from './openaiCompatible';
-import { createOllamaModel, probeOllama } from './ollama';
+import {
+  createOllamaModel,
+  probeOllama,
+  streamOllama,
+  invokeOllamaBuffered,
+} from './ollama';
 
 export {
   createAnthropicModel,
   probeAnthropic,
+  streamAnthropic,
+  invokeAnthropicBuffered,
   createOpenAIModel,
   probeOpenAI,
+  streamOpenAI,
+  invokeOpenAIBuffered,
   createOpenAICompatibleModel,
   probeOpenRouter,
   probeCustom,
+  streamOpenAICompatible,
+  invokeOpenAICompatibleBuffered,
   createOllamaModel,
   probeOllama,
+  streamOllama,
+  invokeOllamaBuffered,
 };
 
 /**
@@ -68,9 +96,30 @@ export function extractProviderError(err: unknown): string {
   return 'Unknown error';
 }
 
-interface ResolvedAdapter {
+/**
+ * Resolved adapter shape. Phase 08 Plan 02 replaces the Phase 07 stub
+ * `invoke` with two concrete entry points:
+ *   - `streamInvoke(prompt, signal)` returns the SDK's `StreamTextResult`
+ *     synchronously (the underlying HTTP fires when the consumer iterates
+ *     `result.textStream` or awaits `result.usage`).
+ *   - `bufferedInvoke(prompt, signal)` returns a Promise resolving to
+ *     `{ text, usage? }` after a single non-streaming generateText call.
+ *
+ * Both entry points propagate the AbortSignal into the AI SDK call (which
+ * forwards it as `init.signal` on the injected fetch). The caller is
+ * responsible for distinguishing AbortError vs network error via
+ * `signal.aborted` (RESEARCH §Pitfall 2).
+ */
+export interface ResolvedAdapter {
   probe: () => Promise<ProbeResult>;
-  invoke: (req: AIRequest) => Promise<AIResponse>;
+  streamInvoke: (
+    prompt: string,
+    signal: AbortSignal,
+  ) => StreamTextResult<Record<string, never>, never>;
+  bufferedInvoke: (
+    prompt: string,
+    signal: AbortSignal,
+  ) => Promise<{ text: string; usage?: { inputTokens?: number; outputTokens?: number } }>;
 }
 
 /**
@@ -78,8 +127,23 @@ interface ResolvedAdapter {
  * switch posture (LeetCodeClient.ts:159-181) — one branch per known case, no
  * default fall-through, every branch typed identically.
  *
- * Phase 07 invoke stub: throws `AIClient.invoke: Phase 08 wires the real call`.
- * Phase 08 replaces with the real generateText / streamText calls.
+ * Phase 08 Plan 02 — wired live. The Phase 07 stub
+ * (`'AIClient.invoke: Phase 08 wires the real call'` throw) is GONE. The
+ * `streamInvoke`/`bufferedInvoke` calls route through Vercel AI SDK's
+ * `streamText`/`generateText` with `abortSignal` propagation and the
+ * caller-provided `fetcher` (obsidianFetch('stream') or 'request') injected
+ * into the SDK provider factory's `fetch` field.
+ *
+ * The 5 provider cases route as follows:
+ *   - anthropic  → @ai-sdk/anthropic + streamAnthropic / invokeAnthropicBuffered
+ *   - openai     → @ai-sdk/openai + streamOpenAI / invokeOpenAIBuffered
+ *   - openrouter → @ai-sdk/openai-compatible (name='openrouter') + streamOpenAICompatible
+ *   - ollama     → @ai-sdk/openai-compatible (Ollama factory) + streamOllama
+ *   - custom     → @ai-sdk/openai-compatible (name='custom') + streamOpenAICompatible
+ *
+ * Three of five branches share the openai-compatible streaming helpers; the
+ * cfg's baseUrl carries the provider-specific endpoint (resolveAdapter is
+ * called with the right cfg for the active provider at call time).
  */
 export function resolveAdapter(
   provider: AIProvider,
@@ -90,37 +154,36 @@ export function resolveAdapter(
     case 'anthropic':
       return {
         probe: () => probeAnthropic(cfg, fetcher),
-        invoke: () => {
-          throw new Error('AIClient.invoke: Phase 08 wires the real call');
-        },
+        streamInvoke: (prompt, signal) => streamAnthropic(cfg, fetcher, prompt, signal),
+        bufferedInvoke: (prompt, signal) => invokeAnthropicBuffered(cfg, fetcher, prompt, signal),
       };
     case 'openai':
       return {
         probe: () => probeOpenAI(cfg, fetcher),
-        invoke: () => {
-          throw new Error('AIClient.invoke: Phase 08 wires the real call');
-        },
+        streamInvoke: (prompt, signal) => streamOpenAI(cfg, fetcher, prompt, signal),
+        bufferedInvoke: (prompt, signal) => invokeOpenAIBuffered(cfg, fetcher, prompt, signal),
       };
     case 'openrouter':
       return {
         probe: () => probeOpenRouter(cfg, fetcher),
-        invoke: () => {
-          throw new Error('AIClient.invoke: Phase 08 wires the real call');
-        },
+        streamInvoke: (prompt, signal) =>
+          streamOpenAICompatible(cfg, fetcher, prompt, signal, 'openrouter'),
+        bufferedInvoke: (prompt, signal) =>
+          invokeOpenAICompatibleBuffered(cfg, fetcher, prompt, signal, 'openrouter'),
       };
     case 'ollama':
       return {
         probe: () => probeOllama(cfg, fetcher),
-        invoke: () => {
-          throw new Error('AIClient.invoke: Phase 08 wires the real call');
-        },
+        streamInvoke: (prompt, signal) => streamOllama(cfg, fetcher, prompt, signal),
+        bufferedInvoke: (prompt, signal) => invokeOllamaBuffered(cfg, fetcher, prompt, signal),
       };
     case 'custom':
       return {
         probe: () => probeCustom(cfg, fetcher),
-        invoke: () => {
-          throw new Error('AIClient.invoke: Phase 08 wires the real call');
-        },
+        streamInvoke: (prompt, signal) =>
+          streamOpenAICompatible(cfg, fetcher, prompt, signal, 'custom'),
+        bufferedInvoke: (prompt, signal) =>
+          invokeOpenAICompatibleBuffered(cfg, fetcher, prompt, signal, 'custom'),
       };
   }
 }

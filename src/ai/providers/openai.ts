@@ -2,10 +2,16 @@
 //
 // Phase 07 Plan 02 — OpenAI provider adapter.
 //
+// Phase 08 Plan 02 — adds streaming + buffered live-call helpers:
+//   - streamOpenAI(cfg, fetcher, prompt, signal) — Vercel AI SDK streamText
+//   - invokeOpenAIBuffered(cfg, fetcher, prompt, signal) — generateText
+//
 // Probe semantics (D-E): GET {baseUrl}/models with `Authorization: Bearer
 // {apiKey}`. On 200, parse `data: [{id, ...}]` and return `modelCount`.
 // On non-OK, extract message from JSON error envelope (truncated 200 chars).
 import { createOpenAI } from '@ai-sdk/openai';
+import { streamText, generateText } from 'ai';
+import type { StreamTextResult } from 'ai';
 import type { ProviderConfig, ProbeResult } from '../types';
 import type { FetchFn } from '../obsidianFetch';
 import { extractFromJson } from './index';
@@ -42,4 +48,42 @@ export async function probeOpenAI(
       errorMessage: (err instanceof Error ? err.message : 'Network error').slice(0, 200),
     };
   }
+}
+
+/**
+ * Streaming live-call path. See anthropic.ts for the contract.
+ */
+export function streamOpenAI(
+  cfg: ProviderConfig,
+  fetcher: FetchFn,
+  prompt: string,
+  signal: AbortSignal,
+): StreamTextResult<Record<string, never>, never> {
+  return streamText({
+    model: createOpenAIModel(cfg, fetcher),
+    prompt,
+    abortSignal: signal,
+  });
+}
+
+/**
+ * Non-streaming buffered live-call path. See anthropic.ts for the contract.
+ */
+export async function invokeOpenAIBuffered(
+  cfg: ProviderConfig,
+  fetcher: FetchFn,
+  prompt: string,
+  signal: AbortSignal,
+): Promise<{ text: string; usage?: { inputTokens?: number; outputTokens?: number } }> {
+  const result = await generateText({
+    model: createOpenAIModel(cfg, fetcher),
+    prompt,
+    abortSignal: signal,
+  });
+  return {
+    text: result.text,
+    ...(result.usage
+      ? { usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens } }
+      : {}),
+  };
 }

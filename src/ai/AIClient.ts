@@ -152,10 +152,21 @@ export class AIClient {
     // Phase 08/09 can branch on the error type'. Without await, a future
     // maintainer wrapping this body in try/catch would be silently
     // betrayed — the rejection would bubble out as the returned promise's
-    // rejection rather than entering the synchronous catch. Same external
-    // observability either way (.catch / rejects.toThrow both work), but
-    // the await makes the intent explicit and future-proofs the seam.
-    return await adapter.invoke(req);
+    // rejection rather than entering the synchronous catch.
+    //
+    // Phase 08 Plan 02 — adapter.invoke is gone; the buffered live-call
+    // path now lives at adapter.bufferedInvoke(prompt, signal). When the
+    // caller doesn't supply a signal, we mint a fresh AbortController so
+    // the adapter call stays sync-cancellable. Cost is added by the
+    // caller (Phase 08 Plan 03's modal owns onFinish) — invoke() returns
+    // text + usage and a usdCost of 0 to preserve the AIResponse shape.
+    const signal = req.signal ?? new AbortController().signal;
+    const r = await adapter.bufferedInvoke(req.prompt, signal);
+    return {
+      text: r.text,
+      usdCost: 0,
+      ...(r.usage ? { usage: r.usage } : {}),
+    };
   }
 
   /**

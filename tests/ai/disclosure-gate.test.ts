@@ -118,7 +118,11 @@ describe('Phase 07 Plan 05 — AIClient.probe disclosure gate', () => {
 
   it('probe with disclosureAcknowledged=true skips modal and proceeds directly', async () => {
     const probeMock = vi.fn(async () => ({ ok: true, modelCount: 3 }));
-    resolveAdapterMock.mockReturnValue({ probe: probeMock, invoke: vi.fn() });
+    resolveAdapterMock.mockReturnValue({
+      probe: probeMock,
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(async () => ({ text: '' })),
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({
       cfgsByProvider: { anthropic: makeCfg({ disclosureAcknowledged: true }) },
@@ -133,7 +137,11 @@ describe('Phase 07 Plan 05 — AIClient.probe disclosure gate', () => {
 
   it('probe with disclosureAcknowledged=false opens modal (calls requireDisclosure)', async () => {
     const probeMock = vi.fn(async () => ({ ok: true, modelCount: 3 }));
-    resolveAdapterMock.mockReturnValue({ probe: probeMock, invoke: vi.fn() });
+    resolveAdapterMock.mockReturnValue({
+      probe: probeMock,
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(async () => ({ text: '' })),
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({
       cfgsByProvider: { anthropic: makeCfg({ disclosureAcknowledged: false }) },
@@ -152,7 +160,11 @@ describe('Phase 07 Plan 05 — AIClient.probe disclosure gate', () => {
 
   it('probe with Cancel returns ok=false errorMessage="AI call cancelled"', async () => {
     const probeMock = vi.fn(async () => ({ ok: true }));
-    resolveAdapterMock.mockReturnValue({ probe: probeMock, invoke: vi.fn() });
+    resolveAdapterMock.mockReturnValue({
+      probe: probeMock,
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(async () => ({ text: '' })),
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({
       cfgsByProvider: { anthropic: makeCfg({ disclosureAcknowledged: false }) },
@@ -167,7 +179,11 @@ describe('Phase 07 Plan 05 — AIClient.probe disclosure gate', () => {
 
   it('probe with Continue persists disclosureAcknowledged=true via setProviderConfig', async () => {
     const probeMock = vi.fn(async () => ({ ok: true, modelCount: 5 }));
-    resolveAdapterMock.mockReturnValue({ probe: probeMock, invoke: vi.fn() });
+    resolveAdapterMock.mockReturnValue({
+      probe: probeMock,
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(async () => ({ text: '' })),
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({
       cfgsByProvider: { anthropic: makeCfg({ disclosureAcknowledged: false, apiKey: 'sk-x' }) },
@@ -187,7 +203,11 @@ describe('Phase 07 Plan 05 — AIClient.probe disclosure gate', () => {
 
   it('probe re-reads cfg after persist (so adapter sees the persisted state)', async () => {
     const probeMock = vi.fn(async () => ({ ok: true, modelCount: 5 }));
-    resolveAdapterMock.mockReturnValue({ probe: probeMock, invoke: vi.fn() });
+    resolveAdapterMock.mockReturnValue({
+      probe: probeMock,
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(async () => ({ text: '' })),
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({
       cfgsByProvider: { anthropic: makeCfg({ disclosureAcknowledged: false }) },
@@ -202,7 +222,11 @@ describe('Phase 07 Plan 05 — AIClient.probe disclosure gate', () => {
 
   it('default no-op requireDisclosure preserves Plan 07-02 backward compat (probe runs)', async () => {
     const probeMock = vi.fn(async () => ({ ok: true, modelCount: 5 }));
-    resolveAdapterMock.mockReturnValue({ probe: probeMock, invoke: vi.fn() });
+    resolveAdapterMock.mockReturnValue({
+      probe: probeMock,
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(async () => ({ text: '' })),
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({
       cfgsByProvider: { anthropic: makeCfg({ disclosureAcknowledged: false }) },
@@ -226,7 +250,11 @@ describe('Phase 07 Plan 05 — AIClient.invoke disclosure gate', () => {
 
   it('invoke with disclosureAcknowledged=false + Cancel throws "AI call cancelled"', async () => {
     const invokeMock = vi.fn(async () => ({}));
-    resolveAdapterMock.mockReturnValue({ probe: vi.fn(), invoke: invokeMock });
+    resolveAdapterMock.mockReturnValue({
+      probe: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: invokeMock,
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({
       active: 'openai',
@@ -241,7 +269,11 @@ describe('Phase 07 Plan 05 — AIClient.invoke disclosure gate', () => {
 
   it('invoke with disclosureAcknowledged=false + Continue persists then proceeds', async () => {
     const invokeMock = vi.fn(async () => ({ shape: 'ok' }));
-    resolveAdapterMock.mockReturnValue({ probe: vi.fn(), invoke: invokeMock });
+    resolveAdapterMock.mockReturnValue({
+      probe: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: invokeMock,
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({
       active: 'openai',
@@ -261,7 +293,11 @@ describe('Phase 07 Plan 05 — AIClient.invoke disclosure gate', () => {
 
   it('invoke without active provider throws BEFORE checking disclosure', async () => {
     const invokeMock = vi.fn(async () => ({}));
-    resolveAdapterMock.mockReturnValue({ probe: vi.fn(), invoke: invokeMock });
+    resolveAdapterMock.mockReturnValue({
+      probe: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: invokeMock,
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({ active: null });
     const requireDisclosure = vi.fn(async () => true);
@@ -283,7 +319,11 @@ describe('Phase 07 Plan 05 — switching provider re-fires gate on next call', (
 
   it('anthropic acked + openai not-acked: probe(anthropic) skips modal, probe(openai) opens modal', async () => {
     const probeMock = vi.fn(async () => ({ ok: true, modelCount: 1 } as ProbeResult));
-    resolveAdapterMock.mockReturnValue({ probe: probeMock, invoke: vi.fn() });
+    resolveAdapterMock.mockReturnValue({
+      probe: probeMock,
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(async () => ({ text: '' })),
+    });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({
       cfgsByProvider: {

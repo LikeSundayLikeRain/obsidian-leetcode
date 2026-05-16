@@ -71,7 +71,8 @@ describe('Phase 07 AIClient — probe', () => {
     const probeMock = vi.fn(async () => ({ ok: true, modelCount: 5 }));
     resolveAdapterMock.mockReturnValue({
       probe: probeMock,
-      invoke: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(),
     });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings();
@@ -98,7 +99,8 @@ describe('Phase 07 AIClient — probe', () => {
       probe: vi.fn(async () => {
         throw new Error('boom-network-down');
       }),
-      invoke: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(),
     });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings();
@@ -124,7 +126,8 @@ describe('Phase 07 AIClient — probe', () => {
     const probeAdapter = vi.fn(async () => ({ ok: true, modelCount: 1 }));
     resolveAdapterMock.mockReturnValue({
       probe: probeAdapter,
-      invoke: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(),
     });
     const { AIClient } = await import('../../src/ai/AIClient');
     const startingCfg = { ...DEFAULT_CFG, disclosureAcknowledged: false };
@@ -151,7 +154,8 @@ describe('Phase 07 AIClient — probe', () => {
     const probeAdapter = vi.fn(async () => ({ ok: true, modelCount: 1 }));
     resolveAdapterMock.mockReturnValue({
       probe: probeAdapter,
-      invoke: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(),
     });
     const { AIClient } = await import('../../src/ai/AIClient');
     const startingCfg = { ...DEFAULT_CFG, disclosureAcknowledged: false };
@@ -179,7 +183,8 @@ describe('Phase 07 AIClient — probe', () => {
     const probeAdapter = vi.fn(async () => ({ ok: true, modelCount: 1 }));
     resolveAdapterMock.mockReturnValue({
       probe: probeAdapter,
-      invoke: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(),
     });
     const { AIClient } = await import('../../src/ai/AIClient');
     const startingCfg = { ...DEFAULT_CFG, disclosureAcknowledged: false };
@@ -208,32 +213,58 @@ describe('Phase 07 AIClient — invoke', () => {
   it('invoke throws when activeAIProvider is null', async () => {
     resolveAdapterMock.mockReturnValue({
       probe: vi.fn(),
-      invoke: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(),
     });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({ overrides: { getActiveAIProvider: () => null } });
     const client = new AIClient(settings as never);
-    await expect(client.invoke({} as never)).rejects.toThrow(/No AI provider configured/);
+    await expect(client.invoke({ prompt: 'hi' } as never)).rejects.toThrow(
+      /No AI provider configured/,
+    );
   });
 
   // Plan 07-07 Task 3 — WR-01 fix. AIClient.invoke must `await` the
-  // adapter.invoke() promise so adapter rejections propagate as a
-  // rejected promise with the original error message preserved. The v1
-  // code returned the unawaited promise — the JSDoc contract documented
-  // re-throw semantics, but a future maintainer wrapping the body in
-  // try/catch would be silently betrayed because the rejection bubbles
-  // out of the async function without ever entering the catch.
-  it('invoke awaits adapter.invoke so adapter rejections propagate as rejected promise with original message preserved', async () => {
+  // adapter call so adapter rejections propagate as a rejected promise
+  // with the original error message preserved. Phase 08 Plan 02 — the
+  // adapter call site moved from `adapter.invoke(req)` to
+  // `adapter.bufferedInvoke(prompt, signal)` (the streaming path lives on
+  // AIClient.invokeStream). The await contract is unchanged.
+  it('invoke awaits adapter.bufferedInvoke so adapter rejections propagate as rejected promise with original message preserved', async () => {
     resolveAdapterMock.mockReturnValue({
       probe: vi.fn(),
-      invoke: vi.fn(async () => {
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(async () => {
         throw new Error('adapter-boom');
       }),
     });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings();
     const client = new AIClient(settings as never);
-    await expect(client.invoke({} as never)).rejects.toThrow(/adapter-boom/);
+    await expect(client.invoke({ prompt: 'hi' } as never)).rejects.toThrow(/adapter-boom/);
+  });
+
+  // Phase 08 Plan 02 — invoke now returns the AIResponse shape derived from
+  // bufferedInvoke's `{ text, usage? }` plus a usdCost of 0 (cost ledger is
+  // owned by the streaming-modal caller, not by invoke()).
+  it('invoke returns AIResponse shape from bufferedInvoke (text + usdCost=0 + optional usage)', async () => {
+    resolveAdapterMock.mockReturnValue({
+      probe: vi.fn(),
+      streamInvoke: vi.fn(),
+      bufferedInvoke: vi.fn(async () => ({
+        text: 'hello world',
+        usage: { inputTokens: 5, outputTokens: 7 },
+      })),
+    });
+    const { AIClient } = await import('../../src/ai/AIClient');
+    const settings = makeMockSettings();
+    const client = new AIClient(settings as never);
+    const result = await client.invoke({ prompt: 'hi' } as never);
+    expect(result).toEqual({
+      text: 'hello world',
+      usdCost: 0,
+      usage: { inputTokens: 5, outputTokens: 7 },
+    });
   });
 });
 
