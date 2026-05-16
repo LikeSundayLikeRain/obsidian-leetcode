@@ -195,6 +195,10 @@ vi.mock('obsidian', () => {
           buttonEl.classList.add('mod-cta');
           return api;
         },
+        setDisabled(d: boolean) {
+          buttonEl.disabled = d;
+          return api;
+        },
         onClick(fn: () => unknown) {
           handlerRecord.onClick = fn;
           buttonEl.addEventListener('click', () => {
@@ -256,6 +260,7 @@ interface ButtonApi {
   setButtonText(t: string): ButtonApi;
   setTooltip(t: string): ButtonApi;
   setCta(): ButtonApi;
+  setDisabled(d: boolean): ButtonApi;
   onClick(fn: () => unknown): ButtonApi;
 }
 
@@ -295,6 +300,12 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     }),
   };
 
+  // Phase 07 Plan 04 — Settings Test connection button delegates to the
+  // plugin-level testActiveAIConnection() method (shared with the palette
+  // command). Tests that exercise the button click stub this with a vi.fn()
+  // and assert it was invoked.
+  const testActiveAIConnection = vi.fn(async () => undefined);
+
   return {
     auth: {
       isLoggedIn: () => false,
@@ -303,6 +314,7 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
       loginManual: vi.fn(),
     },
     settings,
+    testActiveAIConnection,
   };
 }
 
@@ -431,7 +443,7 @@ describe('SettingsTab — AI section (Phase 07 Plan 03)', () => {
     expect(apiKeyInputs[0]?.value).toBe('sk-ant-123');
   });
 
-  it('clicking Test connection while a provider is active fires a placeholder Notice referencing Plan 07-04', async () => {
+  it('clicking Test connection delegates to the plugin-level testActiveAIConnection method (Plan 07-04 wiring)', async () => {
     const obs = await import('obsidian');
     type ObsTest = typeof obs & {
       __resetButtonHandlers: () => void;
@@ -452,9 +464,13 @@ describe('SettingsTab — AI section (Phase 07 Plan 03)', () => {
 
     await testConn!.onClick();
 
-    // Notice was instantiated with the locked placeholder text.
+    // The Settings button onClick must delegate to the plugin's shared
+    // testActiveAIConnection() method (which the palette command also calls).
+    // The placeholder Notice text from Plan 07-03 must be gone — neither this
+    // surface nor the captured Notice list should contain it.
+    expect(plugin.testActiveAIConnection).toHaveBeenCalledTimes(1);
     const placeholder = noticeCalls.find((n) => n.text.includes('Plan 07-04'));
-    expect(placeholder).toBeDefined();
+    expect(placeholder).toBeUndefined();
   });
 
   it('exactly one setCta invocation in src/settings/SettingsTab.ts (the pre-existing Login button)', () => {

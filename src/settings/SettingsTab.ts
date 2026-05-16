@@ -11,20 +11,11 @@ import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type LeetCodePlugin from '../main';
 import type { AuthCookies } from '../auth/types';
 import type { AIProvider } from '../ai/types';
-
-// Phase 07 Plan 03 — provider display names. Locked verbatim by 07-UI-SPEC.md
-// §"Copywriting Contract"; paraphrasing is forbidden. Module-private helper
-// keeps the table colocated with its single consumer (renderAIProviderForm)
-// without expanding the LeetCodeSettingTab class API surface.
-function prettyName(p: AIProvider): string {
-  switch (p) {
-    case 'anthropic': return 'Anthropic';
-    case 'openai': return 'OpenAI';
-    case 'openrouter': return 'OpenRouter';
-    case 'ollama': return 'Ollama';
-    case 'custom': return 'Custom (OpenAI-compatible)';
-  }
-}
+// Phase 07 Plan 04 — single source of truth for provider display names; the
+// local copy of `prettyName` was moved to src/ai/types.ts so main.ts (Notice
+// copy) and SettingsTab.ts (sub-form) render identical brand strings without
+// duplication. 07-UI-SPEC.md §"Copywriting Contract" remains the locked spec.
+import { prettyName } from '../ai/types';
 
 // Phase 07 Plan 03 — model placeholders per provider, locked by 07-UI-SPEC.md
 // §"Copywriting Contract" (Model placeholders row).
@@ -229,9 +220,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // is null only the dropdown row renders (07-UI-SPEC §"Layout Contract").
     // All copy LOCKED VERBATIM from 07-UI-SPEC §"Copywriting Contract" — every
     // provider name, description, placeholder string, and Notice text must
-    // match the spec byte-for-byte. Plan 07-04 will replace the placeholder
-    // Test connection onClick with a real `aiClient.probe(active)` call;
-    // Plan 07-05 will wrap it with the disclosure gate.
+    // match the spec byte-for-byte. The Test connection button delegates to
+    // the shared plugin-level probe path (shared with the palette
+    // command); Plan 07-05 will wrap probe() with the disclosure gate.
     //
     // Color/CTA invariant (07-UI-SPEC §"Color"): exactly ONE setCta() in this
     // file (the pre-existing Login button at line ~86). The AI section adds
@@ -318,9 +309,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
    *                                       w/ placeholder) + Model
    *                                       + Test connection
    *
-   * Test connection ships a placeholder onClick that emits a Notice with text
-   * containing 'Plan 07-04' — locked so the next plan can grep-replace the
-   * handler body without disturbing the rest of the row.
+   * Test connection delegates to the plugin-level probe entry point; the
+   * button label flips to 'Testing...' and is disabled while a probe is in
+   * flight per 07-UI-SPEC §"Test connection — debouncing".
    */
   private renderAIProviderForm(containerEl: HTMLElement, active: AIProvider): void {
     const cfg = this.plugin.settings.getProviderConfig(active);
@@ -405,24 +396,28 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         });
       });
 
-    // ─── Test connection button (PLACEHOLDER — Plan 07-04 wires probe) ───
+    // ─── Test connection button (wired to AIClient.probe via plugin) ────
     // Stays NEUTRAL — NO setCta() per 07-UI-SPEC §"Color". The disclosure
     // modal's Continue button (Plan 07-05) is the only new accent invocation
     // in v1.1.
+    //
+    // The handler delegates to the plugin's shared probe entry point so
+    // the palette command (`test-ai-connection`) and this button share the
+    // same probe path + debounce map + Notice copy. Button-label flip and
+    // disable-while-in-flight are local UX polish — only this surface needs
+    // them; the palette command's feedback is the Notice itself.
     new Setting(containerEl)
       .addButton((b) => b
         .setButtonText('Test connection')
         .onClick(async () => {
-          // Belt-and-suspenders empty-state guard (07-UI-SPEC §"Empty /
-          // unconfigured states"): the row is not rendered when active is
-          // null, but if a future regression changes that, this guard fires
-          // first.
-          const provider = this.plugin.settings.getActiveAIProvider();
-          if (!provider) {
-            new Notice('Pick an AI provider first.', 3000);
-            return;
+          b.setButtonText('Testing...');
+          b.setDisabled(true);
+          try {
+            await this.plugin.testActiveAIConnection();
+          } finally {
+            b.setButtonText('Test connection');
+            b.setDisabled(false);
           }
-          new Notice('Test connection: wiring lands in Plan 07-04', 3000);
         }),
       );
   }

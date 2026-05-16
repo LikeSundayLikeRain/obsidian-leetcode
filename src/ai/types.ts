@@ -70,3 +70,22 @@ export interface AIRequest {}
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface AIResponse {}
+
+/**
+ * Phase 07 Plan 04 — single source of truth for provider display names.
+ * Locked verbatim from 07-UI-SPEC §"Copywriting Contract" (Provider display
+ * names table). Imported by main.ts (testActiveAIConnection Notice copy) and
+ * by SettingsTab.ts (renderAIProviderForm) — both surfaces must render the
+ * exact same brand string. Adding a new provider id requires extending this
+ * switch first; the union exhaustiveness check then surfaces every other
+ * call site that needs an update.
+ */
+export function prettyName(p: AIProvider): string {
+  switch (p) {
+    case 'anthropic': return 'Anthropic';
+    case 'openai': return 'OpenAI';
+    case 'openrouter': return 'OpenRouter';
+    case 'ollama': return 'Ollama';
+    case 'custom': return 'Custom (OpenAI-compatible)';
+  }
+}

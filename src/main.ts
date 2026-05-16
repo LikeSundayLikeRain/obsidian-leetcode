@@ -25,6 +25,13 @@ import { SettingsStore } from './settings/SettingsStore';
 import { installRequestUrlFetcher, throttledRequestUrl } from './api/requestUrlFetcher';
 import { LeetCodeClient } from './api/LeetCodeClient';
 import { AIClient } from './ai/AIClient';
+// Phase 07 Plan 04 — `prettyName` provides the verbatim brand string for
+// every Test connection Notice. `AIProvider` + `ProbeResult` are imported as
+// types only (no runtime cost). The aiProbeInflight Map debounces concurrent
+// probes per provider per CONTEXT decision E + 07-UI-SPEC §"Test connection
+// — debouncing": single in-flight per provider, subsequent clicks are no-ops.
+import { prettyName } from './ai/types';
+import type { AIProvider, ProbeResult } from './ai/types';
 import { AuthService } from './auth/AuthService';
 import { ProblemListService } from './browse/ProblemListService';
 import { ProblemBrowserView, BROWSER_VIEW_TYPE } from './browse/ProblemBrowserView';
@@ -148,6 +155,14 @@ export default class LeetCodePlugin extends Plugin {
   // view that wants AIClient access can grab it from this.aiClient). Holds no
   // listeners, no timers, no open sockets — no onunload teardown required.
   aiClient!: AIClient;
+
+  // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
+  // AIProvider; values are the in-flight probe Promise. Cleared in the
+  // testActiveAIConnection() finally block so a fresh click after the probe
+  // resolves goes through. Subsequent clicks WHILE a probe is running are
+  // no-ops (07-UI-SPEC §"Test connection — debouncing"). The Map is local to
+  // the plugin instance — no need for global serialization across plugins.
+  private aiProbeInflight = new Map<AIProvider, Promise<ProbeResult>>();
 
   // Phase 3 solve-path state (Phase 5 D-01 consolidated Run commands).
   //   activeSolve: currently-in-flight submission/run orchestrator-wrapper.
@@ -306,6 +321,21 @@ export default class LeetCodePlugin extends Plugin {
         }
         return true;
       },
+    });
+
+    // Phase 07 Plan 04 — palette entry for AI Test connection. Shares the
+    // exact same probe path as the Settings button via the plugin-level
+    // testActiveAIConnection() method, so Notice copy + debounce semantics
+    // are identical across both surfaces. ID rules (eslint-plugin-obsidianmd
+    // commands/no-* family): no plugin-id prefix ('leetcode-'), no 'command'
+    // substring, no hotkey field. Sentence-case name does not start with the
+    // plugin name — Obsidian's palette already prefixes it with "LeetCode: ".
+    // Global callback (NOT editorCheckCallback): the command is always
+    // available; gating is internal (provider null → empty-state Notice).
+    this.addCommand({
+      id: 'test-ai-connection',
+      name: 'Test AI connection',
+      callback: () => { void this.testActiveAIConnection(); },
     });
 
     this.addCommand({
@@ -659,6 +689,99 @@ export default class LeetCodePlugin extends Plugin {
     // block also clears it when the poll rejection settles; whichever gets
     // there first wins.
     this.activeSolve = null;
+  }
+
+  /**
+   * Phase 07 Plan 04 — shared entry point for the Settings "Test connection"
+   * button + the `test-ai-connection` palette command. NEVER throws — every
+   * branch ends in a `Notice` (success / failure / empty-state guard) so
+   * callers (Settings + palette) treat this as fire-and-forget.
+   *
+   * Flow (07-UI-SPEC §"Notice copy" + §"Test connection — debouncing"):
+   *   1. Read activeAIProvider; if null, fire the no-provider Notice
+   *      (3000ms) and return without contacting the network.
+   *   2. Read provider config. If provider is anthropic/openai/openrouter AND
+   *      apiKey is empty, fire the empty-key Notice (3000ms) and return —
+   *      the guard prevents a wasted 401-bound network call. Ollama and
+   *      Custom may legitimately have empty keys (default install / no-auth
+   *      backends) so they fall through to probe.
+   *   3. Single-in-flight gate: if aiProbeInflight has an entry for this
+   *      provider, return immediately — concurrent click during in-flight
+   *      probe is a no-op. The button label flip + Notice arrive when the
+   *      original probe resolves.
+   *   4. Store the probe promise in the map, await it, fire the result Notice
+   *      per the 07-UI-SPEC matrix (success-with-count / Anthropic / Ollama
+   *      zero-models / failure-truncated). The whole Notice text is truncated
+   *      to 200 chars per CONTEXT decision E.
+   *   5. Always clear the map entry in `finally`.
+   *
+   * Plan 07-05 will wrap `aiClient.probe()` with the disclosure gate by
+   * modifying AIClient.probe's body — this caller-side method does NOT need
+   * to change for that wrapping. Phase 08 reuses the same probe surface for
+   * pre-invoke connectivity checks.
+   */
+  async testActiveAIConnection(): Promise<void> {
+    const provider = this.settings.getActiveAIProvider();
+    if (!provider) {
+
+      new Notice('Pick an AI provider first.', 3000);
+      return;
+    }
+    const cfg = this.settings.getProviderConfig(provider);
+    if (
+      (provider === 'anthropic' || provider === 'openai' || provider === 'openrouter') &&
+      cfg.apiKey === ''
+    ) {
+
+      new Notice(`Enter an API key for ${prettyName(provider)} first.`, 3000);
+      return;
+    }
+    if (this.aiProbeInflight.has(provider)) {
+      // Single-in-flight: subsequent clicks while a probe is running are
+      // no-ops. The original click's Notice will fire when the in-flight
+      // probe resolves.
+      return;
+    }
+    const probePromise = this.aiClient.probe(provider);
+    this.aiProbeInflight.set(provider, probePromise);
+    try {
+      const result = await probePromise;
+      if (result.ok) {
+        if (result.modelCount === null) {
+          // Anthropic — no public model-list endpoint, modelCount is null.
+
+          new Notice('AI provider connection OK (Anthropic)', 4000);
+        } else if (result.modelCount === 0 && provider === 'ollama') {
+          // Ollama reachable but no models pulled yet — special-case copy
+          // (07-UI-SPEC §"Notice copy" with the pull-suggestion hint).
+
+          new Notice(
+            'Ollama reachable, 0 models installed — run `ollama pull llama3.2`',
+            6000,
+          );
+        } else {
+          // Standard success branch — modelCount is a non-null number.
+          // `?? 0` is defensive against a future adapter returning undefined;
+          // the 07-UI-SPEC copy renders the number directly.
+
+          new Notice(
+            `AI provider connection OK (${prettyName(provider)}, ${String(result.modelCount ?? 0)} models available)`,
+            4000,
+          );
+        }
+      } else {
+        // Failure — the adapter already truncated errorMessage to 200 chars
+        // (provider adapter discipline from Plan 07-02), but truncate again
+        // on the COMBINED prefix+message string per 07-UI-SPEC §"Error state
+        // copy posture" (200 chars TOTAL including the `{provider name}: `
+        // prefix).
+        const combined = `${prettyName(provider)}: ${result.errorMessage ?? 'unknown error'}`;
+
+        new Notice(combined.slice(0, 200), 6000);
+      }
+    } finally {
+      this.aiProbeInflight.delete(provider);
+    }
   }
 
   /** Submit the active note via SubmissionOrchestrator (Plan 05). Opens a
