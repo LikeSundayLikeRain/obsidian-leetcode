@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
 status: executing
-stopped_at: Completed 07-04-PLAN.md
-last_updated: "2026-05-16T00:35:48.060Z"
-last_activity: 2026-05-16 -- Completed 07-04 (Test connection wiring + probe-matrix tests + 200-char Notice truncation)
+stopped_at: Completed 07-05-PLAN.md
+last_updated: "2026-05-16T00:52:55.684Z"
+last_activity: 2026-05-16 -- Completed 07-05 (disclosure modal + AIClient probe/invoke gate + reset-ai-disclosures palette command)
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 12
-  completed_plans: 10
+  completed_plans: 11
   percent: 16
 ---
 
@@ -26,15 +26,14 @@ See: .planning/PROJECT.md (updated 2026-05-15 — v1.1 milestone opened)
 ## Current Position
 
 Phase: 07 (AI Provider Foundation) — EXECUTING
-Plan: 5 of 6
-Status: 07-04 complete; 07-05 next (disclosure modal + AIClient.probe/invoke wrapping)
-Last activity: 2026-05-16 -- Completed 07-04 (Test connection wiring)
+Plan: 6 of 6
+Status: 07-05 complete; 07-06 next (clear-ai-key palette + README Network use update + final phase metadata)
+Last activity: 2026-05-16 -- Completed 07-05 (disclosure modal + AIClient gate)
 
 ### Resume path
 
-1. Execute `.planning/phases/07-ai-provider-foundation/07-05-PLAN.md` (disclosure gate).
-2. Plan 07-05 wraps `AIClient.probe()` and `AIClient.invoke()` with the disclosure modal (`requireDisclosure(provider, cfg)` interception); the wrapping happens at the AIClient seam so all callers — including Plan 07-04's `testActiveAIConnection` — inherit the protection without caller-side changes. The modal's "I understand — continue" button is the only new `setCta()` invocation in v1.1.
-3. Plan 07-06 (palette commands + README) adds `clear-ai-key` and `reset-ai-disclosures` palette commands and updates the README "Network use" section.
+1. Execute `.planning/phases/07-ai-provider-foundation/07-06-PLAN.md` (clear-ai-key palette + README + final phase metadata).
+2. The disclosure gate is now live at the AIClient seam: `AIClient.probe()` AND `AIClient.invoke()` consult `disclosureAcknowledged` BEFORE any HTTP. Plan 07-04's `testActiveAIConnection` inherits the protection automatically; Phase 08+ invokers will inherit it the same way. The `reset-ai-disclosures` palette command is also already shipped (clears all 5 providers' flags). Plan 07-06 adds the `clear-ai-key` complement, updates README "Network use" to disclose the AI providers, and ships the final phase metadata commit closing Phase 07.
 
 ### v1.1 Phase Map
 
@@ -66,7 +65,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 **Velocity (v1.0 cumulative):**
 
 - Total plans completed: 65 across v1.0
-- v1.1 plans completed: 4 (07-01, 07-02, 07-03, 07-04)
+- v1.1 plans completed: 5 (07-01, 07-02, 07-03, 07-04, 07-05)
 - v1.1 phases completed: 0/7
 
 **v1.0 plan-level history archived in `.planning/milestones/v1.0-ROADMAP.md`.**
@@ -79,6 +78,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 | 07    | 02   | 11m 6s   | 3     | 14    |
 | 07    | 03   | 12m 46s  | 2     | 9     |
 | 07    | 04   | 32min    | 2     | 12    |
+| 07    | 05   | 11m 19s  | 2     | 7     |
 
 ## Accumulated Context
 
@@ -118,6 +118,15 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 - **07-04:** Probe path is uncoupled from disclosure: `testActiveAIConnection` calls `aiClient.probe(provider)` directly. Plan 07-05 wraps the disclosure gate at the `AIClient.probe` seam, NOT at the caller — all callers (07-04 testActiveAIConnection AND any Phase 08 invoker) inherit the disclosure protection without 07-04-side changes.
 - **07-04:** Bundle landed at 827.6 KB (+1.0 KB from Plan 07-03 baseline 826.6 KB) — pure code delta from the testActiveAIConnection method + palette command + prettyName export + Settings handler glue. No new runtime deps. Headroom under 1 MB ceiling: 172.4 KB.
 - **07-04:** `tests/ai/probe-debounce.test.ts` uses `vi.mock('obsidian', async () => ({ ...await import('../helpers/obsidian-stub'), Notice: <captureClass> }))` so dynamic `import('../../src/main')` succeeds — main.ts pulls FilterModal -> obsidian.Modal at module evaluation; a bare-bones inline mock missing Modal trips an unhandled rejection during the second test case onward. Concurrent-debounce test pre-resolves the LeetCodePlugin import and captures the prototype method into an explicitly-bound wrapper (avoids `@typescript-eslint/unbound-method`).
+- **07-05:** AIClient ctor extends to `(settings, requireDisclosure?: RequireDisclosureFn)` — default `async () => true` no-op preserves Plan 07-02 backward compat (existing `aiClient.test.ts` stays green without injection). Production injects `(p, c) => this.requireAIDisclosure(p, c)` arrow from main.ts so the plugin's App reference is captured.
+- **07-05:** Disclosure gate at the AIClient seam (NOT at the call site): `probe()` AND `invoke()` both consult `disclosureAcknowledged` BEFORE any HTTP. Plan 07-04's `testActiveAIConnection` inherits the protection automatically — no caller-side wiring change required for AIPROV-04. Phase 08+ invokers inherit it the same way. T-07-03-bypass residual risk: a future caller importing `resolveAdapter` directly bypasses the gate; documented in AIClient JSDoc + 07-RESEARCH §Security threat #5.
+- **07-05:** Cancel posture is distinct between probe and invoke: `probe()` returns `{ ok: false, errorMessage: 'AI call cancelled' }` (preserves the ProbeResult shape so 07-04 testActiveAIConnection's failure-Notice flow renders 'OpenAI: AI call cancelled' verbatim without code changes); `invoke()` throws `Error('AI call cancelled')` (re-throw matches LeetCodeClient.getProblemDetail so Phase 08 callers can catch + branch on the error type). Both 'AI call cancelled' strings locked verbatim.
+- **07-05:** Continue path persists `disclosureAcknowledged: true` via `setProviderConfig` FIRST, then RE-READS cfg before handing to the adapter. The re-read is load-bearing because `sanitizeProviderConfig` (Plan 07-01 Task 2) may normalize other fields (baseUrl trimming, model fallback); without it the adapter would see the pre-sanitize cfg snapshot.
+- **07-05:** `AIDisclosureModal` carries TWO flags — `acknowledged` (set ONLY by Continue) + `decided` (set by EITHER button). `onClose()`'s Esc/X/overlay-click fallback fires onCancel only when both flags are false. The `decided` flag was added during Task 1 GREEN gate as a Rule 1 deviation — without it, Cancel's click handler invoked onCancel then close() → onClose() → fired onCancel a SECOND time because `acknowledged` was correctly left false on Cancel. Both flags are load-bearing; the test suite asserts both behaviours independently.
+- **07-05:** `DISCLOSURE_BASE_COPY` exported as a mutable object (NOT `Object.freeze`'d) — Phase 08/09/11 each append a feature-specific bullet to `willSend` BEFORE any AIClient call site reads the constant. Locking the constant would force each downstream phase to either copy the array (drift risk) or expose a separate registration API (boilerplate). The verbatim shape is asserted at unit-test time so a typo is caught at CI.
+- **07-05:** `resetAIDisclosures` has an idempotent skip path — providers whose flag is already false are NOT written. Avoids churning data.json on every reset and respects the SettingsStore setter's side-effect-free contract when no actual change is needed. Reset Notice fires unconditionally so the user gets confirmation that the command ran.
+- **07-05:** Bundle landed at 830.1 KB (+2.5 KB from Plan 07-04 baseline 827.6 KB). Pure code delta from disclosure modal (~1 KB) + AIClient gate body (~0.5 KB) + main.ts helper methods (~0.7 KB) + CSS scoping rule (~0.1 KB). Headroom under 1 MB ceiling: 169.9 KB. setCta() invariant preserved: exactly 2 functional call sites in src/ tree (`SettingsTab.ts:104` Login + `disclosure.ts:145` Continue).
+- **07-05:** Plan-prescribed vitest `-x` flag is unsupported in vitest 4. Used `npx vitest run ...` without the flag — equivalent semantics; suite already exits non-zero on failure. Documentation drift between the plan template and the vitest 4.1.5 CLI; not a behavior deviation.
 
 ### v1.1 Decisions Locked at Roadmap Time
 
@@ -160,9 +169,9 @@ None yet — awaiting `/gsd-plan-phase 6`.
 
 ## Session Continuity
 
-Last session: 2026-05-16T00:35:25.735Z
-Stopped at: Completed 07-04-PLAN.md
-Resume file: .planning/phases/07-ai-provider-foundation/07-05-PLAN.md
+Last session: 2026-05-16T00:52:05.675Z
+Stopped at: Completed 07-05-PLAN.md
+Resume file: .planning/phases/07-ai-provider-foundation/07-06-PLAN.md
 
 ## Operator Next Steps
 

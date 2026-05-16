@@ -61,7 +61,7 @@ Requirements for the v1.1 milestone. Each maps to a roadmap phase.
 - [x] **AIPROV-01**: User can configure an active AI provider from a Settings tab supporting Anthropic, OpenAI, OpenRouter, and Ollama natively, plus any OpenAI-compatible custom endpoint via a base-URL field (covers Bedrock-via-LiteLLM-gateway, Azure-OpenAI shape, vLLM, LM Studio).
 - [x] **AIPROV-02**: User pastes their own API key per provider; keys are stored in `data.json`, displayed only as a masked field, and the README discloses that storage is plain-text local-only.
 - [x] **AIPROV-03**: User can run a "Test connection" action that issues a tiny round-trip call to the configured provider and reports success or the error message.
-- [ ] **AIPROV-04**: Before the first AI call ever made by the plugin, a one-time disclosure modal lists the active provider, base URL, and the exact data the plugin will send (problem text + `## Code` + last verdict + failing test, optionally `## Notes`); the modal must be acknowledged before the call proceeds.
+- [x] **AIPROV-04**: Before the first AI call ever made by the plugin, a one-time disclosure modal lists the active provider, base URL, and the exact data the plugin will send (problem text + `## Code` + last verdict + failing test, optionally `## Notes`); the modal must be acknowledged before the call proceeds.
 - [x] **AIPROV-05**: AI calls use a single `obsidianFetch(mode)` adapter — `electron.net.fetch` for streaming AI calls when available, otherwise `requestUrl`; non-streaming AI calls always use `requestUrl`; all `leetcode.com` calls remain on `requestUrl` (v1.0 convention preserved absolutely).
 - [x] **AIPROV-06**: User can run a "Clear AI key" command that wipes the active provider's key from `data.json`.
 - [ ] **AIPROV-07**: README's "Network use" section enumerates every endpoint the plugin contacts (leetcode.com plus each AI provider's base URL).
@@ -141,7 +141,7 @@ Filled by the roadmapper.
 | AIPROV-01   | Phase 07 | Complete |
 | AIPROV-02   | Phase 07 | Complete |
 | AIPROV-03   | Phase 07 | Complete |
-| AIPROV-04   | Phase 07 | Pending |
+| AIPROV-04   | Phase 07 | Complete |
 | AIPROV-05   | Phase 07 | Complete |
 | AIPROV-06   | Phase 07 | Complete |
 | AIPROV-07   | Phase 07 | Pending |

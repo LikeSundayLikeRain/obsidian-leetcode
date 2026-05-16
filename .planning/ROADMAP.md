@@ -102,7 +102,7 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion — three parallel plans)*
 
 - [x] 07-04-PLAN.md — Test connection wiring: `testActiveAIConnection` + `test-ai-connection` palette command + per-provider probe matrix unit tests (OpenAI/OpenRouter/Ollama/Anthropic/Custom-fallback)
-- [ ] 07-05-PLAN.md — `AIDisclosureModal` + `DISCLOSURE_BASE_COPY` shared constant + AIClient probe/invoke disclosure gate + `reset-ai-disclosures` palette command
+- [x] 07-05-PLAN.md — `AIDisclosureModal` + `DISCLOSURE_BASE_COPY` shared constant + AIClient probe/invoke disclosure gate + `reset-ai-disclosures` palette command
 - [ ] 07-06-PLAN.md — `clear-ai-key` palette command + README ## Network usage section (5 AI provider hosts + leetcode.com + Authentication + Cost expectations stub) + README CI grep gate
 
 **UI hint**: yes
@@ -196,7 +196,7 @@ Plans:
 | 05.4. Run-verdict UX button polish       | v1.0      | 5/5            | Complete    | 2026-05-14  |
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
-| 07. AI Provider Foundation               | v1.1      | 4/6 | In Progress|  |
+| 07. AI Provider Foundation               | v1.1      | 5/6 | In Progress|  |
 | 08. AI Debug                             | v1.1      | -/-            | Not Started | -           |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
