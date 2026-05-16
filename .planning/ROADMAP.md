@@ -126,7 +126,26 @@ Plans:
   2. User sees AI output progressively fill the modal when streaming is available; otherwise sees a "Thinking…" indicator with elapsed-time counter.
   3. User can click Cancel at any time during an in-flight AI request and the modal closes cleanly with no zombie network call.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 08-01-PLAN.md — AIRequest/AIResponse expansion + LastVerdictStore module + onVerdict orchestrator hook (gates 02–05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 08-02-PLAN.md — AIClient.invokeStream + per-provider streamText/generateText adapters + AbortSignal propagation tests + electron.net.fetch signal-honoring stub
+
+**Wave 3** *(blocked on Waves 1–2 completion)*
+
+- [ ] 08-03-PLAN.md — AIStreamModal (live debounced render + Thinking… counter + Cancel + Copy + Close) + buildDebugPrompt pure helper + withDebugBullet disclosure factory + 5 CSS selectors + manual UAT live-render verification gate
+
+**Wave 4** *(blocked on Wave 3 completion — two parallel plans)*
+
+- [ ] 08-04-PLAN.md — Fence-row 3rd AI Debug button (Edit + Reading via shared factory) + ai-debug palette command + LeetCodePlugin.openAIDebug(slug) single entrypoint + LastVerdictStore field + orchestrator onVerdict callback registration
+- [ ] 08-05-PLAN.md — Verdict modal AI Debug button (conditional on kind ∈ {wa,tle,mle,re,ce}) + RunModal Surface 3 discovery (ships or collapses into Surface 2)
+
 **UI hint**: yes
 
 ### Phase 09: AI ACed Review
