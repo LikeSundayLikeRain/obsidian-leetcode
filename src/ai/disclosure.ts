@@ -73,6 +73,42 @@ export const DISCLOSURE_BASE_COPY: { willSend: readonly string[]; neverSends: re
 Object.freeze(DISCLOSURE_BASE_COPY);
 
 /**
+ * Phase 08 Plan 03 Task 1 — `withDebugBullet` composition factory that
+ * appends the AI Debug feature-specific bullet to a frozen base disclosure
+ * copy. Mandatory composition pattern (08-UI-SPEC §"Disclosure copy
+ * extension" + 08-PATTERNS Pattern 5): NEVER mutate the base in place — the
+ * inner arrays are `Object.freeze`'d at module load (Phase 07 Plan 07 WR-02
+ * mitigation), and an in-place append would throw in strict mode at runtime.
+ *
+ * `withDebugBullet` returns a FRESH object whose `willSend` is a NEW array
+ * (not a reference to the base) ending with the locked verbatim AI Debug
+ * bullet. The `neverSends` field passes through by reference equality —
+ * both arrays are frozen, no copy needed.
+ *
+ * The bullet text is locked verbatim per 08-UI-SPEC §"Disclosure copy
+ * extension" — the parenthetical `(input, expected output, your output,
+ * error message)` is load-bearing (it documents exactly which LastVerdict
+ * fields ship to the provider, and is the user's defense-in-depth contract
+ * for what AI Debug sends beyond the base willSend bullets).
+ *
+ * Phase 09 + Phase 11 will mirror this factory shape (`withReviewBullet`,
+ * `withKgBullet`) — siblings live in this file alongside the base constant.
+ */
+export function withDebugBullet(
+  base: { willSend: readonly string[]; neverSends: readonly string[] },
+): { willSend: readonly string[]; neverSends: readonly string[] } {
+  // Spread (not in-place mutation) is the locked composition pattern. See
+  // the JSDoc above `withDebugBullet` for the WR-02 frozen-base contract.
+  return {
+    willSend: [
+      ...base.willSend,
+      'AI Debug also sends the last failing run/submit verdict for this problem (input, expected output, your output, error message)',
+    ],
+    neverSends: base.neverSends,
+  };
+}
+
+/**
  * Once-per-provider-switch disclosure modal. Fired by
  * `LeetCodePlugin.requireAIDisclosure` (see src/main.ts) when the active
  * provider's `disclosureAcknowledged` flag is false. Continue persists the
