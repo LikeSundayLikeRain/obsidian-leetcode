@@ -167,6 +167,51 @@ describe('LeetCodePlugin.testActiveAIConnection — Plan 07-04 Task 1', () => {
     expect(probe).toHaveBeenCalledWith('custom');
   });
 
+  // ──────────────────────────────────────────────────────────────────────
+  //   Plan 07-07 Task 2 — CR-02 empty-baseUrl guard
+  //
+  //   testActiveAIConnection must block the empty-baseUrl path for custom
+  //   AND ollama with a Notice — symmetric with the existing apiKey guard
+  //   for the cloud providers. Defense-in-depth: the probe-side guards
+  //   (probeCustom + probeOllama) close the bug, but the main.ts guard
+  //   surfaces a friendlier 'Enter a Base URL for X first.' Notice and
+  //   skips the aiClient.probe call entirely (no aiProbeInflight churn).
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('Custom empty baseUrl blocks with Notice and does NOT call probe (CR-02 main.ts guard)', async () => {
+    const probe = vi.fn(async () => ({ ok: true, modelCount: null } as ProbeResult));
+    const fake = makeFake({
+      active: 'custom',
+      cfg: makeProviderConfig({ apiKey: '', baseUrl: '' }),
+      probe,
+    });
+    await callTestActiveAIConnection(fake);
+    expect(noticeCalls).toHaveLength(1);
+    expect(noticeCalls[0]).toEqual({
+      text: 'Enter a Base URL for Custom (OpenAI-compatible) first.',
+      duration: 3000,
+    });
+    expect(probe).not.toHaveBeenCalled();
+    expect(fake.aiProbeInflight.size).toBe(0);
+  });
+
+  it('Ollama empty baseUrl blocks with Notice and does NOT call probe (CR-02 main.ts guard)', async () => {
+    const probe = vi.fn(async () => ({ ok: true, modelCount: null } as ProbeResult));
+    const fake = makeFake({
+      active: 'ollama',
+      cfg: makeProviderConfig({ apiKey: '', baseUrl: '' }),
+      probe,
+    });
+    await callTestActiveAIConnection(fake);
+    expect(noticeCalls).toHaveLength(1);
+    expect(noticeCalls[0]).toEqual({
+      text: 'Enter a Base URL for Ollama first.',
+      duration: 3000,
+    });
+    expect(probe).not.toHaveBeenCalled();
+    expect(fake.aiProbeInflight.size).toBe(0);
+  });
+
   it('concurrent calls deduplicate via the in-flight Map (probe called once)', async () => {
     // Pre-resolve the LeetCodePlugin import so calls into the bound method
     // are fully synchronous — without this, both p1 and p2 await the same

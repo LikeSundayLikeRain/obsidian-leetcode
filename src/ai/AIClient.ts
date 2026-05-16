@@ -147,7 +147,16 @@ export class AIClient {
     const wantStream = (req as { stream?: boolean }).stream === true;
     const fetcher = obsidianFetch(wantStream ? 'stream' : 'request');
     const adapter = resolveAdapter(provider, cfg, fetcher);
-    return adapter.invoke(req);
+    // Phase 07 Plan 07 — WR-01 fix. The `await` is contract-load-bearing:
+    // the JSDoc above promises 're-throws on adapter error (mirrors
+    // LeetCodeClient.getProblemDetail) so feature-layer callers in
+    // Phase 08/09 can branch on the error type'. Without await, a future
+    // maintainer wrapping this body in try/catch would be silently
+    // betrayed — the rejection would bubble out as the returned promise's
+    // rejection rather than entering the synchronous catch. Same external
+    // observability either way (.catch / rejects.toThrow both work), but
+    // the await makes the intent explicit and future-proofs the seam.
+    return await adapter.invoke(req);
   }
 
   /**

@@ -64,3 +64,62 @@ describe('cross-provider probe roll-up — Plan 07-04 Task 2', () => {
     expect(r.ok).toBe(true);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+//   Plan 07-07 Task 2 — CR-02 empty-baseUrl guards
+//
+//   probeCustom + probeOllama must return a clean ProbeResult when baseUrl
+//   is empty WITHOUT issuing any network call (a relative '/models' fetch
+//   blows up requestUrl). The fetcher mock asserts zero calls in the guard
+//   path; happy-path regression guards confirm the guard is empty-only,
+//   not always-on.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('CR-02 empty-baseUrl guards — Plan 07-07 Task 2', () => {
+  const emptyCfg: ProviderConfig = {
+    apiKey: 'sk-test',
+    baseUrl: '',
+    model: 'm1',
+    disclosureAcknowledged: true,
+  };
+
+  it('probeCustom returns clean error when baseUrl is empty (no fetcher call)', async () => {
+    const fetcherSpy = vi.fn<FetchFn>();
+    const r = await probeCustom(emptyCfg, fetcherSpy);
+    expect(r.ok).toBe(false);
+    expect(r.errorMessage).toMatch(/Base URL is required/i);
+    expect(fetcherSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('probeOllama returns clean error when baseUrl is empty (no fetcher call)', async () => {
+    const fetcherSpy = vi.fn<FetchFn>();
+    const r = await probeOllama({ ...emptyCfg, apiKey: '' }, fetcherSpy);
+    expect(r.ok).toBe(false);
+    expect(r.errorMessage).toMatch(/Base URL is required/i);
+    expect(fetcherSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('probeCustom with non-empty baseUrl still calls the fetcher (regression guard)', async () => {
+    const fetcherSpy = vi.fn<FetchFn>(async () =>
+      mockResponse({ data: [{ id: 'm1' }] }, { status: 200 }),
+    );
+    const r = await probeCustom(
+      { ...emptyCfg, baseUrl: 'https://example.com/v1' },
+      fetcherSpy,
+    );
+    expect(r.ok).toBe(true);
+    expect(fetcherSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('probeOllama with non-empty baseUrl still calls the fetcher (regression guard)', async () => {
+    const fetcherSpy = vi.fn<FetchFn>(async () =>
+      mockResponse({ models: [{ name: 'llama3.2' }] }, { status: 200 }),
+    );
+    const r = await probeOllama(
+      { ...emptyCfg, apiKey: '', baseUrl: 'http://localhost:11434/v1' },
+      fetcherSpy,
+    );
+    expect(r.ok).toBe(true);
+    expect(fetcherSpy).toHaveBeenCalledTimes(1);
+  });
+});

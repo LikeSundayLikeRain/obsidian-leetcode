@@ -104,6 +104,26 @@ describe('Phase 07 AIClient — invoke', () => {
     const client = new AIClient(settings as never);
     await expect(client.invoke({} as never)).rejects.toThrow(/No AI provider configured/);
   });
+
+  // Plan 07-07 Task 3 — WR-01 fix. AIClient.invoke must `await` the
+  // adapter.invoke() promise so adapter rejections propagate as a
+  // rejected promise with the original error message preserved. The v1
+  // code returned the unawaited promise — the JSDoc contract documented
+  // re-throw semantics, but a future maintainer wrapping the body in
+  // try/catch would be silently betrayed because the rejection bubbles
+  // out of the async function without ever entering the catch.
+  it('invoke awaits adapter.invoke so adapter rejections propagate as rejected promise with original message preserved', async () => {
+    resolveAdapterMock.mockReturnValue({
+      probe: vi.fn(),
+      invoke: vi.fn(async () => {
+        throw new Error('adapter-boom');
+      }),
+    });
+    const { AIClient } = await import('../../src/ai/AIClient');
+    const settings = makeMockSettings();
+    const client = new AIClient(settings as never);
+    await expect(client.invoke({} as never)).rejects.toThrow(/adapter-boom/);
+  });
 });
 
 describe('Phase 07 AIClient — addCost', () => {

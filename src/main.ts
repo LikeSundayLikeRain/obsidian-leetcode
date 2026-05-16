@@ -780,6 +780,20 @@ export default class LeetCodePlugin extends Plugin {
       new Notice(`Enter an API key for ${prettyName(provider)} first.`, 3000);
       return;
     }
+    // Phase 07 Plan 07 — CR-02 main.ts guard. Symmetric with the apiKey
+    // guard above: custom + ollama require a Base URL before probe is
+    // worth attempting. The probe-side guards (probeCustom, probeOllama)
+    // also early-return on empty baseUrl, but this caller-side guard
+    // surfaces a friendlier Notice ('Enter a Base URL for X first.') and
+    // skips the aiProbeInflight Map churn entirely. Defense-in-depth.
+    if (
+      (provider === 'custom' || provider === 'ollama') &&
+      cfg.baseUrl === ''
+    ) {
+
+      new Notice(`Enter a Base URL for ${prettyName(provider)} first.`, 3000);
+      return;
+    }
     if (this.aiProbeInflight.has(provider)) {
       // Single-in-flight: subsequent clicks while a probe is running are
       // no-ops. The original click's Notice will fire when the in-flight

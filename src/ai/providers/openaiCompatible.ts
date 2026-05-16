@@ -60,6 +60,16 @@ export async function probeCustom(
   cfg: ProviderConfig,
   fetcher: FetchFn,
 ): Promise<ProbeResult> {
+  // Phase 07 Plan 07 — CR-02 BLOCKER fix. When cfg.baseUrl === '' (the
+  // default for the freshly-selected Custom provider), constructing a
+  // fetch URL via `'' + '/models' = '/models'` produces a relative URL
+  // that requestUrl cannot resolve. Early-return with a clean error
+  // message so the caller surfaces a friendly Notice instead of a
+  // confusing requestUrl exception. The fetcher is NEVER invoked in
+  // this path — asserted by tests/ai/probes.test.ts CR-02 fixture.
+  if (!cfg.baseUrl) {
+    return { ok: false, errorMessage: 'Base URL is required for Custom provider.' };
+  }
   try {
     const baseUrl = cfg.baseUrl.replace(/\/$/, '');
     const headers: Record<string, string> = {};
