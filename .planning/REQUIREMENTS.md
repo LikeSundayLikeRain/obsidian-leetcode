@@ -64,7 +64,7 @@ Requirements for the v1.1 milestone. Each maps to a roadmap phase.
 - [x] **AIPROV-04**: Before the first AI call ever made by the plugin, a one-time disclosure modal lists the active provider, base URL, and the exact data the plugin will send (problem text + `## Code` + last verdict + failing test, optionally `## Notes`); the modal must be acknowledged before the call proceeds.
 - [x] **AIPROV-05**: AI calls use a single `obsidianFetch(mode)` adapter — `electron.net.fetch` for streaming AI calls when available, otherwise `requestUrl`; non-streaming AI calls always use `requestUrl`; all `leetcode.com` calls remain on `requestUrl` (v1.0 convention preserved absolutely).
 - [x] **AIPROV-06**: User can run a "Clear AI key" command that wipes the active provider's key from `data.json`.
-- [ ] **AIPROV-07**: README's "Network use" section enumerates every endpoint the plugin contacts (leetcode.com plus each AI provider's base URL).
+- [x] **AIPROV-07**: README's "Network use" section enumerates every endpoint the plugin contacts (leetcode.com plus each AI provider's base URL).
 
 ### Foundations (FOUND)
 
@@ -144,7 +144,7 @@ Filled by the roadmapper.
 | AIPROV-04   | Phase 07 | Complete |
 | AIPROV-05   | Phase 07 | Complete |
 | AIPROV-06   | Phase 07 | Complete |
-| AIPROV-07   | Phase 07 | Pending |
+| AIPROV-07   | Phase 07 | Complete |
 | AIDBG-01    | Phase 08 | Pending |
 | AIDBG-02    | Phase 08 | Pending |
 | AIDBG-03    | Phase 08 | Pending |

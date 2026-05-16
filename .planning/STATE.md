@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
 status: executing
-stopped_at: Completed 07-05-PLAN.md
-last_updated: "2026-05-16T00:52:55.684Z"
-last_activity: 2026-05-16 -- Completed 07-05 (disclosure modal + AIClient probe/invoke gate + reset-ai-disclosures palette command)
+stopped_at: Completed 07-06-PLAN.md (Phase 07 closed — all 7 AIPROV reqs complete)
+last_updated: "2026-05-16T21:05:00.000Z"
+last_activity: 2026-05-16 -- Completed 07-06 (clear-ai-key palette + README ## Network usage rewrite + Phase 07 closeout)
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 12
-  completed_plans: 11
-  percent: 16
+  completed_plans: 12
+  percent: 28
 ---
 
 # Project State
@@ -25,15 +25,15 @@ See: .planning/PROJECT.md (updated 2026-05-15 — v1.1 milestone opened)
 
 ## Current Position
 
-Phase: 07 (AI Provider Foundation) — EXECUTING
-Plan: 6 of 6
-Status: 07-05 complete; 07-06 next (clear-ai-key palette + README Network use update + final phase metadata)
-Last activity: 2026-05-16 -- Completed 07-05 (disclosure modal + AIClient gate)
+Phase: 07 (AI Provider Foundation) — COMPLETE
+Plan: 6 of 6 — DONE
+Status: All 7 AIPROV requirements user-visible and test-verified; Phase 07 closed. Phase 08 (AI Debug) is the next phase.
+Last activity: 2026-05-16 -- Completed 07-06 (clear-ai-key palette + README Network usage + Phase 07 closeout)
 
 ### Resume path
 
-1. Execute `.planning/phases/07-ai-provider-foundation/07-06-PLAN.md` (clear-ai-key palette + README + final phase metadata).
-2. The disclosure gate is now live at the AIClient seam: `AIClient.probe()` AND `AIClient.invoke()` consult `disclosureAcknowledged` BEFORE any HTTP. Plan 07-04's `testActiveAIConnection` inherits the protection automatically; Phase 08+ invokers will inherit it the same way. The `reset-ai-disclosures` palette command is also already shipped (clears all 5 providers' flags). Plan 07-06 adds the `clear-ai-key` complement, updates README "Network use" to disclose the AI providers, and ships the final phase metadata commit closing Phase 07.
+1. Run `/gsd-plan-phase 8` to start planning Phase 08 (AI Debug — streaming modal + cancel; AIDBG-01..03).
+2. Phase 07 closeout state: AIClient seam (Plan 07-02/03/05) is the production AI surface. `AIClient.probe()` and `AIClient.invoke()` both consult `disclosureAcknowledged` BEFORE any HTTP — Phase 08's AI Debug will get the disclosure gate for free. Three palette commands ship in Phase 07: `test-ai-connection` (07-04), `reset-ai-disclosures` (07-05), `clear-ai-key` (07-06). README ## Network usage now enumerates all 5 AI provider hosts + leetcode.com plus Authentication and Cost expectations subsections — plugin-store-reviewer-ready.
 
 ### v1.1 Phase Map
 
@@ -65,8 +65,8 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 **Velocity (v1.0 cumulative):**
 
 - Total plans completed: 65 across v1.0
-- v1.1 plans completed: 5 (07-01, 07-02, 07-03, 07-04, 07-05)
-- v1.1 phases completed: 0/7
+- v1.1 plans completed: 6 (07-01, 07-02, 07-03, 07-04, 07-05, 07-06)
+- v1.1 phases completed: 1/7 (Phase 07 — AI Provider Foundation)
 
 **v1.0 plan-level history archived in `.planning/milestones/v1.0-ROADMAP.md`.**
 
@@ -79,6 +79,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 | 07    | 03   | 12m 46s  | 2     | 9     |
 | 07    | 04   | 32min    | 2     | 12    |
 | 07    | 05   | 11m 19s  | 2     | 7     |
+| 07    | 06   | ~10min   | 2     | 4     |
 
 ## Accumulated Context
 
@@ -127,6 +128,13 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 - **07-05:** `resetAIDisclosures` has an idempotent skip path — providers whose flag is already false are NOT written. Avoids churning data.json on every reset and respects the SettingsStore setter's side-effect-free contract when no actual change is needed. Reset Notice fires unconditionally so the user gets confirmation that the command ran.
 - **07-05:** Bundle landed at 830.1 KB (+2.5 KB from Plan 07-04 baseline 827.6 KB). Pure code delta from disclosure modal (~1 KB) + AIClient gate body (~0.5 KB) + main.ts helper methods (~0.7 KB) + CSS scoping rule (~0.1 KB). Headroom under 1 MB ceiling: 169.9 KB. setCta() invariant preserved: exactly 2 functional call sites in src/ tree (`SettingsTab.ts:104` Login + `disclosure.ts:145` Continue).
 - **07-05:** Plan-prescribed vitest `-x` flag is unsupported in vitest 4. Used `npx vitest run ...` without the flag — equivalent semantics; suite already exits non-zero on failure. Documentation drift between the plan template and the vitest 4.1.5 CLI; not a behavior deviation.
+- **07-06:** `clearActiveAIKey` scope is ACTIVE-ONLY: when activeAIProvider is null, the locked Notice fires and SettingsStore is NOT touched. When set, only the active provider's apiKey is wiped; baseUrl, model, disclosureAcknowledged are PRESERVED on the active provider AND every other provider's config is byte-for-byte unchanged. T-07-06-other-keys mitigation enforced by unit test asserting writtenProviders array equals exactly one element (the active provider).
+- **07-06:** Clearing a key does NOT clear `disclosureAcknowledged` — credential rotation is a distinct semantic from disclosure-reset. Users who want to re-trigger the disclosure modal run the separate `reset-ai-disclosures` command (Plan 07-05). This separation lets users rotate keys without losing prior disclosure acknowledgement.
+- **07-06:** No confirmation modal on `clear-ai-key` (per 07-UI-SPEC §"Destructive actions"): user typed the command name explicitly; double-confirmation is friction; re-pasting from provider dashboard is trivial recovery. Mirrors v1.0 D-22/D-23/AUTH-05 logout precedent.
+- **07-06:** README ## Network usage section REPLACED entirely (was 1 paragraph + 1 LC cookie paragraph) with bullet list enumerating all 5 AI hosts + leetcode.com, plus ### Authentication and ### Cost expectations subsections. v1.0 LC cookie disclosure preserved BYTE-FOR-BYTE under ### Authentication.
+- **07-06:** Plugin-store reviewer parity gate: `tests/ai/readme-network-use.test.ts` asserts 16 substrings on README.md (read from disk via `path.resolve(__dirname, '../../README.md')`). Reviewer-grep claim mismatches surface in CI on every commit. Phase 12 release-audit will only verify (and bump version), not rewrite — audit-ready text shipped now.
+- **07-06:** Bundle landed at 830.5 KB (+0.4 KB from Plan 07-05's 830.1 KB). Pure code delta from clearActiveAIKey method + addCommand block. README is not bundled. Headroom under 1 MB ceiling: 169.5 KB.
+- **07-06 (Phase 07 closeout):** All 7 AIPROV requirements user-visible and test-verified. Three palette commands now exist: `test-ai-connection` (07-04), `reset-ai-disclosures` (07-05), `clear-ai-key` (07-06). Phase 08 (AI Debug) gets the disclosure gate for free via the AIClient seam.
 
 ### v1.1 Decisions Locked at Roadmap Time
 
@@ -169,12 +177,16 @@ None yet — awaiting `/gsd-plan-phase 6`.
 
 ## Session Continuity
 
-Last session: 2026-05-16T00:52:05.675Z
-Stopped at: Completed 07-05-PLAN.md
-Resume file: .planning/phases/07-ai-provider-foundation/07-06-PLAN.md
+Last session: 2026-05-16T21:05:00.000Z
+Stopped at: Completed 07-06-PLAN.md (Phase 07 closed)
+Resume file: None — run `/gsd-plan-phase 8` to start Phase 08 (AI Debug)
 
 ## Operator Next Steps
 
-- Review and approve `.planning/ROADMAP.md` v1.1 section (Phases 06–12).
-- Run `/gsd-plan-phase 6` to start planning Phase 06 (Foundations + Preview Mode).
-- Phase 06 must land before any v1.1 feature code (AIs/Contest) is written — lint + bundle-size gates are gating dependencies for the remaining phases.
+- Phase 07 (AI Provider Foundation) is COMPLETE — all 7 AIPROV requirements user-visible and test-verified.
+- Run `/gsd-plan-phase 8` to start planning Phase 08 (AI Debug — streaming modal + cancel; AIDBG-01..03). Phase 08 gets the disclosure gate for free via the AIClient seam (Plan 07-05).
+- Manual UAT for Plan 07-06 (per 07-VALIDATION.md):
+  - Configure Anthropic with key `sk-ant-test` → run palette `Clear AI key` → Notice "Cleared AI key for Anthropic" fires → Settings → API key field empty.
+  - Configure Anthropic + OpenAI with keys → active=Anthropic → run Clear AI key → switch to OpenAI → verify OpenAI key INTACT.
+  - Set activeAIProvider to null (— Not configured —) → run Clear AI key → Notice "No active AI provider — nothing to clear." fires → data.json unchanged.
+  - Inspect README.md visually → confirm new ## Network usage section enumerates all 5 base URLs + leetcode.com + has ### Authentication + ### Cost expectations.

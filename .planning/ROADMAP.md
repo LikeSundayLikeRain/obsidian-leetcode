@@ -28,7 +28,7 @@ Full milestone detail: [.planning/milestones/v1.0-ROADMAP.md](milestones/v1.0-RO
 ### v1.1 — Contest, AI Coach, and Preview
 
 - [x] **Phase 06: Foundations + Preview Mode** — Lint bump, CI bundle gate, click-to-preview surface; refactor browser row-click into `previewRouter` for downstream reuse. (completed 2026-05-15)
-- [ ] **Phase 07: AI Provider Foundation** — `AIClient`, 4 provider adapters, `obsidianFetch(mode)`, AI settings panel, first-run disclosure modal scaffolding, test-connection.
+- [x] **Phase 07: AI Provider Foundation** — `AIClient`, 4 provider adapters, `obsidianFetch(mode)`, AI settings panel, first-run disclosure modal scaffolding, test-connection. (completed 2026-05-16)
 - [ ] **Phase 08: AI Debug** — Streaming via `electron.net.fetch` with `requestUrl` fallback; `AIStreamModal`; `LastVerdictStore`; AI Debug button under `## Code` fence.
 - [ ] **Phase 09: AI ACed Review** — First AI vault write to new locked `## AI Review` H2; opt-in auto-run; idempotent on re-AC; daily cost cap; manual re-run command.
 - [ ] **Phase 10: Contest (virtual + analysis)** — Past picker + Surprise me; persisted timer; 4 problem notes with `lc-contest-id`; status-bar UI; post-contest summary note.
@@ -103,7 +103,7 @@ Plans:
 
 - [x] 07-04-PLAN.md — Test connection wiring: `testActiveAIConnection` + `test-ai-connection` palette command + per-provider probe matrix unit tests (OpenAI/OpenRouter/Ollama/Anthropic/Custom-fallback)
 - [x] 07-05-PLAN.md — `AIDisclosureModal` + `DISCLOSURE_BASE_COPY` shared constant + AIClient probe/invoke disclosure gate + `reset-ai-disclosures` palette command
-- [ ] 07-06-PLAN.md — `clear-ai-key` palette command + README ## Network usage section (5 AI provider hosts + leetcode.com + Authentication + Cost expectations stub) + README CI grep gate
+- [x] 07-06-PLAN.md — `clear-ai-key` palette command + README ## Network usage section (5 AI provider hosts + leetcode.com + Authentication + Cost expectations stub) + README CI grep gate
 
 **UI hint**: yes
 
