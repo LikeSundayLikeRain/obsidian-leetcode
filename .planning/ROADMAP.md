@@ -143,7 +143,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion — two parallel plans)*
 
-- [ ] 08-04-PLAN.md — Fence-row 3rd AI Debug button (Edit + Reading via shared factory) + ai-debug palette command + LeetCodePlugin.openAIDebug(slug) single entrypoint + LastVerdictStore field + orchestrator onVerdict callback registration
+- [x] 08-04-PLAN.md — Fence-row 3rd AI Debug button (Edit + Reading via shared factory) + ai-debug palette command + LeetCodePlugin.openAIDebug(slug) single entrypoint + LastVerdictStore field + orchestrator onVerdict callback registration
 - [ ] 08-05-PLAN.md — Verdict modal AI Debug button (conditional on kind ∈ {wa,tle,mle,re,ce}) + RunModal Surface 3 discovery (ships or collapses into Surface 2)
 
 **UI hint**: yes
@@ -224,7 +224,7 @@ Plans:
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
 | 07. AI Provider Foundation               | v1.1      | 8/8 | Complete    | 2026-05-16 |
-| 08. AI Debug                             | v1.1      | 3/5 | In Progress|  |
+| 08. AI Debug                             | v1.1      | 4/5 | In Progress|  |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
 status: executing
-stopped_at: Completed 07-06-PLAN.md (Phase 07 closed)
-last_updated: "2026-05-16T03:54:54.472Z"
-last_activity: 2026-05-16 -- Phase 08 execution started
+stopped_at: Completed 08-04-PLAN.md (AI Debug single-entrypoint + ai-debug palette command)
+last_updated: "2026-05-16T05:08:13Z"
+last_activity: 2026-05-16
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 18
-  completed_plans: 13
-  percent: 29
+  total_plans: 19
+  completed_plans: 18
+  percent: 31
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-15 — v1.1 milestone opened)
 ## Current Position
 
 Phase: 08 (ai-debug) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 08
-Last activity: 2026-05-16 -- Phase 08 execution started
+Plan: 5 of 5
+Status: Ready to execute
+Last activity: 2026-05-16
 
 ### Resume path
 
@@ -80,6 +80,10 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 | 07    | 04   | 32min    | 2     | 12    |
 | 07    | 05   | 11m 19s  | 2     | 7     |
 | 07    | 06   | ~10min   | 2     | 4     |
+| 08    | 01   | 11min    | 2     | 4     |
+| 08    | 02   | —        | 2     | 6     |
+| 08    | 03   | —        | 2     | 6     |
+| 08    | 04   | 13min    | 2     | 6     |
 
 ## Accumulated Context
 
@@ -135,6 +139,12 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 - **07-06:** Plugin-store reviewer parity gate: `tests/ai/readme-network-use.test.ts` asserts 16 substrings on README.md (read from disk via `path.resolve(__dirname, '../../README.md')`). Reviewer-grep claim mismatches surface in CI on every commit. Phase 12 release-audit will only verify (and bump version), not rewrite — audit-ready text shipped now.
 - **07-06:** Bundle landed at 830.5 KB (+0.4 KB from Plan 07-05's 830.1 KB). Pure code delta from clearActiveAIKey method + addCommand block. README is not bundled. Headroom under 1 MB ceiling: 169.5 KB.
 - **07-06 (Phase 07 closeout):** All 7 AIPROV requirements user-visible and test-verified. Three palette commands now exist: `test-ai-connection` (07-04), `reset-ai-disclosures` (07-05), `clear-ai-key` (07-06). Phase 08 (AI Debug) gets the disclosure gate for free via the AIClient seam.
+- **08-04:** Single-entrypoint discipline (T-08-04-T-host) — all 3 AI Debug surfaces (fence-row button, palette command, future verdict-modal button) funnel through `LeetCodePlugin.openAIDebug(slug)`. Fence-row button is the discovery surface; palette command is the muscle-memory surface; verdict-modal button (Plan 08-05) is the contextual surface. Disclosure gate + prompt assembly + modal open are single-sourced.
+- **08-04:** `LastVerdictStore` is plain Map (no Plugin arg, no workspace events) — verdicts have no "tab is open" lifecycle. Deliberate deviation from `EphemeralTabStore` which DOES need a reconcile loop because tab-input state IS scoped to "the problem note is open in at least one markdown leaf" (08-PATTERNS Anti-Pattern #6).
+- **08-04:** SubmissionOrchestrator stays pure (T-08-04-T-orch) — only the `LastVerdict` TYPE is imported in `submissionOrchestrator.ts`, never the `LastVerdictStore` class. main.ts owns the store and registers the `onVerdict` callback at orchestrator construction. Test enforces this via `tests/main/aiDebugCommand.test.ts` ("orchestrator stays pure" describe block).
+- **08-04:** `AIStreamModalArgs.disclosureCopy?` field added (Rule 2 deviation) — forward-compat anchor for the 08-04 PLAN's `key_links` contract. The disclosure gate fires inside `AIClient.invokeStream` via `requireAIDisclosure`; the modal field is informational today but prevents future-phase regressions where a caller forgets the feature bullet.
+- **08-04:** `'No AI provider configured. Open settings → AI.'` — sentence-case Notice copy per `eslint-plugin-obsidianmd ui/sentence-case` (lowercase 'settings'). All future Notice strings should follow this pattern.
+- **08-04:** Bundle landed at 986.4 KB. Plan delta well under 1 KB — pure code (palette command + 2 host methods + 1 button + import block). Headroom under 1 MB: ~14 KB; under 1.2 MB ceiling: ~218 KB.
 
 ### v1.1 Decisions Locked at Roadmap Time
 
