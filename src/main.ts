@@ -1203,6 +1203,13 @@ export default class LeetCodePlugin extends Plugin {
       onCopyFailingInput: (input: string) => {
         void this.openRunModalWithSeedAppended(input);
       },
+      // Phase 08 Plan 05 (AIDBG-01) — AI: Debug button in verdict modal
+      // footer. Same single entrypoint as the fence-row + palette surfaces
+      // (T-08-05-T-host single-host mitigation). slug captured at modal
+      // construction time — this is the active problem at submit time so
+      // it stays correct even if the user navigates away while the verdict
+      // is rendering. VerdictModal handles the close-then-fire ordering.
+      onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
     });
     modal.open();
 
@@ -1552,6 +1559,12 @@ export default class LeetCodePlugin extends Plugin {
       onCopyFailingInput: (input: string) => {
         void this.openRunModalWithSeedAppended(input);
       },
+      // Phase 08 Plan 05 (AIDBG-01) — AI: Debug button in verdict modal
+      // footer for the Run path too (custom-input runs that fail). The
+      // verdict footer is rendered by the SAME renderer as Submit, so the
+      // same conditional union {wa,tle,mle,re,ce} applies and the same
+      // single openAIDebug entrypoint is invoked.
+      onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
     });
     modal.open();
 

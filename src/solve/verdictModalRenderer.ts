@@ -44,6 +44,13 @@ export interface RenderVerdictArgs {
   problemTitle?: string;
   /** Called when the user clicks `Copy failing testcase to custom input`. */
   onCopyFailingInput?: (input: string) => void;
+  /** Phase 08 Plan 05 (AIDBG-01) — Called when the user clicks `AI: Debug`
+   *  on a non-Accepted verdict. Visibility union LOCKED to
+   *  `kind ∈ {wa, tle, mle, re, ce}` per RESEARCH §Pitfall 7. The Modal-
+   *  layer caller (VerdictModal.renderVerdict) wraps this callback in a
+   *  close-then-fire lambda so AIStreamModal does not stack on top of a
+   *  closing verdict modal (T-08-05-T-stack mitigation). */
+  onOpenAIDebug?: () => void;
   // ── Phase 5.4 (D-08) — Run-path-only optional inputs ─────────────────────
   // Backward-compatible: every existing call site (Submit / Pending / Timeout
   // / Unknown / Run path callers that haven't been updated) continues to
@@ -102,7 +109,16 @@ export function renderVerdict(args: RenderVerdictArgs): void {
       renderUnknownVerdict(titleEl, contentEl, payload, problemTitle);
       return;
     }
-    renderSubmitVerdict(titleEl, contentEl, payload as SubmitCheckResponse, info.kind, info.displayName, problemTitle, args.onCopyFailingInput);
+    renderSubmitVerdict(
+      titleEl,
+      contentEl,
+      payload as SubmitCheckResponse,
+      info.kind,
+      info.displayName,
+      problemTitle,
+      args.onCopyFailingInput,
+      args.onOpenAIDebug,
+    );
     return;
   }
 
@@ -432,6 +448,7 @@ function renderSubmitVerdict(
   displayName: string,
   problemTitle: string | undefined,
   onCopyFailingInput: ((input: string) => void) | undefined,
+  onOpenAIDebug: (() => void) | undefined,
 ): void {
   setText(titleEl, problemTitle ? `${displayName} — ${problemTitle}` : displayName);
   const body = appendEl(contentEl, 'div', 'leetcode-verdict-body');
@@ -499,6 +516,21 @@ function renderSubmitVerdict(
         void writeClipboard(errText);
       });
     }
+  }
+  // Phase 08 Plan 05 (AIDBG-01) — Conditional `AI: Debug` button. Locked
+  // visibility union (RESEARCH §Pitfall 7): kind ∈ {wa, tle, mle, re, ce}.
+  // ABSENT for ac (Phase 09 territory), ole/ie/unknown/unknown-lc (no
+  // actionable failing case). Neutral class — NO .mod-cta (UI-SPEC §Color).
+  // Defensive gate on `onOpenAIDebug` truthiness so the button never paints
+  // without a wired callback (T-08-05-D-callback-undef mitigation).
+  const showAIDebugButton =
+    kind === 'wa' || kind === 'tle' || kind === 'mle' || kind === 're' || kind === 'ce';
+  if (showAIDebugButton && onOpenAIDebug) {
+    const aiBtn = appendEl(footer, 'button', 'leetcode-ai-debug-action');
+    setText(aiBtn, 'AI: Debug');
+    aiBtn.addEventListener('click', () => {
+      onOpenAIDebug();
+    });
   }
   const closeBtn = appendEl(footer, 'button', 'mod-cta');
   setText(closeBtn, 'Close');

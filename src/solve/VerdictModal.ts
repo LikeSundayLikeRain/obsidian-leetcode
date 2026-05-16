@@ -29,6 +29,12 @@ export interface VerdictModalArgs {
   onCancel: () => void;
   /** Called when user clicks "Copy failing testcase to custom input" on WA/TLE/RE. */
   onCopyFailingInput?: (input: string) => void;
+  /** Phase 08 Plan 05 (AIDBG-01) — Called when user clicks "AI: Debug" on a
+   *  non-Accepted verdict (kind ∈ {wa, tle, mle, re, ce}). The Modal layer
+   *  closes the verdict modal FIRST, then invokes this callback (REVERSED
+   *  from onCopyFailingInput's fire-then-close) so AIStreamModal does NOT
+   *  stack on top of a closing modal — T-08-05-T-stack mitigation. */
+  onOpenAIDebug?: () => void;
 }
 
 export class VerdictModal extends Modal {
@@ -119,6 +125,23 @@ export class VerdictModal extends Modal {
         this.args.onCopyFailingInput?.(input);
         this.close();
       },
+      // Phase 08 Plan 05 (AIDBG-01) — close-then-fire ordering, REVERSED
+      // from onCopyFailingInput. The callback opens AIStreamModal; if we
+      // fire BEFORE close(), the new modal stacks on top of the closing
+      // verdict modal causing z-index flicker. Closing first ensures the
+      // verdict modal's onClose runs cleanly before AIStreamModal's onOpen
+      // paints (T-08-05-T-stack mitigation).
+      //
+      // Pass `undefined` (not the lambda) when the host did not supply a
+      // callback — the renderer's `if (showAIDebugButton && onOpenAIDebug)`
+      // gate suppresses the button entirely, preventing a no-op surface
+      // when no AI Debug entrypoint is wired (T-08-05-D-callback-undef).
+      onOpenAIDebug: this.args.onOpenAIDebug
+        ? () => {
+            this.close();
+            this.args.onOpenAIDebug?.();
+          }
+        : undefined,
     });
     // Primary-focus the Close button if the renderer exposed it.
     this.focusCloseButton();

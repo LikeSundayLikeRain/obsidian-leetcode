@@ -86,8 +86,11 @@ function getCloseBtn(contentEl: HTMLElement): HTMLButtonElement | undefined {
 }
 
 // ── Test fixtures by status_code ────────────────────────────────────────────
+// `state: 'SUCCESS' as const` so the SubmitCheckResponse literal-state union
+// narrows correctly when these are passed to VerdictModal.renderVerdict.
 const wa = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 11,
   status_msg: 'Wrong Answer',
   input: '[2,7,11,15]\n9',
@@ -98,26 +101,30 @@ const wa = {
   expected_code_answer: '[0,1]',
 };
 const mle = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 12,
   status_msg: 'Memory Limit Exceeded',
   input: '[1,2,3]',
   last_testcase: '[1,2,3]',
 };
 const ole = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 13,
   status_msg: 'Output Limit Exceeded',
 };
 const tle = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 14,
   status_msg: 'Time Limit Exceeded',
   input: '[1,2,3,4,5]',
   last_testcase: '[1,2,3,4,5]',
 };
 const re = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 15,
   status_msg: 'Runtime Error',
   input: '[]',
@@ -125,23 +132,27 @@ const re = {
   full_runtime_error: 'IndexError: list index out of range',
 };
 const ie = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 16,
   status_msg: 'Internal Error',
 };
 const ce = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 20,
   status_msg: 'Compile Error',
   full_compile_error: 'SyntaxError: invalid syntax',
 };
 const unknownLc = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 21,
   status_msg: 'Unknown Error',
 };
 const ac = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 10,
   status_msg: 'Accepted',
   status_runtime: '52 ms',
@@ -150,7 +161,8 @@ const ac = {
   memory_percentile: 85.2,
 };
 const unknownVerdict = {
-  state: 'SUCCESS',
+  state: 'SUCCESS' as const,
+  submission_id: '1234567890',
   status_code: 99,
   status_msg: 'Future Status',
 };
