@@ -122,10 +122,9 @@ export class AIClient {
    * provider surfaces as a configuration error rather than as a stuck
    * modal.
    *
-   * Routes through `obsidianFetch(req.stream ? 'stream' : 'request')` — the
-   * AIRequest interface from 07-01 is empty for now; cast inline so the
-   * `stream?: boolean` field is read without type-system gymnastics. Phase 08
-   * expands AIRequest and removes the cast.
+   * Routes through `obsidianFetch(req.stream ? 'stream' : 'request')` — Phase
+   * 08 Plan 01 expanded the AIRequest interface so `req.stream` is type-clean
+   * here without an inline cast.
    */
   async invoke(req: AIRequest): Promise<AIResponse> {
     const provider = this.settings.getActiveAIProvider();
@@ -144,7 +143,7 @@ export class AIClient {
       });
       cfg = this.settings.getProviderConfig(provider);
     }
-    const wantStream = (req as { stream?: boolean }).stream === true;
+    const wantStream = req.stream === true;
     const fetcher = obsidianFetch(wantStream ? 'stream' : 'request');
     const adapter = resolveAdapter(provider, cfg, fetcher);
     // Phase 07 Plan 07 — WR-01 fix. The `await` is contract-load-bearing:

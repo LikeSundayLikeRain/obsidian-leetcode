@@ -28,6 +28,8 @@ import { setWindowTimeout } from '../shared/timers';
 import { extractFirstFencedBlock } from './codeExtractor';
 import { resolveLangSlug } from './languages';
 import { showSessionExpiredNotice } from './SessionExpiredNotice';
+import { classifyStatus } from './statusMap';
+import type { LastVerdict } from './lastVerdictStore';
 import {
   pollSubmission,
   AbortError as PollAbortError,
@@ -71,6 +73,39 @@ export interface SubmissionOrchestratorDeps {
    *  Production wiring in main.ts always supplies
    *  `() => { void this.auth.login(); }`. */
   login?: () => void | Promise<void>;
+  /** Phase 08 Plan 01 — fired after pollSubmission resolves with a non-Accepted
+   *  verdict. Plugin registers
+   *  `(slug, verdict) => store.set(slug, verdict)`. Optional to
+   *  preserve backward compatibility; tests that don't need verdict capture
+   *  omit the callback. Capture filter (locked):
+   *  `kind !== 'ac' && kind !== 'unknown' && kind !== 'unknown-lc'`. The
+   *  orchestrator imports only the LastVerdict type from ./lastVerdictStore —
+   *  the populating store class itself is held by main.ts so the orchestrator
+   *  stays pure (08-PATTERNS §"src/solve/submissionOrchestrator.ts"). */
+  onVerdict?: (slug: string, verdict: LastVerdict) => void;
+}
+
+/** Return the first non-empty string in `values`, or undefined when none has
+ *  positive length. Used to populate `LastVerdict.errorMessage` from the LC
+ *  response's vendor-specific error fields (priority order:
+ *  full_compile_error → compile_error → full_runtime_error → runtime_error). */
+function firstNonEmptyString(...values: Array<unknown>): string | undefined {
+  for (const v of values) {
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return undefined;
+}
+
+/** Coerce LC's `expected_code_answer` / `code_output` (typed
+ *  `string | string[] | undefined`) into a single string for LastVerdict
+ *  population. Joins arrays on '\n'. */
+function asString(v: unknown): string | undefined {
+  if (Array.isArray(v)) {
+    const joined = v.filter((s): s is string => typeof s === 'string').join('\n');
+    return joined.length > 0 ? joined : undefined;
+  }
+  if (typeof v === 'string' && v.length > 0) return v;
+  return undefined;
 }
 
 /** Build the LC-CLI-verbatim header set. Mirrors src/solve/leetcodeRest.ts so
@@ -269,7 +304,56 @@ export class SubmissionOrchestrator {
             // wires the verdict modal. Wave 1 tests only assert that the
             // submit POST happens with the right body + session-expiry
             // detection fires; terminal rendering is owned by Plan 06.
-            void terminal;
+            //
+            // Phase 08 Plan 01 — non-Accepted verdict capture (08-CONTEXT
+            // decision B). After pollSubmission resolves, classify and fire
+            // deps.onVerdict for non-AC submit verdicts. Capture filter is
+            // verbatim from 08-RESEARCH §"Code Examples" Example 6:
+            //   kind !== 'ac' && kind !== 'unknown' && kind !== 'unknown-lc'.
+            // Accepted submissions fall through unannotated (Phase 09 territory).
+            // Wrapped in try/catch so callback errors never crash the submit
+            // flow (verdict capture is best-effort).
+            try {
+              const t = terminal as Record<string, unknown>;
+              const code = typeof t.status_code === 'number' ? t.status_code : 0;
+              const msg = typeof t.status_msg === 'string' ? t.status_msg : undefined;
+              const info = classifyStatus(code, msg);
+              if (
+                info.kind !== 'ac' &&
+                info.kind !== 'unknown' &&
+                info.kind !== 'unknown-lc' &&
+                this.deps.onVerdict
+              ) {
+                const failingInput = firstNonEmptyString(t.input, t.last_testcase);
+                const expectedOutput =
+                  asString(t.expected_output) ?? asString(t.expected_code_answer);
+                const actualOutput =
+                  asString(t.std_output) ?? asString(t.code_output);
+                const runtimeMs = typeof t.status_runtime === 'string' ? t.status_runtime : undefined;
+                const memoryMb = typeof t.status_memory === 'string' ? t.status_memory : undefined;
+                const errorMessage = firstNonEmptyString(
+                  t.full_compile_error,
+                  t.compile_error,
+                  t.full_runtime_error,
+                  t.runtime_error,
+                );
+                const verdict: LastVerdict = {
+                  kind: 'submit-failure',
+                  capturedAt: Date.now(),
+                  verdictText: info.displayName,
+                  ...(failingInput !== undefined ? { failingInput } : {}),
+                  ...(expectedOutput !== undefined ? { expectedOutput } : {}),
+                  ...(actualOutput !== undefined ? { actualOutput } : {}),
+                  ...(runtimeMs !== undefined ? { runtimeMs } : {}),
+                  ...(memoryMb !== undefined ? { memoryMb } : {}),
+                  ...(errorMessage !== undefined ? { errorMessage } : {}),
+                };
+                this.deps.onVerdict(slug, verdict);
+              }
+            } catch {
+              // Capture is best-effort — never propagate errors from the
+              // user-supplied callback into the submit flow.
+            }
             resolve();
           } catch (err) {
             reject(err as Error);

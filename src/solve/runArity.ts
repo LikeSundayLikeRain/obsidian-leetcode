@@ -147,6 +147,122 @@ export function joinCasesForRun(
     .join('\n');
 }
 
+// ── Phase 08 Plan 01 — run-side LastVerdict capture helper ──────────────────
+
+/** Lightweight subset of `RunCheckResponse` that
+ *  `extractRunFailureForVerdictStore` reads. Inlined here (vs importing the
+ *  full `RunCheckResponse` from ./types) to keep this module dependency-free
+ *  per the file-header purity rule (no domain-type imports). The index
+ *  signature mirrors `RunCheckResponse[k: string]: unknown` (types.ts:90)
+ *  for forward-compat with LC field drift. */
+interface RunFailureSource {
+  compare_result?: unknown;
+  code_answer?: unknown;
+  expected_code_answer?: unknown;
+  compile_error?: unknown;
+  full_compile_error?: unknown;
+  runtime_error?: unknown;
+  full_runtime_error?: unknown;
+  [k: string]: unknown;
+}
+
+/** Run-side metadata used to slice the failing case from `joinedDataInput`.
+ *  `arity` = case count (drives `splitOutput`); `linesPerCase` = wire-format
+ *  lines per case (drives `splitInput`). */
+export interface RunFailureExtractMeta {
+  arity: number;
+  linesPerCase: number;
+}
+
+/** Run-side LastVerdict population fields. Caller wraps the return into a
+ *  full `LastVerdict` by adding `kind: 'run-failure'`, `capturedAt`, and
+ *  `verdictText`. */
+export interface RunFailureExtract {
+  failingInput?: string;
+  expectedOutput?: string;
+  actualOutput?: string;
+  errorMessage?: string;
+}
+
+/** Identify the FIRST failing case in a Run response and produce the
+ *  LastVerdict population fields. Reuses `splitInput` + `splitOutput` so the
+ *  caller doesn't re-slice. Returns:
+ *    - `errorMessage` populated when compile_error / runtime_error fields are
+ *      present (Run-mode error path — no compare_result).
+ *    - `failingInput`, `expectedOutput`, `actualOutput` populated when
+ *      `compare_result` contains at least one '0'.
+ *    - All fields undefined when compare_result is all-pass ('111…1').
+ *
+ *  NEVER throws. Defensive against missing fields and malformed compare_result.
+ *
+ *  Pattern reused from `src/solve/verdictModalRenderer.ts:170-179` —
+ *  `passMask = compare_result.split('').map(c => c === '1')` + first '0' index. */
+export function extractRunFailureForVerdictStore(
+  res: RunFailureSource,
+  joinedDataInput: string,
+  metaData: RunFailureExtractMeta,
+): RunFailureExtract {
+  const out: RunFailureExtract = {};
+
+  // Run-mode error path: compile / runtime error fields present.
+  // First non-empty wins per 08-PATTERNS §"src/solve/submissionOrchestrator.ts"
+  // Capture pattern (full_compile_error → compile_error → full_runtime_error
+  // → runtime_error).
+  const errCandidates: Array<unknown> = [
+    res.full_compile_error,
+    res.compile_error,
+    res.full_runtime_error,
+    res.runtime_error,
+  ];
+  for (const cand of errCandidates) {
+    if (typeof cand === 'string' && cand.length > 0) {
+      out.errorMessage = cand;
+      break;
+    }
+  }
+
+  // compare_result-based failing case identification.
+  const compareResult = typeof res.compare_result === 'string' ? res.compare_result : '';
+  if (compareResult.length > 0) {
+    const passMask = compareResult.split('').map((c) => c === '1');
+    const firstFailIdx = passMask.findIndex((p) => !p);
+    if (firstFailIdx >= 0) {
+      const arity = metaData.arity > 0 ? metaData.arity : passMask.length;
+      const inputs = splitInput(joinedDataInput, metaData.linesPerCase);
+      const expectedOut = splitOutput(
+        Array.isArray(res.expected_code_answer)
+          ? (res.expected_code_answer as string[])
+          : typeof res.expected_code_answer === 'string'
+            ? res.expected_code_answer
+            : undefined,
+        arity,
+      );
+      const actualOut = splitOutput(
+        Array.isArray(res.code_answer)
+          ? (res.code_answer as string[])
+          : typeof res.code_answer === 'string'
+            ? res.code_answer
+            : undefined,
+        arity,
+      );
+      const failingInput = inputs[firstFailIdx];
+      if (typeof failingInput === 'string' && failingInput.length > 0) {
+        out.failingInput = failingInput;
+      }
+      const exp = expectedOut[firstFailIdx];
+      if (typeof exp === 'string' && exp.length > 0) {
+        out.expectedOutput = exp;
+      }
+      const act = actualOut[firstFailIdx];
+      if (typeof act === 'string' && act.length > 0) {
+        out.actualOutput = act;
+      }
+    }
+  }
+
+  return out;
+}
+
 /** Normalize LC's `code_answer` / `expected_code_answer` (typed
  *  `string | string[] | undefined` per types.ts:78-79) into a
  *  fixed-length `string[]` of length `arity`. Pads short arrays with

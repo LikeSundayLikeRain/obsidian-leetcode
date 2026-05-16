@@ -50,26 +50,37 @@ export interface ProbeResult {
 }
 
 /**
- * Phase 08 expands this — see Phase 07 plan_hints. Phase 07 ships an
- * empty-but-named interface so Plan 07-02's
- * `AIClient.invoke(req: AIRequest): Promise<AIResponse>` signature
- * type-checks without speculative fields. Empty-interface lint suppression
- * is intentional: a `type X = object` alias would not preserve the named
- * brand that downstream plans import.
+ * Phase 08 Plan 01 — locked field set per 08-CONTEXT decision E. Replaces the
+ * Phase 07 empty-but-named placeholder. AIClient.invoke (and Phase 08 Plan 02's
+ * invokeStream) consume `prompt`, optional `maxTokens`, optional `stream`
+ * (routes through `obsidianFetch('stream')` when true) and optional `signal`
+ * (propagated into Vercel AI SDK's `streamText({ abortSignal })`).
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface AIRequest {}
+export interface AIRequest {
+  /** Single-shot prompt assembled by `buildDebugPrompt(...)` (Plan 08-03). */
+  prompt: string;
+  /** Optional: provider-side max tokens. Default: provider-specific cheap-tier value. */
+  maxTokens?: number;
+  /** When true, route through `obsidianFetch('stream')`. When false/undefined, requestUrl. */
+  stream?: boolean;
+  /** AbortController.signal — propagated into `streamText({ abortSignal })`. */
+  signal?: AbortSignal;
+}
 
 /**
- * Phase 08 expands this — see Phase 07 plan_hints. Phase 07 ships an
- * empty-but-named interface so Plan 07-02's
- * `AIClient.invoke(req: AIRequest): Promise<AIResponse>` signature
- * type-checks without speculative fields. Empty-interface lint suppression
- * is intentional: a `type X = object` alias would not preserve the named
- * brand that downstream plans import.
+ * Phase 08 Plan 01 — locked field set per 08-CONTEXT decision E. Used by
+ * non-streaming `AIClient.invoke` consumers (Plan 07-04 testActiveAIConnection
+ * already routes through probe(), but Phase 09 will consume invoke() for the
+ * AI Review write).
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface AIResponse {}
+export interface AIResponse {
+  /** Full assistant text. */
+  text: string;
+  /** USD cost added to the daily ledger; zero on Ollama / unknown. */
+  usdCost: number;
+  /** Optional usage object for diagnostics. */
+  usage?: { inputTokens?: number; outputTokens?: number };
+}
 
 /**
  * Phase 07 Plan 04 — single source of truth for provider display names.
