@@ -29,7 +29,7 @@ Full milestone detail: [.planning/milestones/v1.0-ROADMAP.md](milestones/v1.0-RO
 
 - [x] **Phase 06: Foundations + Preview Mode** — Lint bump, CI bundle gate, click-to-preview surface; refactor browser row-click into `previewRouter` for downstream reuse. (completed 2026-05-15)
 - [x] **Phase 07: AI Provider Foundation** — `AIClient`, 4 provider adapters, `obsidianFetch(mode)`, AI settings panel, first-run disclosure modal scaffolding, test-connection. (completed 2026-05-16)
-- [ ] **Phase 08: AI Debug** — Streaming via `electron.net.fetch` with `requestUrl` fallback; `AIStreamModal`; `LastVerdictStore`; AI Debug button under `## Code` fence.
+- [x] **Phase 08: AI Debug** — Streaming via `electron.net.fetch` with `requestUrl` fallback; `AIStreamModal`; `LastVerdictStore`; AI Debug button under `## Code` fence. (completed 2026-05-16)
 - [ ] **Phase 09: AI ACed Review** — First AI vault write to new locked `## AI Review` H2; opt-in auto-run; idempotent on re-AC; daily cost cap; manual re-run command.
 - [ ] **Phase 10: Contest (virtual + analysis)** — Past picker + Surprise me; persisted timer; 4 problem notes with `lc-contest-id`; status-bar UI; post-contest summary note.
 - [ ] **Phase 11: AI Knowledge Graph** — 22-pattern classifier; cluster hub notes; lazy-on-AC migration of `## Techniques`; cross-cluster `## Related Variants`; flagged look-ahead edges.
@@ -144,7 +144,7 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion — two parallel plans)*
 
 - [x] 08-04-PLAN.md — Fence-row 3rd AI Debug button (Edit + Reading via shared factory) + ai-debug palette command + LeetCodePlugin.openAIDebug(slug) single entrypoint + LastVerdictStore field + orchestrator onVerdict callback registration
-- [ ] 08-05-PLAN.md — Verdict modal AI Debug button (conditional on kind ∈ {wa,tle,mle,re,ce}) + RunModal Surface 3 discovery (ships or collapses into Surface 2)
+- [x] 08-05-PLAN.md — Verdict modal AI Debug button (conditional on kind ∈ {wa,tle,mle,re,ce}) + RunModal Surface 3 discovery (ships or collapses into Surface 2)
 
 **UI hint**: yes
 
@@ -224,7 +224,7 @@ Plans:
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
 | 07. AI Provider Foundation               | v1.1      | 8/8 | Complete    | 2026-05-16 |
-| 08. AI Debug                             | v1.1      | 4/5 | In Progress|  |
+| 08. AI Debug                             | v1.1      | 5/5 | Complete   | 2026-05-16 |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
