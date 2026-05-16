@@ -111,7 +111,7 @@ Plans:
 
 **Wave 6** *(advisory cleanup — blocked on Wave 5 completion)*
 
-- [ ] 07-08-PLAN.md — Round-2 advisory cleanup: CR-01-A logger Bearer-no-token guard + WR-02-separator separator-preservation in redactString + WR-03-whitespace `!cfg.baseUrl?.trim()` symmetry across main.ts/probeCustom/probeOllama + WR-01-test-gap MockSettings.setProviderConfig + disclosure-gate persistence test
+- [x] 07-08-PLAN.md — Round-2 advisory cleanup: CR-01-A logger Bearer-no-token guard + WR-02-separator separator-preservation in redactString + WR-03-whitespace `!cfg.baseUrl?.trim()` symmetry across main.ts/probeCustom/probeOllama + WR-01-test-gap MockSettings.setProviderConfig + disclosure-gate persistence test
 
 **UI hint**: yes
 
@@ -204,7 +204,7 @@ Plans:
 | 05.4. Run-verdict UX button polish       | v1.0      | 5/5            | Complete    | 2026-05-14  |
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
-| 07. AI Provider Foundation               | v1.1      | 7/8 | In Progress | -          |
+| 07. AI Provider Foundation               | v1.1      | 8/8 | Complete   | 2026-05-16 |
 | 08. AI Debug                             | v1.1      | -/-            | Not Started | -           |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
