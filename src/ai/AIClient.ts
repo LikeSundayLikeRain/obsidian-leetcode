@@ -35,6 +35,33 @@ import type { SettingsStore } from '../settings/SettingsStore';
 import type { AIProvider, AIRequest, AIResponse, ProbeResult, ProviderConfig } from './types';
 import { obsidianFetch } from './obsidianFetch';
 import { resolveAdapter } from './providers';
+import type { StreamTextResult } from 'ai';
+
+/**
+ * Phase 08 Plan 02 — discriminated tuple returned by AIClient.invokeStream.
+ * The modal (Plan 08-03) consumes one of two body strategies depending on
+ * `kind`:
+ *   - 'stream': iterate `result.textStream` for incremental render.
+ *   - 'buffered': await `text` once and render the full response in one
+ *     pass; UI shows 'Thinking…' + mm:ss counter while the Promise is
+ *     unresolved (RESEARCH §"F-Refinement").
+ *
+ * Both variants own an `abortController` whose `signal` was already passed
+ * through to the underlying fetch via `streamText({ abortSignal })` /
+ * `generateText({ abortSignal })`. Caller can `abortController.abort()`
+ * to short-circuit the in-flight call.
+ */
+export type InvokeStreamResult =
+  | {
+      kind: 'stream';
+      result: StreamTextResult<Record<string, never>, never>;
+      abortController: AbortController;
+    }
+  | {
+      kind: 'buffered';
+      text: Promise<string>;
+      abortController: AbortController;
+    };
 
 /**
  * Disclosure helper signature. Returns true on Continue (the AI call may
@@ -152,10 +179,99 @@ export class AIClient {
     // Phase 08/09 can branch on the error type'. Without await, a future
     // maintainer wrapping this body in try/catch would be silently
     // betrayed — the rejection would bubble out as the returned promise's
-    // rejection rather than entering the synchronous catch. Same external
-    // observability either way (.catch / rejects.toThrow both work), but
-    // the await makes the intent explicit and future-proofs the seam.
-    return await adapter.invoke(req);
+    // rejection rather than entering the synchronous catch.
+    //
+    // Phase 08 Plan 02 — adapter.invoke is gone; the buffered live-call
+    // path now lives at adapter.bufferedInvoke(prompt, signal). When the
+    // caller doesn't supply a signal, we mint a fresh AbortController so
+    // the adapter call stays sync-cancellable. Cost is added by the
+    // caller (Phase 08 Plan 03's modal owns onFinish) — invoke() returns
+    // text + usage and a usdCost of 0 to preserve the AIResponse shape.
+    const signal = req.signal ?? new AbortController().signal;
+    const r = await adapter.bufferedInvoke(req.prompt, signal);
+    return {
+      text: r.text,
+      usdCost: 0,
+      ...(r.usage ? { usage: r.usage } : {}),
+    };
+  }
+
+  /**
+   * Phase 08 Plan 02 — streaming live-call entrypoint. Returns a discriminated
+   * tuple the modal (Plan 08-03) switches body strategy on. Mirrors
+   * `invoke`'s disclosure-gate prologue VERBATIM (provider-null check, ack
+   * persist via setProviderConfig, re-read cfg) — every existing invoke()
+   * disclosure-gate test case has an analog here (T-08-02-EoP mitigation).
+   *
+   * Stream-first posture: when `req.stream === true`, we try
+   * `obsidianFetch('stream')` (electron.net.fetch) FIRST. If
+   * `loadElectronNet()` throws (renderer can't access Node require — mobile
+   * or sandbox edge), we catch and fall through to the buffered path
+   * (`obsidianFetch('request')` + adapter.bufferedInvoke). The discriminated
+   * `kind` makes the path explicit at the modal layer.
+   *
+   * AbortController cascade: AIClient.invokeStream OWNS the inner
+   * AbortController (passed into the SDK's `streamText({ abortSignal })`).
+   * If the caller supplies `req.signal`, we register an `abort` listener so
+   * an external abort cascades through. The caller can also abort via
+   * `result.abortController.abort()` directly.
+   *
+   * 'AI call cancelled' (verbatim) on disclosure-cancel — locked Phase 07-05
+   * contract; 'No AI provider configured' (verbatim) on null active provider.
+   */
+  async invokeStream(req: AIRequest): Promise<InvokeStreamResult> {
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      throw new Error('No AI provider configured');
+    }
+    let cfg = this.settings.getProviderConfig(provider);
+    if (!cfg.disclosureAcknowledged) {
+      const ack = await this.requireDisclosure(provider, cfg);
+      if (!ack) {
+        throw new Error('AI call cancelled');
+      }
+      await this.settings.setProviderConfig(provider, {
+        ...cfg,
+        disclosureAcknowledged: true,
+      });
+      cfg = this.settings.getProviderConfig(provider);
+    }
+
+    // Mint the inner AbortController. If the caller supplies their own
+    // signal (e.g. modal's external controller), cascade aborts into ours.
+    const abortController = new AbortController();
+    if (req.signal) {
+      if (req.signal.aborted) {
+        abortController.abort();
+      } else {
+        req.signal.addEventListener('abort', () => abortController.abort(), { once: true });
+      }
+    }
+
+    // Stream-first path: only attempt if caller asked for streaming. If
+    // obsidianFetch('stream') throws (loadElectronNet failure), fall
+    // through to the buffered path.
+    if (req.stream === true) {
+      try {
+        const fetcher = obsidianFetch('stream');
+        const adapter = resolveAdapter(provider, cfg, fetcher);
+        const result = adapter.streamInvoke(req.prompt, abortController.signal);
+        return { kind: 'stream', result, abortController };
+      } catch {
+        // Fall through to buffered path. The catch is intentionally broad
+        // because loadElectronNet() throws an Error on Node-require
+        // unavailability; we don't care about the inner cause — Phase 08's
+        // contract is "stream if you can, buffer if you can't".
+      }
+    }
+
+    // Buffered path (either req.stream !== true or stream-init threw).
+    const fetcher = obsidianFetch('request');
+    const adapter = resolveAdapter(provider, cfg, fetcher);
+    const text = adapter
+      .bufferedInvoke(req.prompt, abortController.signal)
+      .then((r) => r.text);
+    return { kind: 'buffered', text, abortController };
   }
 
   /**

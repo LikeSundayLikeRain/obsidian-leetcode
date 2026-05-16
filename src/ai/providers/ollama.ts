@@ -2,11 +2,17 @@
 //
 // Phase 07 Plan 02 — Ollama provider adapter (local OpenAI-compatible).
 //
+// Phase 08 Plan 02 — adds streaming + buffered live-call helpers:
+//   - streamOllama(cfg, fetcher, prompt, signal) — Vercel AI SDK streamText
+//   - invokeOllamaBuffered(cfg, fetcher, prompt, signal) — generateText
+//
 // Probe semantics (D-E): strip trailing `/v1` from baseUrl and GET
 // `${baseHost}/api/tags`. Ollama's /api/tags returns `{ models: [{name, ...}] }`
 // — modelCount = models.length on 200. Network errors here are "Ollama not
 // reachable on this host" (most common: user hasn't started the daemon).
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { streamText, generateText } from 'ai';
+import type { StreamTextResult } from 'ai';
 import type { ProviderConfig, ProbeResult } from '../types';
 import type { FetchFn } from '../obsidianFetch';
 
@@ -50,4 +56,42 @@ export async function probeOllama(
   } catch {
     return { ok: false, errorMessage: 'Ollama not reachable on this host' };
   }
+}
+
+/**
+ * Streaming live-call path. See anthropic.ts for the contract.
+ */
+export function streamOllama(
+  cfg: ProviderConfig,
+  fetcher: FetchFn,
+  prompt: string,
+  signal: AbortSignal,
+): StreamTextResult<Record<string, never>, never> {
+  return streamText({
+    model: createOllamaModel(cfg, fetcher),
+    prompt,
+    abortSignal: signal,
+  });
+}
+
+/**
+ * Non-streaming buffered live-call path. See anthropic.ts for the contract.
+ */
+export async function invokeOllamaBuffered(
+  cfg: ProviderConfig,
+  fetcher: FetchFn,
+  prompt: string,
+  signal: AbortSignal,
+): Promise<{ text: string; usage?: { inputTokens?: number; outputTokens?: number } }> {
+  const result = await generateText({
+    model: createOllamaModel(cfg, fetcher),
+    prompt,
+    abortSignal: signal,
+  });
+  return {
+    text: result.text,
+    ...(result.usage
+      ? { usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens } }
+      : {}),
+  };
 }

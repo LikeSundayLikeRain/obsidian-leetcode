@@ -6,8 +6,17 @@
 //   - probeOpenRouter(cfg, fetcher) — public model list, no Bearer required
 //   - probeCustom(cfg, fetcher) — GET /models first, fall back to 1-token chat
 //   - probeViaOneTokenChat(cfg, fetcher) — shared chat-fallback helper
+//
+// Phase 08 Plan 02 — adds streaming + buffered live-call helpers:
+//   - streamOpenAICompatible(cfg, fetcher, prompt, signal) — streamText
+//   - invokeOpenAICompatibleBuffered(cfg, fetcher, prompt, signal) — generateText
+// Both helpers accept the cfg directly and route through the shared
+// createOpenAICompatibleModel factory — the baseUrl carried in cfg picks
+// openrouter / custom (resolveAdapter dispatches the right cfg per provider
+// case at the call site).
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { generateText } from 'ai';
+import { streamText, generateText } from 'ai';
+import type { StreamTextResult } from 'ai';
 import type { ProviderConfig, ProbeResult } from '../types';
 import type { FetchFn } from '../obsidianFetch';
 import { extractFromJson, extractProviderError } from './index';
@@ -114,4 +123,46 @@ export async function probeViaOneTokenChat(
   } catch (err) {
     return { ok: false, errorMessage: extractProviderError(err).slice(0, 200) };
   }
+}
+
+/**
+ * Streaming live-call path for openai-compatible providers (OpenRouter +
+ * Custom + Ollama all route here at resolveAdapter time — only the cfg
+ * differs between branches). See anthropic.ts for the contract.
+ */
+export function streamOpenAICompatible(
+  cfg: ProviderConfig,
+  fetcher: FetchFn,
+  prompt: string,
+  signal: AbortSignal,
+  name = 'custom',
+): StreamTextResult<Record<string, never>, never> {
+  return streamText({
+    model: createOpenAICompatibleModel(cfg, fetcher, name),
+    prompt,
+    abortSignal: signal,
+  });
+}
+
+/**
+ * Non-streaming buffered live-call path. See anthropic.ts for the contract.
+ */
+export async function invokeOpenAICompatibleBuffered(
+  cfg: ProviderConfig,
+  fetcher: FetchFn,
+  prompt: string,
+  signal: AbortSignal,
+  name = 'custom',
+): Promise<{ text: string; usage?: { inputTokens?: number; outputTokens?: number } }> {
+  const result = await generateText({
+    model: createOpenAICompatibleModel(cfg, fetcher, name),
+    prompt,
+    abortSignal: signal,
+  });
+  return {
+    text: result.text,
+    ...(result.usage
+      ? { usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens } }
+      : {}),
+  };
 }
