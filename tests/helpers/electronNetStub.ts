@@ -69,12 +69,12 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       reject(makeAbortError());
       return;
     }
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
     const onAbort = (): void => {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       reject(makeAbortError());
     };
     signal?.addEventListener('abort', onAbort, { once: true });
