@@ -154,13 +154,26 @@ interface KnowledgeGraphCapableStore {
 
 function makeFakePluginForSettingsTab(settings: KnowledgeGraphCapableStore) {
   // Production SettingsTab.display() also reads getUsername() + the manual-
-  // cookie path via loginManual(). The fake settings store from solve/mocks
-  // is Phase 3-scoped and does not expose these; wrap it here with the
-  // extra surface the UI path needs so this test focuses on the new
-  // Knowledge Graph section.
+  // cookie path via loginManual() + (Phase 07 Plan 03) the AI section's
+  // getActiveAIProvider(). The fake settings store from solve/mocks is
+  // Phase 3-scoped and does not expose these; wrap it here with the extra
+  // surface the UI path needs so this test focuses on the Knowledge Graph
+  // section. AI surface returns null/empty defaults — the AI section
+  // collapses to "heading + dropdown only" and never trips the conditional
+  // sub-form path, so the knowledge-graph assertions stay valid.
   const wrappedSettings = {
     ...settings,
     getUsername: () => null,
+    getPreviewClickBehavior: () => 'preview',
+    getActiveAIProvider: () => null,
+    setActiveAIProvider: vi.fn(async (_p: unknown) => undefined),
+    getProviderConfig: (_p: unknown) => ({
+      apiKey: '',
+      baseUrl: '',
+      model: '',
+      disclosureAcknowledged: false,
+    }),
+    setProviderConfig: vi.fn(async (_p: unknown, _cfg: unknown) => undefined),
   } as unknown as KnowledgeGraphCapableStore & { getUsername(): string | null };
   return {
     auth: {

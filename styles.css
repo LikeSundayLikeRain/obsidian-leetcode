@@ -195,6 +195,14 @@
   font-family: var(--font-monospace);
   font-size: 12px;
 }
+/* Phase 07 Plan 03 — AI provider input fields (API key, Base URL, Model).
+   Extends the .lc-cookie-input precedent so masked password + monospace
+   editable fields share the same monospace rhythm. Bundle delta < 0.5 KB
+   per 07-UI-SPEC §"Bundle constraint". */
+.leetcode-settings .lc-ai-input {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+}
 /* Progress bar — sticky at the top of the view so it stays visible while the
    row list grows under it. Slim blue fill + muted label.
    When `total` is unknown we flip to an indeterminate shimmer animation. */

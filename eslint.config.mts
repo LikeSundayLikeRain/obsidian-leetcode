@@ -23,6 +23,13 @@ export default tseslint.config(
   // Plugin-wide rule tuning. `LeetCode` is a brand name (capital C) so the
   // sentence-case rule must treat it like Obsidian's own default brands; the
   // recommended config doesn't ship with LC pre-loaded.
+  //
+  // Phase 07 Plan 03 — AI provider brand names + protocol/host tokens are
+  // added so 07-UI-SPEC §"Copywriting Contract" verbatim-locked strings (e.g.
+  // 'Anthropic', 'OpenAI', 'OpenRouter', 'Ollama', 'Custom (OpenAI-compatible)',
+  // base URLs containing 'HTTPS://', 'localhost:11434') don't trip the
+  // sentence-case rule. Each entry below has a corresponding lock in
+  // .planning/phases/07-ai-provider-foundation/07-UI-SPEC.md.
   {
     plugins: { obsidianmd },
     rules: {
@@ -30,7 +37,25 @@ export default tseslint.config(
         'error',
         {
           enforceCamelCaseLower: true,
-          brands: ['LeetCode', 'LEETCODE_SESSION', 'csrftoken'],
+          brands: [
+            'LeetCode', 'LEETCODE_SESSION', 'csrftoken',
+            // Phase 07 Plan 03 AI provider brands (07-UI-SPEC).
+            'Anthropic', 'OpenAI', 'OpenRouter', 'Ollama',
+            'OpenAI-compatible',
+            // Locked URL/host substrings used in verbatim copy + placeholders.
+            'localhost', 'HTTPS', 'sk-…',
+            // Plan-numbered grep-replace markers (locked by 07-UI-SPEC for
+            // Plan 07-04 to substitute in cleanly).
+            'Plan 07-04',
+            // CLI command examples used in Notice copy (locked verbatim by
+            // 07-UI-SPEC §"Notice copy").
+            'ollama pull',
+            // Test connection ships as a sentence-case-tolerant button label;
+            // Obsidian's own rule treats it as already valid, but the
+            // verbatim quote inside Model row's desc text contains "Test
+            // connection" preceded by quotes which trips the rule.
+            'Test connection',
+          ],
         },
       ],
     },
