@@ -1,19 +1,18 @@
 // Phase 06 FOUND-02 — bundle-size gate behavior contract.
 //
 // Asserts that `scripts/check-bundle-size.mjs`:
-//   - Exits 1 with FAIL when main.js > 1_000_000 bytes
-//   - Exits 0 with WARN when 900_000 < size <= 1_000_000
-//   - Exits 0 (no warn) when size <= 900_000
+//   - Exits 1 with FAIL when main.js > 1_200_000 bytes
+//   - Exits 0 with WARN when 1_080_000 < size <= 1_200_000
+//   - Exits 0 (no warn) when size <= 1_080_000
 //   - Exits 1 with FAIL when main.js does not exist
 //
-// Phase 07 Plan 03 ceiling bump (Rule 3 — Architectural deviation):
-//   The original 500 KB / 400 KB thresholds were locked in 06-CONTEXT.md §E
-//   before AI scope was added. Plan 07-03 wires `new AIClient(this.settings)`
-//   into main.ts:onload Step 5.9, which pulls the @ai-sdk/* runtime onto the
-//   bundle graph (esbuild builds Obsidian plugins with format: 'cjs' and no
-//   splitting — `await import()` cannot defer the SDK out of the hot path).
-//   Ceiling raised to 1 MB; soft warning bumped proportionally to 900 KB
-//   (last 10% of headroom — same posture as the prior 80% soft-warning).
+// Phase 07 Plan 03 ceiling bump (Rule 3): 500 KB → 1 MB when the AI SDK
+// landed on the bundle graph (tree-shake-false-green resolved).
+//
+// Phase 08 Plan 02 ceiling bump (Rule 3): 1 MB → 1.2 MB when streamText
+// became a live runtime consumer (Phase 07 import-only stub vs Phase 08
+// AIStreamModal actually iterating the textStream). Soft warning held at
+// 90% of HARD_LIMIT.
 //
 // Spawns the script via `child_process.execFileSync` against fixture
 // directories under `os.tmpdir()` so the real `main.js` is never modified.
@@ -64,18 +63,18 @@ describe('scripts/check-bundle-size.mjs (FOUND-02)', () => {
     expect(r.stderr).not.toMatch(/WARN/);
   });
 
-  it('exits 0 with WARN when 900_000 < size <= 1_000_000 (soft warn band)', () => {
-    const r = runWithFixture(950_000);
+  it('exits 0 with WARN when 1_080_000 < size <= 1_200_000 (soft warn band)', () => {
+    const r = runWithFixture(1_140_000);
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/WARN/);
     expect(r.stderr).toMatch(/heading toward the gate/);
   });
 
-  it('exits 1 with FAIL when main.js > 1_000_000 bytes (hard limit)', () => {
-    const r = runWithFixture(1_100_000);
+  it('exits 1 with FAIL when main.js > 1_200_000 bytes (hard limit)', () => {
+    const r = runWithFixture(1_300_000);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/FAIL/);
-    expect(r.stderr).toMatch(/exceeds 1000000 bytes/);
+    expect(r.stderr).toMatch(/exceeds 1200000 bytes/);
   });
 
   it('exits 1 with FAIL when main.js is missing', () => {
@@ -97,11 +96,11 @@ describe('package.json — check:bundle-size script registration (FOUND-02)', ()
   });
 });
 
-describe('scripts/check-bundle-size.mjs — threshold constants (FOUND-02 + Phase 07 Plan 03 bump)', () => {
-  it('uses HARD_LIMIT=1_000_000 and SOFT_WARN=900_000 (1 MB ceiling for AI SDK runtime)', () => {
+describe('scripts/check-bundle-size.mjs — threshold constants (FOUND-02 + Phase 08 Plan 02 bump)', () => {
+  it('uses HARD_LIMIT=1_200_000 and SOFT_WARN=1_080_000 (1.2 MB ceiling for live streamText consumer)', () => {
     const src = readFileSync(SCRIPT_PATH, 'utf-8');
-    expect(src).toMatch(/HARD_LIMIT\s*=\s*1_?000_?000/);
-    expect(src).toMatch(/SOFT_WARN\s*=\s*900_?000/);
+    expect(src).toMatch(/HARD_LIMIT\s*=\s*1_?200_?000/);
+    expect(src).toMatch(/SOFT_WARN\s*=\s*1_?080_?000/);
   });
 });
 
