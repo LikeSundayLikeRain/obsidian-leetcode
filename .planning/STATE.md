@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
 status: executing
 stopped_at: Completed 07-06-PLAN.md (Phase 07 closed)
-last_updated: "2026-05-16T03:53:50.039Z"
-last_activity: 2026-05-16 -- Phase 08 planning complete
+last_updated: "2026-05-16T03:54:54.472Z"
+last_activity: 2026-05-16 -- Phase 08 execution started
 progress:
   total_phases: 7
   completed_phases: 2
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-15 — v1.1 milestone opened)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** Phase 08 — ai debug
+**Current focus:** Phase 08 — ai-debug
 
 ## Current Position
 
-Phase: 08
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-16 -- Phase 08 planning complete
+Phase: 08 (ai-debug) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 08
+Last activity: 2026-05-16 -- Phase 08 execution started
 
 ### Resume path
 

@@ -131,7 +131,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 08-01-PLAN.md — AIRequest/AIResponse expansion + LastVerdictStore module + onVerdict orchestrator hook (gates 02–05)
+- [x] 08-01-PLAN.md — AIRequest/AIResponse expansion + LastVerdictStore module + onVerdict orchestrator hook (gates 02–05)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -224,7 +224,7 @@ Plans:
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
 | 07. AI Provider Foundation               | v1.1      | 8/8 | Complete    | 2026-05-16 |
-| 08. AI Debug                             | v1.1      | -/-            | Not Started | -           |
+| 08. AI Debug                             | v1.1      | 1/5 | In Progress|  |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
