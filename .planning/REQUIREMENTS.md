@@ -34,8 +34,8 @@ Requirements for the v1.1 milestone. Each maps to a roadmap phase.
 ### AI Debug (AIDBG)
 
 - [x] **AIDBG-01**: User can trigger an "AI: Debug" action from a button under the `## Code` fence; the action sends the problem statement, current code, and last run/submit failure (if any) to the configured LLM.
-- [ ] **AIDBG-02**: AI Debug output appears in a modal that progressively fills as tokens stream when streaming is available, or shows a "Thinking…" indicator with elapsed time when streaming is not available.
-- [ ] **AIDBG-03**: User can cancel an in-flight AI Debug request at any time without leaving the modal in a bad state.
+- [x] **AIDBG-02**: AI Debug output appears in a modal that progressively fills as tokens stream when streaming is available, or shows a "Thinking…" indicator with elapsed time when streaming is not available.
+- [x] **AIDBG-03**: User can cancel an in-flight AI Debug request at any time without leaving the modal in a bad state.
 
 ### AI Review (AIREV)
 
@@ -146,8 +146,8 @@ Filled by the roadmapper.
 | AIPROV-06   | Phase 07 | Complete |
 | AIPROV-07   | Phase 07 | Complete |
 | AIDBG-01    | Phase 08 | Complete |
-| AIDBG-02    | Phase 08 | Pending |
-| AIDBG-03    | Phase 08 | Pending |
+| AIDBG-02    | Phase 08 | Complete |
+| AIDBG-03    | Phase 08 | Complete |
 | AIREV-01    | Phase 09 | Pending |
 | AIREV-02    | Phase 09 | Pending |
 | AIREV-03    | Phase 09 | Pending |
