@@ -139,7 +139,7 @@ Plans:
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
-- [ ] 08-03-PLAN.md — AIStreamModal (live debounced render + Thinking… counter + Cancel + Copy + Close) + buildDebugPrompt pure helper + withDebugBullet disclosure factory + 5 CSS selectors + manual UAT live-render verification gate
+- [x] 08-03-PLAN.md — AIStreamModal (live debounced render + Thinking… counter + Cancel + Copy + Close) + buildDebugPrompt pure helper + withDebugBullet disclosure factory + 5 CSS selectors + manual UAT live-render verification gate
 
 **Wave 4** *(blocked on Wave 3 completion — two parallel plans)*
 
@@ -224,7 +224,7 @@ Plans:
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
 | 07. AI Provider Foundation               | v1.1      | 8/8 | Complete    | 2026-05-16 |
-| 08. AI Debug                             | v1.1      | 2/5 | In Progress|  |
+| 08. AI Debug                             | v1.1      | 3/5 | In Progress|  |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
