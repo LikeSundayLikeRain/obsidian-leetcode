@@ -63,9 +63,29 @@ Only one preview tab is open at a time — clicking another problem reuses the s
 
 ## Network usage
 
-This plugin communicates with leetcode.com to fetch problems and submit solutions. No other network endpoints are contacted.
+This plugin communicates with the following hosts:
+
+- `leetcode.com` — fetch problems, submit solutions, poll verdicts. **All LeetCode traffic** uses Obsidian's built-in `requestUrl`; no other code path touches `leetcode.com`.
+- AI provider hosts — only when you have configured an active AI provider in Settings → AI. The plugin contacts at most ONE of these per AI call, depending on your `Active AI provider` selection:
+  - `https://api.anthropic.com` — when `Active AI provider = Anthropic`
+  - `https://api.openai.com` — when `Active AI provider = OpenAI`
+  - `https://openrouter.ai` — when `Active AI provider = OpenRouter`
+  - your local Ollama host (default `http://localhost:11434`) — when `Active AI provider = Ollama`
+  - your custom OpenAI-compatible endpoint URL — when `Active AI provider = Custom`
+
+No telemetry. No analytics. No other endpoints.
+
+### Authentication
 
 Authentication is handled via an embedded Obsidian `BrowserWindow` that captures your LC session cookie after you sign in. The cookie is stored only in `.obsidian/plugins/leetcode/data.json` on your local machine, is never transmitted anywhere except leetcode.com, and is never logged.
+
+AI provider API keys are stored in plain text in `.obsidian/plugins/leetcode/data.json` on your local machine. Keys are never logged (the plugin's logger redacts every known key field name; see `src/shared/logger.ts`). Keys are transmitted only to the configured provider's endpoint.
+
+### Cost expectations
+
+AI features incur per-call cost charged by your selected provider. Phase 07 introduces no AI feature you can invoke yet (Debug ships in Phase 08, Review in Phase 09, KG classification in Phase 11). The "Test connection" action sends a metadata-only `GET /v1/models` (or `GET /api/tags` for Ollama) for OpenAI / OpenRouter / Custom / Ollama — these are free. For Anthropic, "Test connection" sends a 1-token chat completion (~$0.0001 per click).
+
+Per-feature daily cost cap UI ships in Phase 09. Default model identifiers may rot — when "Test connection" reports `model not found`, update the `Model` field manually. See your provider's pricing page for current rates.
 
 ## Configuration
 
