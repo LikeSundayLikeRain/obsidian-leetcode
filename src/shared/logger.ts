@@ -26,27 +26,48 @@ const REDACT = /session|csrf|cookie|token|apikey|api[_-]?key|bearer|authorizatio
 //     `authorization:` prefix has already been redacted (e.g. when the header
 //     value itself is logged separately or the prefix uses `:` followed by a
 //     space which the original token consumed before the value).
-//   The `bearer` alternate uses a SPACE separator (Authorization: Bearer xyz)
-//   in addition to `=`/`:` — see SECRET_VALUE_PATTERN below for the second
-//   regex covering that shape.
-const SECRET_VALUE_PATTERN = /\b(LEETCODE_SESSION|csrftoken|session|csrf|cookie|token|authorization|apikey|api[_-]?key|x-api-key)\s*[=:]\s*[^\s;,"'&}\]]+/gi;
-// Separate regex for the Bearer-token shape: `Bearer sk-xyz`. The space
-// separator distinguishes this from header-name=value pairs handled above.
-// Captures only the token suffix; the `Bearer` keyword is preserved.
-const BEARER_VALUE_PATTERN = /\b(bearer)\s+([^\s;,"'&}\]]+)/gi;
+//
+// Phase 07 Plan 07 (CR-01 fix): replaced the v1 two-pass approach
+// (BEARER_VALUE_PATTERN then SECRET_VALUE_PATTERN) with a single-pattern
+// ordered alternation. The v1 two-pass produced garbled output for
+// `'Authorization: Bearer sk-xyz'`:
+//   pass 1 (BEARER_VALUE_PATTERN) → `'Authorization: Bearer [REDACTED]'`
+//   pass 2 (SECRET_VALUE_PATTERN's `authorization` alternate) re-matched
+//     `'Authorization: Bearer'` as a kv pair (with `Bearer` as the value
+//     since the value char class permitted it), replacing the whole
+//     match with `'Authorization=[REDACTED]'`, leaving the trailing
+//     `[REDACTED]` token dangling — final shape:
+//     `'Authorization=[REDACTED] [REDACTED]'`.
+// The single-pattern fix below lists the `authorization: bearer <token>`
+// shape FIRST in an ordered alternation so it wins as a single match
+// before the bare `authorization` alternate ever sees the input. The
+// replacement function keeps the original `:` separator instead of
+// rewriting it as `=`. The bare `authorization` alternate stays in the
+// pattern as a fallback for stringified forms like `Authorization=xyz`
+// (no `Bearer` keyword) and for the other auth-ish keys.
+//
+// `s` flag NOT set — we do not want `.` to cross newlines; the pattern
+// should match within a single header line.
+const SECRET_VALUE_PATTERN =
+  /\b(authorization)\s*:\s*(bearer)\s+([^\s;,"'&}\]\[]+)|\b(LEETCODE_SESSION|csrftoken|session|csrf|cookie|token|authorization|apikey|api[_-]?key|x-api-key)\s*[=:]\s*([^\s;,"'&}\]\[]+)/gi;
 
 function redactString(s: string): string {
-  // Order matters: BEARER first so a header value like
-  // `Authorization: Bearer sk-xyz` first becomes
-  // `Authorization: Bearer [REDACTED]`, then SECRET_VALUE_PATTERN's
-  // `authorization` alternate captures `Authorization: Bearer` as the
-  // header-name=value pair (the regex's `[^\s;,"'&}\]]+` consumes `Bearer`,
-  // which is now harmless because the secret has already been redacted).
-  // Net result: both the Bearer keyword's value AND the surrounding header
-  // name redact, with no secret survival.
-  return s
-    .replace(BEARER_VALUE_PATTERN, (_m, key: string) => `${key} [REDACTED]`)
-    .replace(SECRET_VALUE_PATTERN, (_m, key: string) => `${key}=[REDACTED]`);
+  // Single-pass ordered-alternation redaction — see the doc comment above
+  // SECRET_VALUE_PATTERN for the CR-01 fix rationale.
+  //
+  // The replacement function chooses the output shape based on which
+  // alternate fired:
+  //   - authorization: bearer <token> → `<authKey>: <bearer> [REDACTED]`
+  //     (preserves the original `:` separator and the `Bearer` keyword)
+  //   - <key> = <value>                → `<key>=[REDACTED]`
+  //     (legacy v1.0 shape — keeps the `=` for stringified env-var lines
+  //     and other key=value pairs).
+  return s.replace(SECRET_VALUE_PATTERN, (_m, authKey: string | undefined, bearerKey: string | undefined, _bearerTok: string | undefined, otherKey: string | undefined) => {
+    if (authKey !== undefined && bearerKey !== undefined) {
+      return `${authKey}: ${bearerKey} [REDACTED]`;
+    }
+    return `${otherKey ?? ''}=[REDACTED]`;
+  });
 }
 
 function redact(obj: unknown, depth = 0): unknown {
