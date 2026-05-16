@@ -84,7 +84,7 @@ Plans:
   4. README's "Network use" section enumerates every endpoint the plugin can contact (leetcode.com plus each AI provider's base URL).
   5. AI calls go through a single `obsidianFetch(mode)` adapter — `electron.net.fetch` for streaming when available, `requestUrl` otherwise — and all leetcode.com calls remain on `requestUrl` (v1.0 convention preserved absolutely).
 
-**Plans**: 7 plans (gap-closure 07-07 added 2026-05-16)
+**Plans**: 8 plans (gap-closure 07-07 added 2026-05-16; advisory cleanup 07-08 added 2026-05-15)
 
 Plans:
 **Wave 1**
@@ -108,6 +108,10 @@ Plans:
 **Wave 5** *(gap-closure — blocked on Waves 1–4 completion)*
 
 - [x] 07-07-PLAN.md — Gap closure: CR-01 logger double-replacement + CR-02 probeCustom/probeOllama empty-baseUrl guards + WR-01 AIClient.invoke missing await + WR-02 DISCLOSURE_BASE_COPY freeze
+
+**Wave 6** *(advisory cleanup — blocked on Wave 5 completion)*
+
+- [ ] 07-08-PLAN.md — Round-2 advisory cleanup: CR-01-A logger Bearer-no-token guard + WR-02-separator separator-preservation in redactString + WR-03-whitespace `!cfg.baseUrl?.trim()` symmetry across main.ts/probeCustom/probeOllama + WR-01-test-gap MockSettings.setProviderConfig + disclosure-gate persistence test
 
 **UI hint**: yes
 
@@ -200,7 +204,7 @@ Plans:
 | 05.4. Run-verdict UX button polish       | v1.0      | 5/5            | Complete    | 2026-05-14  |
 | 05.5. Section locking for lc-slug notes  | v1.0      | 4/4            | Complete    | 2026-05-14  |
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
-| 07. AI Provider Foundation               | v1.1      | 7/7 | Complete    | 2026-05-16 |
+| 07. AI Provider Foundation               | v1.1      | 7/8 | In Progress | -          |
 | 08. AI Debug                             | v1.1      | -/-            | Not Started | -           |
 | 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
