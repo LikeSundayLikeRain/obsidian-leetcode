@@ -135,9 +135,10 @@ For local testing, copy `main.js`, `manifest.json`, and `styles.css` into `<your
 
 The production bundle (`main.js`) is gated by a portable Node script, `scripts/check-bundle-size.mjs`, which runs as the last step of `.github/workflows/ci.yml` (after lint, test, and build).
 
-- **Hard ceiling: 500 KB.** PRs that push `main.js` over 500,000 bytes fail CI and cannot be merged.
-- **Soft warning: 400 KB.** Builds between 400 KB and 500 KB log a warning but still pass — treat warnings as a signal to investigate before the next release.
-- **Current baseline: ~165.0 KB (168,953 bytes)** at v1.1 entry — well under the soft warning, with substantial headroom for future AI/contest features.
+- **Hard ceiling: 1 MB.** PRs that push `main.js` over 1,000,000 bytes fail CI and cannot be merged.
+- **Soft warning: 900 KB.** Builds between 900 KB and 1 MB log a warning but still pass — treat warnings as a signal to investigate before the next release.
+- **Current baseline (v1.1 Phase 07):** the AI Provider runtime (`@ai-sdk/*` family) lands the bundle in the ~800 KB range when `AIClient` is wired into `main.ts:onload`. The 1 MB ceiling was set after measuring the cost of static imports under Obsidian's CJS-no-splitting esbuild profile, which prevents `await import()` from deferring the AI SDK out of the hot path. Mainstream Obsidian AI plugins (Smart Connections, Copilot) ship at comparable sizes.
+- **v1.1 entry baseline (pre-AI-wiring): ~165.0 KB (168,953 bytes)** — preserved here for historical reference; this baseline applied while the AI SDK was tree-shaken because no entry path imported it.
 
 Run the gate locally before pushing:
 
