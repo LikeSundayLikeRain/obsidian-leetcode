@@ -1,38 +1,43 @@
 ---
 phase: 07-ai-provider-foundation
-verified: 2026-05-15T22:15:00Z
+verified: 2026-05-15T22:45:00Z
 status: passed
-score: 12/12 must-haves verified
+score: 16/16 must-haves verified
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 10/12
-  gaps_closed:
-    - "Logger redactString does not garble log output — 'Authorization: Bearer sk-proj-abcdef' redacts cleanly without double-replacement (CR-01)"
-    - "probeCustom returns a clean error when baseUrl is empty — no network call issued with a relative URL (CR-02)"
-  gaps_remaining: []
+  previous_status: passed
+  previous_score: 12/12
+  gaps_closed: []
+  advisory_findings_closed:
+    - "CR-01-A: Authorization: Bearer (no token) now left untouched; negative lookahead (?!bearer\\b) in second alternate prevents Bearer keyword from being consumed as a value"
+    - "WR-02-separator: second alternate now captures [:=] and replays it in output, so 'x-api-key: val' -> 'x-api-key: [REDACTED]' (colon preserved)"
+    - "WR-03-whitespace: all three guard sites (main.ts testActiveAIConnection, probeCustom, probeOllama) use !cfg.baseUrl?.trim() — whitespace-only baseUrl rejected at all three layers"
+    - "WR-01-test-gap: MockSettings exposes setProviderConfig (stateful in-memory map); 3 new disclosure-gate unit tests cover cold path, warm path, and cancel path"
   regressions: []
-advisory_findings_from_07_07_review:
-  - id: CR-01-A
-    severity: critical-advisory
-    description: "Authorization: Bearer (no trailing token) — second alternate fires, outputs 'Authorization=[REDACTED]', silently consuming the Bearer keyword as a value and changing ':' to '='. Not a security issue; no real secret is exposed. Not in the original 12 truths."
-  - id: WR-01-test-gap
+advisory_findings_from_07_08_review:
+  - id: WR-01
     severity: warning-advisory
-    description: "aiClient.test.ts MockSettings is missing setProviderConfig — disclosure-gate path would crash if exercised; all existing tests bypass it via disclosureAcknowledged:true."
-  - id: WR-02-separator
+    description: "(?!bearer\\b) negative lookahead has an undocumented partial-match behavior when tested in isolation with /g flag — not a production issue; the full pattern context correctly blocks Bearer at position 0. Missing tests for non-authorization keys with Bearer as value (e.g., 'token: Bearer', 'cookie: BEARER')."
+  - id: WR-02
     severity: warning-advisory
-    description: "Second alternate hardcodes '=' separator in output, so 'x-api-key: val' becomes 'x-api-key=[REDACTED]'. Pre-existing asymmetry; worsened by the CR-01 fix which now explicitly documents ':' preservation only for the first alternate."
-  - id: WR-03-whitespace
+    description: "WR-03-whitespace guard at main.ts is production-unreachable via normal settings UI flow because sanitizeProviderConfig coerces whitespace-only baseUrl to provider default before storage. Tests exercise an injected-state-only path (makeFake bypasses setProviderConfig). Defense-in-depth is sound; the tests' coverage claim is narrower than the summary implies."
+  - id: WR-03
     severity: warning-advisory
-    description: "main.ts guard uses cfg.baseUrl === '' (strict) while probeCustom/probeOllama use !cfg.baseUrl (falsy). Whitespace-only baseUrl ('   ') passes the main.ts guard but produces a relative-ish URL. No test coverage for this edge."
+    description: "MockSettings.setProviderConfig stores cfg raw without calling sanitizeProviderConfig. Real SettingsStore sanitizes on every write. Latent trap for future test authors using non-HTTP baseUrls or null values."
+  - id: IN-01
+    severity: info-advisory
+    description: "CR-01-A test accepts dual-contract (acceptableA OR acceptableB) but only acceptableA can ever occur at runtime. acceptableB ('Authorization: Bearer [REDACTED]') is unreachable because the first alternate requires a non-whitespace token after Bearer. Tightening the assertion to acceptableA-only would make regression detection more precise."
+  - id: IN-02
+    severity: info-advisory
+    description: "probeCustom, probeOllama, and createOpenAICompatibleModel do not trim baseUrl after the guard — leading/trailing whitespace would be passed to the fetcher. Unreachable via SettingsStore (sanitization rejects non-http(s):// values) but reachable by direct callers. Fix: cfg.baseUrl.trim().replace(/\\/$/, '')."
 ---
 
-# Phase 07: AI Provider Foundation — Verification Report
+# Phase 07: AI Provider Foundation — Verification Report (Re-verification 3)
 
 **Phase Goal:** User can configure an AI provider (Anthropic, OpenAI, OpenRouter, Ollama, or any OpenAI-compatible endpoint), test the connection, and acknowledge a one-time data-flow disclosure before any AI call is made.
-**Verified:** 2026-05-15T22:15:00Z
+**Verified:** 2026-05-15T22:45:00Z
 **Status:** passed
-**Re-verification:** Yes — after gap closure (Plan 07-07)
+**Re-verification:** Yes — third pass, after advisory cleanup (Plan 07-08)
 
 ---
 
@@ -42,20 +47,24 @@ advisory_findings_from_07_07_review:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | AIProvider union, ProviderConfig, AICostLedger, ProbeResult, AIRequest, AIResponse types exported from src/ai/types.ts | VERIFIED | Confirmed in initial verification; no regression (quick check: file unchanged) |
-| 2 | PluginData carries activeAIProvider, providerConfigs, aiCostLedger after load with shape-guards | VERIFIED | Confirmed in initial verification; SettingsStore unchanged by 07-07 |
-| 3 | Malformed AI fields in data.json collapse to per-provider safe defaults — no crash | VERIFIED | 13 settingsStore unit tests pass in the 925-test suite run |
-| 4 | Logger redacts apiKey, api_key, x-api-key, bearer, authorization at object-key and value-level — clean output without double-replacement | VERIFIED (fixed) | Single ordered-alternation pattern in `src/shared/logger.ts:51-70`. Node execution confirmed: `'Authorization: Bearer sk-proj-abcdef'` → `'Authorization: Bearer [REDACTED]'`. No `=[REDACTED] [REDACTED]` garbling. See advisory CR-01-A for the no-token edge case. |
-| 5 | obsidianFetch sets credentials:'omit' on both branches | VERIFIED | Stream branch: `credentials: 'omit'` in safeInit spread at line 83. Request branch: documented structural impossibility at lines 101-105. |
-| 6 | leetcode.com calls NEVER use obsidianFetch — enforced by CI grep gate AND runtime test | VERIFIED | `scripts/check-no-obsidianfetch-in-lc.sh` exists; 4 LC-isolation tests pass in suite |
-| 7 | AIClient.probe(provider) and AIClient.invoke(req) both gate on disclosureAcknowledged BEFORE any HTTP | VERIFIED | probe() checks `!cfg.disclosureAcknowledged` at line 86; invoke() checks at line 136. Both confirmed present. |
-| 8 | probeCustom returns clean error when baseUrl is empty — no network call issued with a relative URL | VERIFIED (fixed) | `if (!cfg.baseUrl) return { ok: false, errorMessage: 'Base URL is required for Custom provider.' }` at `openaiCompatible.ts:70`. Mirrored in `ollama.ts:32`. `testActiveAIConnection` main.ts guard at lines 789-795. Tests: `probes.test.ts` CR-02 suite asserts `fetcherSpy.toHaveBeenCalledTimes(0)` for both probeCustom and probeOllama with empty baseUrl — all pass (925 passed, 0 failed). |
-| 9 | Three palette commands exist with clean IDs: test-ai-connection, reset-ai-disclosures, clear-ai-key | VERIFIED | All three confirmed at `main.ts:350, 363, 380`. No 'obsidian' prefix, no hotkeys. |
-| 10 | Disclosure modal gates both AIClient.probe AND AIClient.invoke; Continue persists disclosureAcknowledged=true | VERIFIED | Confirmed in initial verification; no changes to gate logic in 07-07 |
-| 11 | Switching activeAIProvider preserves prior provider's apiKey + disclosureAcknowledged in providerConfigs map | VERIFIED | Confirmed in initial verification; SettingsStore unchanged |
-| 12 | README ## Network usage section enumerates all 5 AI provider hosts plus leetcode.com | VERIFIED | Confirmed in initial verification; README not modified by 07-07 |
+| 1 | AIProvider union, ProviderConfig, AICostLedger, ProbeResult, AIRequest, AIResponse types exported from src/ai/types.ts | VERIFIED | No regression — file unchanged from V2 |
+| 2 | PluginData carries activeAIProvider, providerConfigs, aiCostLedger after load with shape-guards | VERIFIED | SettingsStore unchanged; no regression |
+| 3 | Malformed AI fields in data.json collapse to per-provider safe defaults — no crash | VERIFIED | 941-test suite passes (includes 13 settingsStore unit tests) |
+| 4 | Logger redacts apiKey, api_key, x-api-key, bearer, authorization at object-key and value-level — clean output without double-replacement | VERIFIED | Single ordered-alternation at logger.ts:70. Node execution confirmed: `'Authorization: Bearer sk-proj-abcdef'` → `'Authorization: Bearer [REDACTED]'`. No regression. |
+| 5 | obsidianFetch sets credentials:'omit' on both branches | VERIFIED | Unchanged from V2 |
+| 6 | leetcode.com calls NEVER use obsidianFetch — enforced by CI grep gate AND runtime test | VERIFIED | Unchanged; scripts/check-no-obsidianfetch-in-lc.sh exits 0 |
+| 7 | AIClient.probe(provider) and AIClient.invoke(req) both gate on disclosureAcknowledged BEFORE any HTTP | VERIFIED | probe() checks at line 86; invoke() checks at line 136; unchanged |
+| 8 | probeCustom returns clean error when baseUrl is empty — no network call issued with a relative URL | VERIFIED | Guard at openaiCompatible.ts:75 (`!cfg.baseUrl?.trim()`); mirror at ollama.ts:37; main.ts:797-799. Tests assert fetcherSpy.toHaveBeenCalledTimes(0). |
+| 9 | Three palette commands exist with clean IDs: test-ai-connection, reset-ai-disclosures, clear-ai-key | VERIFIED | All three at main.ts:350, 363, 380; unchanged |
+| 10 | Disclosure modal gates both AIClient.probe AND AIClient.invoke; Continue persists disclosureAcknowledged=true | VERIFIED | Unchanged from V2 |
+| 11 | Switching activeAIProvider preserves prior provider's apiKey + disclosureAcknowledged in providerConfigs map | VERIFIED | SettingsStore unchanged |
+| 12 | README ## Network usage section enumerates all 5 AI provider hosts plus leetcode.com | VERIFIED | README unchanged |
+| 13 | Logger preserves separator from input: `'x-api-key: val'` → `'x-api-key: [REDACTED]'`; `'x-api-key=val'` → `'x-api-key=[REDACTED]'` (no normalization to `=`) | VERIFIED | Node execution confirmed both outputs. `otherSep` captured as group 5 (`[:=]` in pattern) and replayed in replacement at logger.ts:99. Logger test Category 5 "preserves the colon separator" and "preserves the equals separator" tests pass. |
+| 14 | Logger does not consume `'Bearer'` keyword as a value: `'Authorization: Bearer'` (no token) is left untouched, NEVER becomes `'Authorization=[REDACTED]'` | VERIFIED | Node execution confirmed: `redactString('Authorization: Bearer')` → `'Authorization: Bearer'` (exact identity). Negative lookahead `(?!bearer\b)` at logger.ts:70 blocks second alternate when value starts with `bearer`. CR-01-A test in Category 5 asserts `not.toContain('Authorization=[REDACTED]')` and `toContain('Bearer')` — passes. |
+| 15 | All three empty-baseUrl guard sites treat whitespace-only as empty: single space, tab, mixed whitespace all rejected at main.ts testActiveAIConnection, probeCustom, probeOllama (zero fetcher invocations) | VERIFIED | All three use `!cfg.baseUrl?.trim()`. Evidence: `openaiCompatible.ts:75`, `ollama.ts:37`, `main.ts:797-799`. WR-03 tests in probe-debounce.test.ts: single-space custom (line 229) and tab-only ollama (line 246) — both assert `probe.not.toHaveBeenCalled()` and the correct Notice text. |
+| 16 | MockSettings exposes setProviderConfig (stateful); aiClient.test.ts has tests covering: cold path (ack=false → setProviderConfig called with ack=true after Continue), warm path (second probe does not re-fire helper), cancel path (Cancel does not persist ack) | VERIFIED | `makeMockSettings` factory at aiClient.test.ts:48-63 uses stateful `cfgs` Map; `setProviderConfig` is `vi.fn` that writes to map and `getProviderConfig` reads from it. Cold path test at line 123 asserts `setProviderConfig` called once with `disclosureAcknowledged: true`. Warm path test at line 150 asserts `requireDisclosureMock` stays at 1 invocation across two probes. Cancel path test at line 178 asserts `setProviderConfig.toHaveBeenCalledTimes(0)`. All pass. |
 
-**Score:** 12/12 truths verified
+**Score:** 16/16 truths verified
 
 ---
 
@@ -63,20 +72,20 @@ advisory_findings_from_07_07_review:
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/ai/types.ts` | AIProvider union + 5 interfaces | VERIFIED | Unchanged from initial verification |
-| `src/ai/AIClient.ts` | probe/invoke/addCost facade | VERIFIED | WR-01 fix applied: `return await adapter.invoke(req)` at line 159 |
-| `src/ai/obsidianFetch.ts` | FetchFn factory with stream/request modes | VERIFIED | Both branches present; credentials:'omit' confirmed |
-| `src/ai/pricing.ts` | PRICING table + estimateCostUsd | VERIFIED | Unchanged from initial verification |
+| `src/ai/types.ts` | AIProvider union + 5 interfaces | VERIFIED | Unchanged |
+| `src/ai/AIClient.ts` | probe/invoke/addCost facade | VERIFIED | Unchanged from V2 |
+| `src/ai/obsidianFetch.ts` | FetchFn factory with stream/request modes | VERIFIED | Unchanged |
+| `src/ai/pricing.ts` | PRICING table + estimateCostUsd | VERIFIED | Unchanged |
 | `src/ai/providers/index.ts` | resolveAdapter exhaustive switch | VERIFIED | Unchanged |
 | `src/ai/providers/anthropic.ts` | createAnthropicModel + probeAnthropic | VERIFIED | Unchanged |
 | `src/ai/providers/openai.ts` | createOpenAIModel + probeOpenAI | VERIFIED | Unchanged |
-| `src/ai/providers/openaiCompatible.ts` | createOpenAICompatibleModel + probeOpenRouter + probeCustom | VERIFIED (fixed) | CR-02 guard at line 70: `if (!cfg.baseUrl) return { ok: false, errorMessage: 'Base URL is required for Custom provider.' }` |
-| `src/ai/providers/ollama.ts` | createOllamaModel + probeOllama | VERIFIED (fixed) | CR-02 mirror guard at line 32: `if (!cfg.baseUrl) return { ok: false, errorMessage: 'Base URL is required for Ollama provider.' }` |
-| `src/ai/disclosure.ts` | AIDisclosureModal + DISCLOSURE_BASE_COPY + setCta on Continue | VERIFIED (improved) | WR-02 fix: `Object.freeze` applied at lines 56, 62, 73 — outer object AND both inner arrays frozen. `readonly` type annotation on exported constant. |
+| `src/ai/providers/openaiCompatible.ts` | createOpenAICompatibleModel + probeOpenRouter + probeCustom | VERIFIED | Guard at line 75: `!cfg.baseUrl?.trim()` (tightened from `!cfg.baseUrl` in 07-08) |
+| `src/ai/providers/ollama.ts` | createOllamaModel + probeOllama | VERIFIED | Guard at line 37: `!cfg.baseUrl?.trim()` (tightened from `!cfg.baseUrl` in 07-08) |
+| `src/ai/disclosure.ts` | AIDisclosureModal + DISCLOSURE_BASE_COPY + setCta on Continue | VERIFIED | Object.freeze unchanged from V2 |
 | `src/settings/SettingsStore.ts` | 3 new PluginData fields + shape-guards + getters/setters | VERIFIED | Unchanged |
-| `src/shared/logger.ts` | Single ordered-alternation SECRET_VALUE_PATTERN | VERIFIED (fixed) | CR-01 fix: two-pass approach replaced with single-pattern ordered alternation at lines 51-71. Replacement function preserves `:` separator for Authorization: Bearer shape. |
-| `src/main.ts` | AIClient Step 5.9 + 3 palette commands + testActiveAIConnection + requireAIDisclosure + resetAIDisclosures + clearActiveAIKey + CR-02 baseUrl guard | VERIFIED (improved) | CR-02 guard added at lines 789-795 for custom/ollama empty baseUrl |
-| `scripts/check-no-obsidianfetch-in-lc.sh` | CI grep gate for AIPROV-05 | VERIFIED | Unchanged; passes |
+| `src/shared/logger.ts` | Single ordered-alternation SECRET_VALUE_PATTERN | VERIFIED | Plan 07-08: negative lookahead `(?!bearer\b)` added; `[:=]` separator capture group added. Lines 49-70 carry comprehensive doc comments. |
+| `src/main.ts` | AIClient Step 5.9 + 3 palette commands + testActiveAIConnection + requireAIDisclosure + resetAIDisclosures + clearActiveAIKey + WR-03 whitespace guard | VERIFIED | Guard at lines 797-799: `!cfg.baseUrl?.trim()` (tightened from `=== ''` in 07-08) |
+| `scripts/check-no-obsidianfetch-in-lc.sh` | CI grep gate for AIPROV-05 | VERIFIED | Unchanged |
 | `styles.css` | .lc-ai-input + .leetcode-ai-disclosure | VERIFIED | Unchanged |
 | `README.md` | ## Network usage with all 5 AI hosts | VERIFIED | Unchanged |
 
@@ -87,12 +96,12 @@ advisory_findings_from_07_07_review:
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
 | `AIClient.probe(provider)` | `requireAIDisclosure(provider, cfg)` before HTTP | `!cfg.disclosureAcknowledged` check at line 86 | WIRED | Unchanged |
-| `AIClient.invoke(req)` | `requireAIDisclosure(provider, cfg)` before HTTP | `!cfg.disclosureAcknowledged` check at line 136 | WIRED | WR-01: now `return await adapter.invoke(req)` so try/catch contracts are honoured |
-| `AIDisclosureModal Continue` | `SettingsStore.setProviderConfig(disclosureAcknowledged:true)` | onContinue callback | WIRED | Unchanged |
-| `probeCustom` | early-return when baseUrl empty | `if (!cfg.baseUrl)` guard at line 70 | WIRED | New in 07-07 (CR-02 fix) |
-| `probeOllama` | early-return when baseUrl empty | `if (!cfg.baseUrl)` guard at line 32 | WIRED | New in 07-07 (CR-02 fix) |
-| `testActiveAIConnection` | Notice + early-return when custom/ollama baseUrl empty | `cfg.baseUrl === ''` guard at lines 789-795 | WIRED | New in 07-07 (CR-02 fix, defense-in-depth) |
-| `DISCLOSURE_BASE_COPY` | immutable at runtime | `Object.freeze` on outer object + both inner arrays | WIRED | New in 07-07 (WR-02 fix) |
+| `AIClient.invoke(req)` | `requireAIDisclosure(provider, cfg)` before HTTP | `!cfg.disclosureAcknowledged` check at line 136 | WIRED | Unchanged |
+| `AIDisclosureModal Continue` | `SettingsStore.setProviderConfig(disclosureAcknowledged:true)` | onContinue callback | WIRED | Unit-tested end-to-end via makeMockSettings stateful map |
+| `probeCustom` | early-return when baseUrl empty or whitespace | `!cfg.baseUrl?.trim()` guard at line 75 | WIRED | Tightened in 07-08 |
+| `probeOllama` | early-return when baseUrl empty or whitespace | `!cfg.baseUrl?.trim()` guard at line 37 | WIRED | Tightened in 07-08 |
+| `testActiveAIConnection` | Notice + early-return when custom/ollama baseUrl empty or whitespace | `!cfg.baseUrl?.trim()` guard at lines 797-799 | WIRED | Tightened in 07-08 |
+| `DISCLOSURE_BASE_COPY` | immutable at runtime | `Object.freeze` on outer object + both inner arrays | WIRED | Unchanged from V2 |
 | `test-ai-connection palette command` | `LeetCodePlugin.testActiveAIConnection()` | addCommand callback at line 350-352 | WIRED | Unchanged |
 | `scripts/check-no-obsidianfetch-in-lc.sh` | LC-side dirs do not import obsidianFetch | prelint hook in package.json | WIRED | Unchanged |
 
@@ -102,7 +111,7 @@ advisory_findings_from_07_07_review:
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| `src/ai/AIClient.ts probe()` | `cfg` via `settings.getProviderConfig` | SettingsStore backed by plugin.loadData() | Yes — real PluginData loaded from data.json | FLOWING |
+| `src/ai/AIClient.ts probe()` | `cfg` via `settings.getProviderConfig` | SettingsStore backed by plugin.loadData() | Yes | FLOWING |
 | `src/settings/SettingsTab.ts AI section` | `active` via `settings.getActiveAIProvider()` | Same SettingsStore | Yes | FLOWING |
 | `src/ai/disclosure.ts` | `provider, cfg` passed from AIClient | Real runtime state from SettingsStore | Yes | FLOWING |
 
@@ -112,16 +121,17 @@ advisory_findings_from_07_07_review:
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| CR-01 primary case: `Authorization: Bearer sk-proj-abcdef` | `node -e` (replicated pattern) | `'Authorization: Bearer [REDACTED]'` — no `=[REDACTED] [REDACTED]` | PASS |
-| CR-01 advisory edge case: `Authorization: Bearer` (no token) | `node -e` | `'Authorization=[REDACTED]'` — Bearer keyword silently consumed; separator mutated to `=` | ADVISORY (CR-01-A, not a blocker for original truth #4) |
-| CR-01 other keys: `x-api-key: sk-proj-abc` | `node -e` | `'x-api-key=[REDACTED]'` — value redacted | PASS |
-| CR-02 probeCustom empty baseUrl | Code inspection + test | `if (!cfg.baseUrl) return { ok: false, errorMessage: '...' }` at line 70; `fetcherSpy.toHaveBeenCalledTimes(0)` asserted | PASS |
-| CR-02 probeOllama empty baseUrl | Code inspection + test | Mirror guard at ollama.ts:32; `fetcherSpy.toHaveBeenCalledTimes(0)` asserted | PASS |
-| CR-02 main.ts guard | Code inspection + test | `cfg.baseUrl === ''` guard at lines 789-795; probe-debounce tests pass | PASS |
-| WR-01 await on adapter.invoke | Code inspection at `AIClient.ts:159` | `return await adapter.invoke(req)` — await present | PASS |
-| WR-02 DISCLOSURE_BASE_COPY frozen | Code inspection at `disclosure.ts:56,62,73` | `Object.freeze([...])` on both inner arrays; `Object.freeze(DISCLOSURE_BASE_COPY)` at module scope | PASS |
+| T13: `'x-api-key: val'` separator preserved | `node -e` with replicated pattern | `'x-api-key: [REDACTED]'` — colon preserved | PASS |
+| T13: `'x-api-key=val'` separator preserved | `node -e` with replicated pattern | `'x-api-key=[REDACTED]'` — equals preserved | PASS |
+| T14: `'Authorization: Bearer'` untouched | `node -e` with replicated pattern | `'Authorization: Bearer'` — exact identity; lookahead blocks second alternate | PASS |
+| T14: `'Authorization: Bearer sk-proj-abc'` redacted | `node -e` with replicated pattern | `'Authorization: Bearer [REDACTED]'` — primary case unchanged | PASS |
+| T15: WR-03 whitespace test (custom, `' '`) | probe-debounce test at line 225 | Notice fired; `probe.not.toHaveBeenCalled()` | PASS |
+| T15: WR-03 whitespace test (ollama, `'\t'`) | probe-debounce test at line 242 | Notice fired; `probe.not.toHaveBeenCalled()` | PASS |
+| T16: disclosure cold path — setProviderConfig called with ack=true | aiClient.test.ts line 123 | `setProviderConfig` called once with `disclosureAcknowledged: true` | PASS |
+| T16: disclosure warm path — second probe skips helper | aiClient.test.ts line 150 | `requireDisclosureMock` stays at 1; `probeAdapter` called twice | PASS |
+| T16: disclosure cancel path — setProviderConfig not called | aiClient.test.ts line 178 | `setProviderConfig.toHaveBeenCalledTimes(0)` | PASS |
 | LC isolation script | `bash scripts/check-no-obsidianfetch-in-lc.sh` | exit 0 | PASS |
-| Full test suite | `npm test` | 925 passed, 3 skipped, 0 failed (130 test files) | PASS |
+| Full test suite | `npm test` | **941 passed, 3 skipped, 0 failed** (130 test files, up from 925 in V2 — delta = 16 new advisory-fix tests) | PASS |
 
 ---
 
@@ -137,8 +147,8 @@ Step 7c: SKIPPED — no probe scripts declared for this phase. LC-isolation bash
 |-------------|------------|-------------|--------|----------|
 | AIPROV-01 | 07-01, 07-03 | Configure active AI provider (Anthropic, OpenAI, OpenRouter, Ollama, Custom) | SATISFIED | AI section in SettingsTab; 6-option dropdown; per-provider sub-form |
 | AIPROV-02 | 07-01, 07-03, 07-06 | API key masked; plain-text storage disclosed in README | SATISFIED | input type='password' + .lc-ai-input; README ### Authentication present |
-| AIPROV-03 | 07-04 | "Test connection" round-trip reports success or error | SATISFIED | testActiveAIConnection + palette command + Settings button; CR-02 guards prevent relative-URL crash |
-| AIPROV-04 | 07-05 | Disclosure modal gates first AI call per provider | SATISFIED | Gate at AIClient.probe AND AIClient.invoke; WR-02 freeze ensures immutable copy during render |
+| AIPROV-03 | 07-04 | "Test connection" round-trip reports success or error | SATISFIED | testActiveAIConnection + palette command + Settings button; WR-03 guards prevent whitespace-URL confusion |
+| AIPROV-04 | 07-05 | Disclosure modal gates first AI call per provider | SATISFIED | Gate at AIClient.probe AND AIClient.invoke; all three disclosure-path branches unit-tested (T16) |
 | AIPROV-05 | 07-02 | obsidianFetch adapter for AI; LC calls never use obsidianFetch | SATISFIED | Two-layer enforcement: bash grep gate + runtime test; prelint hook |
 | AIPROV-06 | 07-06 | "Clear AI key" palette command wipes active provider's key | SATISFIED | clearActiveAIKey method; active-only scope |
 | AIPROV-07 | 07-06 | README enumerates all endpoints | SATISFIED | 5 AI hosts + leetcode.com + ### Authentication + ### Cost expectations |
@@ -149,23 +159,26 @@ All 7 AIPROV requirements satisfied. Coverage: 7/7.
 
 ### Anti-Patterns Found
 
-No new blockers. Resolved from initial verification:
+No blockers or new warnings introduced by 07-08. All four advisory findings from 07-07 review are now closed:
 
-| File | Line | Pattern | Severity | Resolution |
-|------|------|---------|----------|------------|
-| `src/shared/logger.ts` | 51-71 | Two-pass double-replacement (CR-01) | RESOLVED | Single ordered-alternation pattern; primary Authorization: Bearer case verified clean |
-| `src/ai/providers/openaiCompatible.ts` | 70-72 | Empty-baseUrl relative URL (CR-02) | RESOLVED | `if (!cfg.baseUrl)` early-return guard added |
-| `src/ai/AIClient.ts` | 159 | Missing `await` on adapter.invoke (WR-01) | RESOLVED | `return await adapter.invoke(req)` |
-| `src/ai/disclosure.ts` | 56,62,73 | Live mutable array shared across modal renders (WR-02) | RESOLVED | `Object.freeze` on both inner arrays and outer object |
+| File | Line | Finding | Resolution in 07-08 |
+|------|------|---------|---------------------|
+| `src/shared/logger.ts` | 70 | CR-01-A: Bearer-no-token consumed by second alternate | `(?!bearer\b)` negative lookahead added; input now left untouched |
+| `src/shared/logger.ts` | 99 | WR-02-separator: hardcoded `=` output separator | `[:=]` captured as group 5; replayed via `otherSep` in replacement |
+| `src/main.ts` | 797-799 | WR-03-whitespace: strict `=== ''` guard | Tightened to `!cfg.baseUrl?.trim()` |
+| `src/ai/providers/openaiCompatible.ts` | 75 | WR-03-whitespace: falsy `!cfg.baseUrl` guard | Tightened to `!cfg.baseUrl?.trim()` |
+| `src/ai/providers/ollama.ts` | 37 | WR-03-whitespace: falsy `!cfg.baseUrl` guard | Tightened to `!cfg.baseUrl?.trim()` |
+| `tests/ai/aiClient.test.ts` | 48-200 | WR-01-test-gap: MockSettings missing setProviderConfig | `makeMockSettings` factory with stateful map; 3 new disclosure-gate unit tests |
 
-Advisory findings from 07-07 code review (not blockers for this phase's 12 truths):
+Advisory findings from 07-08 code review (not blockers; no action required for phase completion):
 
 | Finding | File | Description | Impact |
 |---------|------|-------------|--------|
-| CR-01-A (advisory) | `src/shared/logger.ts:65-70` | `Authorization: Bearer` with no trailing token: second alternate fires, produces `Authorization=[REDACTED]` — Bearer keyword consumed as value, `:` changed to `=` | Not a security issue; no secret exposed. Degrades log readability for truncated header fragments. Fix in a future phase. |
-| WR-01 (advisory) | `tests/ai/aiClient.test.ts:25-43` | `MockSettings` missing `setProviderConfig` — disclosure-gate ack path untestable at unit level | All tests bypass via `disclosureAcknowledged:true`. Integration coverage exists in probe-debounce tests. |
-| WR-02 (advisory) | `src/shared/logger.ts:69` | Other auth keys (x-api-key, token, etc.) output `key=[REDACTED]` with hardcoded `=` even when original used `:` | Pre-existing asymmetry; not introduced by 07-07. No secret exposed. |
-| WR-03 (advisory) | `src/main.ts:791`, `openaiCompatible.ts:70`, `ollama.ts:32` | main.ts guard uses `=== ''` (strict); provider guards use `!cfg.baseUrl` (falsy). Whitespace-only baseUrl `'   '` bypasses the main.ts Notice but produces a whitespace-prefixed URL. | No test coverage for whitespace-only case. Narrow edge; low real-world risk. |
+| WR-01 (advisory) | `src/shared/logger.ts:70` | Lookahead partial-match behavior untested for non-authorization keys with `Bearer` value (e.g., `'token: Bearer'`). The existing pattern is correct; missing test coverage for this edge. | No production defect; test gap only. |
+| WR-02 (advisory) | `src/main.ts:797-804`, `tests/ai/probe-debounce.test.ts:225-257` | WR-03 guard in main.ts is production-unreachable via SettingsStore UI flow (sanitizeProviderConfig normalizes whitespace baseUrl to provider default). Tests exercise injected-state-only path. | Defense-in-depth is sound; test coverage claim is narrower than summary implies. No user-visible bug. |
+| WR-03 (advisory) | `tests/ai/aiClient.test.ts:53-63` | MockSettings stores cfg raw without sanitizeProviderConfig. Latent divergence from real SettingsStore for future test authors using edge-case baseUrl values. | No current test incorrectly passes; latent trap only. |
+| IN-01 (info) | `tests/shared/logger.test.ts:189-203` | CR-01-A test accepts dual-contract (acceptableA OR acceptableB) but only acceptableA is reachable at runtime. acceptableB (`Authorization: Bearer [REDACTED]`) cannot occur for no-token input. | Documentation/precision issue; hard contract (`not.toContain('Authorization=[REDACTED]')`) is correct and sufficient. |
+| IN-02 (info) | `src/ai/providers/openaiCompatible.ts:79`, `ollama.ts:41` | probeCustom/probeOllama do not trim baseUrl before URL construction — leading/trailing whitespace would survive into the fetcher URL. Unreachable via SettingsStore but reachable by direct callers. | No user-visible bug today. |
 
 ---
 
@@ -177,21 +190,24 @@ No items requiring human verification — all critical paths are verified progra
 
 ### Gaps Summary
 
-No gaps. All 12 original truths are verified. The two blockers from the initial verification have been fixed and confirmed:
+No gaps. All 16 truths (12 original + 4 new advisory-fix truths) are verified. The four advisory findings from the 07-07 code review are confirmed closed by Plan 07-08:
 
-**Gap 1 — CR-01 CLOSED** (`src/shared/logger.ts`)
-The two-pass `redactString` garbling has been replaced with a single ordered-alternation pattern. Runtime execution confirms the primary case `'Authorization: Bearer sk-proj-abcdef'` now produces `'Authorization: Bearer [REDACTED]'` — no `=[REDACTED] [REDACTED]` malformation, separator preserved, Bearer keyword preserved. The 07-07 review identified one new edge case (CR-01-A: no token after Bearer) which is advisory only and does not affect the original truth.
+**Advisory CR-01-A CLOSED** (`src/shared/logger.ts:70`)
+Negative lookahead `(?!bearer\b)` in the second alternate's value position. Runtime execution confirms `redactString('Authorization: Bearer')` returns `'Authorization: Bearer'` exactly — the Bearer keyword is never consumed as a secret value. The `/i` flag makes the lookahead case-insensitive.
 
-**Gap 2 — CR-02 CLOSED** (`src/ai/providers/openaiCompatible.ts`, `ollama.ts`, `src/main.ts`)
-Three-layer defense-in-depth: `probeCustom` and `probeOllama` have `if (!cfg.baseUrl)` early-return guards; `testActiveAIConnection` has a `cfg.baseUrl === ''` guard that surfaces a friendly Notice and skips all probe machinery. Tests in `probes.test.ts` assert zero fetcher calls for empty-baseUrl inputs. All pass.
+**Advisory WR-02-separator CLOSED** (`src/shared/logger.ts:99`)
+Second alternate now captures `[:=]` as group 5 (`otherSep`) and replays it in output: `'x-api-key: val'` → `'x-api-key: [REDACTED]'`, `'x-api-key=val'` → `'x-api-key=[REDACTED]'`. Both confirmed by Node.js execution.
 
-**WR-01 and WR-02 CLOSED**
-`return await adapter.invoke(req)` is confirmed in `AIClient.ts:159`. `Object.freeze` is confirmed on both inner arrays and the outer `DISCLOSURE_BASE_COPY` object in `disclosure.ts:56,62,73`.
+**Advisory WR-03-whitespace CLOSED** (`main.ts:797-799`, `openaiCompatible.ts:75`, `ollama.ts:37`)
+All three guard sites now use `!cfg.baseUrl?.trim()`. Whitespace-only inputs (`' '`, `'\t'`) produce a Notice and zero fetcher invocations — confirmed by two new probe-debounce tests.
 
-Four advisory findings from the 07-07 code review are noted above but do not block phase completion — they are candidates for a targeted follow-up task.
+**Advisory WR-01-test-gap CLOSED** (`tests/ai/aiClient.test.ts:48-200`)
+`makeMockSettings` factory exposes stateful `setProviderConfig`. Three new tests cover the cold path (ack=false → Continue → setProviderConfig called with ack=true), the warm path (second probe reads ack=true from map, skips helper), and the cancel path (Cancel → setProviderConfig not called). All pass.
+
+Five advisory findings from the 07-08 code review are noted above but do not block phase completion — they are candidates for a future targeted cleanup task.
 
 ---
 
-_Verified: 2026-05-15T22:15:00Z_
+_Verified: 2026-05-15T22:45:00Z_
 _Verifier: Claude (gsd-verifier)_
-_Re-verification after Plan 07-07 gap closure_
+_Re-verification 3 — after Plan 07-08 advisory cleanup_
