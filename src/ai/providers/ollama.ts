@@ -24,6 +24,14 @@ export async function probeOllama(
   cfg: ProviderConfig,
   fetcher: FetchFn,
 ): Promise<ProbeResult> {
+  // Phase 07 Plan 07 — CR-02 mirror guard. probeOllama has the same
+  // empty-baseUrl shape as probeCustom: a relative '/api/tags' URL
+  // when cfg.baseUrl === ''. Mirror the early-return guard for
+  // symmetry and so tests/ai/probes.test.ts CR-02 fixture can assert
+  // zero fetcher calls in the empty-baseUrl path.
+  if (!cfg.baseUrl) {
+    return { ok: false, errorMessage: 'Base URL is required for Ollama provider.' };
+  }
   try {
     const baseHost = cfg.baseUrl.replace(/\/v1\/?$/, '');
     const url = `${baseHost}/api/tags`;
