@@ -203,6 +203,15 @@
   font-family: var(--font-monospace);
   font-size: 12px;
 }
+/* Phase 07 Plan 05 — AIDisclosureModal scoping class. Empty rule by design:
+   Obsidian's default modal chrome owns the visual layout; this scoping hook
+   exists so Phase 08/09/11 can attach per-modal CSS (extra spacing tweaks,
+   feature-specific bullet emphasis) without re-scaffolding. Bundle delta
+   < 0.1 KB. Mirrors the .leetcode-verdict precedent at the bottom of this
+   file (also a content-scoping anchor with no own paint). */
+.leetcode-ai-disclosure {
+  /* scoping only — Obsidian default modal chrome handles layout */
+}
 /* Progress bar — sticky at the top of the view so it stays visible while the
    row list grows under it. Slim blue fill + muted label.
    When `total` is unknown we flip to an indeterminate shimmer animation. */
