@@ -74,6 +74,23 @@ export interface AIStreamModalArgs {
   aiClient: AIClient;
   /** Active provider's model identifier (drives estimateCostUsd lookup). */
   model?: string;
+  /**
+   * Phase 08 Plan 04 — feature-specific disclosure copy threaded by the
+   * caller. The actual disclosure gate is owned by AIClient (via the
+   * plugin-injected `requireAIDisclosure` factory in src/main.ts), so this
+   * field is informational / forward-compat: it documents which feature
+   * bullet was composed for the call. Plan 08-04 callers MUST pass
+   * `withDebugBullet(DISCLOSURE_BASE_COPY)` so the key-link contract from
+   * 08-04-PLAN.md (`from: src/main.ts:openAIDebug to: new AIStreamModal(...,
+   * { ..., disclosureCopy: withDebugBullet(...) })`) is satisfied. The
+   * modal does not currently render this copy itself — the disclosure
+   * modal opened by `requireAIDisclosure` reads `DISCLOSURE_BASE_COPY`
+   * directly. Future phases (e.g. AI Review in Phase 09) may surface the
+   * extended copy in a confirm-before-send strip; until then the field is
+   * a contract anchor that prevents future regressions where a caller
+   * forgets the feature bullet.
+   */
+  disclosureCopy?: { willSend: readonly string[]; neverSends: readonly string[] };
 }
 
 /**

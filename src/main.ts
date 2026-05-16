@@ -22,9 +22,27 @@
 import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SettingsStore } from './settings/SettingsStore';
+// Phase 08 Plan 04 — type-only import; openAIDebug coerces a freshly-fetched
+// LeetCodeProblemDetail into the cached shape (both share contentHtml).
+import type { DetailCacheEntry } from './settings/SettingsStore';
 import { installRequestUrlFetcher, throttledRequestUrl } from './api/requestUrlFetcher';
 import { LeetCodeClient } from './api/LeetCodeClient';
 import { AIClient } from './ai/AIClient';
+// Phase 08 Plan 04 (AIDBG-01) — single-entrypoint AI Debug surface.
+//   AIStreamModal: live-streaming response modal (Plan 08-03).
+//   buildDebugPrompt: pure prompt assembler (Plan 08-03).
+//   DISCLOSURE_BASE_COPY + withDebugBullet: composition factory for the
+//     extended disclosure copy (Plan 08-03; the base const is frozen at
+//     module load — withDebugBullet returns a fresh object).
+//   LastVerdictStore: in-memory per-slug verdict map (Plan 08-01).
+//   htmlToMarkdown: same converter Preview uses (already in repo) so the
+//     ## Problem text shipped to the AI provider matches what the user sees
+//     in their preview.
+import { AIStreamModal } from './ai/AIStreamModal';
+import { buildDebugPrompt } from './ai/buildDebugPrompt';
+import { DISCLOSURE_BASE_COPY, withDebugBullet } from './ai/disclosure';
+import { LastVerdictStore } from './solve/lastVerdictStore';
+import { htmlToMarkdown } from './notes/htmlToMarkdown';
 // Phase 07 Plan 04 — `prettyName` provides the verbatim brand string for
 // every Test connection Notice. `AIProvider` + `ProbeResult` are imported as
 // types only (no runtime cost). The aiProbeInflight Map debounces concurrent
@@ -161,6 +179,18 @@ export default class LeetCodePlugin extends Plugin {
   // listeners, no timers, no open sockets — no onunload teardown required.
   aiClient!: AIClient;
 
+  // Phase 08 Plan 04 (AIDBG-01) — in-memory per-slug Map<slug, LastVerdict>.
+  // Populated by SubmissionOrchestrator's onVerdict callback (registered in
+  // onload below). Read by openAIDebug to feed the last failing verdict into
+  // buildDebugPrompt. NO Plugin arg, NO data.json persistence, NO workspace
+  // event subscriptions — verdicts have no "tab is open" lifecycle, plain
+  // Map + clear() on plugin unload is sufficient (08-PATTERNS §"Anti-Patterns
+  // to Avoid" #6 deviates from EphemeralTabStore which DOES need a reconcile
+  // loop because tab-input state is scoped to "the problem note is open in
+  // at least one markdown leaf"). dispose() is called from onunload for a
+  // deterministic wipe in test runs that re-instantiate the plugin.
+  lastVerdictStore!: LastVerdictStore;
+
   // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
   // AIProvider; values are the in-flight probe Promise. Cleared in the
   // testActiveAIConnection() finally block so a fresh click after the probe
@@ -271,6 +301,14 @@ export default class LeetCodePlugin extends Plugin {
       this.settings,
       (provider, cfg) => this.requireAIDisclosure(provider, cfg),
     );
+
+    // Step 5.10 — Phase 08 Plan 04 (AIDBG-01) — LastVerdictStore. In-memory
+    // per-slug Map populated by the SubmissionOrchestrator's onVerdict
+    // callback (registered at orchestrator construction below in
+    // submitFromActive). Plain Map; no Plugin arg; no workspace events;
+    // no data.json persistence (08-CONTEXT decision B). Disposed in
+    // onunload(). Order: ephemeralTabs → aiClient → lastVerdictStore.
+    this.lastVerdictStore = new LastVerdictStore();
 
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
@@ -435,6 +473,33 @@ export default class LeetCodePlugin extends Plugin {
       },
     });
 
+    // Phase 08 Plan 04 (AIDBG-01) — palette command for AI Debug. Verbatim
+    // mirror of the Submit command shape: editorCheckCallback returns false
+    // for non-LC notes (hides the command from palette in that context),
+    // returns true and dispatches openAIDebug(slug) on confirm. Clean ID
+    // (no plugin-id prefix per FOUND-03), sentence-case name (Obsidian
+    // already prefixes "LeetCode: " in the palette so the locked label
+    // surfaces as "LeetCode: AI: Debug current code"). NO default hotkey
+    // per project rule (commands/no-default-hotkeys lint rule).
+    //
+    // openAIDebug(slug) is the SOLE entrypoint — fence-row button (via
+    // aiDebugFromActive) AND palette command BOTH funnel through it so
+    // the disclosure gate, prompt assembly, and modal open are
+    // single-sourced (locked T-08-04-T-host mitigation).
+    this.addCommand({
+      id: 'ai-debug',
+      name: 'AI: Debug current code',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+        const slug = fm?.['lc-slug'];
+        if (!isValidSlug(slug)) return false;
+        if (!checking) { void this.openAIDebug(slug); }
+        return true;
+      },
+    });
+
     // Phase 5.2 D-05 / D-07 — legacy insert-starter command is removed; the
     // file-open hook (Step 6g below) now handles first-open auto-insert (D-06),
     // and this `Reset code` command is the only remaining user-initiated flow.
@@ -588,6 +653,11 @@ export default class LeetCodePlugin extends Plugin {
     // registerEvent subscriptions also auto-detach here, but dispose() keeps
     // the in-memory Maps clean for test runs that re-instantiate the plugin.
     this.ephemeralTabs?.dispose();
+
+    // Phase 08 Plan 04 (AIDBG-01) — deterministic wipe of the LastVerdictStore.
+    // No subscriptions/timers to detach (Map-only), but dispose() resets the
+    // in-memory Map so plugin reload starts with a clean slate.
+    this.lastVerdictStore?.dispose();
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
@@ -955,6 +1025,167 @@ export default class LeetCodePlugin extends Plugin {
     new Notice(`Cleared AI key for ${prettyName(provider)}`, 3000);
   }
 
+  /**
+   * Phase 08 Plan 04 (AIDBG-01) — single entrypoint for the AI Debug surface.
+   *
+   * Called from THREE surfaces (locked T-08-04-T-host mitigation): the
+   * fence-row "AI: Debug" button (via `aiDebugFromActive`), the `ai-debug`
+   * palette command, and (Plan 08-05) the verdict-modal-footer "AI: Debug"
+   * button. All three surfaces funnel through this method so the disclosure
+   * gate, prompt assembly, and modal open are single-sourced.
+   *
+   * Flow (08-UI-SPEC §"Open path" + 08-PATTERNS §"src/main.ts"):
+   *   1. Resolve problem markdown via DetailCache (cache-first; fetch on
+   *      miss). Same path Preview uses — htmlToMarkdown(detail.contentHtml)
+   *      so the ## Problem text shipped to the AI matches the reading-mode
+   *      preview byte-for-byte.
+   *   2. Read the active note's body via the active MarkdownView's editor
+   *      (mirrors getActiveProblemContext.currentBody — read-at-invocation
+   *      per SOLVE-09; the AI sees the user's CURRENT code).
+   *   3. extractFirstFencedBlock(body) → { lang, code }. If null, surface a
+   *      Notice and bail (no fence ⇒ nothing to debug).
+   *   4. Read the last verdict (may be undefined — buildDebugPrompt's
+   *      empty-store path handles this with a literal placeholder).
+   *   5. buildDebugPrompt({ problemMd, code, language, lastVerdict }) —
+   *      pure transform; ## Notes is NEVER included (locked decision A).
+   *   6. Read activeAIProvider; bail with Notice when null.
+   *   7. Open AIStreamModal with `disclosureCopy: withDebugBullet(...)` —
+   *      the disclosure gate inside AIClient.invokeStream fires on first
+   *      use of an unacknowledged provider; the disclosureCopy field is
+   *      a forward-compat anchor so future phases (Phase 09 review) that
+   *      surface the extended copy in the confirm strip can read it from
+   *      the modal args.
+   *
+   * Notice paths (3 fail surfaces):
+   *   - No active MarkdownView with valid lc-slug → caller (aiDebugFromActive
+   *     / palette command) gates BEFORE openAIDebug. openAIDebug itself
+   *     assumes a valid slug came in; this is enforced by the verbatim
+   *     editorCheckCallback shape that mirrors the Submit command.
+   *   - No fence found in the active body → "No `## Code` block found.";
+   *     same wording as run/submit (no need to invent new copy).
+   *   - No active AI provider → "No AI provider configured. Open
+   *     Settings → AI." (locked verbatim per UI-SPEC §"Open path").
+   */
+  async openAIDebug(slug: string): Promise<void> {
+    // Step 1 — resolve the active MarkdownView (we need the editor body
+    // even though the caller already validated lc-slug at the gate). If
+    // the active view has shifted off the LC note between the gate firing
+    // and this method running, bail with the generic Notice.
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const body = view.editor.getValue();
+
+    // Step 2 — read the first fenced code block. extractFirstFencedBlock
+    // is scoped to ## Code when the heading exists (CodeExtractor §preference
+    // order); locked decision A guarantees ## Notes content can't leak in
+    // because the helper rejects fences in other sections.
+    const extracted = extractFirstFencedBlock(body);
+    if (!extracted) {
+      new Notice('No `## Code` block found. Add a fenced block with your solution.', 6000);
+      return;
+    }
+    const language = extracted.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+
+    // Step 3 — resolve problem markdown. DetailCache first (same path Preview
+    // uses); on miss, fetch via the LeetCodeClient. Failures bail with a
+    // Notice (the user can still attempt AI Debug — but we'd be sending an
+    // empty problem statement, which buys nothing).
+    let detail = this.settings.getProblemDetail(slug);
+    if (!detail) {
+      try {
+        const fetched = await this.client.getProblemDetail(slug);
+        if (!fetched) {
+          new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+          return;
+        }
+        // LeetCodeClient.getProblemDetail returns the LeetCodeProblemDetail
+        // shape; SettingsStore.getProblemDetail returns DetailCacheEntry.
+        // The two share contentHtml, so we use the fetched contentHtml
+        // directly — the cache will populate on the next NoteWriter open.
+        detail = fetched as unknown as DetailCacheEntry;
+      } catch {
+        new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+        return;
+      }
+    }
+    const problemMd = htmlToMarkdown(detail.contentHtml ?? '');
+
+    // Step 4 — last verdict (may be undefined — buildDebugPrompt handles).
+    const lastVerdict = this.lastVerdictStore.get(slug);
+
+    // Step 5 — assemble the prompt (pure transform).
+    const prompt = buildDebugPrompt({
+      problemMd,
+      code: extracted.code,
+      language,
+      lastVerdict,
+    });
+
+    // Step 6 — gate on active provider. Empty-state Notice copy locked per
+    // 08-UI-SPEC §"Open path". The AIClient.invokeStream call would also
+    // throw 'No AI provider configured' but surfacing it here gives the
+    // user actionable copy ("Open Settings → AI.") instead of a generic
+    // error.
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      // Sentence case per Obsidian community-plugin guidelines
+      // (eslint-plugin-obsidianmd ui/sentence-case rule). The "settings"
+      // word is lowercased to match plugin store expectations.
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    // Step 7 — open the modal. disclosureCopy is the composition-factory
+    // output (locked: NEW object, NEVER mutates the frozen base). The
+    // disclosure gate itself fires inside AIClient.invokeStream via the
+    // plugin-injected requireAIDisclosure factory — disclosureCopy is a
+    // contract anchor on the modal args (08-04-PLAN.md key_links lock).
+    new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      disclosureCopy: withDebugBullet(DISCLOSURE_BASE_COPY),
+    }).open();
+  }
+
+  /**
+   * Phase 08 Plan 04 (AIDBG-01) — host method invoked by the fence-row
+   * "AI: Debug" button (via the CodeBlockButtonRowHost interface). Resolves
+   * the active MarkdownView's lc-slug frontmatter, validates it, then
+   * delegates to `openAIDebug(slug)`.
+   *
+   * The fence-row factory is shared between Edit Mode (CM6 widget) and
+   * Reading Mode (post-processor) so this single host method serves both
+   * surfaces. Uses `getActiveViewOfType(MarkdownView)` per project rule
+   * (NEVER `workspace.activeLeaf` direct access).
+   *
+   * Notice paths (3 surfaces):
+   *   - No active MarkdownView → "Open a LeetCode problem note first."
+   *   - No frontmatter / no lc-slug → "Active note has no `lc-slug` frontmatter."
+   *   - Valid slug → delegates to openAIDebug (which has its own Notice paths).
+   */
+  async aiDebugFromActive(): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const fm = this.app.metadataCache.getFileCache(view.file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const slug = fm?.['lc-slug'];
+    if (!isValidSlug(slug)) {
+      new Notice('Active note has no `lc-slug` frontmatter.', 4000);
+      return;
+    }
+    await this.openAIDebug(slug);
+  }
+
   /** Submit the active note via SubmissionOrchestrator (Plan 05). Opens a
    *  VerdictModal, drives it through pending → terminal / abort / timeout. */
   async submitFromActive(): Promise<void> {
@@ -1012,6 +1243,15 @@ export default class LeetCodePlugin extends Plugin {
       getCurrentBody: ctx.currentBody,
       // D-21 — login wiring for the sticky session-expired Notice's button.
       login: () => { void this.auth.login(); },
+      // Phase 08 Plan 04 (AIDBG-01) — capture non-Accepted verdicts into the
+      // LastVerdictStore so openAIDebug can feed them into buildDebugPrompt.
+      // Plan 08-01 locked the capture filter inside the orchestrator
+      // (kind !== 'ac' && kind !== 'unknown' && kind !== 'unknown-lc');
+      // main.ts only registers the sink. The orchestrator stays pure: it
+      // imports only the LastVerdict TYPE — never the store class itself —
+      // so test instantiations without a store remain valid (locked
+      // T-08-04-T-orch mitigation).
+      onVerdict: (slug, verdict) => this.lastVerdictStore.set(slug, verdict),
     });
     this.activeSolve = { modal, abort, orchestrator: orch };
 
