@@ -123,3 +123,80 @@ describe('CR-02 empty-baseUrl guards — Plan 07-07 Task 2', () => {
     expect(fetcherSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+//   Plan 07-08 Task 2 — WR-03-whitespace empty-baseUrl guards
+//
+//   The CR-02 guards from Plan 07-07 used `cfg.baseUrl === ''` (main.ts) and
+//   `!cfg.baseUrl` (probeCustom + probeOllama). Both leaked whitespace-only
+//   inputs (' ', '\t', '   \t  ') through the guard, then constructed a
+//   relative-looking URL ('  /models') that would fail at the fetcher layer.
+//   Plan 07-08 standardizes all three sites on `!cfg.baseUrl?.trim()`. Tests
+//   below cover whitespace-only inputs at the two probe-side guards; the
+//   main.ts guard is covered in tests/ai/probe-debounce.test.ts.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('WR-03-whitespace empty-baseUrl guards — Plan 07-08 Task 2', () => {
+  const emptyCfg: ProviderConfig = {
+    apiKey: 'sk-test',
+    baseUrl: '',
+    model: 'm1',
+    disclosureAcknowledged: true,
+  };
+
+  it('probeCustom rejects single-space baseUrl with no fetcher call', async () => {
+    const fetcherSpy = vi.fn<FetchFn>();
+    const r = await probeCustom({ ...emptyCfg, baseUrl: ' ' }, fetcherSpy);
+    expect(r.ok).toBe(false);
+    expect(r.errorMessage).toBe('Base URL is required for Custom provider.');
+    expect(fetcherSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('probeCustom rejects tab-only baseUrl with no fetcher call', async () => {
+    const fetcherSpy = vi.fn<FetchFn>();
+    const r = await probeCustom({ ...emptyCfg, baseUrl: '\t' }, fetcherSpy);
+    expect(r.ok).toBe(false);
+    expect(r.errorMessage).toBe('Base URL is required for Custom provider.');
+    expect(fetcherSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('probeCustom rejects mixed-whitespace baseUrl with no fetcher call', async () => {
+    const fetcherSpy = vi.fn<FetchFn>();
+    const r = await probeCustom({ ...emptyCfg, baseUrl: '  \t  ' }, fetcherSpy);
+    expect(r.ok).toBe(false);
+    expect(r.errorMessage).toBe('Base URL is required for Custom provider.');
+    expect(fetcherSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('probeOllama rejects single-space baseUrl with no fetcher call', async () => {
+    const fetcherSpy = vi.fn<FetchFn>();
+    const r = await probeOllama({ ...emptyCfg, apiKey: '', baseUrl: ' ' }, fetcherSpy);
+    expect(r.ok).toBe(false);
+    expect(r.errorMessage).toBe('Base URL is required for Ollama provider.');
+    expect(fetcherSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('probeOllama rejects mixed-whitespace baseUrl with no fetcher call', async () => {
+    const fetcherSpy = vi.fn<FetchFn>();
+    const r = await probeOllama({ ...emptyCfg, apiKey: '', baseUrl: '\t \t' }, fetcherSpy);
+    expect(r.ok).toBe(false);
+    expect(r.errorMessage).toBe('Base URL is required for Ollama provider.');
+    expect(fetcherSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('probeCustom with leading/trailing whitespace around a real URL STILL calls the fetcher (regression guard)', async () => {
+    // The guard rejects all-whitespace only — not "any whitespace". A user
+    // who pastes ' https://example.com/v1 ' has a malformed URL but a
+    // non-empty trimmed value, so the guard lets it through. URL trimming
+    // is a separate concern (Settings sanitization), out of scope here.
+    const fetcherSpy = vi.fn<FetchFn>(async () =>
+      mockResponse({ data: [{ id: 'm1' }] }, { status: 200 }),
+    );
+    const r = await probeCustom(
+      { ...emptyCfg, baseUrl: ' https://example.com/v1 ' },
+      fetcherSpy,
+    );
+    expect(r.ok).toBe(true);
+    expect(fetcherSpy).toHaveBeenCalledTimes(1);
+  });
+});
