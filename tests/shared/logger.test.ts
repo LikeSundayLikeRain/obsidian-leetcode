@@ -113,3 +113,43 @@ describe('Phase 07 logger Category 3 — v1.0 regression', () => {
     expect(out).toContain('[REDACTED]');
   });
 });
+
+describe('Phase 07 logger Category 4 — CR-01 double-replacement regression', () => {
+  // Phase 07 Plan 07 — fixes CR-01 confirmed by 07-VERIFICATION.md truth #4.
+  // The two-pass redactString in v1 produced garbled output:
+  //   input:  'Authorization: Bearer sk-proj-abcdef'
+  //   step 1: 'Authorization: Bearer [REDACTED]'         (BEARER_VALUE_PATTERN)
+  //   step 2: 'Authorization=[REDACTED] [REDACTED]'      (SECRET_VALUE_PATTERN
+  //                                                       re-consumed [REDACTED])
+  // The fix excludes '[' from SECRET_VALUE_PATTERN's value char class so the
+  // already-placed [REDACTED] token is never re-consumed. The secret was
+  // never exposed by the v1 bug, but the malformed shape (':' → '=' plus a
+  // dangling '[REDACTED]' token) violated the documented contract and made
+  // log lines harder to read for AI provider error debugging.
+  it('redacts Authorization: Bearer cleanly without double-replacement (Title-case)', () => {
+    logger.warn('http err', 'Authorization: Bearer sk-proj-abcdef');
+    const out = captured();
+    expect(out).not.toContain('sk-proj-abcdef');
+    expect(out).toContain('[REDACTED]');
+    // The CR-01 garbled shape MUST NOT appear:
+    expect(out).not.toContain('=[REDACTED] [REDACTED]');
+    expect(out).not.toContain('[REDACTED] [REDACTED]');
+  });
+
+  it('redacts authorization: bearer cleanly without double-replacement (lowercase)', () => {
+    logger.warn('http err', 'authorization: bearer sk-xyz');
+    const out = captured();
+    expect(out).not.toContain('sk-xyz');
+    expect(out).toContain('[REDACTED]');
+    expect(out).not.toContain('=[REDACTED] [REDACTED]');
+    expect(out).not.toContain('[REDACTED] [REDACTED]');
+  });
+
+  it('regression guard: Authorization-header redaction never produces "=[REDACTED] [REDACTED]"', () => {
+    logger.warn('http err', 'Authorization: Bearer sk-test-value');
+    const out = captured();
+    // Locked CR-01 regression guard — this exact substring is the v1 garbled
+    // signature. If this assertion fails, the double-replacement bug is back.
+    expect(out).not.toContain('=[REDACTED] [REDACTED]');
+  });
+});
