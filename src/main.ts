@@ -24,6 +24,7 @@ import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SettingsStore } from './settings/SettingsStore';
 import { installRequestUrlFetcher, throttledRequestUrl } from './api/requestUrlFetcher';
 import { LeetCodeClient } from './api/LeetCodeClient';
+import { AIClient } from './ai/AIClient';
 import { AuthService } from './auth/AuthService';
 import { ProblemListService } from './browse/ProblemListService';
 import { ProblemBrowserView, BROWSER_VIEW_TYPE } from './browse/ProblemBrowserView';
@@ -142,6 +143,12 @@ export default class LeetCodePlugin extends Plugin {
   // markdown leaf. Constructed in onload Step 5.8; disposed in onunload.
   ephemeralTabs!: EphemeralTabStore;
 
+  // Phase 07 Plan 03 — AI provider facade. Constructed AFTER SettingsStore.load
+  // (settings are required by AIClient ctor) and BEFORE registerView (so any
+  // view that wants AIClient access can grab it from this.aiClient). Holds no
+  // listeners, no timers, no open sockets — no onunload teardown required.
+  aiClient!: AIClient;
+
   // Phase 3 solve-path state (Phase 5 D-01 consolidated Run commands).
   //   activeSolve: currently-in-flight submission/run orchestrator-wrapper.
   //     Tracks the single-flight state across the unified `run` command +
@@ -227,6 +234,14 @@ export default class LeetCodePlugin extends Plugin {
     // `plugin.registerEvent` so it auto-detaches on unload; dispose() is still
     // called in onunload() for a deterministic wipe.
     this.ephemeralTabs = new EphemeralTabStore(this);
+
+    // Step 5.9 — Phase 07 AI client. Constructed AFTER SettingsStore.load
+    // (settings are required by AIClient ctor) and BEFORE registerView (so any
+    // future view that wants AIClient access can grab it from this.aiClient).
+    // Synchronous: AIClient ctor takes only SettingsStore, does no eager
+    // network — mirrors LeetCodeClient ctor at line 163. No onunload teardown:
+    // AIClient holds no listeners, no timers, no open sockets.
+    this.aiClient = new AIClient(this.settings);
 
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
