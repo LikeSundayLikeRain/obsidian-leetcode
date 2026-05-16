@@ -625,7 +625,8 @@
   text-align: center;
 }
 .leetcode-verdict .leetcode-verdict-action-row,
-.leetcode-verdict .leetcode-verdict-footer {
+.leetcode-verdict .leetcode-verdict-footer,
+.leetcode-ai-stream-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -1345,4 +1346,36 @@
 
 .leetcode-preview__body {
   padding: 24px 16px 16px 16px;
+}
+
+/* ── Phase 08 — AI Debug stream modal (Plan 03) ────────────────────────── */
+/* 5 new selectors targeting < 1 KB total. All colors via Obsidian CSS
+   variables (no raw hex / rgba). Spacing values from {4, 8, 16, 24} only.
+   Mirrors .leetcode-submissions-loading and .leetcode-verdict precedents.
+   The .leetcode-ai-stream-footer comma-extends the existing
+   .leetcode-verdict-footer rule above (zero net new layout — just adds the
+   footer scoping selector to the already-styled token group).            */
+.leetcode-ai-stream {
+  /* scoping anchor — Obsidian default modal chrome handles layout */
+}
+.leetcode-ai-stream-body {
+  padding: 0;
+}
+.leetcode-ai-stream-thinking {
+  text-align: center;
+  padding: 16px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.leetcode-ai-stream-cancelled {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+  margin: 0 0 8px 0;
+}
+.leetcode-ai-stream-error {
+  color: var(--text-error);
+  font-size: 13px;
+  margin: 8px 0 0 0;
 }
