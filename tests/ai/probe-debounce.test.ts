@@ -212,6 +212,50 @@ describe('LeetCodePlugin.testActiveAIConnection — Plan 07-04 Task 1', () => {
     expect(fake.aiProbeInflight.size).toBe(0);
   });
 
+  // ──────────────────────────────────────────────────────────────────────
+  //   Plan 07-08 Task 2 — WR-03-whitespace main.ts guard
+  //
+  //   The CR-02 guard above used `cfg.baseUrl === ''` (strict empty) and
+  //   silently let whitespace-only baseUrl values through. Plan 07-08
+  //   tightens the guard to `!cfg.baseUrl?.trim()` for symmetry with
+  //   probeCustom + probeOllama. These two tests cover single-space
+  //   (custom) and tab-only (ollama) inputs.
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('Custom whitespace-only baseUrl blocks with Notice and does NOT call probe (WR-03-whitespace main.ts guard)', async () => {
+    const probe = vi.fn(async () => ({ ok: true, modelCount: null } as ProbeResult));
+    const fake = makeFake({
+      active: 'custom',
+      cfg: makeProviderConfig({ apiKey: '', baseUrl: ' ' }),
+      probe,
+    });
+    await callTestActiveAIConnection(fake);
+    expect(noticeCalls).toHaveLength(1);
+    expect(noticeCalls[0]).toEqual({
+      text: 'Enter a Base URL for Custom (OpenAI-compatible) first.',
+      duration: 3000,
+    });
+    expect(probe).not.toHaveBeenCalled();
+    expect(fake.aiProbeInflight.size).toBe(0);
+  });
+
+  it('Ollama whitespace-only baseUrl blocks with Notice and does NOT call probe (WR-03-whitespace main.ts guard)', async () => {
+    const probe = vi.fn(async () => ({ ok: true, modelCount: null } as ProbeResult));
+    const fake = makeFake({
+      active: 'ollama',
+      cfg: makeProviderConfig({ apiKey: '', baseUrl: '\t' }),
+      probe,
+    });
+    await callTestActiveAIConnection(fake);
+    expect(noticeCalls).toHaveLength(1);
+    expect(noticeCalls[0]).toEqual({
+      text: 'Enter a Base URL for Ollama first.',
+      duration: 3000,
+    });
+    expect(probe).not.toHaveBeenCalled();
+    expect(fake.aiProbeInflight.size).toBe(0);
+  });
+
   it('concurrent calls deduplicate via the in-flight Map (probe called once)', async () => {
     // Pre-resolve the LeetCodePlugin import so calls into the bound method
     // are fully synchronous — without this, both p1 and p2 await the same

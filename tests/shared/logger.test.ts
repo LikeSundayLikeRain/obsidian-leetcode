@@ -153,3 +153,67 @@ describe('Phase 07 logger Category 4 — CR-01 double-replacement regression', (
     expect(out).not.toContain('=[REDACTED] [REDACTED]');
   });
 });
+
+describe('Phase 07 logger Category 5 — CR-01-A + WR-02-separator advisory fixes (Plan 07-08)', () => {
+  // Plan 07-08 closes two advisory findings from 07-07-REVIEW:
+  //
+  //   CR-01-A — `'Authorization: Bearer'` (no token) was rendered as
+  //     `'Authorization=[REDACTED]'` because the second alternate consumed
+  //     `Bearer` as a value. The fix adds a negative lookahead `(?!bearer\b)`
+  //     to the second alternate's value char class so the bare `Bearer`
+  //     keyword never matches as a secret. Acceptable post-fix shapes:
+  //     (a) input untouched (`'Authorization: Bearer'` survives), OR
+  //     (b) `'Authorization: Bearer [REDACTED]'`. The hard contract is that
+  //     `'Authorization=[REDACTED]'` MUST NOT appear in output.
+  //
+  //   WR-02-separator — the second alternate's replacement hardcoded `=` as
+  //     the separator. `'x-api-key: sk-ant-xyz'` redacted to
+  //     `'x-api-key=[REDACTED]'` (colon → equals normalization). The fix
+  //     captures `[:=]` as a numbered group and replays it in the
+  //     replacement so the original separator is preserved.
+  it('preserves the colon separator for x-api-key header (WR-02-separator)', () => {
+    logger.warn('http err', 'x-api-key: sk-ant-xyz');
+    const out = captured();
+    expect(out).not.toContain('sk-ant-xyz');
+    expect(out).toContain('x-api-key: [REDACTED]');
+    expect(out).not.toContain('x-api-key=[REDACTED]');
+  });
+
+  it('preserves the equals separator for env-var-style LEETCODE_SESSION (WR-02-separator regression guard)', () => {
+    logger.warn('env', 'LEETCODE_SESSION=cookie-val');
+    const out = captured();
+    expect(out).not.toContain('cookie-val');
+    expect(out).toContain('LEETCODE_SESSION=[REDACTED]');
+  });
+
+  it('does NOT consume the Bearer keyword as a value when no token follows (CR-01-A)', () => {
+    logger.warn('http err', 'Authorization: Bearer');
+    const out = captured();
+    // Hard contract: the v07-07 broken shape MUST NOT appear.
+    expect(out).not.toContain('Authorization=[REDACTED]');
+    // Either form is acceptable:
+    //   (a) input untouched — `Bearer` survives, no `[REDACTED]` introduced
+    //       for the dangling header, AND the Authorization keyword is intact
+    //   (b) normalized — `'Authorization: Bearer [REDACTED]'` is emitted
+    const acceptableA =
+      !out.includes('Authorization=[REDACTED]') &&
+      out.includes('Bearer');
+    const acceptableB = out.includes('Authorization: Bearer [REDACTED]');
+    expect(acceptableA || acceptableB).toBe(true);
+  });
+
+  it('still redacts Authorization: Bearer <token> cleanly (CR-01 primary regression guard)', () => {
+    logger.warn('http err', 'Authorization: Bearer sk-proj-abcdef');
+    const out = captured();
+    expect(out).toContain('Authorization: Bearer [REDACTED]');
+    expect(out).not.toContain('sk-proj-abcdef');
+    expect(out).not.toContain('=[REDACTED] [REDACTED]');
+  });
+
+  it('still redacts non-Bearer env-var token=value (separator-preserving regression guard)', () => {
+    logger.warn('env', 'token=abc123');
+    const out = captured();
+    expect(out).toContain('token=[REDACTED]');
+    expect(out).not.toContain('abc123');
+  });
+});

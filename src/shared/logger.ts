@@ -46,28 +46,59 @@ const REDACT = /session|csrf|cookie|token|apikey|api[_-]?key|bearer|authorizatio
 // pattern as a fallback for stringified forms like `Authorization=xyz`
 // (no `Bearer` keyword) and for the other auth-ish keys.
 //
+// Phase 07 Plan 08 (CR-01-A + WR-02-separator advisory cleanup):
+//   1. CR-01-A — `'Authorization: Bearer'` (no trailing token) was being
+//      consumed by the second alternate with `Bearer` as the value,
+//      producing `'Authorization=[REDACTED]'`. The `Bearer` token is a
+//      scheme keyword, not a secret. The fix adds a negative lookahead
+//      `(?!bearer\b)` in the second alternate's value char class so the
+//      bare `Bearer` keyword can never match as a secret value. The
+//      `/i` flag already on this regex means the lookahead is also
+//      case-insensitive (matches Bearer, BEARER, bearer, etc.). After
+//      this fix, `'Authorization: Bearer'` (no token) survives the
+//      regex untouched — neither alternate matches.
+//   2. WR-02-separator — the second alternate's replacement hardcoded
+//      `=` as the separator, normalizing `'x-api-key: val'` to
+//      `'x-api-key=[REDACTED]'`. The fix captures `[:=]` as a numbered
+//      group and replays it in the replacement so the original
+//      separator (`:` for header style, `=` for env-var style) is
+//      preserved in the output.
+//
 // `s` flag NOT set — we do not want `.` to cross newlines; the pattern
 // should match within a single header line.
 const SECRET_VALUE_PATTERN =
-  /\b(authorization)\s*:\s*(bearer)\s+([^\s;,"'&}\]\[]+)|\b(LEETCODE_SESSION|csrftoken|session|csrf|cookie|token|authorization|apikey|api[_-]?key|x-api-key)\s*[=:]\s*([^\s;,"'&}\]\[]+)/gi;
+  /\b(authorization)\s*:\s*(bearer)\s+([^\s;,"'&}\]\[]+)|\b(LEETCODE_SESSION|csrftoken|session|csrf|cookie|token|authorization|apikey|api[_-]?key|x-api-key)(\s*[=:]\s*)(?!bearer\b)([^\s;,"'&}\]\[]+)/gi;
 
 function redactString(s: string): string {
   // Single-pass ordered-alternation redaction — see the doc comment above
-  // SECRET_VALUE_PATTERN for the CR-01 fix rationale.
+  // SECRET_VALUE_PATTERN for the CR-01 fix rationale and the Plan 07-08
+  // CR-01-A + WR-02-separator extensions.
   //
   // The replacement function chooses the output shape based on which
   // alternate fired:
   //   - authorization: bearer <token> → `<authKey>: <bearer> [REDACTED]`
   //     (preserves the original `:` separator and the `Bearer` keyword)
-  //   - <key> = <value>                → `<key>=[REDACTED]`
-  //     (legacy v1.0 shape — keeps the `=` for stringified env-var lines
-  //     and other key=value pairs).
-  return s.replace(SECRET_VALUE_PATTERN, (_m, authKey: string | undefined, bearerKey: string | undefined, _bearerTok: string | undefined, otherKey: string | undefined) => {
-    if (authKey !== undefined && bearerKey !== undefined) {
-      return `${authKey}: ${bearerKey} [REDACTED]`;
-    }
-    return `${otherKey ?? ''}=[REDACTED]`;
-  });
+  //   - <key><sep><value>             → `<key><sep>[REDACTED]`
+  //     where <sep> is the captured `:` or `=` from the input — preserves
+  //     the input separator for both header style ('x-api-key: val') and
+  //     env-var style ('LEETCODE_SESSION=val').
+  return s.replace(
+    SECRET_VALUE_PATTERN,
+    (
+      _m,
+      authKey: string | undefined,
+      bearerKey: string | undefined,
+      _bearerTok: string | undefined,
+      otherKey: string | undefined,
+      otherSep: string | undefined,
+      _otherVal: string | undefined,
+    ) => {
+      if (authKey !== undefined && bearerKey !== undefined) {
+        return `${authKey}: ${bearerKey} [REDACTED]`;
+      }
+      return `${otherKey ?? ''}${otherSep ?? '='}[REDACTED]`;
+    },
+  );
 }
 
 function redact(obj: unknown, depth = 0): unknown {

@@ -67,7 +67,12 @@ export async function probeCustom(
   // message so the caller surfaces a friendly Notice instead of a
   // confusing requestUrl exception. The fetcher is NEVER invoked in
   // this path — asserted by tests/ai/probes.test.ts CR-02 fixture.
-  if (!cfg.baseUrl) {
+  //
+  // Phase 07 Plan 08 — WR-03-whitespace tightens this from `!cfg.baseUrl`
+  // (falsy) to `!cfg.baseUrl?.trim()` so single-space, tab, and mixed-
+  // whitespace inputs are also rejected — symmetric with main.ts
+  // testActiveAIConnection and probeOllama.
+  if (!cfg.baseUrl?.trim()) {
     return { ok: false, errorMessage: 'Base URL is required for Custom provider.' };
   }
   try {
