@@ -29,7 +29,12 @@ export async function probeOllama(
   // when cfg.baseUrl === ''. Mirror the early-return guard for
   // symmetry and so tests/ai/probes.test.ts CR-02 fixture can assert
   // zero fetcher calls in the empty-baseUrl path.
-  if (!cfg.baseUrl) {
+  //
+  // Phase 07 Plan 08 — WR-03-whitespace tightens this from `!cfg.baseUrl`
+  // (falsy) to `!cfg.baseUrl?.trim()` so single-space, tab, and mixed-
+  // whitespace inputs are also rejected — symmetric with main.ts
+  // testActiveAIConnection and probeCustom.
+  if (!cfg.baseUrl?.trim()) {
     return { ok: false, errorMessage: 'Base URL is required for Ollama provider.' };
   }
   try {

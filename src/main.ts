@@ -786,9 +786,17 @@ export default class LeetCodePlugin extends Plugin {
     // also early-return on empty baseUrl, but this caller-side guard
     // surfaces a friendlier Notice ('Enter a Base URL for X first.') and
     // skips the aiProbeInflight Map churn entirely. Defense-in-depth.
+    //
+    // Phase 07 Plan 08 — WR-03-whitespace tightens this guard from
+    // `cfg.baseUrl === ''` (strict empty) to `!cfg.baseUrl?.trim()` so
+    // single-space, tab, and mixed-whitespace inputs are also rejected
+    // — symmetric with probeCustom and probeOllama. The `?.` is
+    // belt-and-braces against future shape drift; sanitizeProviderConfig
+    // currently coerces missing/non-string baseUrl to '' so it cannot be
+    // undefined in practice today.
     if (
       (provider === 'custom' || provider === 'ollama') &&
-      cfg.baseUrl === ''
+      !cfg.baseUrl?.trim()
     ) {
 
       new Notice(`Enter a Base URL for ${prettyName(provider)} first.`, 3000);
