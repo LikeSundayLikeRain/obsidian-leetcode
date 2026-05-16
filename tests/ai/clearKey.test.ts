@@ -24,6 +24,8 @@
 // method's setProviderConfig writes are reflected in subsequent reads.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
 import type { AIProvider, ProviderConfig } from '../../src/ai/types';
 
 const noticeCalls: Array<{ text: string; duration?: number }> = [];
@@ -92,8 +94,14 @@ function makeFake(opts: {
 async function callClearActiveAIKey(fake: FakePluginShape): Promise<void> {
   const mod = await import('../../src/main');
   const LeetCodePlugin = mod.default;
+  // Bind the prototype method onto the fake — `this` resolves to the fake.
+  // Wrap in an explicit function expression to satisfy
+  // @typescript-eslint/unbound-method (matches probe-debounce.test.ts).
 
-  await (LeetCodePlugin.prototype.clearActiveAIKey as () => Promise<void>).call(fake);
+  const method = function (this: unknown): Promise<void> {
+    return (LeetCodePlugin.prototype.clearActiveAIKey as () => Promise<void>).call(this);
+  };
+  await method.call(fake);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -210,15 +218,13 @@ describe('LeetCodePlugin.clearActiveAIKey — Phase 07 Plan 06 Task 1', () => {
     expect(cfgs.openrouter.model).toBe('anthropic/claude-haiku-4.5');
   });
 
-  it('palette command callback delegates to clearActiveAIKey()', async () => {
+  it('palette command callback delegates to clearActiveAIKey()', () => {
     // Verify the addCommand callback wiring by reading the source — the
     // command id 'clear-ai-key' is registered in onload() and its callback
     // must invoke `this.clearActiveAIKey()`. We assert the source contains
     // the wiring rather than spawning a full plugin onload (which would
     // require Obsidian's full Plugin lifecycle harness).
-    const { readFileSync } = await import('node:fs');
-    const { resolve } = await import('node:path');
-    const mainSrc = readFileSync(resolve(__dirname, '../../src/main.ts'), 'utf8');
+    const mainSrc = readFileSync(path.resolve(__dirname, '../../src/main.ts'), 'utf8');
     // Cluster: id, name, callback delegation must all be present.
     expect(mainSrc).toContain("id: 'clear-ai-key'");
     expect(mainSrc).toContain("name: 'Clear AI key'");

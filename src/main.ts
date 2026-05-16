@@ -365,6 +365,23 @@ export default class LeetCodePlugin extends Plugin {
       callback: () => { void this.resetAIDisclosures(); },
     });
 
+    // Phase 07 Plan 06 — palette entry for AIPROV-06 credential-rotation
+    // escape hatch. Wipes ONLY the active provider's `apiKey` (other
+    // providers' keys preserved per CONTEXT decision C; disclosure flag
+    // preserved per T-07-06-disclosure — clearing the key is a credential
+    // lifecycle action, NOT a disclosure-reset action). ID rules
+    // (eslint-plugin-obsidianmd commands/no-* family): no plugin-id prefix
+    // ('leetcode-'), no 'command' substring, no hotkey field. Sentence-case
+    // name does not start with the plugin name — Obsidian's palette already
+    // prefixes it with "LeetCode: ". UI-SPEC §"Destructive actions" rules
+    // out a confirmation modal: user typed the command name explicitly,
+    // re-pasting from provider dashboard is trivial recovery.
+    this.addCommand({
+      id: 'clear-ai-key',
+      name: 'Clear AI key',
+      callback: () => { void this.clearActiveAIKey(); },
+    });
+
     this.addCommand({
       id: 'refresh-current-problem',
       // Name deliberately omits "LeetCode" — Obsidian's command palette already
@@ -884,6 +901,36 @@ export default class LeetCodePlugin extends Plugin {
       'AI provider disclosures reset. The disclosure modal will show on the next AI call.',
       4000,
     );
+  }
+
+  /**
+   * Phase 07 Plan 06 — palette command implementation for `clear-ai-key`
+   * (AIPROV-06). Wipes the ACTIVE provider's `apiKey` only; every other
+   * field (baseUrl, model, disclosureAcknowledged) is preserved, and other
+   * providers' configs are untouched (T-07-06-other-keys mitigation).
+   *
+   * Empty-state guard: when activeAIProvider is null, the locked Notice
+   * fires and the method returns without touching SettingsStore. Notice
+   * copy is verbatim from 07-UI-SPEC §"Notice copy" — both branches at
+   * 3000ms duration.
+   *
+   * NOT a disclosure-reset path — clearing the key is a credential
+   * lifecycle action; users who want to re-trigger the disclosure modal
+   * should run `reset-ai-disclosures` (Plan 07-05). Both palette commands
+   * are intentionally separate so users can rotate keys without losing
+   * the prior disclosure acknowledgement.
+   */
+  async clearActiveAIKey(): Promise<void> {
+    const provider = this.settings.getActiveAIProvider();
+    if (!provider) {
+
+      new Notice('No active AI provider — nothing to clear.', 3000);
+      return;
+    }
+    const cfg = this.settings.getProviderConfig(provider);
+    await this.settings.setProviderConfig(provider, { ...cfg, apiKey: '' });
+
+    new Notice(`Cleared AI key for ${prettyName(provider)}`, 3000);
   }
 
   /** Submit the active note via SubmissionOrchestrator (Plan 05). Opens a
