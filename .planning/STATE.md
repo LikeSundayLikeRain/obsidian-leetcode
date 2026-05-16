@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
 status: executing
-stopped_at: Completed 07-03-PLAN.md
-last_updated: "2026-05-16T00:13:45.693Z"
-last_activity: 2026-05-16 -- Completed 07-03 (AI Settings section + AIClient wiring + bundle ceiling 500 KB -> 1 MB)
+stopped_at: Completed 07-04-PLAN.md
+last_updated: "2026-05-16T00:35:48.060Z"
+last_activity: 2026-05-16 -- Completed 07-04 (Test connection wiring + probe-matrix tests + 200-char Notice truncation)
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 11
-  completed_plans: 9
-  percent: 15
+  total_plans: 12
+  completed_plans: 10
+  percent: 16
 ---
 
 # Project State
@@ -26,15 +26,15 @@ See: .planning/PROJECT.md (updated 2026-05-15 — v1.1 milestone opened)
 ## Current Position
 
 Phase: 07 (AI Provider Foundation) — EXECUTING
-Plan: 4 of 6
-Status: 07-03 complete; 07-04 next
-Last activity: 2026-05-16 -- Completed 07-03 (AI Settings section + AIClient wiring + bundle ceiling bump)
+Plan: 5 of 6
+Status: 07-04 complete; 07-05 next (disclosure modal + AIClient.probe/invoke wrapping)
+Last activity: 2026-05-16 -- Completed 07-04 (Test connection wiring)
 
 ### Resume path
 
-1. Execute `.planning/phases/07-ai-provider-foundation/07-04-PLAN.md` (Test connection probe wiring).
-2. Plan 07-04 may now grep `Test connection: wiring lands in Plan 07-04` in `src/settings/SettingsTab.ts` to find the placeholder onClick and replace it with `await this.plugin.aiClient.probe(active)`. Surface ProbeResult.ok / errorMessage / modelCount per 07-UI-SPEC §"Notice copy".
-3. Plan 07-05 (disclosure gate) wraps probe + invoke with the disclosure modal after 07-04 ships the live probe surface.
+1. Execute `.planning/phases/07-ai-provider-foundation/07-05-PLAN.md` (disclosure gate).
+2. Plan 07-05 wraps `AIClient.probe()` and `AIClient.invoke()` with the disclosure modal (`requireDisclosure(provider, cfg)` interception); the wrapping happens at the AIClient seam so all callers — including Plan 07-04's `testActiveAIConnection` — inherit the protection without caller-side changes. The modal's "I understand — continue" button is the only new `setCta()` invocation in v1.1.
+3. Plan 07-06 (palette commands + README) adds `clear-ai-key` and `reset-ai-disclosures` palette commands and updates the README "Network use" section.
 
 ### v1.1 Phase Map
 
@@ -66,7 +66,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 **Velocity (v1.0 cumulative):**
 
 - Total plans completed: 65 across v1.0
-- v1.1 plans completed: 3 (07-01, 07-02, 07-03)
+- v1.1 plans completed: 4 (07-01, 07-02, 07-03, 07-04)
 - v1.1 phases completed: 0/7
 
 **v1.0 plan-level history archived in `.planning/milestones/v1.0-ROADMAP.md`.**
@@ -78,6 +78,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 | 07    | 01   | 7m 38s   | 3     | 7     |
 | 07    | 02   | 11m 6s   | 3     | 14    |
 | 07    | 03   | 12m 46s  | 2     | 9     |
+| 07    | 04   | 32min    | 2     | 12    |
 
 ## Accumulated Context
 
@@ -109,6 +110,14 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 - **07-03:** Test connection button onClick is a PLACEHOLDER Notice with text `'Test connection: wiring lands in Plan 07-04'` — locked grep target so 07-04 can replace the handler body cleanly without disturbing surrounding rows.
 - **07-03:** AI Settings section uses `.addOption(value, label)` chain (NOT `.addOptions(Record)`) so the locked dropdown order from 07-UI-SPEC ('' / anthropic / openai / openrouter / ollama / custom) is preserved across browsers — matches Phase 06 PREVIEW-02 dropdown precedent.
 - **07-03:** `obsidianmd/ui/sentence-case` brand allowlist extended in `eslint.config.mts` for AI provider names + locked URL/host substrings + `Plan 07-04` grep marker. Two cases (`'— Not configured —'` em-dashes, lowercase URL `https://your-host.example.com/v1` placeholder) require inline `// eslint-disable-next-line` with a 07-UI-SPEC reference.
+- **07-04:** `prettyName(p: AIProvider): string` is exported from `src/ai/types.ts` (NOT colocated in SettingsTab.ts as Plan 07-03 had it). Single source of truth for verbatim brand strings consumed by both the Settings sub-form AND the Notice copy in `main.ts:testActiveAIConnection`. Future surfaces (Phase 08 disclosure body, Phase 11 cluster header) MUST import this helper rather than redeclare the switch.
+- **07-04:** `aiProbeInflight: Map<AIProvider, Promise<ProbeResult>>` on the LeetCodePlugin instance is the single-in-flight gate per provider. Settings button + palette command both call `testActiveAIConnection()` which manages the Map; concurrent clicks during an in-flight probe are no-ops. Cost-based Availability mitigation (T-07-04-debounce) — Anthropic 1-token chat is ~$0.0001/click but the gate prevents accidental duplicate billing on rapid clicks.
+- **07-04:** Empty-key guard fires ONLY for `anthropic`/`openai`/`openrouter` — Ollama and Custom may legitimately have empty keys (default Ollama install + no-auth Custom backends), so they fall through to probe. Locked by 6 separate test cases in `tests/ai/probe-debounce.test.ts`.
+- **07-04:** Settings button onClick wraps the testActiveAIConnection() call in try/finally with button-label flip to `'Testing...'` + `setDisabled(true)`; palette command does NOT flip a label (the Notice IS the feedback). The debounce Map handles cross-surface concurrency.
+- **07-04:** All Notice copy verbatim from 07-UI-SPEC §"Notice copy"; failure Notice combines provider prefix + vendor message and truncates the COMBINED string to 200 chars (CONTEXT decision E semantics) — NOT just the vendor message portion. This guarantees the visible Notice never exceeds 200 chars total.
+- **07-04:** Probe path is uncoupled from disclosure: `testActiveAIConnection` calls `aiClient.probe(provider)` directly. Plan 07-05 wraps the disclosure gate at the `AIClient.probe` seam, NOT at the caller — all callers (07-04 testActiveAIConnection AND any Phase 08 invoker) inherit the disclosure protection without 07-04-side changes.
+- **07-04:** Bundle landed at 827.6 KB (+1.0 KB from Plan 07-03 baseline 826.6 KB) — pure code delta from the testActiveAIConnection method + palette command + prettyName export + Settings handler glue. No new runtime deps. Headroom under 1 MB ceiling: 172.4 KB.
+- **07-04:** `tests/ai/probe-debounce.test.ts` uses `vi.mock('obsidian', async () => ({ ...await import('../helpers/obsidian-stub'), Notice: <captureClass> }))` so dynamic `import('../../src/main')` succeeds — main.ts pulls FilterModal -> obsidian.Modal at module evaluation; a bare-bones inline mock missing Modal trips an unhandled rejection during the second test case onward. Concurrent-debounce test pre-resolves the LeetCodePlugin import and captures the prototype method into an explicitly-bound wrapper (avoids `@typescript-eslint/unbound-method`).
 
 ### v1.1 Decisions Locked at Roadmap Time
 
@@ -151,9 +160,9 @@ None yet — awaiting `/gsd-plan-phase 6`.
 
 ## Session Continuity
 
-Last session: 2026-05-16T00:13:45.679Z
-Stopped at: Completed 07-03-PLAN.md
-Resume file: .planning/phases/07-ai-provider-foundation/07-04-PLAN.md
+Last session: 2026-05-16T00:35:25.735Z
+Stopped at: Completed 07-04-PLAN.md
+Resume file: .planning/phases/07-ai-provider-foundation/07-05-PLAN.md
 
 ## Operator Next Steps
 
