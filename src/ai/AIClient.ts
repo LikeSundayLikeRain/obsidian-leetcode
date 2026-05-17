@@ -34,6 +34,7 @@
 import type { SettingsStore } from '../settings/SettingsStore';
 import type { AIProvider, AIRequest, AIResponse, ProbeResult, ProviderConfig } from './types';
 import { obsidianFetch } from './obsidianFetch';
+import type { FetchFn } from './obsidianFetch';
 import { resolveAdapter } from './providers';
 import type { StreamTextResult } from 'ai';
 
@@ -248,17 +249,62 @@ export class AIClient {
       }
     }
 
-    // Stream-first path: only attempt if caller asked for streaming. If
-    // obsidianFetch('stream') throws (loadElectronNet failure), fall
-    // through to the buffered path.
+    // Stream-first path: only attempt if caller asked for streaming.
+    //
+    // Phase 08.1 Plan 01 introduced TIER 1 — native window.fetch() — as the
+    // primary streaming transport above the original Phase 08 tier ladder.
+    // The reason: Phase 08's TIER 2 (`obsidianFetch('stream')` →
+    // `electron.net.fetch`) ALWAYS throws on Obsidian 1.10+ because
+    // `electron.net.fetch` is a main-process API blocked by
+    // contextIsolation:true. Without TIER 1, every AI Debug call falls
+    // through to TIER 3 buffered and the modal's `consumeStream` branch is
+    // dead code. TIER 1 makes live token-by-token streaming work.
+    //
+    // Tier ladder (decision tree):
+    //   TIER 1 — native window.fetch (Phase 08.1, this block)
+    //     If composition or sync streamInvoke throw (CORS TypeError /
+    //     window.fetch undefined), fall through to TIER 2.
+    //   TIER 2 — obsidianFetch('stream') → electron.net.fetch (Phase 08)
+    //     Eager probe inside obsidianFetch throws on contextIsolation:true,
+    //     which today is always-on. Kept as a future-proofing seam for any
+    //     Obsidian renderer change that re-exposes electron.net to the
+    //     renderer. Falls through to TIER 3 on throw.
+    //   TIER 3 — obsidianFetch('request') → requestUrl (universal floor)
+    //     Buffered fallback (single-shot await). The modal renders a
+    //     'Thinking…' indicator + mm:ss counter while the Promise is
+    //     unresolved.
     if (req.stream === true) {
+      // ─── TIER 1 (Phase 08.1-01): native window.fetch() ───────────────
+      try {
+        const nativeFetcher: FetchFn = (input, init) => {
+          // T-07-02 cookie-leak parity: force credentials: 'omit' even if
+          // the caller passes 'include'. Mirrors src/ai/obsidianFetch.ts:
+          // 97-98 — this layer is the security boundary, not the provider
+          // adapter. Without this override, `window.fetch` would honor the
+          // default-session cookie pool and could leak the user's
+          // leetcode.com session cookies to AI provider hosts.
+          const safeInit: RequestInit = { ...(init ?? {}), credentials: 'omit' };
+          return window.fetch(input, safeInit);
+        };
+        const adapter = resolveAdapter(provider, cfg, nativeFetcher);
+        const result = adapter.streamInvoke(req.prompt, abortController.signal);
+        return { kind: 'stream', result, abortController };
+      } catch {
+        // Fall through to TIER 2. Catch is intentionally broad because
+        // resolveAdapter / streamInvoke can throw a TypeError (CORS
+        // synchronous failure on the AI SDK provider construction path)
+        // or any other Error; the "stream if you can, buffer if you can't"
+        // contract doesn't care about the inner cause.
+      }
+
+      // ─── TIER 2 (Phase 08): obsidianFetch('stream') → electron.net.fetch ─
       try {
         const fetcher = obsidianFetch('stream');
         const adapter = resolveAdapter(provider, cfg, fetcher);
         const result = adapter.streamInvoke(req.prompt, abortController.signal);
         return { kind: 'stream', result, abortController };
       } catch {
-        // Fall through to buffered path. The catch is intentionally broad
+        // Fall through to TIER 3 buffered. The catch is intentionally broad
         // because loadElectronNet() throws an Error on Node-require
         // unavailability; we don't care about the inner cause — Phase 08's
         // contract is "stream if you can, buffer if you can't".

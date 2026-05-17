@@ -1,12 +1,13 @@
 // tests/ai/AIClient.invokeStream.cors-fallback.test.ts
 //
-// Phase 08.1 Plan 01 Task 1 — Wave 0 scaffold for the TIER 1 → TIER 2 → TIER 3
-// fall-through decision tree. Bodies fill in Task 2 (TDD).
+// Phase 08.1 Plan 01 Task 2 — TIER 1 → TIER 2 → TIER 3 fall-through covers:
+//   - "TIER 1 throws -> TIER 2 used"
+//   - "TIER 1+2 throw -> TIER 3 buffered"
 //
 // Mirrors the mock harness from tests/ai/AIClient.invokeStream.test.ts
-// lines 14-65 verbatim.
+// lines 14-65.
 
-import { describe, it, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const resolveAdapterMock = vi.fn();
 
@@ -58,9 +59,6 @@ function makeMockSettings(opts: {
   return { ...base, ...(opts.overrides ?? {}) };
 }
 
-void DEFAULT_CFG;
-void makeMockSettings;
-
 describe('Phase 08.1 AIClient.invokeStream — CORS fallback decision tree', () => {
   beforeEach(() => {
     resolveAdapterMock.mockReset();
@@ -68,6 +66,88 @@ describe('Phase 08.1 AIClient.invokeStream — CORS fallback decision tree', () 
     vi.unstubAllGlobals();
   });
 
-  it.todo('TIER 1 throws -> TIER 2 used');
-  it.todo('TIER 1+2 throw -> TIER 3 buffered');
+  it('TIER 1 throws -> TIER 2 used (obsidianFetch("stream") streams)', async () => {
+    // Stub window.fetch so the TIER 1 composition itself doesn't fail on
+    // missing globals; the simulated CORS rejection is driven by
+    // resolveAdapter throwing on the FIRST call (TIER 1) only.
+    vi.stubGlobal('window', { ...window, fetch: vi.fn(async () => new Response('')) });
+
+    const tier2StreamResult = { textStream: (async function* () {})() };
+    const tier2StreamInvoke = vi.fn(() => tier2StreamResult);
+
+    let callCount = 0;
+    resolveAdapterMock.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        // Simulate CORS TypeError surfacing synchronously inside TIER 1's
+        // resolveAdapter -> streamInvoke composition.
+        throw new TypeError('CORS rejection');
+      }
+      return {
+        probe: vi.fn(),
+        streamInvoke: tier2StreamInvoke,
+        bufferedInvoke: vi.fn(async () => ({ text: 'unused' })),
+      };
+    });
+    // TIER 2 obsidianFetch('stream') succeeds.
+    obsidianFetchMock.mockReturnValue(() => Promise.resolve(new Response('')));
+
+    const { AIClient } = await import('../../src/ai/AIClient');
+    const settings = makeMockSettings({ active: 'openai' });
+    const client = new AIClient(settings as never);
+
+    const handle = await client.invokeStream({ prompt: 'hi', stream: true } as never);
+    expect(handle.kind).toBe('stream');
+    if (handle.kind === 'stream') {
+      expect(handle.result).toBe(tier2StreamResult);
+    }
+    // resolveAdapter was called twice — TIER 1 (threw) + TIER 2 (won).
+    expect(resolveAdapterMock).toHaveBeenCalledTimes(2);
+    expect(obsidianFetchMock).toHaveBeenCalledWith('stream');
+  });
+
+  it('TIER 1+2 throw -> TIER 3 buffered (obsidianFetch("request"))', async () => {
+    vi.stubGlobal('window', { ...window, fetch: vi.fn(async () => new Response('')) });
+
+    let callCount = 0;
+    const tier3BufferedInvoke = vi.fn(async () => ({ text: 'tier-3-buffered' }));
+    resolveAdapterMock.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        // TIER 1 throws (simulate native-fetch CORS reject).
+        throw new TypeError('CORS rejection');
+      }
+      // TIER 3 path returns the buffered adapter (TIER 2 throws BEFORE
+      // resolveAdapter is reached for it — see obsidianFetchMock below).
+      return {
+        probe: vi.fn(),
+        streamInvoke: vi.fn(() => ({ textStream: (async function* () {})() })),
+        bufferedInvoke: tier3BufferedInvoke,
+      };
+    });
+
+    // TIER 2 obsidianFetch('stream') throws (eager-probe simulating
+    // electron.net.fetch unavailable on contextIsolation:true). TIER 3
+    // obsidianFetch('request') succeeds.
+    obsidianFetchMock.mockImplementation((mode: string) => {
+      if (mode === 'stream') throw new Error('loadElectronNet: contextIsolation');
+      return () => Promise.resolve(new Response(''));
+    });
+
+    const { AIClient } = await import('../../src/ai/AIClient');
+    const settings = makeMockSettings({ active: 'openai' });
+    const client = new AIClient(settings as never);
+
+    const handle = await client.invokeStream({ prompt: 'hi', stream: true } as never);
+    expect(handle.kind).toBe('buffered');
+    if (handle.kind === 'buffered') {
+      expect(handle.abortController).toBeInstanceOf(AbortController);
+      expect(await handle.text).toBe('tier-3-buffered');
+    }
+    // resolveAdapter calls: TIER 1 (threw) + TIER 3 (buffered) = 2.
+    expect(resolveAdapterMock).toHaveBeenCalledTimes(2);
+    // obsidianFetch was tried for 'stream' (threw) and 'request' (succeeded).
+    expect(obsidianFetchMock).toHaveBeenCalledWith('stream');
+    expect(obsidianFetchMock).toHaveBeenCalledWith('request');
+  });
 });
