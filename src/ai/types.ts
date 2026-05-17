@@ -11,7 +11,16 @@
  * layer (Plan 07-01 Task 2: `isValidProviderId`).
  */
 // Single-line union (locked grep target for plan acceptance criteria).
-export type AIProvider = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'custom';
+// Phase 08.1 Plan 02 — widened with 'bedrock' (AIPROV-FUT-01 forward-port).
+// Adding a new provider id REQUIRES extending every per-provider exhaustive
+// switch (S4 shared pattern — see .planning/phases/08.1.../08.1-PATTERNS.md):
+//   - prettyName (this file)
+//   - getDisplayBaseUrl (src/ai/displayBaseUrl.ts)
+//   - resolveAdapter (src/ai/providers/index.ts)
+//   - VALID_AI_PROVIDERS + DEFAULT_PROVIDER_CONFIGS + load hydration (src/settings/SettingsStore.ts)
+//   - renderAIProviderForm + active-provider <select> + modelPlaceholder (src/settings/SettingsTab.ts)
+// TypeScript's exhaustiveness check fires at every site that needs an update.
+export type AIProvider = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'custom' | 'bedrock';
 
 /**
  * Per-provider credential + endpoint config. Persisted in
@@ -23,6 +32,44 @@ export interface ProviderConfig {
   baseUrl: string;
   model: string;
   disclosureAcknowledged: boolean;
+}
+
+/**
+ * Phase 08.1 Plan 02 — discriminated config shape for the AWS Bedrock
+ * provider. Extends `ProviderConfig` (the inherited `apiKey` / `baseUrl` /
+ * `model` fields are unused by the Bedrock adapter — `region` + `modelId` +
+ * `authMethod` + per-mode secret fields take their place — but inheriting
+ * keeps the `Record<AIProvider, ProviderConfig | BedrockProviderConfig>`
+ * map shape in SettingsStore wide enough to hold both types).
+ *
+ * `authMethod` discriminant maps onto `createAmazonBedrock`'s constructor
+ * options (RESEARCH §Pattern 4):
+ *   - 'default-chain'  → resolveAwsCredentials({ source: 'env-or-default-profile' })
+ *   - 'access-keys'    → opts.accessKeyId = cfg.accessKeyId; opts.secretAccessKey = ...
+ *   - 'sso-profile'    → resolveAwsCredentials({ source: 'profile', profile: cfg.ssoProfile })
+ *   - 'api-key'        → opts.apiKey = cfg.bedrockApiKey
+ *
+ * Pitfall 10 (RESEARCH.md): switching `authMethod` mid-edit must NOT clear
+ * any of the 4 secret fields. Settings UI changes which rows RENDER, never
+ * which fields are STORED. `sanitizeBedrockProviderConfig` preserves all
+ * 4 verbatim regardless of `authMethod`.
+ */
+export interface BedrockProviderConfig extends ProviderConfig {
+  /** AWS region for Bedrock runtime endpoint (default 'us-east-1'). */
+  region: string;
+  /** Bedrock model identifier — e.g. 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+   *  or a cross-region inference profile id like 'us.anthropic.claude-haiku-4-5'. */
+  modelId: string;
+  /** How the plugin obtains AWS credentials at probe/invoke time. */
+  authMethod: 'default-chain' | 'access-keys' | 'sso-profile' | 'api-key';
+  /** Set when authMethod === 'access-keys'. Preserved across mode switches. */
+  accessKeyId?: string;
+  /** Set when authMethod === 'access-keys'. Preserved across mode switches. */
+  secretAccessKey?: string;
+  /** Set when authMethod === 'sso-profile'. Preserved across mode switches. */
+  ssoProfile?: string;
+  /** Set when authMethod === 'api-key'. Long-term Bedrock API key bearer. */
+  bedrockApiKey?: string;
 }
 
 /**
@@ -98,5 +145,6 @@ export function prettyName(p: AIProvider): string {
     case 'openrouter': return 'OpenRouter';
     case 'ollama': return 'Ollama';
     case 'custom': return 'Custom (OpenAI-compatible)';
+    case 'bedrock': return 'AWS Bedrock';  // Phase 08.1 Plan 02
   }
 }

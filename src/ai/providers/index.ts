@@ -11,7 +11,7 @@
 // Phase 08 Plan 02 — replaces the Phase 07 invoke stub with real call shapes.
 // resolveAdapter now exposes `streamInvoke` + `bufferedInvoke` (the old
 // `invoke` is gone). AIClient consumes these from invokeStream + invoke.
-import type { AIProvider, ProviderConfig, ProbeResult } from '../types';
+import type { AIProvider, ProviderConfig, BedrockProviderConfig, ProbeResult } from '../types';
 import type { FetchFn } from '../obsidianFetch';
 import type { StreamTextResult } from 'ai';
 
@@ -40,6 +40,13 @@ import {
   streamOllama,
   invokeOllamaBuffered,
 } from './ollama';
+// Phase 08.1 Plan 02 — bedrock adapter (mirrors anthropic shape).
+import {
+  createBedrockModel,
+  probeBedrock,
+  streamBedrock,
+  invokeBedrockBuffered,
+} from './bedrock';
 
 export {
   createAnthropicModel,
@@ -59,6 +66,11 @@ export {
   probeOllama,
   streamOllama,
   invokeOllamaBuffered,
+  // Phase 08.1 Plan 02 — bedrock barrel re-exports.
+  createBedrockModel,
+  probeBedrock,
+  streamBedrock,
+  invokeBedrockBuffered,
 };
 
 /**
@@ -184,6 +196,19 @@ export function resolveAdapter(
           streamOpenAICompatible(cfg, fetcher, prompt, signal, 'custom'),
         bufferedInvoke: (prompt, signal) =>
           invokeOpenAICompatibleBuffered(cfg, fetcher, prompt, signal, 'custom'),
+      };
+    // Phase 08.1 Plan 02 — Bedrock case mirrors the Anthropic shape.
+    // The cfg cast widens ProviderConfig to BedrockProviderConfig — the
+    // SettingsStore stores Bedrock entries as BedrockProviderConfig but
+    // exposes them via getProviderConfig's ProviderConfig return type
+    // (the discriminated map shape erased at the public API for ergonomics).
+    case 'bedrock':
+      return {
+        probe: () => probeBedrock(cfg as BedrockProviderConfig, fetcher),
+        streamInvoke: (prompt, signal) =>
+          streamBedrock(cfg as BedrockProviderConfig, fetcher, prompt, signal),
+        bufferedInvoke: (prompt, signal) =>
+          invokeBedrockBuffered(cfg as BedrockProviderConfig, fetcher, prompt, signal),
       };
   }
 }

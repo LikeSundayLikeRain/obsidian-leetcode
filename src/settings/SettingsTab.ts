@@ -10,7 +10,7 @@
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type LeetCodePlugin from '../main';
 import type { AuthCookies } from '../auth/types';
-import type { AIProvider } from '../ai/types';
+import type { AIProvider, BedrockProviderConfig } from '../ai/types';
 // Phase 07 Plan 04 — single source of truth for provider display names; the
 // local copy of `prettyName` was moved to src/ai/types.ts so main.ts (Notice
 // copy) and SettingsTab.ts (sub-form) render identical brand strings without
@@ -19,6 +19,13 @@ import { prettyName } from '../ai/types';
 
 // Phase 07 Plan 03 — model placeholders per provider, locked by 07-UI-SPEC.md
 // §"Copywriting Contract" (Model placeholders row).
+//
+// Phase 08.1 Plan 02 — Bedrock joins the exhaustive switch. The placeholder
+// returns '' because Bedrock's per-provider sub-form replaces the generic
+// "Model" row with a dedicated "Model ID" row inside renderAIProviderForm's
+// `case 'bedrock'` branch (the generic Model row is hidden when active is
+// 'bedrock'). The placeholder is referenced by the generic Model row only,
+// so the empty string here never reaches a UI surface for Bedrock.
 function modelPlaceholder(p: AIProvider): string {
   switch (p) {
     case 'anthropic': return 'claude-haiku-4-5';
@@ -26,6 +33,7 @@ function modelPlaceholder(p: AIProvider): string {
     case 'openrouter': return 'anthropic/claude-haiku-4.5';
     case 'ollama': return 'llama3.2';
     case 'custom': return '';
+    case 'bedrock': return '';
   }
 }
 
@@ -244,6 +252,11 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         .addOption('openrouter', 'OpenRouter')
         .addOption('ollama',     'Ollama')
         .addOption('custom',     'Custom (OpenAI-compatible)')
+        // Phase 08.1 Plan 02 — AWS Bedrock joins the locked dropdown order
+        // after 'custom' (alphabetical-by-add-time precedent — Bedrock is
+        // the 6th provider added to the union). 'AWS Bedrock' is in the
+        // sentence-case allowlist (see eslint.config.mts AWS extension).
+        .addOption('bedrock',    'AWS Bedrock')
         .setValue(active ?? '')
         .onChange(async (v) => {
           const next = v === '' ? null : (v as AIProvider);
@@ -317,8 +330,12 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     const cfg = this.plugin.settings.getProviderConfig(active);
     const providerName = prettyName(active);
 
-    // ─── API key row (omitted for Ollama) ────────────────────────────────
-    if (active !== 'ollama') {
+    // ─── API key row (omitted for Ollama and Bedrock) ────────────────────
+    // Phase 08.1 Plan 02 — Bedrock skips the standard API key row because
+    // its 4-mode auth dropdown (default-chain / access-keys / sso-profile /
+    // api-key) renders mode-specific secret rows below. Ollama remains
+    // skip-listed (Phase 07 — local Ollama has no API key).
+    if (active !== 'ollama' && active !== 'bedrock') {
       new Setting(containerEl)
         .setName('API key')
         .setDesc(`Stored in plain text in data.json on this machine. Never transmitted anywhere except ${providerName}.`)
@@ -380,21 +397,153 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           });
         break;
       }
+      case 'bedrock': {
+        // Phase 08.1 Plan 02 — Bedrock-specific sub-form per CONTEXT
+        // decision B + 08.1-PATTERNS.md "Plan 08.1-02 #src/settings/SettingsTab.ts".
+        // Renders Region + Model ID + Auth method dropdown + conditional
+        // secret rows in place of Base URL/Model rows. The 4-mode dropdown
+        // calls this.display() onChange so the conditional rows re-render
+        // atomically — Pitfall 10 invariant: switching authMethod ONLY
+        // changes which rows render, never which fields are stored.
+        const bcfg = cfg as BedrockProviderConfig;
+
+        // Region row (text input, default 'us-east-1').
+        new Setting(containerEl)
+          .setName('Region')
+          .setDesc('AWS region for Bedrock runtime endpoint. Default: us-east-1.')
+          .addText((t) => {
+            t.inputEl.addClass('lc-ai-input');
+            // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'us-east-1' is the verbatim AWS region identifier (lowercase per AWS convention); not a sentence.
+            t.setPlaceholder('us-east-1');
+            t.setValue(bcfg.region);
+            t.onChange(async (v) => {
+              const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
+              await this.plugin.settings.setProviderConfig(active, { ...current, region: v });
+            });
+          });
+
+        // Model ID row (replaces the generic Model row for Bedrock).
+        new Setting(containerEl)
+          .setName('Model ID')
+          // eslint-disable-next-line obsidianmd/ui/sentence-case -- Bedrock model IDs are dotted-namespace lowercase identifiers (e.g. 'anthropic.claude-3-5-sonnet...'); the rule mistakes the model-name parts for sentence-start words.
+          .setDesc('Bedrock model identifier (e.g. anthropic.claude-3-5-sonnet-20241022-v2:0).')
+          .addText((t) => {
+            t.inputEl.addClass('lc-ai-input');
+            t.setValue(bcfg.modelId);
+            t.onChange(async (v) => {
+              const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
+              await this.plugin.settings.setProviderConfig(active, { ...current, modelId: v });
+            });
+          });
+
+        // Auth method dropdown — onChange triggers a re-render so the
+        // conditional secret rows below swap atomically.
+        new Setting(containerEl)
+          .setName('Auth method')
+          .setDesc('How the plugin obtains AWS credentials for Bedrock calls.')
+          .addDropdown((d) => d
+            .addOption('default-chain', 'Default credential chain (recommended)')
+            .addOption('access-keys',   'Explicit access keys')
+            .addOption('sso-profile',   'SSO profile')
+            .addOption('api-key',       'Bedrock API key')
+            .setValue(bcfg.authMethod)
+            .onChange(async (v) => {
+              const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
+              await this.plugin.settings.setProviderConfig(active, {
+                ...current,
+                authMethod: v as BedrockProviderConfig['authMethod'],
+              });
+              // Re-render so the conditional secret rows for the newly-active
+              // mode appear atomically. Pitfall 10 invariant: this only
+              // changes which rows RENDER — `current` (and the persisted
+              // config) keeps every secret field byte-for-byte intact.
+              this.display();
+            }),
+          );
+
+        // Conditional secret rows — only the active mode's rows render, but
+        // ALL secret fields stay PERSISTED in data.json (Pitfall 10).
+        if (bcfg.authMethod === 'default-chain') {
+          // Helper-text-only row — no input.
+          new Setting(containerEl)
+            .setName('Credentials source')
+            // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains AWS env-var literals (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) and the lowercase ~/.aws/credentials path; rule cannot distinguish technical literals from prose.
+            .setDesc('The plugin reads AWS credentials from your environment variables (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY) or from the [default] profile in ~/.aws/credentials.');
+        } else if (bcfg.authMethod === 'access-keys') {
+          new Setting(containerEl)
+            .setName('Access key ID')
+            .setDesc('AWS access key ID. Stored in plain text in data.json on this machine.')
+            .addText((t) => {
+              t.inputEl.type = 'password';
+              t.inputEl.addClass('lc-ai-input');
+              t.setValue(bcfg.accessKeyId ?? '');
+              t.onChange(async (v) => {
+                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.settings.setProviderConfig(active, { ...current, accessKeyId: v });
+              });
+            });
+          new Setting(containerEl)
+            .setName('Secret access key')
+            .setDesc('AWS secret access key. Stored in plain text in data.json on this machine.')
+            .addText((t) => {
+              t.inputEl.type = 'password';
+              t.inputEl.addClass('lc-ai-input');
+              t.setValue(bcfg.secretAccessKey ?? '');
+              t.onChange(async (v) => {
+                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.settings.setProviderConfig(active, { ...current, secretAccessKey: v });
+              });
+            });
+        } else if (bcfg.authMethod === 'sso-profile') {
+          new Setting(containerEl)
+            .setName('Profile name')
+            .setDesc('Run `aws sso login --profile <name>` before launching Obsidian. The plugin reads the resolved keys from the matching section of ~/.aws/credentials.')
+            .addText((t) => {
+              t.inputEl.addClass('lc-ai-input');
+              t.setValue(bcfg.ssoProfile ?? '');
+              t.onChange(async (v) => {
+                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.settings.setProviderConfig(active, { ...current, ssoProfile: v });
+              });
+            });
+        } else if (bcfg.authMethod === 'api-key') {
+          new Setting(containerEl)
+            .setName('Bedrock API key')
+            .setDesc('Long-term Bedrock API key from the AWS console (IAM > Users > Service-specific credentials). Stored in plain text in data.json on this machine.')
+            .addText((t) => {
+              t.inputEl.type = 'password';
+              t.inputEl.addClass('lc-ai-input');
+              t.setValue(bcfg.bedrockApiKey ?? '');
+              t.onChange(async (v) => {
+                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.settings.setProviderConfig(active, { ...current, bedrockApiKey: v });
+              });
+            });
+        }
+        break;
+      }
     }
 
-    // ─── Model row (all providers) ───────────────────────────────────────
-    new Setting(containerEl)
-      .setName('Model')
-      .setDesc('Model identifier the provider expects. Defaults may rot — when "Test connection" reports "model not found", update this field.')
-      .addText((t) => {
-        t.inputEl.addClass('lc-ai-input');
-        t.setPlaceholder(modelPlaceholder(active));
-        t.setValue(cfg.model);
-        t.onChange(async (v) => {
-          const current = this.plugin.settings.getProviderConfig(active);
-          await this.plugin.settings.setProviderConfig(active, { ...current, model: v });
+    // ─── Model row (all providers EXCEPT Bedrock — Bedrock uses Model ID) ─
+    // Phase 08.1 Plan 02 — Bedrock's case branch above already rendered a
+    // dedicated "Model ID" row, so we skip the generic Model row when
+    // active === 'bedrock' to avoid duplicate input rows. The Model ID row
+    // writes to cfg.modelId; the generic row writes to cfg.model (which is
+    // unused for Bedrock).
+    if (active !== 'bedrock') {
+      new Setting(containerEl)
+        .setName('Model')
+        .setDesc('Model identifier the provider expects. Defaults may rot — when "Test connection" reports "model not found", update this field.')
+        .addText((t) => {
+          t.inputEl.addClass('lc-ai-input');
+          t.setPlaceholder(modelPlaceholder(active));
+          t.setValue(cfg.model);
+          t.onChange(async (v) => {
+            const current = this.plugin.settings.getProviderConfig(active);
+            await this.plugin.settings.setProviderConfig(active, { ...current, model: v });
+          });
         });
-      });
+    }
 
     // ─── Test connection button (wired to AIClient.probe via plugin) ────
     // Stays NEUTRAL — NO setCta() per 07-UI-SPEC §"Color". The disclosure

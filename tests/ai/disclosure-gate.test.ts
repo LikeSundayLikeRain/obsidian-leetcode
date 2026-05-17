@@ -83,6 +83,8 @@ function makeMockSettings(opts: {
     openrouter: makeCfg(),
     ollama: makeCfg({ baseUrl: 'http://localhost:11434/v1' }),
     custom: makeCfg({ baseUrl: '' }),
+    // Phase 08.1 Plan 02 — Bedrock joins the locked provider map.
+    bedrock: makeCfg(),
   };
   if (opts.cfgsByProvider) {
     for (const [p, cfg] of Object.entries(opts.cfgsByProvider)) {

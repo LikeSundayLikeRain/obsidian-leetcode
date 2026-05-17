@@ -42,6 +42,12 @@ export default tseslint.config(
             // Phase 07 Plan 03 AI provider brands (07-UI-SPEC).
             'Anthropic', 'OpenAI', 'OpenRouter', 'Ollama',
             'OpenAI-compatible',
+            // Phase 08.1 Plan 02 — AWS Bedrock + AWS infrastructure brand
+            // tokens used in Settings copy (Region, Model ID, Auth method
+            // dropdown labels, helper text). 'AWS Bedrock' is the verbatim
+            // dropdown label per CONTEXT decision B; 'SSO' / 'IAM' appear
+            // in helper text for sso-profile and api-key auth modes.
+            'AWS', 'Bedrock', 'SSO', 'IAM',
             // Locked URL/host substrings used in verbatim copy + placeholders.
             'localhost', 'HTTPS', 'sk-…',
             // Plan-numbered grep-replace markers (locked by 07-UI-SPEC for

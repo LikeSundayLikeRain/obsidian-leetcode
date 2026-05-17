@@ -61,6 +61,13 @@ function makeFake(initialAck: Partial<Record<AIProvider, boolean>>): FakePluginS
     openrouter: makeCfg({ disclosureAcknowledged: initialAck.openrouter ?? false }),
     ollama: makeCfg({ disclosureAcknowledged: initialAck.ollama ?? false }),
     custom: makeCfg({ disclosureAcknowledged: initialAck.custom ?? false }),
+    // Phase 08.1 Plan 02 — Bedrock joins the locked provider map; the
+    // reset-disclosures command iterates VALID_AI_PROVIDERS so a missing
+    // bedrock entry would crash. Default disclosureAcknowledged stays
+    // false so existing tests' "expected reset count" math still works
+    // (Bedrock is in the same starting state as the other 5 providers
+    // when initialAck.bedrock is unset).
+    bedrock: makeCfg({ disclosureAcknowledged: initialAck.bedrock ?? false }),
   };
   const setSpy = vi.fn(async (p: AIProvider, cfg: ProviderConfig) => {
     cfgs[p] = { ...cfg };

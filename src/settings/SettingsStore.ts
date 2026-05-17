@@ -5,7 +5,7 @@
 import type { Plugin } from 'obsidian';
 import type { AuthCookies } from '../auth/types';
 import type { IndexedProblem, ProblemIndex } from '../browse/types';
-import type { AIProvider, ProviderConfig, AICostLedger } from '../ai/types';
+import type { AIProvider, ProviderConfig, BedrockProviderConfig, AICostLedger } from '../ai/types';
 import { logger } from '../shared/logger';
 
 export type { AuthCookies } from '../auth/types';
@@ -91,12 +91,16 @@ export interface PluginData {
    *  per-provider `providerConfigs` map below (T-07-01 invariant). */
   activeAIProvider: AIProvider | null;
   /** Phase 07 AIPROV-01 — per-provider credential + endpoint config, keyed by
-   *  AIProvider. All 5 entries always present after `SettingsStore.load`
+   *  AIProvider. All 6 entries always present after `SettingsStore.load`
    *  (fresh installs and corrupt-data recovery alike). Each entry has the
    *  Vercel-AI-SDK-shape required fields apiKey/baseUrl/model and the
    *  disclosure boolean (D-A). Shape-guard `sanitizeProviderConfig` at load
-   *  collapses every malformed field to its per-provider default. */
-  providerConfigs: Record<AIProvider, ProviderConfig>;
+   *  collapses every malformed field to its per-provider default.
+   *
+   *  Phase 08.1 Plan 02 — widened to `ProviderConfig | BedrockProviderConfig`
+   *  to accommodate the Bedrock entry's region/modelId/authMethod/secret
+   *  fields. The bedrock branch hydrates via `sanitizeBedrockProviderConfig`. */
+  providerConfigs: Record<AIProvider, ProviderConfig | BedrockProviderConfig>;
   /** Phase 07 AIPROV-06 + decision F — daily AI spend tally. Day-rollover
    *  happens on read inside `addCostLedger` (when local-day differs from
    *  `date`, ledger resets BEFORE adding). No cap enforcement, no UI in
@@ -135,8 +139,15 @@ export type FilterRule =
 /** Phase 07 Plan 01 — per-provider defaults locked by CONTEXT decision C
  *  (D-C). Used by both DEFAULT_DATA and the `sanitizeProviderConfig`
  *  fallback path inside `load`. Iteration order matches the AIProvider
- *  union in src/ai/types.ts. */
-const DEFAULT_PROVIDER_CONFIGS: Record<AIProvider, ProviderConfig> = {
+ *  union in src/ai/types.ts.
+ *
+ *  Phase 08.1 Plan 02 — added `bedrock` entry. Map type widened to
+ *  `Record<AIProvider, ProviderConfig | BedrockProviderConfig>` so the
+ *  Bedrock entry's region/modelId/authMethod/secret fields fit. The
+ *  inherited apiKey/baseUrl/model fields on the bedrock entry are unused
+ *  by the bedrock adapter (they exist purely to satisfy the ProviderConfig
+ *  base shape). */
+const DEFAULT_PROVIDER_CONFIGS: Record<AIProvider, ProviderConfig | BedrockProviderConfig> = {
   anthropic: {
     apiKey: '',
     baseUrl: 'https://api.anthropic.com/v1',
@@ -167,6 +178,25 @@ const DEFAULT_PROVIDER_CONFIGS: Record<AIProvider, ProviderConfig> = {
     baseUrl: '',
     model: '',
     disclosureAcknowledged: false,
+  },
+  // Phase 08.1 Plan 02 — Bedrock defaults locked per CONTEXT decision B +
+  // 08.1-PATTERNS.md "Plan 08.1-02 #src/settings/SettingsStore.ts".
+  // apiKey/baseUrl/model are unused by the Bedrock adapter — region/modelId
+  // take their place. All 4 secret fields default to '' so switching auth
+  // methods later starts from a clean slate (Pitfall 10 — preserve invariant
+  // applies AFTER the user has typed a value; defaults stay empty).
+  bedrock: {
+    apiKey: '',
+    baseUrl: '',
+    model: '',
+    disclosureAcknowledged: false,
+    region: 'us-east-1',
+    modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    authMethod: 'default-chain',
+    accessKeyId: '',
+    secretAccessKey: '',
+    ssoProfile: '',
+    bedrockApiKey: '',
   },
 };
 
@@ -366,7 +396,21 @@ const VALID_AI_PROVIDERS: ReadonlySet<AIProvider> = new Set<AIProvider>([
   'openrouter',
   'ollama',
   'custom',
+  // Phase 08.1 Plan 02 — Bedrock joins the locked set.
+  'bedrock',
 ]);
+
+/** Phase 08.1 Plan 02 — locked set of valid `BedrockProviderConfig.authMethod`
+ *  values. Matches the 4 options in 08.1-CONTEXT.md decision B. Anything
+ *  outside this set collapses to `'default-chain'` at load via
+ *  `sanitizeBedrockProviderConfig`. */
+const VALID_BEDROCK_AUTH_METHODS: ReadonlySet<BedrockProviderConfig['authMethod']> =
+  new Set<BedrockProviderConfig['authMethod']>([
+    'default-chain',
+    'access-keys',
+    'sso-profile',
+    'api-key',
+  ]);
 
 /** Strict membership test for the AIProvider union. Anything outside the
  *  locked 5-entry set (typos, legacy values, non-strings) returns false so
@@ -402,6 +446,55 @@ function sanitizeProviderConfig(
     // to false so a corrupt data.json cannot silently flip a user past the
     // disclosure gate (T-07-05).
     disclosureAcknowledged: r.disclosureAcknowledged === true,
+  };
+}
+
+/** Phase 08.1 Plan 02 — shape-guard for `BedrockProviderConfig`. Mirrors
+ *  `sanitizeProviderConfig`'s posture (T-07-01 — every field guarded with a
+ *  per-default fallback) and adds:
+ *    - `authMethod` collapses to `defaults.authMethod` (`'default-chain'`)
+ *      when the input is not in `VALID_BEDROCK_AUTH_METHODS`.
+ *    - All 4 secret fields (`accessKeyId`, `secretAccessKey`, `ssoProfile`,
+ *      `bedrockApiKey`) are PRESERVED verbatim regardless of `authMethod`.
+ *      Pitfall 10 (08.1-RESEARCH.md) — switching `authMethod` mid-edit must
+ *      NOT clear secrets in inactive modes; only the rendered Settings rows
+ *      change. The shape-guard preserves the field shape every load, even
+ *      across downgrades that touch authMethod through the UI.
+ *  Returns `{ ...defaults }` whole when `raw` is null or non-object. */
+function sanitizeBedrockProviderConfig(
+  raw: unknown,
+  defaults: BedrockProviderConfig,
+): BedrockProviderConfig {
+  if (!raw || typeof raw !== 'object') return { ...defaults };
+  const r = raw as Partial<Record<keyof BedrockProviderConfig, unknown>>;
+  const authMethodRaw = r.authMethod;
+  const authMethod: BedrockProviderConfig['authMethod'] =
+    typeof authMethodRaw === 'string' &&
+    VALID_BEDROCK_AUTH_METHODS.has(authMethodRaw as BedrockProviderConfig['authMethod'])
+      ? (authMethodRaw as BedrockProviderConfig['authMethod'])
+      : defaults.authMethod;
+  return {
+    // Inherited ProviderConfig fields — kept loose-typed (apiKey/baseUrl/model
+    // are unused by the bedrock adapter; we still preserve whatever the user
+    // had to keep round-tripping byte-clean).
+    apiKey: typeof r.apiKey === 'string' ? r.apiKey : '',
+    baseUrl: typeof r.baseUrl === 'string' ? r.baseUrl : '',
+    model: typeof r.model === 'string' ? r.model : '',
+    // Strict-true only — corrupt data.json cannot silently flip past the
+    // disclosure gate (T-07-05 mirrors).
+    disclosureAcknowledged: r.disclosureAcknowledged === true,
+    // Bedrock-only fields.
+    region:
+      typeof r.region === 'string' && r.region.length > 0 ? r.region : defaults.region,
+    modelId:
+      typeof r.modelId === 'string' && r.modelId.length > 0 ? r.modelId : defaults.modelId,
+    authMethod,
+    // All 4 secret fields preserved verbatim regardless of authMethod
+    // (Pitfall 10 — mode switch must not clear inactive-mode secrets).
+    accessKeyId: typeof r.accessKeyId === 'string' ? r.accessKeyId : '',
+    secretAccessKey: typeof r.secretAccessKey === 'string' ? r.secretAccessKey : '',
+    ssoProfile: typeof r.ssoProfile === 'string' ? r.ssoProfile : '',
+    bedrockApiKey: typeof r.bedrockApiKey === 'string' ? r.bedrockApiKey : '',
   };
 }
 
@@ -496,6 +589,13 @@ export class SettingsStore {
         custom: sanitizeProviderConfig(
           (raw.providerConfigs as Record<string, unknown> | undefined)?.custom,
           DEFAULT_PROVIDER_CONFIGS.custom,
+        ),
+        // Phase 08.1 Plan 02 — bedrock hydrates via the dedicated shape-guard
+        // because BedrockProviderConfig has 7 fields beyond the 4 inherited
+        // ProviderConfig fields.
+        bedrock: sanitizeBedrockProviderConfig(
+          (raw.providerConfigs as Record<string, unknown> | undefined)?.bedrock,
+          DEFAULT_PROVIDER_CONFIGS.bedrock as BedrockProviderConfig,
         ),
       },
       aiCostLedger: sanitizeAICostLedger(raw.aiCostLedger),
@@ -688,16 +788,41 @@ export class SettingsStore {
   }
 
   /** Phase 07 AIPROV-01 — read the per-provider config. Always returns a
-   *  defined ProviderConfig because load hydrates all 5 entries. */
+   *  defined ProviderConfig because load hydrates all 6 entries.
+   *
+   *  Phase 08.1 Plan 02 — bedrock entries are stored as BedrockProviderConfig
+   *  (a superset of ProviderConfig); callers that need Bedrock-specific fields
+   *  cast `getProviderConfig('bedrock') as BedrockProviderConfig`. */
   getProviderConfig(p: AIProvider): ProviderConfig {
     return this.data.providerConfigs[p];
   }
 
   /** Phase 07 AIPROV-01 — persist a per-provider config. Re-sanitizes the
    *  incoming value against the per-provider default so a buggy caller cannot
-   *  poison data.json (T-07-01-b). */
-  async setProviderConfig(p: AIProvider, cfg: ProviderConfig): Promise<void> {
-    this.data.providerConfigs[p] = sanitizeProviderConfig(cfg, DEFAULT_PROVIDER_CONFIGS[p]);
+   *  poison data.json (T-07-01-b).
+   *
+   *  Phase 08.1 Plan 02 — signature widened to `ProviderConfig |
+   *  BedrockProviderConfig` so callers can pass a full BedrockProviderConfig
+   *  literal without casting at the call site. Runtime dispatch checks
+   *  `p === 'bedrock'` to route through the dedicated shape-guard
+   *  (`sanitizeBedrockProviderConfig`), preserving all 7 Bedrock-only fields
+   *  (region/modelId/authMethod + 4 secrets); other providers continue to
+   *  use the inherited `sanitizeProviderConfig`. */
+  async setProviderConfig(
+    p: AIProvider,
+    cfg: ProviderConfig | BedrockProviderConfig,
+  ): Promise<void> {
+    if (p === 'bedrock') {
+      this.data.providerConfigs[p] = sanitizeBedrockProviderConfig(
+        cfg,
+        DEFAULT_PROVIDER_CONFIGS.bedrock as BedrockProviderConfig,
+      );
+    } else {
+      this.data.providerConfigs[p] = sanitizeProviderConfig(
+        cfg,
+        DEFAULT_PROVIDER_CONFIGS[p] as ProviderConfig,
+      );
+    }
     await this.persist();
   }
 
