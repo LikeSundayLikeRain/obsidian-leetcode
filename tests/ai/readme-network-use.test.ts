@@ -47,6 +47,15 @@ describe('README network-use enumeration (AIPROV-07)', () => {
     expect(README).toMatch(/[Cc]ustom OpenAI-compatible/);
   });
 
+  // Phase 08.1 Plan 02 — Bedrock joins the README enumeration as the 5th AI
+  // provider. Plugin-store reviewer parity: every host the plugin can contact
+  // must appear in the README ## Network usage section.
+  test('mentions AWS Bedrock regional endpoint format', () => {
+    expect(README).toContain('AWS Bedrock');
+    expect(README).toContain('bedrock-runtime');
+    expect(README).toMatch(/bedrock-runtime\.\{region\}\.amazonaws\.com/);
+  });
+
   test('contains ### Authentication subsection', () => {
     expect(README).toContain('### Authentication');
   });

@@ -72,6 +72,7 @@ This plugin communicates with the following hosts:
   - `https://openrouter.ai` — when `Active AI provider = OpenRouter`
   - your local Ollama host (default `http://localhost:11434`) — when `Active AI provider = Ollama`
   - your custom OpenAI-compatible endpoint URL — when `Active AI provider = Custom`
+  - **AWS Bedrock**: `https://bedrock-runtime.{region}.amazonaws.com` where `{region}` is your configured AWS region (e.g. `us-east-1`) — when `Active AI provider = AWS Bedrock`
 
 No telemetry. No analytics. No other endpoints.
 
