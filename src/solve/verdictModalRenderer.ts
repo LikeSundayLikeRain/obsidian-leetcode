@@ -95,6 +95,7 @@ export function renderVerdict(args: RenderVerdictArgs): void {
       problemTitle,
       args.metaData,
       args.joinedDataInput,
+      args.onOpenAIDebug,
     );
     return;
   }
@@ -150,10 +151,11 @@ function renderRunResult(
   _problemTitle: string | undefined,
   metaData?: string,
   joinedDataInput?: string,
+  onOpenAIDebug?: () => void,
 ): void {
   // ── Step 1: D-15 error sniff — single error block + zero tabs ──────────
   if (hasRunErrorPayload(res)) {
-    renderRunErrorBlock(titleEl, contentEl, res);
+    renderRunErrorBlock(titleEl, contentEl, res, onOpenAIDebug);
     return;
   }
 
@@ -314,6 +316,18 @@ function renderRunResult(
 
   // ── Step 8: Footer — single Close, NO Copy button (D-16 Run side) ──────
   const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
+  // Phase 08 dogfood — Plan 08-05 originally only wired the AI Debug button
+  // into renderSubmitVerdict + renderRunErrorBlock. Sample-test failures
+  // (Wrong Answer with case tabs) route through this path and were missing
+  // the button. Visibility: any per-case FAIL → button shows. ABSENT when
+  // every case passes (treated as no-op success on Run; user can submit).
+  if (!aggregatePass && onOpenAIDebug) {
+    const aiBtn = appendEl(footer, 'button', 'leetcode-ai-debug-action');
+    setText(aiBtn, 'AI: Debug');
+    aiBtn.addEventListener('click', () => {
+      onOpenAIDebug();
+    });
+  }
   const closeBtn = appendEl(footer, 'button', 'mod-cta');
   setText(closeBtn, 'Close');
   closeBtn.setAttribute('data-lc-role', 'close');
@@ -327,6 +341,7 @@ function renderRunErrorBlock(
   titleEl: HTMLElement,
   contentEl: HTMLElement,
   res: RunCheckResponse,
+  onOpenAIDebug?: () => void,
 ): void {
   const statusInfo = classifyStatus(
     typeof res.status_code === 'number' ? res.status_code : 0,
@@ -353,6 +368,15 @@ function renderRunErrorBlock(
   setText(pre, errText);
 
   const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
+  // Phase 08 dogfood — Run-side compile/runtime errors are non-Accepted and
+  // should expose AI Debug like Submit-side ce/re do.
+  if (onOpenAIDebug) {
+    const aiBtn = appendEl(footer, 'button', 'leetcode-ai-debug-action');
+    setText(aiBtn, 'AI: Debug');
+    aiBtn.addEventListener('click', () => {
+      onOpenAIDebug();
+    });
+  }
   const closeBtn = appendEl(footer, 'button', 'mod-cta');
   setText(closeBtn, 'Close');
   closeBtn.setAttribute('data-lc-role', 'close');

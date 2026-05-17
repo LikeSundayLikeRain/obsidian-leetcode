@@ -368,3 +368,79 @@ describe('Phase 5.4 — Run-mode redesign (RED)', () => {
     expect(passed.length).toBeGreaterThan(0);
   });
 });
+
+// Phase 08 dogfood — Plan 08-05 only wired AI Debug into renderSubmitVerdict.
+// renderRunResult (case-tabs path for sample-test failures) and
+// renderRunErrorBlock (Run-side compile/runtime errors) didn't receive the
+// onOpenAIDebug callback. These regression tests lock the gap so it can't reopen.
+describe('Phase 08 — AI Debug button on Run-mode failure paths', () => {
+  it('renderRunResult: WA sample-test failure shows AI: Debug button when onOpenAIDebug wired', () => {
+    const titleEl = document.createElement('div');
+    const contentEl = document.createElement('div');
+    const onOpenAIDebug = vi.fn();
+    const failing = JSON.parse(JSON.stringify(runMultiCase)) as Record<string, unknown>;
+    failing.expected_code_answer = ['DIFFERENT', 'DIFFERENT'];
+    renderVerdict({ titleEl, contentEl, payload: failing, onOpenAIDebug });
+    const aiBtn = Array.from(contentEl.querySelectorAll('button')).find(
+      (b) => (b.textContent ?? '').trim() === 'AI: Debug',
+    );
+    expect(aiBtn).toBeDefined();
+  });
+
+  it('renderRunResult: AI: Debug button click invokes onOpenAIDebug exactly once', () => {
+    const titleEl = document.createElement('div');
+    const contentEl = document.createElement('div');
+    const onOpenAIDebug = vi.fn();
+    const failing = JSON.parse(JSON.stringify(runMultiCase)) as Record<string, unknown>;
+    failing.expected_code_answer = ['DIFFERENT', 'DIFFERENT'];
+    renderVerdict({ titleEl, contentEl, payload: failing, onOpenAIDebug });
+    const aiBtn = Array.from(contentEl.querySelectorAll('button')).find(
+      (b) => (b.textContent ?? '').trim() === 'AI: Debug',
+    );
+    expect(aiBtn).toBeDefined();
+    (aiBtn as HTMLButtonElement).click();
+    expect(onOpenAIDebug).toHaveBeenCalledTimes(1);
+  });
+
+  it('renderRunResult: all-pass sample run does NOT show AI: Debug button', () => {
+    const titleEl = document.createElement('div');
+    const contentEl = document.createElement('div');
+    const onOpenAIDebug = vi.fn();
+    renderVerdict({ titleEl, contentEl, payload: runMultiCase, onOpenAIDebug });
+    const aiBtn = Array.from(contentEl.querySelectorAll('button')).find(
+      (b) => (b.textContent ?? '').trim() === 'AI: Debug',
+    );
+    expect(aiBtn).toBeUndefined();
+  });
+
+  it('renderRunResult: WA without onOpenAIDebug callback does NOT render the button (defensive gate)', () => {
+    const titleEl = document.createElement('div');
+    const contentEl = document.createElement('div');
+    const failing = JSON.parse(JSON.stringify(runMultiCase)) as Record<string, unknown>;
+    failing.expected_code_answer = ['DIFFERENT', 'DIFFERENT'];
+    renderVerdict({ titleEl, contentEl, payload: failing });
+    const aiBtn = Array.from(contentEl.querySelectorAll('button')).find(
+      (b) => (b.textContent ?? '').trim() === 'AI: Debug',
+    );
+    expect(aiBtn).toBeUndefined();
+  });
+
+  it('renderRunErrorBlock: Run-side compile error shows AI: Debug button + click invokes callback', () => {
+    const titleEl = document.createElement('div');
+    const contentEl = document.createElement('div');
+    const onOpenAIDebug = vi.fn();
+    const runCompileError = {
+      status_code: 20,
+      status_msg: 'Compile Error',
+      compile_error: 'syntax error at line 1',
+      full_compile_error: 'syntax error at line 1\n  Solution.cpp:1:1',
+    };
+    renderVerdict({ titleEl, contentEl, payload: runCompileError, onOpenAIDebug });
+    const aiBtn = Array.from(contentEl.querySelectorAll('button')).find(
+      (b) => (b.textContent ?? '').trim() === 'AI: Debug',
+    );
+    expect(aiBtn).toBeDefined();
+    (aiBtn as HTMLButtonElement).click();
+    expect(onOpenAIDebug).toHaveBeenCalledTimes(1);
+  });
+});
