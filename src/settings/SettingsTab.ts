@@ -19,6 +19,13 @@ import { prettyName } from '../ai/types';
 
 // Phase 07 Plan 03 — model placeholders per provider, locked by 07-UI-SPEC.md
 // §"Copywriting Contract" (Model placeholders row).
+//
+// Phase 08.1 Plan 02 — Bedrock joins the exhaustive switch. The placeholder
+// returns '' because Bedrock's per-provider sub-form replaces the generic
+// "Model" row with a dedicated "Model ID" row inside renderAIProviderForm's
+// `case 'bedrock'` branch (the generic Model row is hidden when active is
+// 'bedrock'). The placeholder is referenced by the generic Model row only,
+// so the empty string here never reaches a UI surface for Bedrock.
 function modelPlaceholder(p: AIProvider): string {
   switch (p) {
     case 'anthropic': return 'claude-haiku-4-5';
@@ -26,6 +33,7 @@ function modelPlaceholder(p: AIProvider): string {
     case 'openrouter': return 'anthropic/claude-haiku-4.5';
     case 'ollama': return 'llama3.2';
     case 'custom': return '';
+    case 'bedrock': return '';
   }
 }
 

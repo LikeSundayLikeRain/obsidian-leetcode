@@ -28,6 +28,10 @@
 import { App, Modal, Setting } from 'obsidian';
 import type { AIProvider, ProviderConfig } from './types';
 import { prettyName } from './types';
+// Phase 08.1 Plan 02 — per-provider display URL helper. Bedrock substitutes
+// region into the regional endpoint format; other providers return cfg.baseUrl
+// verbatim (no behavior change for the existing 5 providers).
+import { getDisplayBaseUrl } from './displayBaseUrl';
 
 /**
  * Shared disclosure copy. Locked verbatim from 07-UI-SPEC §"Disclosure modal
@@ -156,7 +160,12 @@ export class AIDisclosureModal extends Modal {
 
     titleEl.setText(`Heads up: this will send data to ${prettyName(this.provider)}`);
 
-    const baseUrlText = this.cfg.baseUrl || '(no base URL configured yet)';
+    // Phase 08.1 Plan 02 — route through getDisplayBaseUrl so Bedrock renders
+    // the region-substituted regional endpoint (`https://bedrock-runtime.{region}.amazonaws.com`)
+    // instead of cfg.baseUrl (which is unused / empty for Bedrock). Other
+    // providers return cfg.baseUrl verbatim — no visible behavior change.
+    const baseUrlText =
+      getDisplayBaseUrl(this.provider, this.cfg) || '(no base URL configured yet)';
     contentEl.createEl('p', {
 
       text: `Active provider: ${prettyName(this.provider)} — ${baseUrlText}`,

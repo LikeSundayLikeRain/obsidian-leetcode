@@ -73,6 +73,11 @@ function makeFake(opts: {
     openrouter: opts.cfgs?.openrouter ?? makeCfg(),
     ollama: opts.cfgs?.ollama ?? makeCfg(),
     custom: opts.cfgs?.custom ?? makeCfg(),
+    // Phase 08.1 Plan 02 — Bedrock joins the locked provider map. The
+    // BedrockProviderConfig superset is structurally compatible with
+    // ProviderConfig (the inherited 4 fields are all present); the
+    // Bedrock-only fields are additive.
+    bedrock: opts.cfgs?.bedrock ?? makeCfg(),
   };
   const setSpy = vi.fn(async (p: AIProvider, cfg: ProviderConfig) => {
     cfgs[p] = { ...cfg };

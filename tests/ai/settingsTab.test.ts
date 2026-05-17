@@ -274,6 +274,13 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     openrouter: { apiKey: '', baseUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-haiku-4.5', disclosureAcknowledged: false },
     ollama: { apiKey: '', baseUrl: 'http://localhost:11434/v1', model: 'llama3.2', disclosureAcknowledged: false },
     custom: { apiKey: '', baseUrl: '', model: '', disclosureAcknowledged: false },
+    // Phase 08.1 Plan 02 — Bedrock joins the locked provider map. The
+    // BedrockProviderConfig superset includes `region/modelId/authMethod`
+    // plus 4 secret fields; only the inherited ProviderConfig fields are
+    // referenced by SettingsTab tests, so a minimal ProviderConfig shape
+    // satisfies the type — the cast widens for round-tripping cfg through
+    // settings.getProviderConfig.
+    bedrock: { apiKey: '', baseUrl: '', model: '', disclosureAcknowledged: false },
   };
   const merged: Record<AIProvider, ProviderConfig> = { ...defaultConfigs, ...(opts.configs ?? {}) } as Record<AIProvider, ProviderConfig>;
   let activeProvider: AIProvider | null = opts.activeProvider ?? null;
