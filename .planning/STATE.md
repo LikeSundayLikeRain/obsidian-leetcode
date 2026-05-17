@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
 status: planning
-stopped_at: Completed 07-06-PLAN.md (Phase 07 closed)
-last_updated: "2026-05-17T03:00:37.357Z"
+stopped_at: Phase 08.1 context gathered
+last_updated: "2026-05-17T03:15:11.245Z"
 last_activity: 2026-05-16
 progress:
   total_phases: 8
@@ -189,9 +189,9 @@ None yet — awaiting `/gsd-plan-phase 6`.
 
 ## Session Continuity
 
-Last session: 2026-05-16T05:23:10.036Z
-Stopped at: Completed 07-06-PLAN.md (Phase 07 closed)
-Resume file: None
+Last session: 2026-05-17T03:15:11.234Z
+Stopped at: Phase 08.1 context gathered
+Resume file: .planning/phases/08.1-streaming-transport-fix-bedrock-provider/08.1-CONTEXT.md
 
 ## Operator Next Steps
 
