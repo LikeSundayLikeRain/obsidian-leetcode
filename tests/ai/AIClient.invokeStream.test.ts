@@ -162,17 +162,34 @@ describe('Phase 08 AIClient.invokeStream — stream/fallback paths', () => {
     }
   });
 
-  it('fallback path returns { kind: "buffered", text, abortController } when obsidianFetch("stream") throws', async () => {
+  it('fallback path returns { kind: "buffered", text, abortController } when both streaming tiers throw', async () => {
+    // Phase 08.1 update: TIER 1 (native window.fetch) was added ABOVE the
+    // original obsidianFetch('stream') tier. To exercise the buffered
+    // fallback we must force BOTH streaming tiers to fail. We do that by
+    // (a) making window.fetch undefined so TIER 1's resolveAdapter ->
+    // streamInvoke throws on the synchronous fetcher composition / first
+    // streamInvoke call, and (b) keeping the obsidianFetch('stream') throw
+    // for TIER 2.
+    vi.stubGlobal('window', { ...window, fetch: undefined });
     obsidianFetchMock.mockImplementation((mode: string) => {
       if (mode === 'stream') {
         throw new Error('loadElectronNet failed');
       }
       return () => Promise.resolve(new Response(''));
     });
-    resolveAdapterMock.mockReturnValue({
-      probe: vi.fn(),
-      streamInvoke: vi.fn(),
-      bufferedInvoke: vi.fn(async () => ({ text: 'fallback-text' })),
+    // TIER 1 streamInvoke throws (native fetch undefined drives a TypeError
+    // when the AI SDK invokes the fetcher); TIER 3 path resolves the
+    // buffered adapter. We model this by throwing on the first resolveAdapter
+    // call and returning the buffered adapter on subsequent calls.
+    let calls = 0;
+    resolveAdapterMock.mockImplementation(() => {
+      calls++;
+      if (calls === 1) throw new TypeError('TIER 1 native fetch unavailable');
+      return {
+        probe: vi.fn(),
+        streamInvoke: vi.fn(),
+        bufferedInvoke: vi.fn(async () => ({ text: 'fallback-text' })),
+      };
     });
     const { AIClient } = await import('../../src/ai/AIClient');
     const settings = makeMockSettings({ active: 'openai' });
