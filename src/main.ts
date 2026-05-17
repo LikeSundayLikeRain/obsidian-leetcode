@@ -1093,25 +1093,28 @@ export default class LeetCodePlugin extends Plugin {
     // uses); on miss, fetch via the LeetCodeClient. Failures bail with a
     // Notice (the user can still attempt AI Debug — but we'd be sending an
     // empty problem statement, which buys nothing).
-    let detail = this.settings.getProblemDetail(slug);
-    if (!detail) {
+    // DetailCache hit (DetailCacheEntry shape — `.contentHtml`) OR fetch
+    // (LeetCodeProblemDetail shape — `.content`). The two field names differ;
+    // we read whichever is present so the prompt always gets the problem
+    // markdown, regardless of which path populated `detail`.
+    let problemHtml = '';
+    const cached = this.settings.getProblemDetail(slug);
+    if (cached?.contentHtml) {
+      problemHtml = cached.contentHtml;
+    } else {
       try {
         const fetched = await this.client.getProblemDetail(slug);
         if (!fetched) {
           new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
           return;
         }
-        // LeetCodeClient.getProblemDetail returns the LeetCodeProblemDetail
-        // shape; SettingsStore.getProblemDetail returns DetailCacheEntry.
-        // The two share contentHtml, so we use the fetched contentHtml
-        // directly — the cache will populate on the next NoteWriter open.
-        detail = fetched as unknown as DetailCacheEntry;
+        problemHtml = fetched.content ?? '';
       } catch {
         new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
         return;
       }
     }
-    const problemMd = htmlToMarkdown(detail.contentHtml ?? '');
+    const problemMd = htmlToMarkdown(problemHtml);
 
     // Step 4 — last verdict (may be undefined — buildDebugPrompt handles).
     const lastVerdict = this.lastVerdictStore.get(slug);

@@ -57,7 +57,15 @@ function loadElectronNet(): ElectronNetFetch {
     g.module?.require ??
     (typeof __webpack_require__ === 'function' ? __webpack_require__ : undefined);
   if (!fn) throw new Error('obsidianFetch(stream): Node require() unavailable from renderer.');
-  const electron = fn('electron') as ElectronModule;
+  const electron = fn('electron') as ElectronModule | undefined;
+  // Modern Obsidian builds with contextIsolation may load `electron` but expose
+  // it as the renderer-process subset (no `.net` — `net` is a main-process API).
+  // Fail fast here so AIClient.invokeStream's catch block falls through to the
+  // buffered (`requestUrl`) path before any streamText/electron.net.fetch call
+  // is made on undefined.
+  if (!electron || typeof electron.net?.fetch !== 'function') {
+    throw new Error('obsidianFetch(stream): electron.net.fetch unavailable in this renderer.');
+  }
   return electron.net;
 }
 
@@ -76,8 +84,15 @@ function loadElectronNet(): ElectronNetFetch {
  */
 export function obsidianFetch(mode: 'stream' | 'request'): FetchFn {
   if (mode === 'stream') {
+    // Eager probe — call loadElectronNet() at FACTORY time, not inside the
+    // returned closure. If we defer to the closure, streamText() has already
+    // returned a StreamTextResult by the time the throw happens (the iterator
+    // calls fetch lazily during consumption), and AIClient.invokeStream's
+    // catch can no longer fall through to the buffered path. Eager probe
+    // surfaces the failure synchronously here so the caller's try/catch
+    // around `obsidianFetch('stream')` actually catches it.
+    const net = loadElectronNet();
     return async (input, init) => {
-      const net = loadElectronNet();
       // T-07-02 mitigation: force credentials: 'omit' even if the caller
       // passes 'include'. obsidianFetch is the security boundary.
       const safeInit: RequestInit = { ...(init ?? {}), credentials: 'omit' };

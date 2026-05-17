@@ -1360,6 +1360,16 @@
 }
 .leetcode-ai-stream-body {
   padding: 0;
+  /* Override Obsidian's modal default `user-select: none` so users can copy
+     fragments of the AI response by selection (in addition to the explicit
+     Copy button on stream-end). Also relax cursor for affordance. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+.leetcode-ai-stream-body * {
+  user-select: text;
+  -webkit-user-select: text;
 }
 .leetcode-ai-stream-thinking {
   text-align: center;
