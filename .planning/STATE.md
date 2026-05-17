@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
-status: ready_to_plan
-stopped_at: Phase 08 complete (5/5) — ready to discuss Phase 09
-last_updated: 2026-05-16T05:35:40.520Z
+status: planning
+stopped_at: Completed 07-06-PLAN.md (Phase 07 closed)
+last_updated: "2026-05-17T03:00:37.357Z"
 last_activity: 2026-05-16
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 3
   total_plans: 18
   completed_plans: 18
-  percent: 43
+  percent: 38
 ---
 
 # Project State
@@ -93,6 +93,7 @@ Coverage: 39/39 v1.1 requirements mapped ✓
 - 2026-05-14 — v1.0 MVP shipped (Phases 01–05.5).
 - 2026-05-15 — v1.1 milestone opened: Contest, AI Coach, and Preview.
 - 2026-05-15 — v1.1 ROADMAP.md drafted with Phases 06–12; 39/39 requirements mapped to phases.
+- Phase 08.1 inserted after Phase 08: Streaming transport fix + Bedrock provider (URGENT)
 
 ### Decisions (v1.1-relevant carry-overs from v1.0)
 

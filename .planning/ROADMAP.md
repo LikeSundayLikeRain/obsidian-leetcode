@@ -148,6 +148,16 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 08.1: Streaming transport fix + Bedrock provider (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 08
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 08.1 to break down)
+
 ### Phase 09: AI ACed Review
 
 **Goal**: When a user opts in, an Accepted submission triggers a single combined-dimensions AI review that lands as a new locked-heading `## AI Review` section inside the problem note, idempotent on re-AC and re-runnable on demand.
