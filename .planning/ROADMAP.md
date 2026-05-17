@@ -153,12 +153,12 @@ Plans:
 **Goal:** Restore real token-by-token streaming to AI Debug by inserting a native `window.fetch()` primary tier above the existing `obsidianFetch('stream')` fallback (Phase 08's eager-probe always throws on Obsidian 1.10+ contextIsolation:true), AND add AWS Bedrock as a 5th first-class AI provider via `@ai-sdk/amazon-bedrock@4.0.107` with a 4-option auth dropdown (default credential chain / explicit access keys / SSO profile / Bedrock API key) — closing two URGENT carry-overs from Phase 08 dogfood.
 **Requirements**: AIPROV-04 (carry-over: streaming transport now lives), AIPROV-05 (preserved: native fetch confined to src/ai/ via new prelint+fs-walk gates), AIPROV-02 (extended: Bedrock secret fields use masked inputs + logger redaction), AIPROV-FUT-01 (forward-port: native Bedrock via AI SDK's vendored aws4fetch — softer than the v1.2-deferred hand-rolled SigV4)
 **Depends on:** Phase 08
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 08.1-01-PLAN.md — Streaming transport: native window.fetch() primary tier + LC-no-fetch leakage gate (prelint shell grep + runtime fs-walk regression).
+- [x] 08.1-01-PLAN.md — Streaming transport: native window.fetch() primary tier + LC-no-fetch leakage gate (prelint shell grep + runtime fs-walk regression).
 
 **Wave 2** *(blocked on Wave 1 completion — Bedrock UAT validates the new transport tier)*
 
