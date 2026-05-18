@@ -17,7 +17,7 @@
 //
 // Logger redaction for Copy payload on unknown verdicts (T-03-06-02 mitigation).
 
-import { Modal, Notice, setIcon, type App } from 'obsidian';
+import { Component, Modal, Notice, setIcon, type App } from 'obsidian';
 import type { RunCheckResponse, SubmitCheckResponse } from './types';
 import { renderVerdict } from './verdictModalRenderer';
 import { logger } from '../shared/logger';
@@ -35,10 +35,27 @@ export interface VerdictModalArgs {
    *  from onCopyFailingInput's fire-then-close) so AIStreamModal does NOT
    *  stack on top of a closing modal — T-08-05-T-stack mitigation. */
   onOpenAIDebug?: () => void;
+  /**
+   * Phase 09 Plan 03 (AIREV-01) — Called AFTER renderVerdict paints "Accepted!"
+   * to start the auto-review stream. The host (main.ts) provides the streaming
+   * implementation; VerdictModal provides the DOM container + Component lifecycle.
+   * Returns `{ abort, promise }` — abort cancels the stream (anti-zombie on
+   * modal close); promise resolves on natural completion or rejects on error.
+   * VerdictModal does NOT import AIClient or buildReviewPrompt (decoupled).
+   */
+  onStartReviewStream?: (
+    reviewAreaEl: HTMLElement,
+    component: Component,
+  ) => { abort: () => void; promise: Promise<void> };
 }
 
 export class VerdictModal extends Modal {
   private readonly args: VerdictModalArgs;
+
+  // Phase 09 — review stream lifecycle state.
+  private reviewAbort: (() => void) | null = null;
+  private reviewPromise: Promise<void> | null = null;
+  private reviewComponent: Component | null = null;
 
   constructor(app: App, args: VerdictModalArgs) {
     super(app);
@@ -59,6 +76,17 @@ export class VerdictModal extends Modal {
     if (this.isPending) {
       this.isPending = false;
       try { this.args.onCancel(); } catch { /* ignore — cleanup */ }
+    }
+    // Phase 09 — abort in-flight review stream (anti-zombie per Pitfall 2).
+    // If the review promise has not settled, abort ensures no vault write
+    // occurs after the modal is dismissed (D-11 posture: non-blocking failure).
+    if (this.reviewAbort) {
+      try { this.reviewAbort(); } catch { /* ignore — best-effort abort */ }
+      this.reviewAbort = null;
+    }
+    if (this.reviewComponent) {
+      try { this.reviewComponent.unload(); } catch { /* ignore */ }
+      this.reviewComponent = null;
     }
     const { contentEl } = this;
     if (contentEl && typeof (contentEl as unknown as { empty?: () => void }).empty === 'function') {
@@ -145,6 +173,14 @@ export class VerdictModal extends Modal {
     });
     // Primary-focus the Close button if the renderer exposed it.
     this.focusCloseButton();
+
+    // Phase 09 (AIREV-01) — start the review stream on AC when the host
+    // provides the callback. The callback is only supplied when
+    // autoAIReviewOnAC is enabled AND a provider is configured (gated in
+    // main.ts). The review area appears below the verdict chrome.
+    if (this.args.onStartReviewStream && this.isAccepted(res)) {
+      this.startReviewStream();
+    }
   }
 
   renderUnknown(payload: unknown, problemTitle: string): void {
@@ -177,6 +213,32 @@ export class VerdictModal extends Modal {
   }
 
   // ── Internal ───────────────────────────────────────────────────────────
+
+  /** Phase 09 — check if the terminal response is an Accepted submission. */
+  private isAccepted(res: TerminalResponse): boolean {
+    const r = res as Record<string, unknown>;
+    return typeof r.status_code === 'number' && r.status_code === 10;
+  }
+
+  /** Phase 09 (AIREV-01) — create the review area, start the host-provided
+   *  stream, and store abort + promise for lifecycle management. */
+  private startReviewStream(): void {
+    const reviewAreaEl = appendEl(this.contentEl, 'div', 'leetcode-ai-review-stream');
+    const component = new Component();
+    component.load();
+    this.reviewComponent = component;
+
+    const handle = this.args.onStartReviewStream!(reviewAreaEl, component);
+    this.reviewAbort = handle.abort;
+    this.reviewPromise = handle.promise;
+
+    // Await the promise — on rejection the host handles the Notice (D-11);
+    // VerdictModal leaves the modal in its current state.
+    handle.promise.catch(() => {
+      // Non-blocking: review failure does not affect the Accepted state.
+      // The host (main.ts) is responsible for surfacing the Notice.
+    });
+  }
 
   private clearPendingStateClass(): void {
     this.isPending = false;
