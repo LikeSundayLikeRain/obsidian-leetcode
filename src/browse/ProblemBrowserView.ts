@@ -1237,37 +1237,23 @@ export class ProblemBrowserView extends ItemView {
     };
   }
 
-  /**
-   * Handle contest finish: get snapshot, switch back to contest list.
-   * Plan 06 will wire ContestFinalizer here.
-   */
   private handleFinishContest(): void {
     const snapshot = this.plugin.contestSessionManager.finish();
     if (!snapshot) return;
 
-    // Plan 06 wires ContestFinalizer here. For now store snapshot on plugin
-    // for Plan 06 to consume.
-    (this.plugin as unknown as { _lastContestSnapshot: unknown })._lastContestSnapshot = snapshot;
-
     this.contestCallbacksWired = false;
     this.mode = 'contests';
-    new Notice('Contest complete! Summary will be written when finalization is wired.', 6000);
     void this.onOpen();
+    void (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(false);
   }
 
-  /**
-   * Handle contest abort: get snapshot with aborted flag, switch back to list.
-   */
   private handleAbortContest(): void {
     const snapshot = this.plugin.contestSessionManager.abort();
     if (!snapshot) return;
 
-    // Plan 06 wires ContestFinalizer here with aborted=true.
-    (this.plugin as unknown as { _lastContestSnapshot: unknown })._lastContestSnapshot = snapshot;
-
     this.contestCallbacksWired = false;
     this.mode = 'contests';
-    new Notice('Contest aborted. Summary will be written when finalization is wired.', 6000);
     void this.onOpen();
+    void (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(true);
   }
 }
