@@ -190,7 +190,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 08.2-01-PLAN.md — Rewrite awsCredentials.ts with canonical profile-resolution waterfall + new credentialProcess.ts (command parser, spawnSync runner, cache, concurrent-refresh coalescing).
+- [x] 08.2-01-PLAN.md — Rewrite awsCredentials.ts with canonical profile-resolution waterfall + new credentialProcess.ts (command parser, spawnSync runner, cache, concurrent-refresh coalescing).
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
