@@ -185,7 +185,16 @@ Plans:
   8. Stdout of `credential_process` is NEVER logged (it contains creds). Stderr is logged truncated to 200 chars for diagnostics. Logger redaction extension covers any new field names if introduced.
   9. Bundle stays under 1.2 MB ceiling (estimated <1 KB delta — pure JS extension, no new npm deps).
 
-**Plans**: TBD (target: 1–2 plans, ~half-day work)
+**Plans**: 2 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 08.2-01-PLAN.md — Rewrite awsCredentials.ts with canonical profile-resolution waterfall + new credentialProcess.ts (command parser, spawnSync runner, cache, concurrent-refresh coalescing).
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 08.2-02-PLAN.md — sessionToken field in types/adapter/shape-guard + Settings UI rename ("Profile name") + sessionToken input + helper text updates.
 
 **Out of scope (explicitly deferred)**:
 - `role_arn` + `source_profile` chains (assume-role) — needs `@aws-sdk/client-sts` (~150 KB bundle).
