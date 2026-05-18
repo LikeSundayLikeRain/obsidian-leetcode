@@ -332,5 +332,5 @@ Plans:
 | 09. AI ACed Review                       | v1.1      | 4/4 | Complete    | 2026-05-18 |
 | 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
 | 10.1. LC Virtual Contest API             | v1.1      | -/-            | Not Started | -           |
-| 11. AI Knowledge Graph                   | v1.1      | 0/3            | Planning    | -           |
+| 11. AI Knowledge Graph                   | v1.1      | 0/3            | Planned     | -           |
 | 12. Polish + Plugin-Store Re-submission  | v1.1      | -/-            | Not Started | -           |
