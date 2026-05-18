@@ -84,6 +84,10 @@ export interface PluginData {
    *  (T-05-02-01 mitigation). UI layer trims trailing slashes before set;
    *  setter accepts raw. */
   techniquesFolderOverride: string;
+  /** Phase 09 AIREV-01 — opt-in auto AI review on Accepted. Default false
+   *  (user must explicitly enable). Shape-guard collapses non-boolean to
+   *  false so corrupt data.json never enables AI calls. */
+  autoAIReviewOnAC: boolean;
 }
 
 /** Compound filter matching LC's "Match All/Any of the following" UI. Each
@@ -118,6 +122,7 @@ const DEFAULT_DATA: PluginData = {
   legacyBaseNoticeShown: false,
   autoBacklinksEnabled: true,  // D-21 default ON
   techniquesFolderOverride: '',  // D-15 '' = use derived default
+  autoAIReviewOnAC: false,  // AIREV-01 default OFF — user must opt in
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -323,6 +328,12 @@ export class SettingsStore {
       techniquesFolderOverride: typeof raw.techniquesFolderOverride === 'string'
         ? raw.techniquesFolderOverride
         : DEFAULT_DATA.techniquesFolderOverride,
+      // Phase 09 AIREV-01 — autoAIReviewOnAC shape-guard (T-09-04).
+      // Non-boolean raw (string "true", number, null, object) collapses to
+      // false — never enables AI calls from corrupt data.json.
+      autoAIReviewOnAC: typeof raw.autoAIReviewOnAC === 'boolean'
+        ? raw.autoAIReviewOnAC
+        : DEFAULT_DATA.autoAIReviewOnAC,
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -415,6 +426,16 @@ export class SettingsStore {
    *  the UI + shape-guard on load). */
   async setTechniquesFolderOverride(v: string): Promise<void> {
     this.data.techniquesFolderOverride = v;
+    await this.persist();
+  }
+
+  /** Phase 09 AIREV-01 — read the auto AI review on Accepted opt-in flag.
+   *  When false, no AI review is generated on AC. Default false. */
+  getAutoAIReviewOnAC(): boolean { return this.data.autoAIReviewOnAC; }
+
+  /** Phase 09 AIREV-01 — persist the auto AI review on Accepted opt-in flag. */
+  async setAutoAIReviewOnAC(value: boolean): Promise<void> {
+    this.data.autoAIReviewOnAC = value;
     await this.persist();
   }
 

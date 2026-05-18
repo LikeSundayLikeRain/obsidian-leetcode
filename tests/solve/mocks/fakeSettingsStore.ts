@@ -34,6 +34,9 @@ export interface FakeSettings {
   // Phase 5 POLISH-01 D-16 — auto-backlink toggle round-trip (Settings UI).
   getAutoBacklinksEnabled(): boolean;
   setAutoBacklinksEnabled(v: boolean): Promise<void>;
+  // Phase 09 AIREV-01 — auto AI review on Accepted toggle round-trip.
+  getAutoAIReviewOnAC(): boolean;
+  setAutoAIReviewOnAC(v: boolean): Promise<void>;
 }
 
 /** Optional seed values for `makeFakeSettingsStore`. Any field left undefined
@@ -126,6 +129,13 @@ export function makeFakeSettingsStore(overrides: FakeSettingsOverrides = {}): Fa
     },
     async setAutoBacklinksEnabled(v: boolean) {
       autoBacklinksEnabled = v;
+    },
+    // Phase 09 AIREV-01 — autoAIReviewOnAC round-trip.
+    getAutoAIReviewOnAC() {
+      return false;
+    },
+    async setAutoAIReviewOnAC(_v: boolean) {
+      // no-op in fake
     },
   };
 }

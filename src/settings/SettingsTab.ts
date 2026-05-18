@@ -173,6 +173,21 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       );
 
     // =============================
+    //   AI section (Phase 09 AIREV-01)
+    // =============================
+    new Setting(containerEl).setName('AI').setHeading();
+
+    new Setting(containerEl)
+      .setName('Auto AI review on Accept')
+      .setDesc('When enabled, an AI review is generated automatically each time you get Accepted.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getAutoAIReviewOnAC())
+        .onChange(async (value) => {
+          await this.plugin.settings.setAutoAIReviewOnAC(value);
+        }),
+      );
+
+    // =============================
     //   Knowledge Graph section (Phase 5 POLISH-01 D-14)
     // =============================
     // D-17: no Advanced / collapsible section — always visible.
