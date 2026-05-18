@@ -13,7 +13,9 @@ import { showSessionExpiredNotice } from '../solve/SessionExpiredNotice';
 import { FilterModal } from './FilterModal';
 import { ContestListService } from '../contest/ContestListService';
 import { ContestPreviewModal } from '../contest/ContestPreview';
-import type { CachedContest } from '../contest/types';
+import type { CachedContest, ContestProblemState } from '../contest/types';
+import { getRemainingMs } from '../contest/types';
+import { AbortContestModal } from '../contest/AbortContestModal';
 // WR-02: route all timers through the popout-aware helpers used by Throttle
 // so that timers on a view hosted in an Obsidian popout bind to the popout's
 // event loop, not the main window's.
@@ -104,6 +106,13 @@ export class ProblemBrowserView extends ItemView {
   private contestRenderedCount = 0;
   private static readonly CONTEST_PAGE_SIZE = 50;
   private static readonly CONTEST_SEARCH_DEBOUNCE_MS = 200;
+
+  // Phase 10 Plan 05 — Active contest timer header state
+  private timerDisplayEl: HTMLElement | null = null;
+  private timerPausedEl: HTMLElement | null = null;
+  private badgeEls: HTMLElement[] = [];
+  private progressFillEl: HTMLElement | null = null;
+  private contestCallbacksWired = false;
 
   constructor(leaf: WorkspaceLeaf, private readonly plugin: LeetCodePlugin) {
     super(leaf);
@@ -742,6 +751,13 @@ export class ProblemBrowserView extends ItemView {
       return;
     }
 
+    // Phase 10 Plan 05 — if a contest session is active, render the active
+    // contest UI (timer header + problem cards) instead of the contest list.
+    if (this.plugin.contestSessionManager.isActive()) {
+      this.renderActiveContest(root);
+      return;
+    }
+
     // Top bar: search + shuffle
     const topbar = root.createDiv({ cls: 'lc-topbar' });
 
@@ -949,6 +965,309 @@ export class ProblemBrowserView extends ItemView {
 
     // Re-render in contests mode to show active contest state
     this.mode = 'contests';
+    void this.onOpen();
+  }
+
+  // ─── Phase 10 Plan 05: Active contest UI ─────────────────────────────────────
+
+  /**
+   * Render the active contest dashboard: sticky timer header with countdown,
+   * verdict badges, progress bar, action buttons, and navigable problem cards.
+   */
+  private renderActiveContest(root: HTMLElement): void {
+    const session = this.plugin.contestSessionManager.getSession();
+    if (!session) return;
+
+    // Wire session manager callbacks once (persists across re-renders).
+    this.wireContestCallbacks();
+
+    const remaining = getRemainingMs(session);
+
+    // ─── Sticky timer header ───────────────────────────────────────────
+    const timerHeader = root.createDiv({ cls: 'leetcode-contest__timer' });
+
+    // Timer row: icon + display + badges
+    const timerRow = timerHeader.createDiv({ cls: 'leetcode-contest__timer-row' });
+
+    const timerIcon = timerRow.createSpan({ cls: 'leetcode-contest__timer-icon' });
+    setIcon(timerIcon, 'timer');
+
+    // Timer display with MM:SS
+    this.timerDisplayEl = timerRow.createDiv({
+      cls: 'leetcode-contest__timer-display',
+      attr: { 'aria-live': 'polite' },
+    });
+    this.updateTimerDisplay(remaining);
+
+    // Verdict badges
+    const badgesContainer = timerRow.createDiv({ cls: 'leetcode-contest__badges' });
+    this.badgeEls = [];
+    for (let i = 0; i < session.problems.length; i++) {
+      const problem = session.problems[i]!;
+      const badge = badgesContainer.createDiv({
+        cls: 'leetcode-contest__badge',
+        attr: { 'aria-label': `${problem.title}: ${problem.verdict}` },
+      });
+      this.renderBadgeIcon(badge, problem.verdict);
+      // Click badge → open problem in ContestSolveView
+      badge.addEventListener('click', () => {
+        void this.plugin.openContestProblem(i);
+      });
+      this.badgeEls.push(badge);
+    }
+
+    // Timer label
+    this.timerPausedEl = timerHeader.createDiv({ cls: 'leetcode-contest__timer-label' });
+    if (session.isPaused) {
+      this.timerPausedEl.setText('Paused');
+      this.timerPausedEl.addClass('leetcode-contest__timer-paused');
+    } else {
+      this.timerPausedEl.setText('remaining');
+    }
+
+    // Progress bar
+    const progressContainer = timerHeader.createDiv({ cls: 'leetcode-contest__progress' });
+    this.progressFillEl = progressContainer.createDiv({ cls: 'leetcode-contest__progress-fill' });
+    this.updateContestProgressBar(session);
+
+    // Action buttons
+    const actions = timerHeader.createDiv({ cls: 'leetcode-contest__actions' });
+
+    const pauseResumeBtn = actions.createEl('button', {
+      text: session.isPaused ? 'Resume' : 'Pause',
+      cls: 'leetcode-contest__btn',
+    });
+    pauseResumeBtn.addEventListener('click', () => {
+      if (this.plugin.contestSessionManager.getSession()?.isPaused) {
+        this.plugin.contestSessionManager.resume();
+      } else {
+        this.plugin.contestSessionManager.pause();
+      }
+      // Re-render to update button label and timer state
+      void this.onOpen();
+    });
+
+    const finishBtn = actions.createEl('button', {
+      text: 'Finish',
+      cls: 'leetcode-contest__btn',
+    });
+    finishBtn.addEventListener('click', () => {
+      this.handleFinishContest();
+    });
+
+    const abortBtn = actions.createEl('button', {
+      text: 'Abort',
+      cls: 'leetcode-contest__btn leetcode-contest__btn-abort',
+    });
+    abortBtn.addEventListener('click', () => {
+      const currentSession = this.plugin.contestSessionManager.getSession();
+      if (!currentSession) return;
+      const solvedCount = currentSession.problems.filter((p) => p.verdict === 'accepted').length;
+      const currentRemaining = getRemainingMs(currentSession);
+      new AbortContestModal(
+        this.app,
+        solvedCount,
+        currentSession.problems.length,
+        currentRemaining,
+        () => { this.handleAbortContest(); },
+      ).open();
+    });
+
+    // ─── Problem cards ─────────────────────────────────────────────────
+    const cardsContainer = root.createDiv({ cls: 'leetcode-contest__cards' });
+    for (let i = 0; i < session.problems.length; i++) {
+      const problem = session.problems[i]!;
+      this.renderProblemCard(cardsContainer, problem, i);
+    }
+  }
+
+  /**
+   * Render a single problem card in the active contest view.
+   * Click opens ContestSolveView for that problem.
+   */
+  private renderProblemCard(container: HTMLElement, problem: ContestProblemState, idx: number): void {
+    const isAc = problem.verdict === 'accepted';
+    const row = container.createDiv({
+      cls: `lc-row${isAc ? ' lc-row--solved' : ''}`,
+      attr: { role: 'option' },
+    });
+    row.setAttribute('aria-label',
+      `${String(idx + 1)}. ${problem.title}, ${this.diffLabel(problem.difficulty)}, ${problem.verdict}`);
+
+    // Title block
+    const titleBlock = row.createDiv({ cls: 'lc-row__titleblock' });
+    titleBlock.createSpan({ cls: 'lc-row__id', text: `${String(idx + 1)}. ` });
+    titleBlock.createSpan({ cls: 'lc-row__title', text: problem.title });
+
+    // Meta: difficulty + verdict chip
+    const meta = row.createDiv({ cls: 'lc-row__meta' });
+    const diffClass = this.diffLabel(problem.difficulty).toLowerCase();
+    meta.createSpan({
+      cls: `lc-row__diff lc-diff--${diffClass}`,
+      text: this.diffLabel(problem.difficulty),
+    });
+    meta.createSpan({
+      cls: `leetcode-contest__verdict-chip leetcode-contest__verdict-chip--${problem.verdict}`,
+      text: this.verdictLabel(problem.verdict),
+    });
+
+    row.addEventListener('click', () => {
+      void this.plugin.openContestProblem(idx);
+    });
+  }
+
+  /** Map numeric difficulty (1-3) to display label. */
+  private diffLabel(difficulty: number): string {
+    if (difficulty === 1) return 'Easy';
+    if (difficulty === 2) return 'Medium';
+    return 'Hard';
+  }
+
+  /** Map verdict enum to user-facing chip label. */
+  private verdictLabel(verdict: ContestProblemState['verdict']): string {
+    if (verdict === 'accepted') return 'Accepted';
+    if (verdict === 'attempted') return 'Attempted';
+    return 'Unsolved';
+  }
+
+  /**
+   * Render the correct icon in a verdict badge based on the problem's verdict.
+   */
+  private renderBadgeIcon(badge: HTMLElement, verdict: ContestProblemState['verdict']): void {
+    badge.empty();
+    badge.removeClass('leetcode-contest__badge--ac');
+    badge.removeClass('leetcode-contest__badge--failed');
+    badge.removeClass('leetcode-contest__badge--unsolved');
+
+    if (verdict === 'accepted') {
+      setIcon(badge, 'check-circle');
+      badge.addClass('leetcode-contest__badge--ac');
+    } else if (verdict === 'attempted') {
+      setIcon(badge, 'x-circle');
+      badge.addClass('leetcode-contest__badge--failed');
+    } else {
+      setIcon(badge, 'circle');
+      badge.addClass('leetcode-contest__badge--unsolved');
+    }
+  }
+
+  /**
+   * Update the timer display element text and color class.
+   */
+  private updateTimerDisplay(remainingMs: number): void {
+    if (!this.timerDisplayEl) return;
+    const minutes = Math.floor(remainingMs / 60000);
+    const seconds = Math.floor((remainingMs % 60000) / 1000);
+    this.timerDisplayEl.setText(
+      `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`,
+    );
+
+    // Color shifts: normal > 10min, warning 5-10min, critical < 5min
+    this.timerDisplayEl.removeClass('is-warning');
+    this.timerDisplayEl.removeClass('is-critical');
+    if (remainingMs < 5 * 60 * 1000) {
+      this.timerDisplayEl.addClass('is-critical');
+    } else if (remainingMs < 10 * 60 * 1000) {
+      this.timerDisplayEl.addClass('is-warning');
+    }
+  }
+
+  /**
+   * Update the progress bar fill width based on elapsed time proportion.
+   */
+  private updateContestProgressBar(session: { duration: number; startedAt: number; pausedDuration: number; isPaused: boolean; pausedAt: number | null }): void {
+    if (!this.progressFillEl) return;
+    const now = session.isPaused ? (session.pausedAt ?? Date.now()) : Date.now();
+    const elapsed = now - session.startedAt - session.pausedDuration;
+    const totalMs = session.duration * 1000;
+    const pct = Math.min(100, Math.max(0, (elapsed / totalMs) * 100));
+    this.progressFillEl.setCssStyles({ width: `${String(Math.round(pct))}%` });
+  }
+
+  /**
+   * Wire ContestSessionManager callbacks into the ProblemBrowserView for
+   * live updates: tick, expired, verdictChange.
+   * Only wires once — subsequent renderActiveContest calls skip.
+   */
+  private wireContestCallbacks(): void {
+    if (this.contestCallbacksWired) return;
+    this.contestCallbacksWired = true;
+
+    const manager = this.plugin.contestSessionManager;
+    // Patch the callbacks that were set at manager construction to include
+    // our live-update behavior. The manager's callbacks object is set once
+    // at construction. We need to hook into the same reference.
+    // The approach: save original callbacks, override with wrappers that
+    // call both the original and our UI updates.
+    const originalCallbacks = (manager as unknown as { callbacks: {
+      onTick: (remainingMs: number) => void;
+      onExpired: () => void;
+      onVerdictChange: (idx: number, verdict: ContestProblemState['verdict']) => void;
+    } }).callbacks;
+
+    const origTick = originalCallbacks.onTick;
+    const origExpired = originalCallbacks.onExpired;
+    const origVerdict = originalCallbacks.onVerdictChange;
+
+    originalCallbacks.onTick = (remainingMs: number) => {
+      origTick(remainingMs);
+      this.updateTimerDisplay(remainingMs);
+      // Also update progress bar
+      const session = manager.getSession();
+      if (session) this.updateContestProgressBar(session);
+    };
+
+    originalCallbacks.onExpired = () => {
+      origExpired();
+      this.handleFinishContest();
+    };
+
+    originalCallbacks.onVerdictChange = (idx: number, verdict: ContestProblemState['verdict']) => {
+      origVerdict(idx, verdict);
+      // Update the badge at this index
+      const badge = this.badgeEls[idx];
+      if (badge) {
+        const session = manager.getSession();
+        const problem = session?.problems[idx];
+        this.renderBadgeIcon(badge, verdict);
+        if (problem) {
+          badge.setAttribute('aria-label', `${problem.title}: ${verdict}`);
+        }
+      }
+    };
+  }
+
+  /**
+   * Handle contest finish: get snapshot, switch back to contest list.
+   * Plan 06 will wire ContestFinalizer here.
+   */
+  private handleFinishContest(): void {
+    const snapshot = this.plugin.contestSessionManager.finish();
+    if (!snapshot) return;
+
+    // Plan 06 wires ContestFinalizer here. For now store snapshot on plugin
+    // for Plan 06 to consume.
+    (this.plugin as unknown as { _lastContestSnapshot: unknown })._lastContestSnapshot = snapshot;
+
+    this.contestCallbacksWired = false;
+    this.mode = 'contests';
+    new Notice('Contest complete! Summary will be written when finalization is wired.', 6000);
+    void this.onOpen();
+  }
+
+  /**
+   * Handle contest abort: get snapshot with aborted flag, switch back to list.
+   */
+  private handleAbortContest(): void {
+    const snapshot = this.plugin.contestSessionManager.abort();
+    if (!snapshot) return;
+
+    // Plan 06 wires ContestFinalizer here with aborted=true.
+    (this.plugin as unknown as { _lastContestSnapshot: unknown })._lastContestSnapshot = snapshot;
+
+    this.contestCallbacksWired = false;
+    this.mode = 'contests';
+    new Notice('Contest aborted. Summary will be written when finalization is wired.', 6000);
     void this.onOpen();
   }
 }
