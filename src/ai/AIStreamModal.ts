@@ -91,6 +91,15 @@ export interface AIStreamModalArgs {
    * forgets the feature bullet.
    */
   disclosureCopy?: { willSend: readonly string[]; neverSends: readonly string[] };
+  /**
+   * Phase 09 Plan 04 (AIREV-05) — optional callback fired after the stream
+   * completes successfully (natural end, NOT abort/cancel). Receives the
+   * full accumulated buffer text. Used by `runAIReview` to write the review
+   * to the note via `vault.process` on manual re-run. The callback is NOT
+   * invoked on cancel/abort/error — callers should not rely on it for
+   * cleanup paths.
+   */
+  onStreamComplete?: (fullText: string) => Promise<void>;
 }
 
 /**
@@ -274,6 +283,17 @@ export class AIStreamModal extends Modal {
         cost = 0;
       }
       await this.args.aiClient.addCost(cost);
+      // Phase 09 Plan 04 — invoke onStreamComplete callback (vault write on
+      // manual re-run). Fires after cost ledger so the callback can safely
+      // assume accounting is done. Errors in the callback are swallowed to
+      // avoid disrupting the modal's own completion UX.
+      if (this.args.onStreamComplete) {
+        try {
+          await this.args.onStreamComplete(this.buffer);
+        } catch {
+          /* swallow — vault write failure must not break modal */
+        }
+      }
       this.swapToCompletionFooter();
       logger.debug('ai-stream.finish', {
         provider: this.args.provider,
@@ -321,6 +341,14 @@ export class AIStreamModal extends Modal {
       // AIClient.invokeStream's buffered shape (text: Promise<string> only).
       // Phase 09 may revisit if buffered usage becomes available.
       await this.args.aiClient.addCost(0);
+      // Phase 09 Plan 04 — onStreamComplete for buffered path (same as stream).
+      if (this.args.onStreamComplete) {
+        try {
+          await this.args.onStreamComplete(this.buffer);
+        } catch {
+          /* swallow — vault write failure must not break modal */
+        }
+      }
       this.swapToCompletionFooter();
       logger.debug('ai-stream.finish', {
         provider: this.args.provider,

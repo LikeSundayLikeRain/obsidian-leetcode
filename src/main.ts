@@ -40,7 +40,7 @@ import { AIClient } from './ai/AIClient';
 //     in their preview.
 import { AIStreamModal } from './ai/AIStreamModal';
 import { buildDebugPrompt } from './ai/buildDebugPrompt';
-import { DISCLOSURE_BASE_COPY, withDebugBullet } from './ai/disclosure';
+import { DISCLOSURE_BASE_COPY, withDebugBullet, withReviewBullet } from './ai/disclosure';
 import { LastVerdictStore } from './solve/lastVerdictStore';
 import { htmlToMarkdown } from './notes/htmlToMarkdown';
 // Phase 09 Plan 03 (AIREV-01) — auto-review on AC wiring.
@@ -507,6 +507,25 @@ export default class LeetCodePlugin extends Plugin {
         const slug = fm?.['lc-slug'];
         if (!isValidSlug(slug)) return false;
         if (!checking) { void this.openAIDebug(slug); }
+        return true;
+      },
+    });
+
+    // Phase 09 Plan 04 (AIREV-05) — palette command for manual AI Review
+    // re-run. Same editorCheckCallback gate shape as ai-debug: returns false
+    // for non-LC notes (hides from palette), returns true and dispatches
+    // runAIReview(slug, file) on confirm. Clean ID (no plugin-id prefix per
+    // FOUND-03), sentence-case name. NO default hotkey per project rule.
+    this.addCommand({
+      id: 'rerun-ai-review',
+      name: 'Re-run AI review on current note',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+        const slug = fm?.['lc-slug'];
+        if (!isValidSlug(slug)) return false;
+        if (!checking) { void this.runAIReview(slug, file); }
         return true;
       },
     });
@@ -1317,6 +1336,89 @@ export default class LeetCodePlugin extends Plugin {
       abort: () => abortController.abort(),
       promise,
     };
+  }
+
+  /**
+   * Phase 09 Plan 04 (AIREV-05) — manual AI Review re-run. Invoked by the
+   * `rerun-ai-review` palette command. Opens AIStreamModal with the review
+   * prompt; on stream completion, writes the review + attribution to the
+   * note via vault.process (idempotent — replaces existing ## AI Review).
+   *
+   * Notice paths:
+   *   - No active AI provider → "No AI provider configured. Open settings → AI."
+   *   - No code fence found → "No `## Code` block found."
+   *   - Problem details unavailable → "Problem details unavailable."
+   */
+  async runAIReview(slug: string, file: TFile): Promise<void> {
+    // Step 1 — gate on active provider (same pattern as openAIDebug Step 6).
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    // Step 2 — resolve the active MarkdownView for reading the editor body.
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const body = view.editor.getValue();
+
+    // Step 3 — extract first fenced code block.
+    const extracted = extractFirstFencedBlock(body);
+    if (!extracted) {
+      new Notice('No `## Code` block found. Add a fenced block with your solution.', 6000);
+      return;
+    }
+    const language = extracted.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+
+    // Step 4 — resolve problem markdown (DetailCache hit or fetch).
+    let problemHtml = '';
+    const cached = this.settings.getProblemDetail(slug);
+    if (cached?.contentHtml) {
+      problemHtml = cached.contentHtml;
+    } else {
+      try {
+        const fetched = await this.client.getProblemDetail(slug);
+        if (!fetched) {
+          new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+          return;
+        }
+        problemHtml = fetched.content ?? '';
+      } catch {
+        new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+        return;
+      }
+    }
+    const problemMd = htmlToMarkdown(problemHtml);
+
+    // Step 5 — assemble the review prompt (pure transform).
+    const prompt = buildReviewPrompt({ problemMd, code: extracted.code, language });
+
+    // Step 6 — open AIStreamModal with onStreamComplete callback for vault write.
+    new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      disclosureCopy: withReviewBullet(DISCLOSURE_BASE_COPY),
+      onStreamComplete: async (fullText: string) => {
+        // Build attribution line (D-03 format).
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const attributionLine = `*Reviewed by ${prettyName(provider)} (${providerCfg.model ?? 'unknown'}) — ${yyyy}-${mm}-${dd}*`;
+        const reviewContent = fullText + '\n\n' + attributionLine;
+
+        // D-20/D-21: vault.process is atomic + idempotent (replaces existing).
+        await this.app.vault.process(file, (noteBody) =>
+          mergeAIReviewSection(noteBody, reviewContent),
+        );
+      },
+    }).open();
   }
 
   /**
