@@ -74,11 +74,11 @@ Exceptions:
 | Role | Size | Weight | Line Height | Usage in Phase 10 |
 |------|------|--------|-------------|-------------------|
 | Body | 14px (`var(--font-ui-small)`) | 400 | 1.5 | Contest row descriptions, settings descriptions, modal body text |
-| Label | 12px | 500 | 1.4 | Contest row metadata (date, type), verdict badge labels, timer "remaining" label |
+| Label | 12px | 400 | 1.4 | Contest row metadata (date, type), verdict badge labels, timer "remaining" label |
 | Heading | 18px | 600 | 1.3 | Contest title in preview/active header, summary note file title in palette |
 | Timer | 20px (`var(--font-monospace)`) | 600 | 1.2 | Countdown `MM:SS` display — monospace for stable digit width |
 
-**Two primary weights:** 400 (regular) for body + 600 (semibold) for headings and timer. 500 (medium) inherited from v1.0 chip/label precedent.
+**Two weights only:** 400 (regular) for body and labels + 600 (semibold) for headings and timer. Labels at 12px/400 read as subordinate metadata without needing a distinct weight — their smaller size provides sufficient visual differentiation from 14px body text.
 
 **Monospace for timer:** The countdown display uses `font-variant-numeric: tabular-nums` combined with `var(--font-monospace)` to prevent jitter as digits change (same pattern as `.lc-row__acrate` at `styles.css:175`).
 
@@ -550,7 +550,7 @@ All new CSS scoped under `.leetcode-contest` (contest-specific surfaces). Mode t
 .leetcode-browser .lc-contest-row__title {
   flex: 1 1 auto;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--text-normal);
   overflow: hidden;
   text-overflow: ellipsis;
