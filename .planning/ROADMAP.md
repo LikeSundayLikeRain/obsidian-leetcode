@@ -33,7 +33,7 @@ Full milestone detail: [.planning/milestones/v1.0-ROADMAP.md](milestones/v1.0-RO
 - [x] **Phase 08.1: Streaming transport fix + Bedrock provider** *(INSERTED)* — Native `window.fetch()` primary tier; AWS Bedrock as 5th provider with 4-option auth. (completed 2026-05-17)
 - [x] **Phase 08.2: Bedrock canonical default-chain + credential_process auto-refresh** *(INSERTED)* — Honor `AWS_PROFILE` / `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE`; read `~/.aws/config`'s `[profile X]` syntax; resolve `credential_process` with in-memory cache + auto-refresh on `Expiration`. (completed 2026-05-18)
 - [x] **Phase 09: AI ACed Review** — First AI vault write to new locked `## AI Review` H2; opt-in auto-run; idempotent on re-AC; daily cost cap; manual re-run command. (completed 2026-05-18)
-- [ ] **Phase 10: Contest (virtual + analysis)** — Past picker + Surprise me; persisted timer; 4 problem notes with `lc-contest-id`; status-bar UI; post-contest summary note.
+- [x] **Phase 10: Contest (virtual + analysis)** — Past picker + Surprise me; persisted timer; 4 problem notes with `lc-contest-id`; status-bar UI; post-contest summary note. (completed 2026-05-18)
 - [ ] **Phase 11: AI Knowledge Graph** — 22-pattern classifier; cluster hub notes; lazy-on-AC migration of `## Techniques`; cross-cluster `## Related Variants`; flagged look-ahead edges.
 - [ ] **Phase 12: Polish + Plugin-Store Re-submission** — Final README/network audit, version bump 1.1.0, manifest re-validation, GitHub release artifacts; opt-in batch migration UI as stretch goal.
 
@@ -315,6 +315,6 @@ Plans:
 | 07. AI Provider Foundation               | v1.1      | 8/8 | Complete    | 2026-05-16 |
 | 08. AI Debug                             | v1.1      | 5/5 | Complete    | 2026-05-16 |
 | 09. AI ACed Review                       | v1.1      | 4/4 | Complete    | 2026-05-18 |
-| 10. Contest (virtual + analysis)         | v1.1      | 0/7            | Planning    | -           |
+| 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
 | 12. Polish + Plugin-Store Re-submission  | v1.1      | -/-            | Not Started | -           |
