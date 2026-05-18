@@ -305,6 +305,8 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     setProviderConfig: vi.fn(async (p: AIProvider, cfg: ProviderConfig) => {
       merged[p] = cfg;
     }),
+    getAutoAIReviewOnAC: () => false,
+    setAutoAIReviewOnAC: vi.fn(async (_v: boolean) => undefined),
   };
 
   // Phase 07 Plan 04 — Settings Test connection button delegates to the
