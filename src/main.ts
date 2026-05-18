@@ -19,7 +19,7 @@
 // This keeps the Plan 05 orchestrator untouched (its public API is just
 // submit/cancel/isInFlight) while still satisfying Plan 07's user-facing
 // contract (pending → verdict / abort / timeout).
-import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { Component, MarkdownRenderer, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SettingsStore } from './settings/SettingsStore';
 // Phase 08 Plan 04 — type-only import; openAIDebug coerces a freshly-fetched
@@ -43,6 +43,10 @@ import { buildDebugPrompt } from './ai/buildDebugPrompt';
 import { DISCLOSURE_BASE_COPY, withDebugBullet } from './ai/disclosure';
 import { LastVerdictStore } from './solve/lastVerdictStore';
 import { htmlToMarkdown } from './notes/htmlToMarkdown';
+// Phase 09 Plan 03 (AIREV-01) — auto-review on AC wiring.
+import { buildReviewPrompt } from './ai/buildReviewPrompt';
+import { mergeAIReviewSection } from './ai/mergeAIReviewSection';
+import { estimateCostUsd } from './ai/pricing';
 // Phase 07 Plan 04 — `prettyName` provides the verbatim brand string for
 // every Test connection Notice. `AIProvider` + `ProbeResult` are imported as
 // types only (no runtime cost). The aiProbeInflight Map debounces concurrent
@@ -138,7 +142,7 @@ import {
   type AbortLike,
   type TerminalCheckResponse,
 } from './solve/pollingOrchestrator';
-import { setWindowTimeout } from './shared/timers';
+import { setWindowTimeout, clearWindowTimeout, type TimerHandle } from './shared/timers';
 import { logger } from './shared/logger';
 import type { SubmitCheckResponse, RunCheckResponse } from './solve/types';
 
@@ -1164,6 +1168,158 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /**
+   * Phase 09 Plan 03 (AIREV-01) — host implementation for the auto-review
+   * stream. Invoked by VerdictModal's onStartReviewStream callback after
+   * "Accepted!" renders. Assembles the prompt, calls AIClient.invokeStream,
+   * streams chunks into reviewAreaEl via debounced MarkdownRenderer.render,
+   * and writes the completed review to the note via vault.process.
+   *
+   * Ordering (D-07, D-13, Pitfall 1): knowledgeGraph.onAccepted has already
+   * completed by the time VerdictModal calls this callback (it fires after
+   * renderVerdict which is called after the AC gate awaits onAccepted).
+   *
+   * Anti-zombie (Pitfall 2): VerdictModal.onClose calls abort() on the
+   * returned handle — if the modal closes mid-stream, vault.process is
+   * never called.
+   */
+  private startAutoReview(
+    ctx: { file: TFile; slug: string; title: string; currentBody: () => string },
+    reviewAreaEl: HTMLElement,
+    component: Component,
+  ): { abort: () => void; promise: Promise<void> } {
+    const abortController = new AbortController();
+    const RENDER_DEBOUNCE_MS = 100;
+
+    const promise = (async () => {
+      // Step 1 — resolve problem markdown for prompt assembly.
+      let problemHtml = '';
+      const cached = this.settings.getProblemDetail(ctx.slug);
+      if (cached?.contentHtml) {
+        problemHtml = cached.contentHtml;
+      } else {
+        try {
+          const fetched = await this.client.getProblemDetail(ctx.slug);
+          problemHtml = fetched?.content ?? '';
+        } catch {
+          problemHtml = '';
+        }
+      }
+      const problemMd = htmlToMarkdown(problemHtml);
+
+      // Step 2 — extract code from the note body at submit time.
+      const body = ctx.currentBody();
+      const extracted = extractFirstFencedBlock(body);
+      const code = extracted?.code ?? '';
+      const language = extracted?.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+
+      // Step 3 — assemble the prompt.
+      const prompt = buildReviewPrompt({ problemMd, code, language });
+
+      // Step 4 — resolve provider (already gated at modal construction).
+      const provider = this.settings.getActiveAIProvider()!;
+      const providerCfg = this.settings.getProviderConfig(provider);
+
+      // Step 5 — invoke the AI stream. Disclosure gate fires automatically
+      // inside AIClient.invokeStream via requireAIDisclosure (Phase 07).
+      const handle = await this.aiClient.invokeStream({
+        prompt,
+        stream: true,
+        signal: abortController.signal,
+      });
+
+      // Step 6 — consume stream / buffered response.
+      let buffer = '';
+      let renderTimer: TimerHandle | null = null;
+
+      const scheduleRender = (): void => {
+        if (renderTimer != null) return;
+        renderTimer = setWindowTimeout(() => {
+          renderTimer = null;
+          void flushRender();
+        }, RENDER_DEBOUNCE_MS);
+      };
+
+      const flushRender = async (): Promise<void> => {
+        if (renderTimer != null) {
+          clearWindowTimeout(renderTimer);
+          renderTimer = null;
+        }
+        // Empty + re-render (same pattern as AIStreamModal).
+        while (reviewAreaEl.firstChild) reviewAreaEl.removeChild(reviewAreaEl.firstChild);
+        await MarkdownRenderer.render(this.app, buffer, reviewAreaEl, '', component);
+      };
+
+      if (handle.kind === 'stream') {
+        const textStream = (
+          handle.result as unknown as { textStream: AsyncIterable<string> }
+        ).textStream;
+        for await (const chunk of textStream) {
+          if (abortController.signal.aborted) throw new Error('aborted');
+          if (typeof chunk !== 'string' || chunk.length === 0) continue;
+          buffer += chunk;
+          scheduleRender();
+        }
+        // Natural completion — flush final render.
+        await flushRender();
+
+        // Cost ledger.
+        let cost = 0;
+        try {
+          const usage = await (
+            handle.result as unknown as {
+              usage: PromiseLike<{ inputTokens?: number; outputTokens?: number }>;
+            }
+          ).usage;
+          if (usage) {
+            cost = estimateCostUsd(providerCfg.model ?? '', {
+              inputTokens: usage.inputTokens ?? 0,
+              outputTokens: usage.outputTokens ?? 0,
+            });
+          }
+        } catch {
+          cost = 0;
+        }
+        await this.aiClient.addCost(cost);
+      } else {
+        // Buffered fallback — await text, render once.
+        const text = await handle.text;
+        if (abortController.signal.aborted) throw new Error('aborted');
+        buffer = text;
+        await flushRender();
+        await this.aiClient.addCost(0);
+      }
+
+      // Step 7 — write review to note via vault.process (D-20, D-21).
+      // Build attribution line (D-03): local date via getFullYear/getMonth/getDate.
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const attributionLine = `*Reviewed by ${prettyName(provider)} (${providerCfg.model ?? 'unknown'}) — ${yyyy}-${mm}-${dd}*`;
+      const reviewContent = buffer + '\n\n' + attributionLine;
+
+      await this.app.vault.process(ctx.file, (noteBody) =>
+        mergeAIReviewSection(noteBody, reviewContent),
+      );
+    })().catch((err) => {
+      // Anti-zombie: if aborted (modal closed), silently swallow.
+      if (abortController.signal.aborted) {
+        void this.aiClient.addCost(0);
+        return;
+      }
+      // D-11: non-blocking failure — subtle Notice, no vault write.
+      const reason = err instanceof Error ? err.message : String(err);
+      new Notice(`AI review skipped — ${reason.slice(0, 100)}`, 4000);
+      void this.aiClient.addCost(0);
+    });
+
+    return {
+      abort: () => abortController.abort(),
+      promise,
+    };
+  }
+
+  /**
    * Phase 08 Plan 04 (AIDBG-01) — host method invoked by the fence-row
    * "AI: Debug" button (via the CodeBlockButtonRowHost interface). Resolves
    * the active MarkdownView's lc-slug frontmatter, validates it, then
@@ -1220,6 +1376,14 @@ export default class LeetCodePlugin extends Plugin {
       // it stays correct even if the user navigates away while the verdict
       // is rendering. VerdictModal handles the close-then-fire ordering.
       onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
+      // Phase 09 Plan 03 (AIREV-01) — auto-review on AC. Gates on BOTH
+      // autoAIReviewOnAC toggle AND an active provider being configured.
+      // The callback is invoked by VerdictModal AFTER renderVerdict paints
+      // "Accepted!" — the host handles prompt assembly, AIClient.invokeStream,
+      // buffer accumulation, debounced render, and vault.process write.
+      onStartReviewStream: this.settings.getAutoAIReviewOnAC() && this.settings.getActiveAIProvider()
+        ? (reviewAreaEl, component) => this.startAutoReview(ctx, reviewAreaEl, component)
+        : undefined,
     });
     modal.open();
 
