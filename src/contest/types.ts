@@ -48,15 +48,10 @@ export interface ContestSession {
 /**
  * Compute remaining contest time from epoch math (RESEARCH Pattern 2).
  * Pure function — no I/O, no side effects. Handles both paused and running states.
- *
- * When paused: elapsed = pausedAt - startedAt - pausedDuration
- * When running: elapsed = now - startedAt - pausedDuration
- * Remaining = max(0, duration*1000 - elapsed)
  */
 export function getRemainingMs(session: ContestSession): number {
-  const elapsed = session.isPaused
-    ? (session.pausedAt! - session.startedAt - session.pausedDuration)
-    : (Date.now() - session.startedAt - session.pausedDuration);
-  const remaining = (session.duration * 1000) - elapsed;
+  const now = session.isPaused ? session.pausedAt! : Date.now();
+  const elapsed = now - session.startedAt - session.pausedDuration;
+  const remaining = session.duration * 1000 - elapsed;
   return Math.max(0, remaining);
 }
