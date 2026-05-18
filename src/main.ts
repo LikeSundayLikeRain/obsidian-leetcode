@@ -40,7 +40,7 @@ import { AIClient } from './ai/AIClient';
 //     in their preview.
 import { AIStreamModal } from './ai/AIStreamModal';
 import { buildDebugPrompt } from './ai/buildDebugPrompt';
-import { DISCLOSURE_BASE_COPY, withDebugBullet, withReviewBullet } from './ai/disclosure';
+import { DISCLOSURE_BASE_COPY, withDebugBullet, withReviewBullet, withContestAnalysisBullet } from './ai/disclosure';
 import { LastVerdictStore } from './solve/lastVerdictStore';
 import { htmlToMarkdown } from './notes/htmlToMarkdown';
 // Phase 09 Plan 03 (AIREV-01) — auto-review on AC wiring.
@@ -152,6 +152,14 @@ import {
   ContestSolveView,
   CONTEST_SOLVE_VIEW_TYPE,
 } from './contest/ContestSolveView';
+// Phase 10 Plan 07 — contest integration wiring (finalizer, AI analysis,
+// list service, preview modal, abort modal).
+import { finalizeContest } from './contest/ContestFinalizer';
+import { ContestListService } from './contest/ContestListService';
+import { ContestPreviewModal } from './contest/ContestPreview';
+import { AbortContestModal } from './contest/AbortContestModal';
+import { buildContestAnalysisPrompt } from './contest/buildContestAnalysisPrompt';
+import { mergeAIContestAnalysisSection } from './contest/mergeAIContestAnalysisSection';
 
 /** Shape returned by getActiveProblemContext — the minimum info every Phase 3
  *  command needs: the TFile (used by RunModal / submit / starter-code paths),
@@ -204,9 +212,13 @@ export default class LeetCodePlugin extends Plugin {
 
   // Phase 10 Plan 03 — Contest session manager. Manages the contest lifecycle
   // state machine (start/pause/resume/abort/finish) with epoch-based timer.
-  // Constructed in onload after settings. The callbacks (onTick, onExpired,
-  // onVerdictChange) are no-ops initially — Plan 04 wires the real handlers.
+  // Constructed in onload after settings. Plan 07 wires the real callbacks.
   contestSessionManager!: ContestSessionManager;
+
+  // Phase 10 Plan 07 — Contest list service. Constructed in onload after client
+  // + settings. Provides refresh/search/surpriseMe for ProblemBrowserView's
+  // contest mode and the `start-random-contest` palette command.
+  contestListService!: ContestListService;
 
   // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
   // AIProvider; values are the in-flight probe Promise. Cleared in the
@@ -334,18 +346,30 @@ export default class LeetCodePlugin extends Plugin {
     // onunload(). Order: ephemeralTabs → aiClient → lastVerdictStore.
     this.lastVerdictStore = new LastVerdictStore();
 
-    // Step 5.11 — Phase 10 Plan 03 — ContestSessionManager. State machine for
-    // contest lifecycle (start/pause/resume/abort/finish). Callbacks are no-ops
-    // initially — Plan 04 wires the real onTick/onExpired/onVerdictChange
-    // handlers that drive the timer UI in ProblemBrowserView.
+    // Step 5.10 — Phase 10 Plan 07 — ContestListService. Provides
+    // refresh/search/surpriseMe for the start-random-contest palette command.
+    // ProblemBrowserView constructs its own instance (Plan 03 pattern) so this
+    // plugin-level instance is only for the palette command surface.
+    this.contestListService = new ContestListService(this.client, this.settings);
+
+    // Step 5.11 — Phase 10 Plan 03 + Plan 07 — ContestSessionManager. State
+    // machine for contest lifecycle (start/pause/resume/abort/finish). Plan 07
+    // wires the real callbacks: onExpired triggers finalization, onTick and
+    // onVerdictChange are display-layer concerns handled by ProblemBrowserView's
+    // internal polling of getSession().
     this.contestSessionManager = new ContestSessionManager(
       this.settings,
       {
-        onTick: () => { /* Plan 04 wires real handler */ },
-        onExpired: () => { /* Plan 04 wires real handler */ },
-        onVerdictChange: () => { /* Plan 04 wires real handler */ },
+        onTick: () => { /* ProblemBrowserView polls getSession() for display */ },
+        onExpired: () => { void this.handleContestEnd(false); },
+        onVerdictChange: () => { /* ProblemBrowserView polls getSession() for badge updates */ },
       },
     );
+
+    // Step 5.12 — Phase 10 Plan 07 — restore any active contest session from
+    // PluginData. Resumes tick if session is still running; fires onExpired if
+    // the contest timed out while the plugin was unloaded.
+    this.contestSessionManager.restore();
 
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
@@ -620,6 +644,62 @@ export default class LeetCodePlugin extends Plugin {
       },
     });
 
+    // ── Phase 10 Plan 07 contest command set (4 commands) ────────────────
+    // All IDs: no plugin-id prefix, no 'command' substring, no hotkey.
+    // Per D-03: start-random-contest from palette.
+    this.addCommand({
+      id: 'start-random-contest',
+      name: 'Start random contest',
+      callback: () => { void this.handleStartRandomContest(); },
+    });
+
+    // Per CONTEST-06: pause/resume toggle.
+    this.addCommand({
+      id: 'pause-contest',
+      name: 'Pause contest',
+      callback: () => {
+        const session = this.contestSessionManager.getSession();
+        if (!session) return;
+        if (session.isPaused) {
+          this.contestSessionManager.resume();
+          new Notice('Contest resumed.', 3000);
+        } else {
+          this.contestSessionManager.pause();
+          new Notice('Contest paused.', 3000);
+        }
+      },
+    });
+
+    // Per CONTEST-06: abort with confirmation modal (D-07).
+    this.addCommand({
+      id: 'abort-contest',
+      name: 'Abort contest',
+      callback: () => {
+        if (!this.contestSessionManager.isActive()) return;
+        const session = this.contestSessionManager.getSession();
+        if (!session) return;
+        new AbortContestModal(this.app, session, () => {
+          void this.handleContestEnd(true);
+        }).open();
+      },
+    });
+
+    // Per D-20: manual AI contest analysis on a summary note.
+    // editorCheckCallback gates on lc-contest-id frontmatter (T-10-14 mitigation).
+    this.addCommand({
+      id: 'generate-contest-analysis',
+      name: 'Generate contest analysis',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+        if (!fm?.['lc-contest-id']) return false;
+        if (!checking) { void this.handleManualContestAnalysis(file); }
+        return true;
+      },
+    });
+
     // Step 6d — settings tab.
     this.addSettingTab(new LeetCodeSettingTab(this.app, this));
 
@@ -819,6 +899,216 @@ export default class LeetCodePlugin extends Plugin {
       state: { problemIdx },
     });
     await workspace.revealLeaf(leaf);
+  }
+
+  // ── Phase 10 Plan 07 contest integration helpers ─────────────────────
+
+  /**
+   * Phase 10 Plan 07 — handle contest end (timer expired or user abort).
+   * Calls ContestFinalizer to write problem notes + summary, then optionally
+   * triggers AI analysis when the toggle is ON and a provider is configured.
+   * Closes any open ContestSolveView leaves.
+   */
+  private async handleContestEnd(aborted: boolean): Promise<void> {
+    const session = aborted
+      ? this.contestSessionManager.abort()
+      : this.contestSessionManager.finish();
+    if (!session) return;
+
+    let summaryPath: string;
+    try {
+      summaryPath = await finalizeContest({
+        session,
+        aborted,
+        app: this.app,
+        settings: this.settings,
+        noteWriter: this.notes,
+      });
+    } catch (err) {
+      logger.debug('contest.finalize: failed', err);
+      new Notice('Contest finalization failed. Check the console for details.', 6000);
+      return;
+    }
+
+    // Notice per UI-SPEC: context-sensitive text.
+    if (aborted) {
+      new Notice(`Contest aborted. Summary written to ${summaryPath}.`, 4000);
+    } else {
+      new Notice(`Time’s up! Contest ended. Summary written to ${summaryPath}.`, 4000);
+    }
+
+    // Close any open ContestSolveView leaves.
+    const leaves = this.app.workspace.getLeavesOfType(CONTEST_SOLVE_VIEW_TYPE);
+    for (const leaf of leaves) { leaf.detach(); }
+
+    // Auto AI contest analysis (D-20): gated on toggle + active provider.
+    if (this.settings.getAutoAIContestAnalysis() && this.settings.getActiveAIProvider()) {
+      void this.runContestAnalysis(summaryPath, session);
+    }
+  }
+
+  /**
+   * Phase 10 Plan 07 — run AI contest analysis (auto or manual).
+   * Opens AIStreamModal with onStreamComplete callback writing the analysis
+   * to the summary note via vault.process + mergeAIContestAnalysisSection.
+   */
+  private async runContestAnalysis(summaryPath: string, session: import('./contest/types').ContestSession): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(summaryPath);
+    if (!(file instanceof TFile)) {
+      new Notice('Summary note not found — cannot generate contest analysis.', 4000);
+      return;
+    }
+
+    // Gate on active provider.
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    // Build prompt from session data.
+    const DIFFICULTY_MAP: Record<number, string> = { 1: 'Easy', 2: 'Medium', 3: 'Hard' };
+    const mappedProblems = session.problems.map((p) => {
+      let timeToSolveMin: number | null = null;
+      if (p.solvedAt !== null) {
+        // Compute actual solving time: solvedAt - startedAt - pausedDuration at solve time
+        // Simplified: use the overall session pausedDuration as an approximation.
+        const solveElapsed = p.solvedAt - session.startedAt - session.pausedDuration;
+        timeToSolveMin = Math.max(1, Math.round(solveElapsed / 60000));
+      }
+      return {
+        slug: p.slug,
+        difficulty: DIFFICULTY_MAP[p.difficulty] ?? 'Unknown',
+        verdict: p.verdict,
+        timeToSolveMin,
+        code: p.code,
+        language: p.language,
+      };
+    });
+
+    const prompt = buildContestAnalysisPrompt({
+      contestTitle: session.contestTitle,
+      contestType: session.contestType,
+      durationMin: Math.round(session.duration / 60),
+      problems: mappedProblems,
+    });
+
+    // Open AIStreamModal with onStreamComplete writing via vault.process.
+    new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      title: `Contest analysis — ${prettyName(provider)}`,
+      disclosureCopy: withContestAnalysisBullet(DISCLOSURE_BASE_COPY),
+      onStreamComplete: async (fullText: string) => {
+        // Build attribution line.
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const attributionLine = `*Analyzed by ${prettyName(provider)} (${providerCfg.model ?? 'unknown'}) — ${yyyy}-${mm}-${dd}*`;
+        const analysisContent = fullText + '\n\n' + attributionLine;
+
+        await this.app.vault.process(file, (body) =>
+          mergeAIContestAnalysisSection(body, analysisContent),
+        );
+        new Notice(`Contest analysis written to ${summaryPath}.`, 4000);
+      },
+    }).open();
+  }
+
+  /**
+   * Phase 10 Plan 07 — palette command: Start random contest.
+   * Calls ContestListService.surpriseMe() and opens ContestPreviewModal on success.
+   */
+  private async handleStartRandomContest(): Promise<void> {
+    const contest = await this.contestListService.surpriseMe();
+    if (!contest) {
+      new Notice('No contests available. Check your connection or try again.', 4000);
+      return;
+    }
+    new ContestPreviewModal(this.app, contest, this.client, async (questions) => {
+      // Start the contest session via the session manager.
+      this.contestSessionManager.start({
+        contestSlug: contest.slug,
+        contestTitle: contest.title,
+        contestType: contest.type,
+        duration: contest.duration,
+        problems: questions.map((q) => ({
+          slug: q.title_slug,
+          title: q.title,
+          credit: q.credit,
+          difficulty: q.difficulty,
+        })),
+      });
+      new Notice(`Contest started: ${contest.title}`, 3000);
+    }).open();
+  }
+
+  /**
+   * Phase 10 Plan 07 — manual contest analysis on a summary note.
+   * Reads lc-contest-id from frontmatter, reconstructs session data from
+   * the note's frontmatter fields, and runs AI analysis.
+   */
+  private async handleManualContestAnalysis(file: TFile): Promise<void> {
+    // Read frontmatter to reconstruct a minimal session for prompt building.
+    const cache = this.app.metadataCache.getFileCache(file);
+    const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+    if (!fm) return;
+
+    const contestTitle = (fm['lc-contest-id'] as string) ?? 'Unknown Contest';
+    const contestType = (fm['lc-contest-type'] as 'weekly' | 'biweekly') ?? 'weekly';
+    const durationMin = typeof fm['duration'] === 'number' ? fm['duration'] : 90;
+
+    // Reconstruct problems from frontmatter 'problems' array if available.
+    const problemSlugs = Array.isArray(fm['problems']) ? fm['problems'] as string[] : [];
+    const problems = problemSlugs.map((slug) => ({
+      slug: typeof slug === 'string' ? slug : String(slug),
+      difficulty: 'Unknown',
+      verdict: 'unknown',
+      timeToSolveMin: null as number | null,
+      code: '',
+      language: '',
+    }));
+
+    // Gate on active provider.
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    const prompt = buildContestAnalysisPrompt({
+      contestTitle,
+      contestType,
+      durationMin,
+      problems,
+    });
+
+    new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      title: `Contest analysis — ${prettyName(provider)}`,
+      disclosureCopy: withContestAnalysisBullet(DISCLOSURE_BASE_COPY),
+      onStreamComplete: async (fullText: string) => {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const attributionLine = `*Analyzed by ${prettyName(provider)} (${providerCfg.model ?? 'unknown'}) — ${yyyy}-${mm}-${dd}*`;
+        const analysisContent = fullText + '\n\n' + attributionLine;
+
+        await this.app.vault.process(file, (body) =>
+          mergeAIContestAnalysisSection(body, analysisContent),
+        );
+        new Notice(`Contest analysis written to ${file.path}.`, 4000);
+      },
+    }).open();
   }
 
   private async activateBrowser(): Promise<void> {
