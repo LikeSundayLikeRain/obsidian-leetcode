@@ -86,9 +86,9 @@ describe('ContestSessionManager', () => {
         expect(p.language).toBe('python3');
         expect(p.solvedAt).toBeNull();
       }
-      expect(problems[0].slug).toBe('problem-a');
-      expect(problems[0].credit).toBe(3);
-      expect(problems[3].difficulty).toBe(3);
+      expect(problems[0]!.slug).toBe('problem-a');
+      expect(problems[0]!.credit).toBe(3);
+      expect(problems[3]!.difficulty).toBe(3);
     });
 
     it('marks session as active', () => {
@@ -165,7 +165,7 @@ describe('ContestSessionManager', () => {
       manager.start(START_PARAMS);
       manager.recordVerdict(0, 'attempted');
 
-      expect(settings.stored!.problems[0].verdict).toBe('attempted');
+      expect(settings.stored!.problems[0]!.verdict).toBe('attempted');
       expect(callbacks.onVerdictChange).toHaveBeenCalledWith(0, 'attempted');
     });
 
@@ -174,8 +174,8 @@ describe('ContestSessionManager', () => {
       const beforeAC = Date.now();
       manager.recordVerdict(1, 'accepted');
 
-      expect(settings.stored!.problems[1].verdict).toBe('accepted');
-      expect(settings.stored!.problems[1].solvedAt).toBeGreaterThanOrEqual(beforeAC);
+      expect(settings.stored!.problems[1]!.verdict).toBe('accepted');
+      expect(settings.stored!.problems[1]!.solvedAt).toBeGreaterThanOrEqual(beforeAC);
       expect(callbacks.onVerdictChange).toHaveBeenCalledWith(1, 'accepted');
     });
 
@@ -184,7 +184,7 @@ describe('ContestSessionManager', () => {
       manager.recordVerdict(0, 'attempted');
       manager.recordVerdict(0, 'accepted');
 
-      expect(settings.stored!.problems[0].verdict).toBe('accepted');
+      expect(settings.stored!.problems[0]!.verdict).toBe('accepted');
     });
 
     it('never downgrades: accepted stays accepted even if called with attempted', () => {
@@ -192,7 +192,7 @@ describe('ContestSessionManager', () => {
       manager.recordVerdict(0, 'accepted');
       manager.recordVerdict(0, 'attempted');
 
-      expect(settings.stored!.problems[0].verdict).toBe('accepted');
+      expect(settings.stored!.problems[0]!.verdict).toBe('accepted');
       // onVerdictChange should only have been called once (for the accepted upgrade)
       expect(callbacks.onVerdictChange).toHaveBeenCalledTimes(1);
     });
@@ -210,15 +210,15 @@ describe('ContestSessionManager', () => {
       manager.start(START_PARAMS);
       manager.updateCode(0, 'class Solution { }', 'java');
 
-      expect(settings.stored!.problems[0].code).toBe('class Solution { }');
-      expect(settings.stored!.problems[0].language).toBe('java');
+      expect(settings.stored!.problems[0]!.code).toBe('class Solution { }');
+      expect(settings.stored!.problems[0]!.language).toBe('java');
     });
 
     it('does nothing for invalid index', () => {
       manager.start(START_PARAMS);
       manager.updateCode(99, 'code', 'python3');
       // Should not throw
-      expect(settings.stored!.problems[0].code).toBe('');
+      expect(settings.stored!.problems[0]!.code).toBe('');
     });
   });
 
@@ -231,7 +231,7 @@ describe('ContestSessionManager', () => {
 
       expect(snapshot).not.toBeNull();
       expect(snapshot!.contestSlug).toBe('weekly-contest-400');
-      expect(snapshot!.problems[0].verdict).toBe('attempted');
+      expect(snapshot!.problems[0]!.verdict).toBe('attempted');
       expect(settings.stored).toBeNull();
       expect(manager.isActive()).toBe(false);
     });
@@ -249,7 +249,7 @@ describe('ContestSessionManager', () => {
       const snapshot = manager.finish();
 
       expect(snapshot).not.toBeNull();
-      expect(snapshot!.problems[0].verdict).toBe('accepted');
+      expect(snapshot!.problems[0]!.verdict).toBe('accepted');
       expect(settings.stored).toBeNull();
       expect(manager.isActive()).toBe(false);
     });
@@ -330,7 +330,7 @@ describe('ContestSessionManager', () => {
 
       expect(callbacks.onTick).toHaveBeenCalledTimes(3);
       // Each call should have a positive remaining value
-      const lastCall = (callbacks.onTick as ReturnType<typeof vi.fn>).mock.calls[2][0];
+      const lastCall = (callbacks.onTick as ReturnType<typeof vi.fn>).mock.calls[2]![0];
       expect(lastCall).toBeGreaterThan(0);
       expect(lastCall).toBeLessThan(5400 * 1000);
     });
