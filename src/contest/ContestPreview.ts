@@ -82,7 +82,6 @@ export class ContestPreviewModal extends Modal {
       const list = problemsContainer.createEl('ol', { cls: 'lc-contest-preview__list' });
       for (const q of questions) {
         const item = list.createEl('li', { cls: 'lc-contest-preview__problem' });
-        item.createSpan({ text: q.title });
         const diffMap: Record<number, string> = { 1: 'easy', 2: 'medium', 3: 'hard' };
         const diffLabel: Record<number, string> = { 1: 'Easy', 2: 'Medium', 3: 'Hard' };
         const diffClass = diffMap[q.difficulty] ?? 'easy';
@@ -90,6 +89,8 @@ export class ContestPreviewModal extends Modal {
           text: diffLabel[q.difficulty] ?? 'Easy',
           cls: `lc-diff--${diffClass}`,
         });
+        item.createSpan({ text: ' ' });
+        item.createSpan({ text: q.title, cls: 'lc-contest-preview__problem-title' });
       }
     } catch {
       problemsContainer.empty();

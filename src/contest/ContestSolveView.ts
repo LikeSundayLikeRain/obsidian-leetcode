@@ -33,6 +33,17 @@ import { VerdictModal } from '../solve/VerdictModal';
 
 export const CONTEST_SOLVE_VIEW_TYPE = 'leetcode-contest-solve';
 
+/** Map LC language slugs to markdown fence language tags for highlighting. */
+function langToFenceTag(slug: string): string {
+  const map: Record<string, string> = {
+    python3: 'python', python: 'python', java: 'java',
+    cpp: 'cpp', c: 'c', javascript: 'javascript', typescript: 'typescript',
+    golang: 'go', ruby: 'ruby', swift: 'swift', kotlin: 'kotlin',
+    rust: 'rust', scala: 'scala', csharp: 'csharp',
+  };
+  return map[slug] ?? slug;
+}
+
 /** Debounce delay for auto-saving code to PluginData (30 seconds). */
 const CODE_SAVE_DEBOUNCE_MS = 30_000;
 
@@ -40,7 +51,7 @@ export class ContestSolveView extends ItemView {
   private problemIdx: number | null = null;
   private rootEl: HTMLElement | null = null;
   private renderToken = 0;
-  private codeEl: HTMLTextAreaElement | null = null;
+  private highlightEl: HTMLElement | null = null;
   private saveTimer: TimerHandle | null = null;
   /** Track in-memory code before flush to avoid stale reads. */
   private pendingCode: string | null = null;
@@ -82,7 +93,7 @@ export class ContestSolveView extends ItemView {
     // Flush pending code save
     this.flushCodeSave();
     this.rootEl = null;
-    this.codeEl = null;
+    this.highlightEl = null;
     this.renderToken += 1;
     if (this.saveTimer != null) {
       clearTimeout(this.saveTimer as unknown as number);
@@ -165,18 +176,40 @@ export class ContestSolveView extends ItemView {
       });
     }
 
-    // ── Code textarea ──
+    // ── Code editor: click-to-edit with highlighted preview ──
     const currentCode = this.pendingCode ?? problem.code;
     const currentLang = this.pendingLanguage ?? problem.language;
 
-    const codeArea = root.createEl('textarea', {
-      cls: 'leetcode-contest-solve__code',
+    const codeContainer = root.createDiv({ cls: 'leetcode-contest-solve__code' });
+
+    // Highlighted preview (rendered via MarkdownRenderer — native Obsidian highlighting)
+    const highlightWrap = codeContainer.createDiv({ cls: 'leetcode-contest-solve__highlight' });
+    this.highlightEl = highlightWrap;
+    this.renderHighlight(currentCode, currentLang, highlightWrap);
+
+    // Editable textarea (hidden until user clicks the highlight)
+    const codeArea = codeContainer.createEl('textarea', {
+      cls: 'leetcode-contest-solve__textarea is-hidden',
     });
     codeArea.value = currentCode;
     codeArea.setAttribute('spellcheck', 'false');
     codeArea.setAttribute('autocomplete', 'off');
     codeArea.setAttribute('aria-label', 'Solution code editor');
-    this.codeEl = codeArea;
+    codeArea.setAttribute('wrap', 'off');
+
+    // Click highlight → show textarea, hide highlight
+    highlightWrap.addEventListener('click', () => {
+      highlightWrap.addClass('is-hidden');
+      codeArea.removeClass('is-hidden');
+      codeArea.focus();
+    });
+
+    // Blur textarea → show highlight, hide textarea
+    codeArea.addEventListener('blur', () => {
+      this.renderHighlight(codeArea.value, currentLang, highlightWrap);
+      codeArea.addClass('is-hidden');
+      highlightWrap.removeClass('is-hidden');
+    });
 
     // Wire code input with debounced save
     codeArea.addEventListener('input', () => {
@@ -223,6 +256,13 @@ export class ContestSolveView extends ItemView {
   }
 
   /** Schedule a debounced code save to ContestSessionManager. */
+  private renderHighlight(code: string, lang: string, container: HTMLElement): void {
+    container.empty();
+    const fenceTag = langToFenceTag(lang);
+    const md = '```' + fenceTag + '\n' + code + '\n```';
+    void MarkdownRenderer.render(this.app, md, container, '', this);
+  }
+
   private scheduleSave(): void {
     if (this.saveTimer != null) {
       clearTimeout(this.saveTimer as unknown as number);
@@ -242,7 +282,7 @@ export class ContestSolveView extends ItemView {
     const problem = session.problems[this.problemIdx];
     if (!problem) return;
 
-    const code = this.pendingCode ?? (this.codeEl?.value ?? problem.code);
+    const code = this.pendingCode ?? problem.code;
     const language = this.pendingLanguage ?? problem.language;
 
     this.plugin.contestSessionManager.updateCode(this.problemIdx, code, language);

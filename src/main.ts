@@ -149,10 +149,8 @@ import type { SubmitCheckResponse, RunCheckResponse } from './solve/types';
 import { ContestSessionManager } from './contest/ContestSessionManager';
 import { getRemainingMs } from './contest/types';
 // Phase 10 Plan 04 — contest solve view (dedicated editing surface).
-import {
-  ContestSolveView,
-  CONTEST_SOLVE_VIEW_TYPE,
-} from './contest/ContestSolveView';
+import { ContestSolveView, CONTEST_SOLVE_VIEW_TYPE } from './contest/ContestSolveView';
+import { ContestScratchManager } from './contest/ContestScratchManager';
 // Phase 10 Plan 07 — contest integration wiring (finalizer, AI analysis,
 // list service, preview modal, abort modal).
 import { finalizeContest } from './contest/ContestFinalizer';
@@ -220,6 +218,7 @@ export default class LeetCodePlugin extends Plugin {
   // + settings. Provides refresh/search/surpriseMe for ProblemBrowserView's
   // contest mode and the `start-random-contest` palette command.
   contestListService!: ContestListService;
+  contestScratch!: ContestScratchManager;
 
   // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
   // AIProvider; values are the in-flight probe Promise. Cleared in the
@@ -352,6 +351,7 @@ export default class LeetCodePlugin extends Plugin {
     // ProblemBrowserView constructs its own instance (Plan 03 pattern) so this
     // plugin-level instance is only for the palette command surface.
     this.contestListService = new ContestListService(this.client, this.settings);
+    this.contestScratch = new ContestScratchManager(this.app);
 
     // Step 5.11 — Phase 10 Plan 03 + Plan 07 — ContestSessionManager. State
     // machine for contest lifecycle (start/pause/resume/abort/finish). Plan 07
@@ -886,25 +886,21 @@ export default class LeetCodePlugin extends Plugin {
    * timer header problem badges delegate here.
    */
   async openContestProblem(problemIdx: number): Promise<void> {
-    const { workspace } = this.app;
-    const existing = workspace.getLeavesOfType(CONTEST_SOLVE_VIEW_TYPE);
-    if (existing.length > 0 && existing[0]) {
-      const leaf = existing[0];
-      await leaf.setViewState({
-        type: CONTEST_SOLVE_VIEW_TYPE,
-        active: true,
-        state: { problemIdx },
-      });
-      await workspace.revealLeaf(leaf);
-      return;
-    }
-    const leaf = workspace.getLeaf('tab');
-    await leaf.setViewState({
-      type: CONTEST_SOLVE_VIEW_TYPE,
-      active: true,
-      state: { problemIdx },
-    });
-    await workspace.revealLeaf(leaf);
+    const session = this.contestSessionManager.getSession();
+    if (!session) return;
+    const problem = session.problems[problemIdx];
+    if (!problem) return;
+
+    // Get problem HTML content from cache for the scratch file
+    const detail = this.settings.getProblemDetail(problem.slug);
+    const contentHtml = detail?.contentHtml;
+
+    // Create/update scratch file with current code + problem content
+    const file = await this.contestScratch.createOrUpdate(problem, contentHtml);
+
+    // Open in native MarkdownView (full Obsidian editor with highlighting)
+    const leaf = this.app.workspace.getLeaf('tab');
+    await leaf.openFile(file);
   }
 
   // ── Phase 10 Plan 07 contest integration helpers ─────────────────────
@@ -916,6 +912,16 @@ export default class LeetCodePlugin extends Plugin {
    * Closes any open ContestSolveView leaves.
    */
   private async handleContestEnd(aborted: boolean): Promise<void> {
+    // Sync code from scratch files back to session before finalizing
+    const activeSession = this.contestSessionManager.getSession();
+    if (activeSession) {
+      for (const problem of activeSession.problems) {
+        const code = await this.contestScratch.readCode(problem.slug);
+        if (code !== null) problem.code = code;
+      }
+      await this.settings.setContestSession(activeSession);
+    }
+
     const session = aborted
       ? this.contestSessionManager.abort()
       : this.contestSessionManager.finish();
@@ -942,9 +948,23 @@ export default class LeetCodePlugin extends Plugin {
       new Notice(`Time’s up! Contest ended. Summary written to ${summaryPath}.`, 4000);
     }
 
-    // Close any open ContestSolveView leaves.
+    // Close any open ContestSolveView leaves and scratch file tabs.
     const leaves = this.app.workspace.getLeavesOfType(CONTEST_SOLVE_VIEW_TYPE);
     for (const leaf of leaves) { leaf.detach(); }
+
+    // Close scratch file tabs and delete scratch files
+    for (const problem of session.problems) {
+      const file = this.contestScratch.getFile(problem.slug);
+      if (file) {
+        // Close any leaves showing this file
+        this.app.workspace.getLeavesOfType('markdown').forEach(leaf => {
+          if ((leaf.view as { file?: { path: string } }).file?.path === file.path) {
+            leaf.detach();
+          }
+        });
+      }
+    }
+    await this.contestScratch.cleanupAll();
 
     // Auto AI contest analysis (D-20): gated on toggle + active provider.
     if (this.settings.getAutoAIContestAnalysis() && this.settings.getActiveAIProvider()) {

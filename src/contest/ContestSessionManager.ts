@@ -56,7 +56,7 @@ export class ContestSessionManager {
     contestTitle: string;
     contestType: 'weekly' | 'biweekly';
     duration: number;
-    problems: Array<{ slug: string; title: string; credit: number; difficulty: number }>;
+    problems: Array<{ slug: string; title: string; credit: number; difficulty: number; code?: string; language?: string }>;
   }): void {
     const session: ContestSession = {
       contestSlug: params.contestSlug,
@@ -73,8 +73,8 @@ export class ContestSessionManager {
         credit: p.credit,
         difficulty: p.difficulty,
         verdict: 'unsolved' as const,
-        code: '',
-        language: 'python3',
+        code: p.code ?? '',
+        language: p.language ?? 'python3',
         solvedAt: null,
       })),
     };

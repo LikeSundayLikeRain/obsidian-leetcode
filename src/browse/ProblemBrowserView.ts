@@ -16,6 +16,7 @@ import { ContestPreviewModal } from '../contest/ContestPreview';
 import type { CachedContest, ContestProblemState } from '../contest/types';
 import { getRemainingMs } from '../contest/types';
 import { AbortContestModal } from '../contest/AbortContestModal';
+import { toDetailCacheEntry } from '../notes/NoteWriter';
 // WR-02: route all timers through the popout-aware helpers used by Throttle
 // so that timers on a view hosted in an Obsidian popout bind to the popout's
 // event loop, not the main window's.
@@ -164,24 +165,27 @@ export class ProblemBrowserView extends ItemView {
     // Phase 10: render mode toggle above all content
     this.renderModeToggle(root);
 
+    // Content container — refreshAndRender empties this, not root, so the toggle persists.
+    const content = root.createDiv({ cls: 'lc-browser-content' });
+
     if (this.mode === 'contests') {
-      await this.renderContestsMode(root);
+      await this.renderContestsMode(content);
       return;
     }
 
     if (!this.plugin.auth.isLoggedIn()) {
-      this.renderLoggedOutState(root, {
+      this.renderLoggedOutState(content, {
         heading: 'Log in to browse problems',
         body: 'Sign in to LeetCode to load the problem list.',
       });
       return;
     }
 
-    this.renderEmptyState(root, {
+    this.renderEmptyState(content, {
       heading: 'Loading problems…',
       body: 'Fetching the problem list. This happens once.',
     });
-    await this.refreshAndRender(root);
+    await this.refreshAndRender(content);
   }
 
   /**
@@ -946,18 +950,35 @@ export class ProblemBrowserView extends ItemView {
       return;
     }
 
+    // Cache problem details so ContestSolveView can render content
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) {
+        const entry = toDetailCacheEntry(r.value);
+        await this.plugin.settings.setProblemDetail(r.value.titleSlug, entry);
+      }
+    }
+
+    // Resolve default language + starter code per problem from cached details
+    const defaultLang = this.plugin.settings.getDefaultLanguage() || 'python3';
+
     // Create contest session via ContestSessionManager
     this.plugin.contestSessionManager.start({
       contestSlug: contest.slug,
       contestTitle: contest.title,
       contestType: contest.type,
       duration: contest.duration,
-      problems: questions.map((q) => ({
-        slug: q.title_slug,
-        title: q.title,
-        credit: q.credit,
-        difficulty: q.difficulty,
-      })),
+      problems: questions.map((q) => {
+        const detail = this.plugin.settings.getProblemDetail(q.title_slug);
+        const snippet = detail?.codeSnippets?.find(s => s.langSlug === defaultLang);
+        return {
+          slug: q.title_slug,
+          title: q.title,
+          credit: q.credit,
+          difficulty: q.difficulty,
+          code: snippet?.code ?? '',
+          language: defaultLang,
+        };
+      }),
     });
 
     const minutes = Math.round(contest.duration / 60);

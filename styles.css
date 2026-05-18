@@ -1519,23 +1519,52 @@
   font-style: italic;
 }
 .leetcode-contest-solve__code {
+  width: 100%;
+  min-height: 200px;
+  max-height: 60vh;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  margin-bottom: 12px;
+  overflow: auto;
+}
+.leetcode-contest-solve__highlight {
+  cursor: text;
+}
+.leetcode-contest-solve__highlight pre {
+  margin: 0;
+  padding: 12px;
+}
+.leetcode-contest-solve__highlight code {
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  font-family: var(--font-monospace) !important;
+}
+.leetcode-contest-solve__highlight.is-hidden {
+  display: none;
+}
+.leetcode-contest-solve__textarea {
   display: block;
   width: 100%;
   min-height: 200px;
+  max-height: 60vh;
   resize: vertical;
   padding: 12px;
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
   background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
   color: var(--text-normal);
-  margin-bottom: 12px;
+  border: none;
+  outline: none;
+  overflow: auto;
+  white-space: pre;
+  tab-size: 4;
 }
-.leetcode-contest-solve__code:focus {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: -1px;
+.leetcode-contest-solve__textarea.is-hidden {
+  display: none;
+}
+.leetcode-contest-solve__textarea:focus {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
 }
 .leetcode-contest-solve__actions {
   display: flex;
@@ -1544,13 +1573,21 @@
   padding: 8px 0;
 }
 .leetcode-contest-solve__lang-select {
-  padding: 4px 8px;
+  padding: 4px 24px 4px 8px;
   border-radius: 4px;
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
   color: var(--text-normal);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 500;
   margin-right: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  cursor: pointer;
+  min-width: 100px;
 }
 .leetcode-contest-solve__run-btn,
 .leetcode-contest-solve__submit-btn {
@@ -1727,4 +1764,66 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 16px;
+}
+
+/* ─── Contest Preview Modal ─── */
+.lc-contest-preview__duration {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+.lc-contest-preview__list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.lc-contest-preview__problem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.lc-contest-preview__problem:last-child {
+  border-bottom: none;
+}
+.lc-contest-preview__problem-title {
+  flex: 1;
+}
+.lc-contest-preview__problem .lc-diff--easy,
+.lc-contest-preview__problem .lc-diff--medium,
+.lc-contest-preview__problem .lc-diff--hard {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  width: 60px;
+  text-align: center;
+}
+.lc-contest-preview__problem .lc-diff--easy {
+  color: var(--color-green);
+  background: color-mix(in srgb, var(--color-green) 15%, transparent);
+}
+.lc-contest-preview__problem .lc-diff--medium {
+  color: var(--color-yellow);
+  background: color-mix(in srgb, var(--color-yellow) 15%, transparent);
+}
+.lc-contest-preview__problem .lc-diff--hard {
+  color: var(--color-red);
+  background: color-mix(in srgb, var(--color-red) 15%, transparent);
+}
+.lc-contest-preview__footer {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+.lc-contest-preview__start {
+  font-size: 14px;
+  padding: 8px 16px;
+}
+.lc-contest-preview__loading,
+.lc-contest-preview__error {
+  color: var(--text-muted);
+  font-style: italic;
 }
