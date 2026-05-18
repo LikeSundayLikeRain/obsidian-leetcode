@@ -7,10 +7,11 @@
   "firecrawl": false,
   "exa_search": false,
   "git": {
-    "branching_strategy": "none",
+    "branching_strategy": "milestone",
     "phase_branch_template": "gsd/phase-{phase}-{slug}",
     "milestone_branch_template": "gsd/{milestone}-{slug}",
-    "quick_branch_template": null
+    "quick_branch_template": null,
+    "create_tag": true
   },
   "workflow": {
     "research": true,
@@ -33,7 +34,7 @@
     "ui_review": true,
     "pattern_mapper": true,
     "ai_integration_phase": true,
-    "use_worktrees": false
+    "use_worktrees": true
   },
   "hooks": {
     "context_warnings": true,
