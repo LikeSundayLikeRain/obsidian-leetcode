@@ -280,6 +280,23 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       );
 
     // =============================
+    //   Contest section (Phase 10 Plan 07 — UI-SPEC §Settings)
+    // =============================
+    // Position: after AI section, before Knowledge Graph (per 10-UI-SPEC).
+    // Single toggle: Auto AI contest analysis (D-20, default OFF).
+    new Setting(containerEl).setName('Contest').setHeading();
+
+    new Setting(containerEl)
+      .setName('Auto AI contest analysis')
+      .setDesc('Automatically generate AI performance analysis when a virtual contest ends. Requires an active AI provider.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getAutoAIContestAnalysis())
+        .onChange(async (value) => {
+          await this.plugin.settings.setAutoAIContestAnalysis(value);
+        }),
+      );
+
+    // =============================
     //   Knowledge Graph section (Phase 5 POLISH-01 D-14)
     // =============================
     // D-17: no Advanced / collapsible section — always visible.
