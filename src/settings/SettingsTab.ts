@@ -269,6 +269,16 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       this.renderAIProviderForm(containerEl, active);
     }
 
+    new Setting(containerEl)
+      .setName('Auto AI review on Accept')
+      .setDesc('When enabled, an AI review is generated automatically each time you get Accepted.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getAutoAIReviewOnAC())
+        .onChange(async (value) => {
+          await this.plugin.settings.setAutoAIReviewOnAC(value);
+        }),
+      );
+
     // =============================
     //   Knowledge Graph section (Phase 5 POLISH-01 D-14)
     // =============================
