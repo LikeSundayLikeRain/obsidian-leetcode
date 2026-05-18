@@ -54,6 +54,7 @@ import {
 } from '@codemirror/view';
 import { editorInfoField, type Plugin } from 'obsidian';
 import {
+  AI_REVIEW_HEADING_LINE,
   CODE_HEADING_LINE,
   NOTES_HEADING_LINE,
   PROBLEM_HEADING_LINE,
@@ -74,7 +75,7 @@ export { LOCKED_HEADINGS } from '../notes/NoteTemplate';
  * lets each kind branch into its own per-section range emission rule
  * (see the second pass in `computeLockedRanges` below).
  */
-type HeadingKind = 'problem' | 'code' | 'techniques' | 'notes';
+type HeadingKind = 'problem' | 'code' | 'techniques' | 'notes' | 'ai-review';
 
 interface HeadingHit {
   readonly kind: HeadingKind;
@@ -121,6 +122,8 @@ export function computeLockedRanges(
       headings.push({ kind: 'techniques', line: i });
     } else if (text === NOTES_HEADING_LINE) {
       headings.push({ kind: 'notes', line: i });
+    } else if (text === AI_REVIEW_HEADING_LINE) {
+      headings.push({ kind: 'ai-review', line: i });
     }
     // The legacy `## Custom Tests` heading is intentionally NOT matched
     // (Phase 5 D-08; CONTEXT D-03; Pitfall 4) — leaving it editable.
@@ -188,7 +191,7 @@ export function computeLockedRanges(
         out.push(headFrom, headTo);
       }
     } else {
-      // techniques | notes — heading line only (D-03). Body editable.
+      // techniques | notes | ai-review — heading line only (D-03/D-19). Body editable.
       out.push(headFrom, headTo);
     }
   }
@@ -292,7 +295,8 @@ function buildLockedDecorations(state: EditorStateType): DecorationSet {
       text === PROBLEM_HEADING_LINE ||
       text === CODE_HEADING_LINE ||
       text === TECHNIQUES_HEADING_LINE ||
-      text === NOTES_HEADING_LINE
+      text === NOTES_HEADING_LINE ||
+      text === AI_REVIEW_HEADING_LINE
     ) {
       b.add(state.doc.line(i).from, state.doc.line(i).from, lineDeco);
     }

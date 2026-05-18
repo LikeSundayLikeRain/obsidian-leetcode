@@ -60,12 +60,16 @@ export const CASE_HEADING_PREFIX = '### Case ' as const;
  *  additions on every Accepted submission (D-13). Inserted immediately after
  *  `## Notes` when absent (D-14). */
 export const TECHNIQUES_HEADING_LINE = '## Techniques' as const;
+// Phase 09 heading extension (AIREV-01, D-19).
+/** Plugin-owned H2 where the AI-generated review content lives. Heading locked
+ *  (like ## Techniques / ## Notes); body editable by the AI writer. */
+export const AI_REVIEW_HEADING_LINE = '## AI Review' as const;
 
 /**
- * Phase 05.5 D-01 / D-03 — the four heading lines locked by `sectionLockExtension`.
+ * Phase 05.5 D-01 / D-03 — the five heading lines locked by `sectionLockExtension`.
  * Order matches the canonical anchor order from Phase 4 D-14 (## Problem → ## Code →
- * ## Techniques → ## Notes). `## Custom Tests` is intentionally NOT in this
- * array (Phase 5 D-08 ignores it on read/write; Phase 05.5 D-03 leaves it editable).
+ * ## Techniques → ## Notes → ## AI Review). `## Custom Tests` is intentionally NOT
+ * in this array (Phase 5 D-08 ignores it on read/write; Phase 05.5 D-03 leaves it editable).
  *
  * SSoT invariant (Phase 2 D-03): heading literals come from this module — no
  * other module hardcodes these strings. The lock extension imports this tuple
@@ -76,6 +80,7 @@ export const LOCKED_HEADINGS = [
   CODE_HEADING_LINE,
   TECHNIQUES_HEADING_LINE,
   NOTES_HEADING_LINE,
+  AI_REVIEW_HEADING_LINE,
 ] as const;
 
 /**
