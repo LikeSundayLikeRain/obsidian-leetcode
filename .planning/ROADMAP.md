@@ -281,7 +281,22 @@ Plans:
   4. Look-ahead wikilinks to unsolved problems are emitted only when `featureFlags.lookAheadEdges` is enabled; every emitted slug is validated against the local problem index, unknowns dropped silently, capped at 2 per note.
   5. All knowledge-graph writes use `app.vault.process` (body) and `app.fileManager.processFrontMatter` (frontmatter); no `cm.dispatch` and no `vault.modify` anywhere in the AI write paths.
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 11-01-PLAN.md — Foundation: pattern taxonomy (22 seeds), buildKgPrompt, parseKgResponse, mergeRelatedVariantsSection, withKgBullet disclosure factory, LOCKED_HEADINGS extension, PluginData schema (featureFlags.lookAheadEdges + autoAIKnowledgeGraph).
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 11-02-PLAN.md — Service layer: ClusterHubWriter (hub create/append/reconcile with difficulty-grouped tables), PatternClusterEngine (AI classification orchestration + validation + vault writes), mergeTechniquesSectionAI (clean-break replacement of v1.0 lc-tag wikilinks).
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 11-03-PLAN.md — Wiring: KnowledgeGraphWriter pipeline extension (Step 2.5 AI classification), main.ts construction + reconcile-pattern-hubs palette command + 1-hour registerInterval, Settings tab toggles (AI KG + look-ahead edges).
+
+**UI hint**: yes (Settings toggles only — no new views)
 
 ### Phase 12: Polish + Plugin-Store Re-submission
 
@@ -317,5 +332,5 @@ Plans:
 | 09. AI ACed Review                       | v1.1      | 4/4 | Complete    | 2026-05-18 |
 | 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
 | 10.1. LC Virtual Contest API             | v1.1      | -/-            | Not Started | -           |
-| 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
+| 11. AI Knowledge Graph                   | v1.1      | 0/3            | Planning    | -           |
 | 12. Polish + Plugin-Store Re-submission  | v1.1      | -/-            | Not Started | -           |
