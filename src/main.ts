@@ -1208,6 +1208,9 @@ export default class LeetCodePlugin extends Plugin {
   ): { abort: () => void; promise: Promise<void> } {
     const abortController = new AbortController();
     const RENDER_DEBOUNCE_MS = 100;
+    // Snapshot body immediately — before any async work — so edits during the
+    // network round-trip don't contaminate the review prompt (CR-02 fix).
+    const snapshotBody = ctx.currentBody();
 
     const promise = (async () => {
       // Step 1 — resolve problem markdown for prompt assembly.
@@ -1225,8 +1228,8 @@ export default class LeetCodePlugin extends Plugin {
       }
       const problemMd = htmlToMarkdown(problemHtml);
 
-      // Step 2 — extract code from the note body at submit time.
-      const body = ctx.currentBody();
+      // Step 2 — extract code from the snapshotted body.
+      const body = snapshotBody;
       const extracted = extractFirstFencedBlock(body);
       const code = extracted?.code ?? '';
       const language = extracted?.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';

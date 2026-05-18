@@ -15,15 +15,9 @@
 //   - Output ends with exactly one trailing newline
 //   - Never mutates input string (returns new string)
 
-import { NOTES_HEADING_LINE } from '../notes/NoteTemplate';
+import { AI_REVIEW_HEADING_LINE } from '../notes/NoteTemplate';
 
-/** Exported heading constant for downstream consumers (Plan 03/04 wiring). */
-export const AI_REVIEW_HEADING_LINE = '## AI Review' as const;
-
-// Suppress unused-import lint — NOTES_HEADING_LINE is imported for future
-// anchor-point logic if needed; current implementation appends at EOF which
-// inherently places after ## Notes when present.
-void NOTES_HEADING_LINE;
+export { AI_REVIEW_HEADING_LINE };
 
 /**
  * Idempotent vault-write transform. Inserts or replaces `## AI Review` in the
