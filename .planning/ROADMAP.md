@@ -221,8 +221,8 @@ Plans:
 Plans:
 **Wave 1** *(parallel)*
 
-- [ ] 09-01-PLAN.md — Pure helpers: buildReviewPrompt + mergeAIReviewSection + withReviewBullet disclosure factory + comprehensive unit tests.
-- [ ] 09-02-PLAN.md — Schema + section lock: AI_REVIEW_HEADING_LINE + LOCKED_HEADINGS extension + HeadingKind ai-review + PluginData.autoAIReviewOnAC + settings toggle.
+- [x] 09-01-PLAN.md — Pure helpers: buildReviewPrompt + mergeAIReviewSection + withReviewBullet disclosure factory + comprehensive unit tests.
+- [x] 09-02-PLAN.md — Schema + section lock: AI_REVIEW_HEADING_LINE + LOCKED_HEADINGS extension + HeadingKind ai-review + PluginData.autoAIReviewOnAC + settings toggle.
 
 **Wave 2** *(blocked on Wave 1 completion — parallel)*
 
@@ -293,7 +293,7 @@ Plans:
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
 | 07. AI Provider Foundation               | v1.1      | 8/8 | Complete    | 2026-05-16 |
 | 08. AI Debug                             | v1.1      | 5/5 | Complete    | 2026-05-16 |
-| 09. AI ACed Review                       | v1.1      | 0/4            | Planning    | -           |
+| 09. AI ACed Review                       | v1.1      | 2/4 | In Progress|  |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
 | 12. Polish + Plugin-Store Re-submission  | v1.1      | -/-            | Not Started | -           |
