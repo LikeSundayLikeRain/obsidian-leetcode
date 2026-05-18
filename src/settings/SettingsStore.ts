@@ -197,6 +197,7 @@ const DEFAULT_PROVIDER_CONFIGS: Record<AIProvider, ProviderConfig | BedrockProvi
     secretAccessKey: '',
     ssoProfile: '',
     bedrockApiKey: '',
+    sessionToken: '',
   },
 };
 
@@ -495,6 +496,7 @@ function sanitizeBedrockProviderConfig(
     secretAccessKey: typeof r.secretAccessKey === 'string' ? r.secretAccessKey : '',
     ssoProfile: typeof r.ssoProfile === 'string' ? r.ssoProfile : '',
     bedrockApiKey: typeof r.bedrockApiKey === 'string' ? r.bedrockApiKey : '',
+    sessionToken: typeof r.sessionToken === 'string' ? r.sessionToken : '',
   };
 }
 

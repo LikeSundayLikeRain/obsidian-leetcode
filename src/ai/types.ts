@@ -70,6 +70,8 @@ export interface BedrockProviderConfig extends ProviderConfig {
   ssoProfile?: string;
   /** Set when authMethod === 'api-key'. Long-term Bedrock API key bearer. */
   bedrockApiKey?: string;
+  /** Set when authMethod === 'access-keys'. Session token for temporary STS credentials. Preserved across mode switches. */
+  sessionToken?: string;
 }
 
 /**

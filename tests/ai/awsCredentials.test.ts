@@ -595,3 +595,105 @@ describe('Phase 08.2 awsCredentials — parseIniProfile extended fields', () => 
     expect(out.accessKeyId).toBe('AKIA-WORK');
   });
 });
+
+// ─── Phase 08.2 Plan 02 — sessionToken integration (resolver → adapter) ─────
+
+describe('Phase 08.2 integration — sessionToken round-trips through bedrock adapter', () => {
+  it('access-keys mode passes sessionToken to SDK when present', async () => {
+    // We test this via the bedrock adapter directly using a mock of the SDK
+    const createAmazonBedrockOpts: Record<string, unknown>[] = [];
+    vi.doMock('@ai-sdk/amazon-bedrock', () => ({
+      createAmazonBedrock: (opts: Record<string, unknown>) => {
+        createAmazonBedrockOpts.push(opts);
+        return (modelId: string) => ({ modelId });
+      },
+    }));
+    vi.doMock('ai', () => ({
+      streamText: vi.fn(),
+      generateText: vi.fn(),
+    }));
+    vi.doMock('../../src/ai/awsCredentials', () => ({
+      resolveAwsCredentials: () => ({}),
+    }));
+
+    const { createBedrockModel } = await import('../../src/ai/providers/bedrock');
+    const fetcher = vi.fn() as unknown as import('../../src/ai/obsidianFetch').FetchFn;
+
+    createBedrockModel(
+      {
+        apiKey: '',
+        baseUrl: '',
+        model: '',
+        disclosureAcknowledged: true,
+        region: 'us-east-1',
+        modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+        authMethod: 'access-keys',
+        accessKeyId: 'AKIA-TEMP',
+        secretAccessKey: 'secret-temp',
+        ssoProfile: '',
+        bedrockApiKey: '',
+        sessionToken: 'FwoGZX-session-token-from-sts',
+      },
+      fetcher,
+    );
+
+    expect(createAmazonBedrockOpts).toHaveLength(1);
+    const opts = createAmazonBedrockOpts[0]!;
+    expect(opts.accessKeyId).toBe('AKIA-TEMP');
+    expect(opts.secretAccessKey).toBe('secret-temp');
+    expect(opts.sessionToken).toBe('FwoGZX-session-token-from-sts');
+
+    vi.doUnmock('@ai-sdk/amazon-bedrock');
+    vi.doUnmock('ai');
+    vi.doUnmock('../../src/ai/awsCredentials');
+  });
+
+  it('access-keys mode omits sessionToken from SDK opts when field is empty', async () => {
+    const createAmazonBedrockOpts: Record<string, unknown>[] = [];
+    vi.doMock('@ai-sdk/amazon-bedrock', () => ({
+      createAmazonBedrock: (opts: Record<string, unknown>) => {
+        createAmazonBedrockOpts.push(opts);
+        return (modelId: string) => ({ modelId });
+      },
+    }));
+    vi.doMock('ai', () => ({
+      streamText: vi.fn(),
+      generateText: vi.fn(),
+    }));
+    vi.doMock('../../src/ai/awsCredentials', () => ({
+      resolveAwsCredentials: () => ({}),
+    }));
+
+    const { createBedrockModel } = await import('../../src/ai/providers/bedrock');
+    const fetcher = vi.fn() as unknown as import('../../src/ai/obsidianFetch').FetchFn;
+
+    createBedrockModel(
+      {
+        apiKey: '',
+        baseUrl: '',
+        model: '',
+        disclosureAcknowledged: true,
+        region: 'us-east-1',
+        modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+        authMethod: 'access-keys',
+        accessKeyId: 'AKIA-STATIC',
+        secretAccessKey: 'secret-static',
+        ssoProfile: '',
+        bedrockApiKey: '',
+        sessionToken: '',
+      },
+      fetcher,
+    );
+
+    expect(createAmazonBedrockOpts).toHaveLength(1);
+    const opts = createAmazonBedrockOpts[0]!;
+    expect(opts.accessKeyId).toBe('AKIA-STATIC');
+    expect(opts.secretAccessKey).toBe('secret-static');
+    // Empty sessionToken must NOT be passed to SDK (it would override env-var fallback)
+    expect(opts.sessionToken).toBeUndefined();
+
+    vi.doUnmock('@ai-sdk/amazon-bedrock');
+    vi.doUnmock('ai');
+    vi.doUnmock('../../src/ai/awsCredentials');
+  });
+});

@@ -444,7 +444,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           .addDropdown((d) => d
             .addOption('default-chain', 'Default credential chain (recommended)')
             .addOption('access-keys',   'Explicit access keys')
-            .addOption('sso-profile',   'SSO profile')
+            .addOption('sso-profile',   'Profile name')
             .addOption('api-key',       'Bedrock API key')
             .setValue(bcfg.authMethod)
             .onChange(async (v) => {
@@ -467,8 +467,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           // Helper-text-only row — no input.
           new Setting(containerEl)
             .setName('Credentials source')
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains AWS env-var literals (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) and the lowercase ~/.aws/credentials path; rule cannot distinguish technical literals from prose.
-            .setDesc('The plugin reads AWS credentials from your environment variables (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY) or from the [default] profile in ~/.aws/credentials.');
+            // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains AWS env-var literals (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_PROFILE, AWS_DEFAULT_PROFILE, AWS_SHARED_CREDENTIALS_FILE, AWS_CONFIG_FILE) and lowercase paths; rule cannot distinguish technical literals from prose.
+            .setDesc('Plugin reads AWS credentials from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars first, then falls back to AWS_PROFILE (or AWS_DEFAULT_PROFILE, or [default]) in ~/.aws/credentials and ~/.aws/config. Supports credential_process helpers and honors AWS_SHARED_CREDENTIALS_FILE / AWS_CONFIG_FILE overrides. Run aws sso login (or your usual helper) before launching Obsidian if your profile uses SSO.');
         } else if (bcfg.authMethod === 'access-keys') {
           new Setting(containerEl)
             .setName('Access key ID')
@@ -494,10 +494,24 @@ export class LeetCodeSettingTab extends PluginSettingTab {
                 await this.plugin.settings.setProviderConfig(active, { ...current, secretAccessKey: v });
               });
             });
+          new Setting(containerEl)
+            .setName('Session token')
+            // eslint-disable-next-line obsidianmd/ui/sentence-case -- STS is an AWS acronym (Security Token Service); rule cannot distinguish technical acronyms from prose.
+            .setDesc('Required only for temporary STS credentials.')
+            .addText((t) => {
+              t.inputEl.type = 'password';
+              t.inputEl.addClass('lc-ai-input');
+              t.setValue(bcfg.sessionToken ?? '');
+              t.onChange(async (v) => {
+                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.settings.setProviderConfig(active, { ...current, sessionToken: v });
+              });
+            });
         } else if (bcfg.authMethod === 'sso-profile') {
           new Setting(containerEl)
             .setName('Profile name')
-            .setDesc('Run `aws sso login --profile <name>` before launching Obsidian. The plugin reads the resolved keys from the matching section of ~/.aws/credentials.')
+            // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains AWS_PROFILE env var, lowercase paths ~/.aws/credentials and ~/.aws/config, and tool names (aws-vault, awsume); rule cannot distinguish technical literals from prose.
+            .setDesc('Any profile name from ~/.aws/credentials or ~/.aws/config. Use this if you want a specific profile without exporting AWS_PROFILE. Supports credential_process helpers (e.g. aws-vault, awsume).')
             .addText((t) => {
               t.inputEl.addClass('lc-ai-input');
               t.setValue(bcfg.ssoProfile ?? '');
