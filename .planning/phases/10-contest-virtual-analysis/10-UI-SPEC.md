@@ -57,7 +57,7 @@ Obsidian-aligned 4-point scale. Reuses tokens already established in prior phase
 |-------|-------|-------------------|
 | xs | 4px | Gap between verdict badges in timer header, gap between contest row elements |
 | sm | 8px | Gap between mode toggle buttons, internal padding of timer display, gap between problem cards in solve view |
-| md | 12px | Gap between timer sections (clock + badges), topbar margin-bottom, contest row padding |
+| md | 12px | Gap between timer sections (clock + badges), topbar margin-bottom, contest row padding, contest row gap |
 | md2 | 16px | Outer padding of contest view containers, sticky header padding, modal body padding |
 | lg | 24px | Body content top padding below sticky header, section breaks in summary note |
 | xl | 32px | Major visual separation between timer header and problem list |
@@ -66,6 +66,8 @@ Exceptions:
 - **Mode toggle button height: 28px** — slightly smaller than icon buttons (32px) to read as a tab-toggle rather than an action button.
 - **Timer countdown font: 20px** — larger than body (14px) for at-a-glance readability during a timed contest.
 - **Verdict badge: 20px diameter** — matches existing `.leetcode-submissions-chip` height (20px) from `styles.css:802`.
+- **Timer label margin-top: 2px** — optical micro-adjustment below "remaining" label to visually tighten the timer digit/label pair; decorative, not structural spacing.
+- **Progress bar height: 3px** — decorative hairline thickness for the contest progress indicator; not layout spacing.
 
 ---
 
@@ -74,7 +76,7 @@ Exceptions:
 | Role | Size | Weight | Line Height | Usage in Phase 10 |
 |------|------|--------|-------------|-------------------|
 | Body | 14px (`var(--font-ui-small)`) | 400 | 1.5 | Contest row descriptions, settings descriptions, modal body text |
-| Label | 12px | 400 | 1.4 | Contest row metadata (date, type), verdict badge labels, timer "remaining" label |
+| Label | 12px | 400 | 1.4 | Contest row metadata (date, type), verdict badge labels, timer "remaining" label, mode toggle buttons, action buttons |
 | Heading | 18px | 600 | 1.3 | Contest title in preview/active header, summary note file title in palette |
 | Timer | 20px (`var(--font-monospace)`) | 600 | 1.2 | Countdown `MM:SS` display — monospace for stable digit width |
 
@@ -354,7 +356,7 @@ No other destructive actions in Phase 10. Starting a contest is not destructive 
 
 **Mode toggle dimensions:**
 - Container: full width, `margin-bottom: 12px`, `display: flex`, `gap: 4px`
-- Each segment button: `height: 28px`, `padding: 0 12px`, `border-radius: 6px`, `font-size: 13px`
+- Each segment button: `height: 28px`, `padding: 0 12px`, `border-radius: 6px`, `font-size: 12px`
 - Active segment: `background: var(--interactive-accent)`, `color: var(--text-on-accent)`, `font-weight: 600`
 - Inactive segment: `background: var(--background-secondary)`, `color: var(--text-muted)`, `font-weight: 400`
 - Transition: `background 120ms ease, color 120ms ease`
@@ -391,7 +393,7 @@ No other destructive actions in Phase 10. Starting a contest is not destructive 
 - Timer digit: `font-size: 20px; font-weight: 600; font-family: var(--font-monospace); font-variant-numeric: tabular-nums`
 - "remaining" label: `font-size: 12px; color: var(--text-muted)`
 - Verdict badges: `width: 20px; height: 20px; border-radius: 50%` — green filled (AC), red filled (failed), hollow border-only (unsolved)
-- Action buttons: neutral button token (same as `.leetcode-code-action-run` — `min-height: 30px; padding: 2px 12px; border-radius: 6px; font-size: 13px; border: 1px solid var(--background-modifier-border)`)
+- Action buttons: neutral button token (same as `.leetcode-code-action-run` — `min-height: 30px; padding: 2px 12px; border-radius: 6px; font-size: 12px; border: 1px solid var(--background-modifier-border)`)
 - Abort button: same shape, but `color: var(--text-error)` for the text
 
 **Problem cards:**
@@ -513,7 +515,7 @@ All new CSS scoped under `.leetcode-contest` (contest-specific surfaces). Mode t
   height: 28px;
   padding: 0 12px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
@@ -536,7 +538,7 @@ All new CSS scoped under `.leetcode-contest` (contest-specific surfaces). Mode t
 .leetcode-browser .lc-contest-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-height: 40px;
   padding: 8px 12px;
   border-radius: 8px;
@@ -588,7 +590,7 @@ All new CSS scoped under `.leetcode-contest` (contest-specific surfaces). Mode t
 .leetcode-contest__timer-label {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 2px; /* exception: optical micro-adjustment, decorative */
 }
 .leetcode-contest__timer-paused {
   font-size: 14px;
@@ -615,8 +617,11 @@ All new CSS scoped under `.leetcode-contest` (contest-specific surfaces). Mode t
   gap: 8px;
   margin-top: 8px;
 }
+.leetcode-contest__actions button {
+  font-size: 12px;
+}
 .leetcode-contest__progress {
-  height: 3px;
+  height: 3px; /* exception: decorative hairline thickness, not layout spacing */
   background: var(--background-modifier-border);
   border-radius: 2px;
   margin-top: 8px;
