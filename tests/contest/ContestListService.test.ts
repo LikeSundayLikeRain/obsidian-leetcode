@@ -81,10 +81,10 @@ describe('ContestListService', () => {
       const result = await service.refresh();
       expect(client.getPastContests).toHaveBeenCalled();
       expect(result).toHaveLength(2);
-      expect(result[0].slug).toBe('weekly-contest-380');
-      expect(result[0].type).toBe('weekly');
-      expect(result[1].slug).toBe('biweekly-contest-121');
-      expect(result[1].type).toBe('biweekly');
+      expect(result[0]!.slug).toBe('weekly-contest-380');
+      expect(result[0]!.type).toBe('weekly');
+      expect(result[1]!.slug).toBe('biweekly-contest-121');
+      expect(result[1]!.type).toBe('biweekly');
       expect(settings.setContestIndex).toHaveBeenCalled();
     });
 
@@ -99,7 +99,7 @@ describe('ContestListService', () => {
       const result = await svc.refresh();
       expect(client.getPastContests).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
-      expect(result[0].slug).toBe('weekly-contest-1');
+      expect(result[0]!.slug).toBe('weekly-contest-1');
     });
 
     it('refetches when cache is stale (beyond TTL)', async () => {
@@ -183,13 +183,13 @@ describe('ContestListService', () => {
     it('filters by case-insensitive substring', () => {
       const result = service.search(contests, 'biweekly');
       expect(result).toHaveLength(1);
-      expect(result[0].slug).toBe('biweekly-contest-121');
+      expect(result[0]!.slug).toBe('biweekly-contest-121');
     });
 
     it('filters by partial number', () => {
       const result = service.search(contests, '380');
       expect(result).toHaveLength(1);
-      expect(result[0].slug).toBe('weekly-contest-380');
+      expect(result[0]!.slug).toBe('weekly-contest-380');
     });
 
     it('returns empty array for no match', () => {

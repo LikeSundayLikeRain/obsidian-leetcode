@@ -111,7 +111,7 @@ export class ContestListService {
       } while (tried.has(idx));
       tried.add(idx);
 
-      const contest = contests[idx];
+      const contest = contests[idx]!;
       try {
         const questions = await this.client.getContestQuestions(contest.slug);
         if (questions.questions.length >= 4) {
