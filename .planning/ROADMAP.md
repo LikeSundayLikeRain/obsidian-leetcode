@@ -208,16 +208,28 @@ Plans:
 
 **Goal**: When a user opts in, an Accepted submission triggers a single combined-dimensions AI review that lands as a new locked-heading `## AI Review` section inside the problem note, idempotent on re-AC and re-runnable on demand.
 **Depends on**: Phase 07
-**Requirements**: AIREV-01, AIREV-02, AIREV-03, AIREV-04, AIREV-05, AIREV-06
+**Requirements**: AIREV-01, AIREV-02, AIREV-03, AIREV-04, AIREV-05
 **Success Criteria** (what must be TRUE):
 
   1. User can toggle "Auto AI review on Accept" in settings (default OFF); when ON, an Accepted submission writes a 3-dimension review (Approach + Efficiency + Code Style) to a new `## AI Review` section.
   2. The `## AI Review` heading is in `LOCKED_HEADINGS`, and the review body is written via `app.vault.process` (never `cm.dispatch` or `vault.modify`).
   3. Re-AC of the same problem replaces the prior review block (idempotent — never appends), and AI-suggested code lands in a separate fence inside `## AI Review` (never auto-applied to `## Code`).
   4. User can run "Re-run AI review on current note" from the command palette and refresh a stale review on demand.
-  5. User can configure a daily AI cost cap; once exceeded, AI Review and AI Debug return a Notice instead of calling the provider until the next day.
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+**Wave 1** *(parallel)*
+
+- [ ] 09-01-PLAN.md — Pure helpers: buildReviewPrompt + mergeAIReviewSection + withReviewBullet disclosure factory + comprehensive unit tests.
+- [ ] 09-02-PLAN.md — Schema + section lock: AI_REVIEW_HEADING_LINE + LOCKED_HEADINGS extension + HeadingKind ai-review + PluginData.autoAIReviewOnAC + settings toggle.
+
+**Wave 2** *(blocked on Wave 1 completion — parallel)*
+
+- [ ] 09-03-PLAN.md — VerdictModal streaming extension for auto-review on AC + main.ts AC hook wiring (knowledgeGraph.onAccepted → review stream start).
+- [ ] 09-04-PLAN.md — `rerun-ai-review` palette command using AIStreamModal + vault.process write on stream completion.
+
+**UI hint**: yes (Settings toggle + VerdictModal streaming area + AIStreamModal for manual re-run)
 
 ### Phase 10: Contest (virtual + analysis)
 
@@ -281,7 +293,7 @@ Plans:
 | 06. Foundations + Preview Mode           | v1.1      | 4/4 | Complete    | 2026-05-15 |
 | 07. AI Provider Foundation               | v1.1      | 8/8 | Complete    | 2026-05-16 |
 | 08. AI Debug                             | v1.1      | 5/5 | Complete    | 2026-05-16 |
-| 09. AI ACed Review                       | v1.1      | -/-            | Not Started | -           |
+| 09. AI ACed Review                       | v1.1      | 0/4            | Planning    | -           |
 | 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
 | 12. Polish + Plugin-Store Re-submission  | v1.1      | -/-            | Not Started | -           |
