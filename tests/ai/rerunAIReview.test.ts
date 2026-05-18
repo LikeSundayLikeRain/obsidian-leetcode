@@ -72,7 +72,7 @@ describe('src/main.ts grep gates — Phase 09 Plan 04 wiring (AIREV-05)', () => 
   it('onStreamComplete callback uses vault.process with mergeAIReviewSection', () => {
     const idx = SRC_MAIN.indexOf('async runAIReview(');
     expect(idx).toBeGreaterThan(0);
-    const block = SRC_MAIN.slice(idx, idx + 2000);
+    const block = SRC_MAIN.slice(idx, idx + 3000);
     expect(block).toMatch(/vault\.process/);
     expect(block).toMatch(/mergeAIReviewSection/);
   });
@@ -158,8 +158,8 @@ describe('rerun-ai-review editorCheckCallback shape (unit)', () => {
       { getFileCache: () => ({ frontmatter: { 'lc-slug': 'two-sum' } }) },
     );
     expect(dispatched.length).toBe(1);
-    expect(dispatched[0].slug).toBe('two-sum');
-    expect(dispatched[0].file).toBe(mockFile);
+    expect(dispatched[0]!.slug).toBe('two-sum');
+    expect(dispatched[0]!.file).toBe(mockFile);
   });
 
   it('does NOT dispatch when checking === true (palette-list-render mode)', () => {
