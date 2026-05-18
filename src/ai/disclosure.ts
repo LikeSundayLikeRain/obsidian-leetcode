@@ -113,6 +113,33 @@ export function withDebugBullet(
 }
 
 /**
+ * Phase 09 Plan 01 Task 3 — `withReviewBullet` composition factory that
+ * appends the AI Review feature-specific bullet to a frozen base disclosure
+ * copy. Mandatory composition pattern (mirrors `withDebugBullet` above):
+ * NEVER mutate the base in place — the inner arrays are `Object.freeze`'d at
+ * module load (Phase 07 Plan 07 WR-02 mitigation).
+ *
+ * `withReviewBullet` returns a FRESH object whose `willSend` is a NEW array
+ * (not a reference to the base) ending with the locked verbatim AI Review
+ * bullet. The `neverSends` field passes through by reference equality —
+ * both arrays are frozen, no copy needed.
+ *
+ * The bullet text is locked verbatim per D-10 — describes exactly what
+ * AI Review sends to the provider (problem statement + accepted solution code).
+ */
+export function withReviewBullet(
+  base: { willSend: readonly string[]; neverSends: readonly string[] },
+): { willSend: readonly string[]; neverSends: readonly string[] } {
+  return {
+    willSend: [
+      ...base.willSend,
+      'AI Review sends the problem statement and your accepted solution code',
+    ],
+    neverSends: base.neverSends,
+  };
+}
+
+/**
  * Once-per-provider-switch disclosure modal. Fired by
  * `LeetCodePlugin.requireAIDisclosure` (see src/main.ts) when the active
  * provider's `disclosureAcknowledged` flag is false. Continue persists the
