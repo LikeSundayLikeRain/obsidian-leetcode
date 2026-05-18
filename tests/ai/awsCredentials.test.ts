@@ -1,7 +1,9 @@
 // tests/ai/awsCredentials.test.ts
 //
-// Phase 08.1 Plan 02 — unit tests for the in-plugin ~/.aws/credentials INI
-// parser + the resolveAwsCredentials env-vars-or-file dispatch.
+// Phase 08.1 Plan 02 + Phase 08.2 Plan 01 — unit tests for the canonical
+// AWS credential chain: env vars, profile resolution, file reads with
+// AWS_*_FILE overrides, config-file [profile X] syntax, merge logic,
+// and credential_process delegation.
 //
 // Strategy: stub `activeWindow.require` (the Electron-renderer Node-require
 // shim) with a fake fs/path/os triple that returns deterministic content per
@@ -15,10 +17,20 @@ interface FakeFs {
   readFileSync(path: string, encoding: string): string;
 }
 
-function stubNodeModules(opts: { credentialsContent?: string; throwOnRead?: Error }): void {
+/**
+ * Enhanced stubNodeModules that supports multiple file paths.
+ * When `files` is provided, readFileSync dispatches by path.
+ * When `credentialsContent` is provided (legacy), all reads return it.
+ */
+function stubNodeModules(opts: {
+  credentialsContent?: string;
+  files?: Record<string, string>;
+  throwOnRead?: Error;
+}): void {
   const fakeFs: FakeFs = {
-    readFileSync(_p: string, _e: string): string {
+    readFileSync(p: string, _e: string): string {
       if (opts.throwOnRead) throw opts.throwOnRead;
+      if (opts.files && p in opts.files) return opts.files[p] as string;
       return opts.credentialsContent ?? '';
     },
   };
@@ -36,6 +48,7 @@ function stubNodeModules(opts: { credentialsContent?: string; throwOnRead?: Erro
     if (id === 'fs') return fakeFs;
     if (id === 'path') return fakePath;
     if (id === 'os') return fakeOs;
+    if (id === 'child_process') return { spawnSync: vi.fn() };
     throw new Error(`unexpected require: ${id}`);
   });
   vi.stubGlobal('activeWindow', { require: fakeRequire });
@@ -47,6 +60,10 @@ function clearAwsEnv(): void {
   delete process.env.AWS_ACCESS_KEY_ID;
   delete process.env.AWS_SECRET_ACCESS_KEY;
   delete process.env.AWS_SESSION_TOKEN;
+  delete process.env.AWS_PROFILE;
+  delete process.env.AWS_DEFAULT_PROFILE;
+  delete process.env.AWS_SHARED_CREDENTIALS_FILE;
+  delete process.env.AWS_CONFIG_FILE;
 }
 
 beforeEach(() => {
@@ -61,7 +78,7 @@ afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
 });
 
-// ─── env-or-default-profile dispatch ────────────────────────────────────────
+// ─── Phase 08.1 — env-or-default-profile dispatch (preserved) ──────────────
 
 describe('Phase 08.1 awsCredentials — env-or-default-profile dispatch', () => {
   it('returns env vars when AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are set', async () => {
@@ -78,11 +95,14 @@ describe('Phase 08.1 awsCredentials — env-or-default-profile dispatch', () => 
 
   it('falls back to ~/.aws/credentials [default] when env vars are absent', async () => {
     stubNodeModules({
-      credentialsContent: [
-        '[default]',
-        'aws_access_key_id = AKIAFROMFILE',
-        'aws_secret_access_key = secretfromfile',
-      ].join('\n'),
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[default]',
+          'aws_access_key_id = AKIAFROMFILE',
+          'aws_secret_access_key = secretfromfile',
+        ].join('\n'),
+        '/home/testuser/.aws/config': '',
+      },
     });
     const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
     const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
@@ -103,21 +123,24 @@ describe('Phase 08.1 awsCredentials — env-or-default-profile dispatch', () => 
   });
 });
 
-// ─── Named profile dispatch ─────────────────────────────────────────────────
+// ─── Phase 08.1 — Named profile dispatch (preserved) ───────────────────────
 
 describe('Phase 08.1 awsCredentials — named profile dispatch', () => {
   it("reads the [work] section when source: 'profile', profile: 'work'", async () => {
     stubNodeModules({
-      credentialsContent: [
-        '[default]',
-        'aws_access_key_id = AKIA-DEFAULT',
-        'aws_secret_access_key = secret-default',
-        '',
-        '[work]',
-        'aws_access_key_id = AKIA-WORK',
-        'aws_secret_access_key = secret-work',
-        'aws_session_token = work-session-token',
-      ].join('\n'),
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[default]',
+          'aws_access_key_id = AKIA-DEFAULT',
+          'aws_secret_access_key = secret-default',
+          '',
+          '[work]',
+          'aws_access_key_id = AKIA-WORK',
+          'aws_secret_access_key = secret-work',
+          'aws_session_token = work-session-token',
+        ].join('\n'),
+        '/home/testuser/.aws/config': '',
+      },
     });
     const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
     const creds = resolveAwsCredentials({ source: 'profile', profile: 'work' });
@@ -126,23 +149,12 @@ describe('Phase 08.1 awsCredentials — named profile dispatch', () => {
     expect(creds.sessionToken).toBe('work-session-token');
   });
 
-  it('honors `[profile <name>]` config-file syntax for named profiles', async () => {
-    stubNodeModules({
-      credentialsContent: [
-        '[profile work]',
-        'aws_access_key_id = AKIA-CONFIG',
-        'aws_secret_access_key = secret-config',
-      ].join('\n'),
-    });
-    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
-    const creds = resolveAwsCredentials({ source: 'profile', profile: 'work' });
-    expect(creds.accessKeyId).toBe('AKIA-CONFIG');
-    expect(creds.secretAccessKey).toBe('secret-config');
-  });
-
   it('returns empty when the requested profile is missing', async () => {
     stubNodeModules({
-      credentialsContent: '[default]\naws_access_key_id = AKIA-DEFAULT',
+      files: {
+        '/home/testuser/.aws/credentials': '[default]\naws_access_key_id = AKIA-DEFAULT',
+        '/home/testuser/.aws/config': '',
+      },
     });
     const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
     const creds = resolveAwsCredentials({ source: 'profile', profile: 'nonexistent' });
@@ -154,22 +166,25 @@ describe('Phase 08.1 awsCredentials — named profile dispatch', () => {
   });
 });
 
-// ─── INI parser edge cases ──────────────────────────────────────────────────
+// ─── Phase 08.1 — INI parser edge cases (preserved) ────────────────────────
 
 describe('Phase 08.1 awsCredentials — parseIniProfile edge cases', () => {
   it('ignores `#` and `;` comment lines and blank lines', async () => {
     stubNodeModules({
-      credentialsContent: [
-        '# comment line',
-        '',
-        '; another comment',
-        '[default]',
-        '# inline-style comment after section',
-        '   ',
-        'aws_access_key_id = AKIA-CLEAN',
-        '; aws_secret_access_key = should-be-ignored',
-        'aws_secret_access_key = secret-clean',
-      ].join('\n'),
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '# comment line',
+          '',
+          '; another comment',
+          '[default]',
+          '# inline-style comment after section',
+          '   ',
+          'aws_access_key_id = AKIA-CLEAN',
+          '; aws_secret_access_key = should-be-ignored',
+          'aws_secret_access_key = secret-clean',
+        ].join('\n'),
+        '/home/testuser/.aws/config': '',
+      },
     });
     const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
     const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
@@ -184,7 +199,11 @@ describe('Phase 08.1 awsCredentials — parseIniProfile edge cases', () => {
     const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
     const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
     // Empty object — collapsed silently per T-08.1-03 mitigation.
-    expect(creds).toEqual({});
+    expect(creds).toEqual({
+      accessKeyId: undefined,
+      secretAccessKey: undefined,
+      sessionToken: undefined,
+    });
   });
 
   it('returns empty object when nodeRequire shim is unavailable (no activeWindow.require)', async () => {
@@ -193,7 +212,11 @@ describe('Phase 08.1 awsCredentials — parseIniProfile edge cases', () => {
     // env path doesn't short-circuit the test.
     const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
     const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
-    expect(creds).toEqual({});
+    expect(creds).toEqual({
+      accessKeyId: undefined,
+      secretAccessKey: undefined,
+      sessionToken: undefined,
+    });
   });
 
   it('parseIniProfile is exported and parses a single-section blob directly', async () => {
@@ -210,5 +233,365 @@ describe('Phase 08.1 awsCredentials — parseIniProfile edge cases', () => {
     expect(out.accessKeyId).toBe('AKIA-DIRECT');
     expect(out.secretAccessKey).toBe('secret-direct');
     expect(out.sessionToken).toBe('token-with-leading-space');
+  });
+});
+
+// ─── Phase 08.2 — Profile resolution waterfall ─────────────────────────────
+
+describe('Phase 08.2 awsCredentials — profile resolution waterfall', () => {
+  it('AWS_PROFILE=work resolves the [work] section instead of [default]', async () => {
+    process.env.AWS_PROFILE = 'work';
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[default]',
+          'aws_access_key_id = AKIA-DEFAULT',
+          'aws_secret_access_key = secret-default',
+          '',
+          '[work]',
+          'aws_access_key_id = AKIA-WORK',
+          'aws_secret_access_key = secret-work',
+        ].join('\n'),
+        '/home/testuser/.aws/config': '',
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
+    expect(creds.accessKeyId).toBe('AKIA-WORK');
+    expect(creds.secretAccessKey).toBe('secret-work');
+  });
+
+  it('AWS_DEFAULT_PROFILE=staging resolves the [staging] section', async () => {
+    process.env.AWS_DEFAULT_PROFILE = 'staging';
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[default]',
+          'aws_access_key_id = AKIA-DEFAULT',
+          'aws_secret_access_key = secret-default',
+          '',
+          '[staging]',
+          'aws_access_key_id = AKIA-STAGING',
+          'aws_secret_access_key = secret-staging',
+        ].join('\n'),
+        '/home/testuser/.aws/config': '',
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
+    expect(creds.accessKeyId).toBe('AKIA-STAGING');
+    expect(creds.secretAccessKey).toBe('secret-staging');
+  });
+
+  it('with no AWS_PROFILE or AWS_DEFAULT_PROFILE, falls back to [default]', async () => {
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[default]',
+          'aws_access_key_id = AKIA-FALLBACK',
+          'aws_secret_access_key = secret-fallback',
+        ].join('\n'),
+        '/home/testuser/.aws/config': '',
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
+    expect(creds.accessKeyId).toBe('AKIA-FALLBACK');
+    expect(creds.secretAccessKey).toBe('secret-fallback');
+  });
+
+  it("source:'profile' skips env vars and reads [work] directly", async () => {
+    // Set env vars that would win for default-chain — profile mode ignores them.
+    process.env.AWS_ACCESS_KEY_ID = 'AKIA-ENV';
+    process.env.AWS_SECRET_ACCESS_KEY = 'secret-env';
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[work]',
+          'aws_access_key_id = AKIA-WORK-DIRECT',
+          'aws_secret_access_key = secret-work-direct',
+        ].join('\n'),
+        '/home/testuser/.aws/config': '',
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'profile', profile: 'work' });
+    expect(creds.accessKeyId).toBe('AKIA-WORK-DIRECT');
+    expect(creds.secretAccessKey).toBe('secret-work-direct');
+  });
+});
+
+// ─── Phase 08.2 — AWS_*_FILE env overrides ──────────────────────────────────
+
+describe('Phase 08.2 awsCredentials — AWS_*_FILE overrides', () => {
+  it('AWS_SHARED_CREDENTIALS_FILE=/custom/path is honored', async () => {
+    process.env.AWS_SHARED_CREDENTIALS_FILE = '/custom/credentials';
+    stubNodeModules({
+      files: {
+        '/custom/credentials': [
+          '[default]',
+          'aws_access_key_id = AKIA-CUSTOM-CRED',
+          'aws_secret_access_key = secret-custom-cred',
+        ].join('\n'),
+        '/home/testuser/.aws/config': '',
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
+    expect(creds.accessKeyId).toBe('AKIA-CUSTOM-CRED');
+    expect(creds.secretAccessKey).toBe('secret-custom-cred');
+  });
+
+  it('AWS_CONFIG_FILE=/custom/config is honored', async () => {
+    process.env.AWS_CONFIG_FILE = '/custom/config';
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': '',
+        '/custom/config': [
+          '[default]',
+          'aws_access_key_id = AKIA-CUSTOM-CFG',
+          'aws_secret_access_key = secret-custom-cfg',
+          'region = us-west-2',
+        ].join('\n'),
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
+    expect(creds.accessKeyId).toBe('AKIA-CUSTOM-CFG');
+    expect(creds.secretAccessKey).toBe('secret-custom-cfg');
+  });
+});
+
+// ─── Phase 08.2 — Config file [profile X] syntax ───────────────────────────
+
+describe('Phase 08.2 awsCredentials — config file [profile X] syntax', () => {
+  it('[profile work] syntax in config file matches profile work', async () => {
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': '',
+        '/home/testuser/.aws/config': [
+          '[profile work]',
+          'aws_access_key_id = AKIA-CFG-WORK',
+          'aws_secret_access_key = secret-cfg-work',
+        ].join('\n'),
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'profile', profile: 'work' });
+    expect(creds.accessKeyId).toBe('AKIA-CFG-WORK');
+    expect(creds.secretAccessKey).toBe('secret-cfg-work');
+  });
+
+  it('[default] in config file (not [profile default]) matches default profile', async () => {
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': '',
+        '/home/testuser/.aws/config': [
+          '[default]',
+          'aws_access_key_id = AKIA-CFG-DEFAULT',
+          'aws_secret_access_key = secret-cfg-default',
+          'region = eu-west-1',
+        ].join('\n'),
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
+    expect(creds.accessKeyId).toBe('AKIA-CFG-DEFAULT');
+    expect(creds.secretAccessKey).toBe('secret-cfg-default');
+  });
+
+  it('[profile default] in config file also matches default profile', async () => {
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': '',
+        '/home/testuser/.aws/config': [
+          '[profile default]',
+          'aws_access_key_id = AKIA-CFG-PROFDEFAULT',
+          'aws_secret_access_key = secret-cfg-profdefault',
+        ].join('\n'),
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
+    expect(creds.accessKeyId).toBe('AKIA-CFG-PROFDEFAULT');
+    expect(creds.secretAccessKey).toBe('secret-cfg-profdefault');
+  });
+});
+
+// ─── Phase 08.2 — Merge logic ──────────────────────────────────────────────
+
+describe('Phase 08.2 awsCredentials — merge logic', () => {
+  it('config wins on region; credentials wins on static keys', async () => {
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[work]',
+          'aws_access_key_id = AKIA-CRED-WORK',
+          'aws_secret_access_key = secret-cred-work',
+          'region = us-east-1',
+        ].join('\n'),
+        '/home/testuser/.aws/config': [
+          '[profile work]',
+          'aws_access_key_id = AKIA-CFG-WORK',
+          'aws_secret_access_key = secret-cfg-work',
+          'region = eu-central-1',
+        ].join('\n'),
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'profile', profile: 'work' });
+    // Credentials file wins on keys
+    expect(creds.accessKeyId).toBe('AKIA-CRED-WORK');
+    expect(creds.secretAccessKey).toBe('secret-cred-work');
+  });
+
+  it('credential_process from config is used when credentials file has none', async () => {
+    // Mock getCachedOrRefreshSync to verify it's called
+    vi.doMock('../../src/ai/credentialProcess', () => ({
+      getCachedOrRefreshSync: vi.fn((_profile: string, _cmd: string) => ({
+        accessKeyId: 'AKIA-FROM-PROCESS',
+        secretAccessKey: 'secret-from-process',
+        sessionToken: 'token-from-process',
+      })),
+      getCachedOrRefresh: vi.fn(),
+      clearCredentialProcessCache: vi.fn(),
+      parseCommandLine: vi.fn(),
+    }));
+
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[work]',
+          '# no static keys, no credential_process',
+        ].join('\n'),
+        '/home/testuser/.aws/config': [
+          '[profile work]',
+          'credential_process = aws-vault exec work --json',
+          'region = us-west-2',
+        ].join('\n'),
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'profile', profile: 'work' });
+    expect(creds.accessKeyId).toBe('AKIA-FROM-PROCESS');
+    expect(creds.secretAccessKey).toBe('secret-from-process');
+    expect(creds.sessionToken).toBe('token-from-process');
+  });
+
+  it('missing files collapse to empty object (D-18 — never throw)', async () => {
+    const enoent = new Error('ENOENT');
+    (enoent as unknown as { code: string }).code = 'ENOENT';
+    stubNodeModules({ throwOnRead: enoent });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
+    expect(creds).toEqual({
+      accessKeyId: undefined,
+      secretAccessKey: undefined,
+      sessionToken: undefined,
+    });
+  });
+
+  it('missing nodeRequire returns empty object (existing behavior preserved)', async () => {
+    // Don't stub activeWindow — nodeRequire returns undefined
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'profile', profile: 'work' });
+    expect(creds).toEqual({
+      accessKeyId: undefined,
+      secretAccessKey: undefined,
+      sessionToken: undefined,
+    });
+  });
+});
+
+// ─── Phase 08.2 — credential_process delegation ────────────────────────────
+
+describe('Phase 08.2 awsCredentials — credential_process delegation', () => {
+  it('calls getCachedOrRefreshSync when credential_process directive found', async () => {
+    const mockGetCachedOrRefreshSync = vi.fn(() => ({
+      accessKeyId: 'AKIA-CP',
+      secretAccessKey: 'secret-cp',
+      sessionToken: 'session-cp',
+    }));
+
+    vi.doMock('../../src/ai/credentialProcess', () => ({
+      getCachedOrRefreshSync: mockGetCachedOrRefreshSync,
+      getCachedOrRefresh: vi.fn(),
+      clearCredentialProcessCache: vi.fn(),
+      parseCommandLine: vi.fn(),
+    }));
+
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[default]',
+          'credential_process = /usr/local/bin/helper --json',
+        ].join('\n'),
+        '/home/testuser/.aws/config': '',
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'env-or-default-profile' });
+    expect(creds.accessKeyId).toBe('AKIA-CP');
+    expect(creds.secretAccessKey).toBe('secret-cp');
+    expect(creds.sessionToken).toBe('session-cp');
+    expect(mockGetCachedOrRefreshSync).toHaveBeenCalledWith(
+      'default',
+      '/usr/local/bin/helper --json',
+    );
+  });
+
+  it('credential_process in credentials file takes precedence over config file', async () => {
+    const mockGetCachedOrRefreshSync = vi.fn((_p: string, cmd: string) => ({
+      accessKeyId: `AKIA-${cmd.includes('cred-helper') ? 'CRED' : 'CFG'}`,
+      secretAccessKey: 'secret',
+    }));
+
+    vi.doMock('../../src/ai/credentialProcess', () => ({
+      getCachedOrRefreshSync: mockGetCachedOrRefreshSync,
+      getCachedOrRefresh: vi.fn(),
+      clearCredentialProcessCache: vi.fn(),
+      parseCommandLine: vi.fn(),
+    }));
+
+    stubNodeModules({
+      files: {
+        '/home/testuser/.aws/credentials': [
+          '[work]',
+          'credential_process = cred-helper --json',
+        ].join('\n'),
+        '/home/testuser/.aws/config': [
+          '[profile work]',
+          'credential_process = cfg-helper --json',
+        ].join('\n'),
+      },
+    });
+    const { resolveAwsCredentials } = await import('../../src/ai/awsCredentials');
+    const creds = resolveAwsCredentials({ source: 'profile', profile: 'work' });
+    expect(creds.accessKeyId).toBe('AKIA-CRED');
+    expect(mockGetCachedOrRefreshSync).toHaveBeenCalledWith(
+      'work',
+      'cred-helper --json',
+    );
+  });
+});
+
+// ─── Phase 08.2 — parseIniProfile extended return type ──────────────────────
+
+describe('Phase 08.2 awsCredentials — parseIniProfile extended fields', () => {
+  it('parseIniProfile returns credential_process and region fields', async () => {
+    const { parseIniProfile } = await import('../../src/ai/awsCredentials');
+    const out = parseIniProfile(
+      [
+        '[profile work]',
+        'aws_access_key_id = AKIA-WORK',
+        'aws_secret_access_key = secret-work',
+        'credential_process = aws-vault exec work --json',
+        'region = us-west-2',
+      ].join('\n'),
+      'work',
+    );
+    expect(out.credential_process).toBe('aws-vault exec work --json');
+    expect(out.region).toBe('us-west-2');
+    expect(out.accessKeyId).toBe('AKIA-WORK');
   });
 });
