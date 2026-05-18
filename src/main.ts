@@ -147,6 +147,11 @@ import { logger } from './shared/logger';
 import type { SubmitCheckResponse, RunCheckResponse } from './solve/types';
 // Phase 10 Plan 03 — contest session manager (state machine + timer).
 import { ContestSessionManager } from './contest/ContestSessionManager';
+// Phase 10 Plan 04 — contest solve view (dedicated editing surface).
+import {
+  ContestSolveView,
+  CONTEST_SOLVE_VIEW_TYPE,
+} from './contest/ContestSolveView';
 
 /** Shape returned by getActiveProblemContext — the minimum info every Phase 3
  *  command needs: the TFile (used by RunModal / submit / starter-code paths),
@@ -353,6 +358,12 @@ export default class LeetCodePlugin extends Plugin {
     // can call `plugin.openProblem(slug)` (existing v1.0 path).
     this.registerView(PREVIEW_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
       new ProblemPreviewView(leaf, this));
+
+    // Phase 10 Plan 04 — register the contest solve view. Dedicated ItemView
+    // for solving contest problems (code editor + Run/Submit). Tab-reuse via
+    // openContestProblem() helper below.
+    this.registerView(CONTEST_SOLVE_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
+      new ContestSolveView(leaf, this));
 
     // Step 6b — ribbon icon (BROWSE-01). Lucide name from UI-SPEC.md § Icons.
      
@@ -780,6 +791,34 @@ export default class LeetCodePlugin extends Plugin {
    *  failure copy is surfaced. */
   async refreshProblem(slug: string): Promise<void> {
     return this.notes.forceRefresh(slug);
+  }
+
+  /**
+   * Phase 10 Plan 04 — open a contest problem in the dedicated ContestSolveView.
+   * Reuses the tab-reuse pattern from previewRouter: if a ContestSolveView leaf
+   * already exists, swap its state; otherwise open a new center tab. Plan 05's
+   * timer header problem badges delegate here.
+   */
+  async openContestProblem(problemIdx: number): Promise<void> {
+    const { workspace } = this.app;
+    const existing = workspace.getLeavesOfType(CONTEST_SOLVE_VIEW_TYPE);
+    if (existing.length > 0 && existing[0]) {
+      const leaf = existing[0];
+      await leaf.setViewState({
+        type: CONTEST_SOLVE_VIEW_TYPE,
+        active: true,
+        state: { problemIdx },
+      });
+      await workspace.revealLeaf(leaf);
+      return;
+    }
+    const leaf = workspace.getLeaf('tab');
+    await leaf.setViewState({
+      type: CONTEST_SOLVE_VIEW_TYPE,
+      active: true,
+      state: { problemIdx },
+    });
+    await workspace.revealLeaf(leaf);
   }
 
   private async activateBrowser(): Promise<void> {
