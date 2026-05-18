@@ -1481,3 +1481,97 @@
   color: var(--text-muted);
   flex-shrink: 0;
 }
+
+/* ── Phase 10 Plan 04 — ContestSolveView (solving surface) ─────────────── */
+.leetcode-contest-solve {
+  padding: 16px;
+}
+.leetcode-contest-solve__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--background-primary);
+  padding: 8px 0 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 12px;
+}
+.leetcode-contest-solve__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.leetcode-contest-solve__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+.leetcode-contest-solve__position {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.leetcode-contest-solve__body {
+  margin-bottom: 16px;
+}
+.leetcode-contest-solve__no-detail {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.leetcode-contest-solve__code {
+  display: block;
+  width: 100%;
+  min-height: 200px;
+  resize: vertical;
+  padding: 12px;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-normal);
+  margin-bottom: 12px;
+}
+.leetcode-contest-solve__code:focus {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -1px;
+}
+.leetcode-contest-solve__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+.leetcode-contest-solve__lang-select {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 13px;
+  margin-right: auto;
+}
+.leetcode-contest-solve__run-btn,
+.leetcode-contest-solve__submit-btn {
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+}
+.leetcode-contest-solve__run-btn:hover,
+.leetcode-contest-solve__submit-btn:hover {
+  background: var(--interactive-hover);
+}
+.leetcode-contest-solve__submit-btn.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.leetcode-contest-solve__submit-btn.mod-cta:hover {
+  background: var(--interactive-accent-hover);
+}
