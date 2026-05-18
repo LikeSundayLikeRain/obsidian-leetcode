@@ -56,6 +56,9 @@ export function createBedrockModel(cfg: BedrockProviderConfig, fetcher: FetchFn)
     case 'access-keys': {
       opts.accessKeyId = cfg.accessKeyId;
       opts.secretAccessKey = cfg.secretAccessKey;
+      if (cfg.sessionToken) {
+        opts.sessionToken = cfg.sessionToken;
+      }
       break;
     }
     case 'sso-profile': {
