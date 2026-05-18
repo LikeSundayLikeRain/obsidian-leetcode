@@ -1,53 +1,57 @@
 // src/contest/AbortContestModal.ts
-// Phase 10 Plan 07 — Confirmation modal for aborting a contest (D-07).
-//
-// Shows "Are you sure? You've solved X/4 problems, Y min remaining."
-// On confirm: calls the onConfirm callback which triggers handleContestEnd(true).
-// Pattern precedent: src/solve/VerdictModal.ts (Modal pattern).
+// Phase 10 Plan 05 — Confirmation modal for aborting an active contest.
+// All DOM via createEl / createDiv (Shared Pattern 3, no innerHTML).
 
-import { Modal, Setting, type App } from 'obsidian';
-import type { ContestSession } from './types';
-import { getRemainingMs } from './types';
+import { Modal, type App } from 'obsidian';
 
+/**
+ * Modal asking the user to confirm aborting the active contest.
+ * Shows the number of solved problems and remaining time to communicate
+ * the cost of aborting.
+ */
 export class AbortContestModal extends Modal {
   constructor(
     app: App,
-    private readonly session: ContestSession,
+    private readonly solvedCount: number,
+    private readonly totalProblems: number,
+    private readonly remainingMs: number,
     private readonly onConfirm: () => void,
   ) {
     super(app);
   }
 
   onOpen(): void {
-    const { contentEl } = this;
-    contentEl.empty();
+    const { contentEl, titleEl } = this;
+    titleEl.setText('Abort contest?');
 
-    const solvedCount = this.session.problems.filter(
-      (p) => p.verdict === 'accepted',
-    ).length;
-    const totalCount = this.session.problems.length;
-    const remainingMin = Math.ceil(getRemainingMs(this.session) / 60000);
+    const minutes = Math.floor(this.remainingMs / 60000);
+    const seconds = Math.floor((this.remainingMs % 60000) / 1000);
+    const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-    contentEl.createEl('h2', { text: 'Abort contest?' });
     contentEl.createEl('p', {
-      text: `You've solved ${String(solvedCount)}/${String(totalCount)} problems, ${String(remainingMin)} min remaining.`,
+      text: `You've solved ${String(this.solvedCount)}/${String(this.totalProblems)} problems with ${timeStr} remaining. Aborting will end the contest and write a summary note marked as aborted.`,
     });
 
-    new Setting(contentEl)
-      .addButton((b) =>
-        b.setButtonText('Cancel').onClick(() => {
-          this.close();
-        }),
-      )
-      .addButton((b) =>
-        b
-          .setButtonText('Abort contest')
-          .setWarning()
-          .onClick(() => {
-            this.close();
-            this.onConfirm();
-          }),
-      );
+    const actions = contentEl.createDiv({ cls: 'leetcode-contest__modal-actions' });
+
+    const confirmBtn = actions.createEl('button', {
+      text: 'Abort contest',
+      cls: 'leetcode-contest__btn-abort',
+    });
+    confirmBtn.addEventListener('click', () => {
+      this.onConfirm();
+      this.close();
+    });
+
+    const cancelBtn = actions.createEl('button', {
+      text: 'Cancel',
+    });
+    cancelBtn.addEventListener('click', () => {
+      this.close();
+    });
+
+    // Default-focus the cancel button (safe action) per UI-SPEC accessibility.
+    try { cancelBtn.focus(); } catch { /* headless */ }
   }
 
   onClose(): void {

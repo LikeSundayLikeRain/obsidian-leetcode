@@ -1575,3 +1575,156 @@
 .leetcode-contest-solve__submit-btn.mod-cta:hover {
   background: var(--interactive-accent-hover);
 }
+
+/* ── Phase 10 Plan 05 — Active Contest Timer Header ────────────────────── */
+.leetcode-contest__timer {
+  position: sticky;
+  top: -16px;
+  z-index: 10;
+  padding: 16px;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.leetcode-contest__timer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.leetcode-contest__timer-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.leetcode-contest__timer-display {
+  font-size: 20px;
+  font-weight: 600;
+  font-family: var(--font-monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-normal);
+}
+.leetcode-contest__timer-display.is-warning {
+  color: var(--color-yellow);
+}
+.leetcode-contest__timer-display.is-critical {
+  color: var(--color-red);
+}
+.leetcode-contest__timer-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.leetcode-contest__timer-paused {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Verdict badges */
+.leetcode-contest__badges {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+.leetcode-contest__badge {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.leetcode-contest__badge--ac {
+  color: var(--color-green);
+}
+.leetcode-contest__badge--failed {
+  color: var(--color-red);
+}
+.leetcode-contest__badge--unsolved {
+  color: var(--text-faint);
+}
+
+/* Progress bar */
+.leetcode-contest__progress {
+  height: 3px;
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.leetcode-contest__progress-fill {
+  height: 100%;
+  background: var(--interactive-accent);
+  transition: width 1s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .leetcode-contest__progress-fill {
+    transition: none;
+  }
+}
+
+/* Action buttons */
+.leetcode-contest__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.leetcode-contest__btn {
+  min-height: 30px;
+  padding: 2px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+.leetcode-contest__btn:hover {
+  background: var(--interactive-hover);
+}
+.leetcode-contest__btn-abort {
+  color: var(--text-error);
+}
+.leetcode-contest__btn-abort:hover {
+  border-color: var(--text-error);
+}
+
+/* Problem cards container */
+.leetcode-contest__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 0 4px;
+}
+
+/* Verdict chip in problem cards */
+.leetcode-contest__verdict-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  height: 20px;
+}
+.leetcode-contest__verdict-chip--accepted {
+  color: var(--color-green);
+  background: color-mix(in srgb, var(--background-secondary) 85%, var(--color-green) 15%);
+}
+.leetcode-contest__verdict-chip--attempted {
+  color: var(--color-red);
+  background: color-mix(in srgb, var(--background-secondary) 85%, var(--color-red) 15%);
+}
+.leetcode-contest__verdict-chip--unsolved {
+  color: var(--text-faint);
+  background: var(--background-secondary);
+}
+
+/* Abort modal actions */
+.leetcode-contest__modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
