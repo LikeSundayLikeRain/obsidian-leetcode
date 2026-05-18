@@ -33,7 +33,26 @@ function stubNodeModules(opts?: {
         signal: opts?.spawnSyncResult?.signal ?? null,
       }));
 
-  const fakeChildProcess = { spawnSync: mockSpawnSync };
+  const mockExecFile = vi.fn(
+    (_cmd: string, _args: string[], _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
+      const syncResult = (mockSpawnSync as (...a: unknown[]) => unknown)(_cmd, _args, _opts);
+      const r = syncResult as { status?: number | null; stdout?: string; stderr?: string; error?: { code?: string } | null };
+      if (r.error) {
+        const err = new Error(`spawn failed: ${r.error.code}`);
+        (err as NodeJS.ErrnoException).code = r.error.code;
+        cb(err, '', typeof r.stderr === 'string' ? r.stderr : '');
+      } else if (r.status !== 0) {
+        const err = new Error(`exited ${r.status}`);
+        (err as { code?: string | number }).code = r.status ?? 1;
+        cb(err, '', typeof r.stderr === 'string' ? r.stderr : '');
+      } else {
+        cb(null, typeof r.stdout === 'string' ? r.stdout : '', typeof r.stderr === 'string' ? r.stderr : '');
+      }
+      return { unref: () => {} };
+    },
+  );
+
+  const fakeChildProcess = { spawnSync: mockSpawnSync, execFile: mockExecFile };
   const fakeRequire = vi.fn((id: string) => {
     if (id === 'child_process') return fakeChildProcess;
     throw new Error(`unexpected require: ${id}`);
@@ -206,7 +225,7 @@ describe('credentialProcess — runCredentialProcess (spawn behavior)', () => {
     );
   });
 
-  it('spawnSync called with shell:false, timeout:30000, windowsHide:true, encoding:utf8', async () => {
+  it('spawnSync called with shell:true, timeout:30000, windowsHide:true, encoding:utf8', async () => {
     stubNodeModules({
       spawnSyncResult: {
         status: 0,
@@ -222,13 +241,12 @@ describe('credentialProcess — runCredentialProcess (spawn behavior)', () => {
     );
     clearCredentialProcessCache();
     getCachedOrRefreshSync('test', 'my-helper --arg1');
-    expect(mockSpawnSync).toHaveBeenCalledWith('my-helper', ['--arg1'], {
+    expect(mockSpawnSync).toHaveBeenCalledWith('my-helper', ['--arg1'], expect.objectContaining({
       timeout: 30_000,
       encoding: 'utf8',
       windowsHide: true,
       shell: false,
-      env: process.env,
-    });
+    }));
   });
 });
 

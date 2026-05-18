@@ -110,6 +110,54 @@ export function parseCommandLine(s: string): { command: string; args: string[] }
   };
 }
 
+// ─── Login shell PATH resolution (macOS GUI apps get minimal PATH) ────────
+
+let cachedLoginPath: string | undefined;
+
+export function getLoginShellPath(): string {
+  return cachedLoginPath ?? process.env.PATH ?? '';
+}
+
+/**
+ * Async PATH probe — runs the user's login shell with -ic to capture the
+ * full PATH (including .zshrc additions like ~/.toolbox/bin). Cached after
+ * first successful call. 5s timeout prevents hanging on exotic shell configs.
+ * Falls back to process.env.PATH on any failure.
+ *
+ * Call once at plugin load (fire-and-forget). Fully async — never freezes UI.
+ */
+export async function warmLoginShellPath(): Promise<void> {
+  if (cachedLoginPath !== undefined) return;
+  if (process.platform === 'win32') { cachedLoginPath = process.env.PATH || ''; return; }
+  const cp = nodeRequire<typeof import('child_process')>('child_process');
+  if (!cp) { cachedLoginPath = process.env.PATH || ''; return; }
+
+  const shell = process.env.SHELL || '/bin/zsh';
+  return new Promise<void>((resolve) => {
+    try {
+      cp.execFile(shell, ['-ic', 'printf "%s" "$PATH"'], {
+        timeout: 5_000,
+        encoding: 'utf8',
+        windowsHide: true,
+      }, (_err: Error | null, stdout: string) => {
+        cachedLoginPath = (stdout && stdout.trim()) ? stdout.trim() : (process.env.PATH || '');
+        resolve();
+      });
+    } catch {
+      cachedLoginPath = process.env.PATH || '';
+      resolve();
+    }
+  });
+}
+
+export function _resetLoginPathCache(): void {
+  cachedLoginPath = undefined;
+}
+
+export function _setLoginPathCache(v: string): void {
+  cachedLoginPath = v;
+}
+
 // ─── runCredentialProcess ─────────────────────────────────────────────────
 
 interface SpawnSyncResult {
@@ -136,12 +184,20 @@ function runCredentialProcess(value: string): { stdout: string; stderr: string }
 
   const { command, args } = parseCommandLine(value);
 
+  // Enrich PATH from the user's login shell so tools in ~/.toolbox/bin,
+  // /opt/homebrew/bin, etc. are findable. The probe runs once (cached at
+  // plugin load via onload warm-up) so this is a Map lookup, not a spawn.
+  const loginPath = getLoginShellPath();
+  const env = loginPath
+    ? { ...process.env, PATH: loginPath }
+    : process.env;
+
   const result: SpawnSyncResult = cp.spawnSync(command, args, {
     timeout: 30_000,
     encoding: 'utf8',
     windowsHide: true,
     shell: false,
-    env: process.env,
+    env,
   }) as unknown as SpawnSyncResult;
 
   const stderr = typeof result.stderr === 'string' ? result.stderr.slice(0, 200) : '';
@@ -165,6 +221,41 @@ function runCredentialProcess(value: string): { stdout: string; stderr: string }
     stdout: typeof result.stdout === 'string' ? result.stdout : '',
     stderr,
   };
+}
+
+function runCredentialProcessAsync(value: string): Promise<{ stdout: string; stderr: string }> {
+  const cp = nodeRequire<typeof import('child_process')>('child_process');
+  if (!cp) {
+    return Promise.reject(new Error('credential_process spawn failed: child_process unavailable'));
+  }
+
+  const { command, args } = parseCommandLine(value);
+  const enrichedPath = getLoginShellPath();
+  const env = { ...process.env, PATH: enrichedPath };
+
+  return new Promise((resolve, reject) => {
+    const child = cp.execFile(command, args, {
+      timeout: 30_000,
+      encoding: 'utf8',
+      windowsHide: true,
+      env,
+    }, (err: Error | null, stdout: string, stderr: string) => {
+      const stderrTrunc = typeof stderr === 'string' ? stderr.slice(0, 200) : '';
+      if (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'ETIMEDOUT' || (err.message && err.message.includes('timed out'))) {
+          return reject(new Error('credential_process timed out after 30s'));
+        }
+        if (code === 'ENOENT') {
+          return reject(new Error(`credential_process spawn failed: ${code}`));
+        }
+        const exitCode = (err as { code?: string | number }).code;
+        return reject(new Error(`credential_process exited ${exitCode}: ${stderrTrunc}`));
+      }
+      resolve({ stdout: stdout || '', stderr: stderrTrunc });
+    });
+    child?.unref?.();
+  });
 }
 
 // ─── parseCredentialProcessOutput ─────────────────────────────────────────
@@ -284,11 +375,9 @@ export function getCachedOrRefreshSync(
 }
 
 /**
- * Async wrapper around getCachedOrRefreshSync for concurrent coalescing.
- * D-12: Multiple concurrent callers share a single spawn via Promise dedup.
- *
- * Since spawnSync is blocking, the actual coalescing happens at the sync level.
- * This async wrapper enables Promise.all patterns in tests and future async callers.
+ * Truly async cache-check + spawn for credential_process.
+ * D-12: Multiple concurrent callers share a single in-flight Promise.
+ * Uses execFile (non-blocking) instead of spawnSync — does not freeze the UI.
  */
 const inflightPromises = new Map<string, Promise<ResolvedCredentials>>();
 
@@ -296,17 +385,33 @@ export async function getCachedOrRefresh(
   profileName: string,
   credentialProcessValue: string,
 ): Promise<ResolvedCredentials> {
-  // Check if there's already an in-flight promise for this profile
+  const entry = cache.get(profileName);
+  if (entry && entry.status === 'fresh' && Date.now() < entry.expiresAt - SKEW_MS) {
+    return entry.creds;
+  }
+
   const existing = inflightPromises.get(profileName);
   if (existing) return existing;
 
-  const promise = Promise.resolve().then(() => {
+  const promise = (async () => {
     try {
-      return getCachedOrRefreshSync(profileName, credentialProcessValue);
+      const { stdout } = await runCredentialProcessAsync(credentialProcessValue);
+      const parsed = parseCredentialProcessOutput(stdout);
+      const creds: ResolvedCredentials = {
+        accessKeyId: parsed.accessKeyId,
+        secretAccessKey: parsed.secretAccessKey,
+        sessionToken: parsed.sessionToken,
+      };
+      const expiresAt = parsed.expiresAt ?? (Date.now() + DEFAULT_TTL_MS);
+      cache.set(profileName, { status: 'fresh', creds, expiresAt });
+      return creds;
+    } catch (err) {
+      cache.delete(profileName);
+      throw err;
     } finally {
       inflightPromises.delete(profileName);
     }
-  });
+  })();
 
   inflightPromises.set(profileName, promise);
   return promise;

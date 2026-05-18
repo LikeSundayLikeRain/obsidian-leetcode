@@ -24,7 +24,7 @@
 // credential_process failures HARD-FAIL (D-05) — they propagate as thrown
 // errors. probeBedrock's try/catch collapses them to {ok:false, errorMessage}.
 
-import { getCachedOrRefreshSync } from './credentialProcess';
+import { getCachedOrRefreshSync, getCachedOrRefresh } from './credentialProcess';
 
 type CjsRequire = (id: string) => unknown;
 declare const __webpack_require__: CjsRequire | undefined;
@@ -231,6 +231,44 @@ export function resolveAwsCredentials(
   }
 
   // Static keys fallback.
+  return {
+    accessKeyId: merged.aws_access_key_id,
+    secretAccessKey: merged.aws_secret_access_key,
+    sessionToken: merged.aws_session_token,
+  };
+}
+
+/**
+ * Async version of resolveAwsCredentials — uses execFile (non-blocking)
+ * for credential_process instead of spawnSync. Does not freeze the UI.
+ */
+export async function resolveAwsCredentialsAsync(
+  opts:
+    | { source: 'env-or-default-profile' }
+    | { source: 'profile'; profile: string },
+): Promise<{ accessKeyId?: string; secretAccessKey?: string; sessionToken?: string }> {
+  if (opts.source === 'env-or-default-profile') {
+    const envCreds = readEnvCredentials();
+    if (envCreds) return envCreds;
+  }
+  const profileName =
+    opts.source === 'profile' ? opts.profile : resolveProfileName();
+  const credPath = resolveCredentialsPath();
+  const credText = credPath ? safeReadFile(credPath) : '';
+  const credSection = parseIniSection(credText, profileName, 'credentials');
+  const cfgPath = resolveConfigPath();
+  const cfgText = cfgPath ? safeReadFile(cfgPath) : '';
+  const cfgSection = parseIniSection(cfgText, profileName, 'config');
+  const merged = mergeProfileSettings(cfgSection, credSection);
+
+  if (merged.credential_process) {
+    const result = await getCachedOrRefresh(profileName, merged.credential_process);
+    return {
+      accessKeyId: result.accessKeyId,
+      secretAccessKey: result.secretAccessKey,
+      sessionToken: result.sessionToken,
+    };
+  }
   return {
     accessKeyId: merged.aws_access_key_id,
     secretAccessKey: merged.aws_secret_access_key,

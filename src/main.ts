@@ -207,6 +207,13 @@ export default class LeetCodePlugin extends Plugin {
   private activeSolve: ActiveSolve | null = null;
 
   async onload(): Promise<void> {
+    // Step 0.5 — warm the login-shell PATH cache so credential_process
+    // can find tools like isengardcli/aws-vault in ~/.toolbox/bin etc.
+    // Async fire-and-forget — never blocks plugin load.
+    import('./ai/credentialProcess')
+      .then(m => m.warmLoginShellPath())
+      .catch(() => { /* non-critical */ });
+
     // Step 1 — load persisted settings (cookies, folder, language, index)
     this.settings = await SettingsStore.load(this);
 

@@ -37,6 +37,7 @@ vi.mock('obsidian', async () => await import('../../helpers/obsidian-stub'));
 const resolveAwsCredentialsSpy = vi.fn();
 vi.mock('../../../src/ai/awsCredentials', () => ({
   resolveAwsCredentials: (opts: unknown) => resolveAwsCredentialsSpy(opts),
+  resolveAwsCredentialsAsync: (opts: unknown) => Promise.resolve(resolveAwsCredentialsSpy(opts)),
 }));
 
 const fetcher = vi.fn() as unknown as FetchFn;

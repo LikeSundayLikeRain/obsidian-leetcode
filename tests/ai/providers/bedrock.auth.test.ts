@@ -34,6 +34,7 @@ vi.mock('ai', () => ({
 
 vi.mock('../../../src/ai/awsCredentials', () => ({
   resolveAwsCredentials: (opts: unknown) => resolveAwsCredentialsSpy(opts),
+  resolveAwsCredentialsAsync: (opts: unknown) => Promise.resolve(resolveAwsCredentialsSpy(opts)),
 }));
 
 vi.mock('obsidian', async () => await import('../../helpers/obsidian-stub'));
@@ -62,18 +63,16 @@ beforeEach(() => {
   resolveAwsCredentialsSpy.mockReset();
 });
 
-describe('Phase 08.1 createBedrockModel — default-chain auth', () => {
-  it("calls resolveAwsCredentials({ source: 'env-or-default-profile' })", async () => {
-    resolveAwsCredentialsSpy.mockReturnValue({});
+describe('Phase 08.2 createBedrockModel — default-chain auth (lazy credentialProvider)', () => {
+  it('sets credentialProvider as an async function (no eager resolve)', async () => {
     const { createBedrockModel } = await import('../../../src/ai/providers/bedrock');
     createBedrockModel(makeBedrockCfg({ authMethod: 'default-chain' }), fetcher);
-    expect(resolveAwsCredentialsSpy).toHaveBeenCalledTimes(1);
-    expect(resolveAwsCredentialsSpy.mock.calls[0]![0]).toEqual({
-      source: 'env-or-default-profile',
-    });
+    const opts = createAmazonBedrockSpy.mock.calls[0]![0] as { credentialProvider?: () => PromiseLike<unknown> };
+    expect(typeof opts.credentialProvider).toBe('function');
+    expect(resolveAwsCredentialsSpy).not.toHaveBeenCalled();
   });
 
-  it('Object.assigns the resolved credentials onto opts', async () => {
+  it('credentialProvider resolves to credentials when called', async () => {
     resolveAwsCredentialsSpy.mockReturnValue({
       accessKeyId: 'AKIA-FROM-CHAIN',
       secretAccessKey: 'secret-from-chain',
@@ -81,14 +80,14 @@ describe('Phase 08.1 createBedrockModel — default-chain auth', () => {
     });
     const { createBedrockModel } = await import('../../../src/ai/providers/bedrock');
     createBedrockModel(makeBedrockCfg({ authMethod: 'default-chain' }), fetcher);
-    const opts = createAmazonBedrockSpy.mock.calls[0]![0] as {
-      accessKeyId?: string;
-      secretAccessKey?: string;
-      sessionToken?: string;
-    };
-    expect(opts.accessKeyId).toBe('AKIA-FROM-CHAIN');
-    expect(opts.secretAccessKey).toBe('secret-from-chain');
-    expect(opts.sessionToken).toBe('session-from-chain');
+    const opts = createAmazonBedrockSpy.mock.calls[0]![0] as { credentialProvider: () => PromiseLike<unknown> };
+    const creds = await opts.credentialProvider();
+    expect(creds).toEqual({
+      accessKeyId: 'AKIA-FROM-CHAIN',
+      secretAccessKey: 'secret-from-chain',
+      sessionToken: 'session-from-chain',
+    });
+    expect(resolveAwsCredentialsSpy).toHaveBeenCalledWith({ source: 'env-or-default-profile' });
   });
 });
 
@@ -125,19 +124,18 @@ describe('Phase 08.1 createBedrockModel — access-keys auth', () => {
   });
 });
 
-describe('Phase 08.1 createBedrockModel — sso-profile auth', () => {
-  it("calls resolveAwsCredentials({ source: 'profile', profile: cfg.ssoProfile })", async () => {
+describe('Phase 08.2 createBedrockModel — sso-profile auth (lazy credentialProvider)', () => {
+  it('sets credentialProvider that resolves with profile name', async () => {
     resolveAwsCredentialsSpy.mockReturnValue({});
     const { createBedrockModel } = await import('../../../src/ai/providers/bedrock');
     createBedrockModel(
       makeBedrockCfg({ authMethod: 'sso-profile', ssoProfile: 'work' }),
       fetcher,
     );
-    expect(resolveAwsCredentialsSpy).toHaveBeenCalledTimes(1);
-    expect(resolveAwsCredentialsSpy.mock.calls[0]![0]).toEqual({
-      source: 'profile',
-      profile: 'work',
-    });
+    const opts = createAmazonBedrockSpy.mock.calls[0]![0] as { credentialProvider: () => PromiseLike<unknown> };
+    expect(typeof opts.credentialProvider).toBe('function');
+    await opts.credentialProvider();
+    expect(resolveAwsCredentialsSpy).toHaveBeenCalledWith({ source: 'profile', profile: 'work' });
   });
 
   it('passes empty profile string when cfg.ssoProfile is undefined', async () => {
@@ -147,10 +145,9 @@ describe('Phase 08.1 createBedrockModel — sso-profile auth', () => {
       makeBedrockCfg({ authMethod: 'sso-profile', ssoProfile: undefined }),
       fetcher,
     );
-    expect(resolveAwsCredentialsSpy.mock.calls[0]![0]).toEqual({
-      source: 'profile',
-      profile: '',
-    });
+    const opts = createAmazonBedrockSpy.mock.calls[0]![0] as { credentialProvider: () => PromiseLike<unknown> };
+    await opts.credentialProvider();
+    expect(resolveAwsCredentialsSpy).toHaveBeenCalledWith({ source: 'profile', profile: '' });
   });
 });
 

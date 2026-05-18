@@ -29,7 +29,7 @@ import type { StreamTextResult } from 'ai';
 import type { BedrockProviderConfig, ProbeResult } from '../types';
 import type { FetchFn } from '../obsidianFetch';
 import { extractProviderError } from './index';
-import { resolveAwsCredentials } from '../awsCredentials';
+import { resolveAwsCredentialsAsync } from '../awsCredentials';
 
 /**
  * Construct an AI-SDK Bedrock model from the user's `BedrockProviderConfig`.
@@ -50,7 +50,10 @@ export function createBedrockModel(cfg: BedrockProviderConfig, fetcher: FetchFn)
   };
   switch (cfg.authMethod) {
     case 'default-chain': {
-      Object.assign(opts, resolveAwsCredentials({ source: 'env-or-default-profile' }));
+      opts.credentialProvider = () =>
+        resolveAwsCredentialsAsync({ source: 'env-or-default-profile' }) as PromiseLike<{
+          accessKeyId: string; secretAccessKey: string; sessionToken?: string;
+        }>;
       break;
     }
     case 'access-keys': {
@@ -62,16 +65,13 @@ export function createBedrockModel(cfg: BedrockProviderConfig, fetcher: FetchFn)
       break;
     }
     case 'sso-profile': {
-      Object.assign(
-        opts,
-        resolveAwsCredentials({ source: 'profile', profile: cfg.ssoProfile ?? '' }),
-      );
+      opts.credentialProvider = () =>
+        resolveAwsCredentialsAsync({ source: 'profile', profile: cfg.ssoProfile ?? '' }) as PromiseLike<{
+          accessKeyId: string; secretAccessKey: string; sessionToken?: string;
+        }>;
       break;
     }
     case 'api-key': {
-      // SDK auto-falls-back to AWS_BEARER_TOKEN_BEDROCK env var when apiKey
-      // is unset; passing the cfg field through covers both the
-      // user-typed-into-Settings path and the env-var path.
       opts.apiKey = cfg.bedrockApiKey;
       break;
     }
