@@ -186,6 +186,7 @@ None yet — awaiting `/gsd-plan-phase 6`.
 | Contest | Live participation — CONTEST-FUT-01 | Deferred | 2026-05-15 |
 | Contest | Difficulty-weighted Surprise me — CONTEST-FUT-02 | Deferred | 2026-05-15 |
 | Contest | Upcoming contest schedule — CONTEST-FUT-03 | Deferred | 2026-05-15 |
+| Contest | LC Virtual Contest API integration — CONTEST-FUT-04 (register virtual session, contest-specific submit, virtual ranking) | Backlog | 2026-05-18 |
 
 ## Session Continuity
 
