@@ -30,6 +30,8 @@ Full milestone detail: [.planning/milestones/v1.0-ROADMAP.md](milestones/v1.0-RO
 - [x] **Phase 06: Foundations + Preview Mode** — Lint bump, CI bundle gate, click-to-preview surface; refactor browser row-click into `previewRouter` for downstream reuse. (completed 2026-05-15)
 - [x] **Phase 07: AI Provider Foundation** — `AIClient`, 4 provider adapters, `obsidianFetch(mode)`, AI settings panel, first-run disclosure modal scaffolding, test-connection. (completed 2026-05-16)
 - [x] **Phase 08: AI Debug** — Streaming via `electron.net.fetch` with `requestUrl` fallback; `AIStreamModal`; `LastVerdictStore`; AI Debug button under `## Code` fence. (completed 2026-05-16)
+- [x] **Phase 08.1: Streaming transport fix + Bedrock provider** *(INSERTED)* — Native `window.fetch()` primary tier; AWS Bedrock as 5th provider with 4-option auth. (completed 2026-05-17)
+- [ ] **Phase 08.2: Bedrock canonical default-chain + credential_process auto-refresh** *(INSERTED)* — Honor `AWS_PROFILE` / `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE`; read `~/.aws/config`'s `[profile X]` syntax; resolve `credential_process` with in-memory cache + auto-refresh on `Expiration`.
 - [ ] **Phase 09: AI ACed Review** — First AI vault write to new locked `## AI Review` H2; opt-in auto-run; idempotent on re-AC; daily cost cap; manual re-run command.
 - [ ] **Phase 10: Contest (virtual + analysis)** — Past picker + Surprise me; persisted timer; 4 problem notes with `lc-contest-id`; status-bar UI; post-contest summary note.
 - [ ] **Phase 11: AI Knowledge Graph** — 22-pattern classifier; cluster hub notes; lazy-on-AC migration of `## Techniques`; cross-cluster `## Related Variants`; flagged look-ahead edges.
@@ -165,6 +167,33 @@ Plans:
 - [x] 08.1-02-PLAN.md — Bedrock provider adapter (mirrors anthropic.ts) + in-plugin ~/.aws/credentials INI parser + 4-option auth dropdown UI + region-substituted disclosure modal + logger redaction extension + bundle measurement gate.
 
 **UI hint**: yes (Bedrock Settings sub-form — Region + Model ID + 4-option auth dropdown + conditional secret fields)
+
+### Phase 08.2: Bedrock canonical default-chain + credential_process auto-refresh (INSERTED)
+
+**Goal:** Close the credential-resolution drift between Phase 08.1's hand-rolled `awsCredentials.ts` and the canonical AWS chain. Honor `AWS_PROFILE` / `AWS_DEFAULT_PROFILE` (currently hardcoded to `[default]`); honor `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE` overrides; read `~/.aws/config`'s `[profile X]` syntax for profile metadata (region, `credential_process`); resolve `credential_process` helper commands via `child_process.spawnSync` (renderer Node-require shim — same pattern as `obsidianFetch.ts:loadElectronNet`) with in-memory cache and auto-refresh on `Expiration` minus 5-minute skew. Closes the everyday-user surprise where `export AWS_PROFILE=work` silently reads `[default]`. SSO refresh and assume-role chains stay out of scope (require `child_process.spawn` for `aws sso login` / `@aws-sdk/client-sts` for AssumeRole — both flagged for v1.2).
+**Depends on:** Phase 08.1
+**Requirements**: AIPROV-FUT-01 (extends — canonical AWS credential chain parity for static + credential_process modes), AIPROV-02 (preserved — credential_process stdout never logged; stderr truncated to 200 chars; 30-second timeout)
+**Success Criteria** (what must be TRUE):
+
+  1. `export AWS_PROFILE=work` resolves the `[work]` (or `[profile work]`) section instead of `[default]`. `AWS_DEFAULT_PROFILE` and the literal `"default"` are the documented fallbacks in canonical order.
+  2. `export AWS_SHARED_CREDENTIALS_FILE=/custom/path` and `AWS_CONFIG_FILE=/custom/path` are honored; default paths (`~/.aws/credentials`, `~/.aws/config`) used when env vars are absent.
+  3. A profile with `credential_process = aws-vault exec work --json` (or any command emitting AWS-CLI v1 JSON: `Version`, `AccessKeyId`, `SecretAccessKey`, `SessionToken`, `Expiration`) resolves credentials by spawning the command, parsing stdout, and signing the request with the resulting keys.
+  4. `credential_process` results cache in memory keyed by profile name. The cache TTL respects the `Expiration` field minus a 5-minute skew. Subsequent calls within the TTL reuse the cached creds; calls past the skew window re-spawn the command.
+  5. `credential_process` errors (non-zero exit, malformed JSON, missing required fields, timeout > 30 s) surface as a Notice with the truncated stderr (first 200 chars). `probeBedrock` continues to never throw — failures collapse to `{ ok: false, errorMessage }` per the existing contract.
+  6. Reading `~/.aws/config`'s `[profile X]` syntax handles both bare-name (in `~/.aws/credentials`) and `profile <name>` prefix (in `~/.aws/config`); `region` and `credential_process` keys flow through.
+  7. Static `[profile X]` entries in `~/.aws/credentials` (existing v0.8.1 path) keep working — when no `credential_process` is present, fall through to direct `aws_access_key_id` + `aws_secret_access_key` + `aws_session_token` reads.
+  8. Stdout of `credential_process` is NEVER logged (it contains creds). Stderr is logged truncated to 200 chars for diagnostics. Logger redaction extension covers any new field names if introduced.
+  9. Bundle stays under 1.2 MB ceiling (estimated <1 KB delta — pure JS extension, no new npm deps).
+
+**Plans**: TBD (target: 1–2 plans, ~half-day work)
+
+**Out of scope (explicitly deferred)**:
+- `role_arn` + `source_profile` chains (assume-role) — needs `@aws-sdk/client-sts` (~150 KB bundle).
+- Inline `sso_session` blocks / `aws sso login` browser auth — requires `child_process.spawn` for the AWS CLI flow.
+- EC2 instance metadata service / ECS container metadata — Obsidian renderer doesn't run on those infrastructures.
+- Container/credential-helper IPC — same.
+
+**UI hint**: minimal (Settings helper text under "Default credential chain" updates to mention `AWS_PROFILE` + `credential_process` support; no new dropdowns).
 
 ### Phase 09: AI ACed Review
 
