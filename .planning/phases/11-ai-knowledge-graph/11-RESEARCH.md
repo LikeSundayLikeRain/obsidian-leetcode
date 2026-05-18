@@ -564,24 +564,24 @@ export function mergeRelatedVariantsSection(
 | A5 | 500 maxTokens is sufficient for pattern + 2 variants + 2 look-ahead in JSON format | Pattern 1 | May need increase; 200-300 tokens typical, 500 gives generous headroom |
 | A6 | The 22 seed patterns cover 90%+ of LeetCode problems adequately | Prompt design | If AI creates too many novel patterns, graph fragments; user may need taxonomy admin (deferred) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Classification opt-in: shared toggle or dedicated?**
+1. **Classification opt-in: shared toggle or dedicated?** (RESOLVED: dedicated `autoAIKnowledgeGraph` toggle, default ON — Plan 01 Task 2 + Plan 03 Task 2)
    - What we know: AI Review has `autoAIReviewOnAC` toggle. Classification is a separate concern (D-01 says it fires on AC).
    - What's unclear: Should classification be always-on when AI is configured, or require a separate opt-in?
    - Recommendation: Gate behind the existing `autoAIReviewOnAC` OR add a distinct `autoAIKnowledgeGraph` toggle. The CONTEXT decisions don't specify — this is Claude's discretion. Recommend a dedicated toggle (default ON when AI is configured) since KG is a core feature, not just review.
 
-2. **JSON parsing resilience**
+2. **JSON parsing resilience** (RESOLVED: 4-strategy cascade in parseKgResponse — Plan 01 Task 1)
    - What we know: LLMs sometimes wrap JSON in markdown code fences or add explanatory text.
    - What's unclear: How reliable are different providers at raw JSON output?
    - Recommendation: `parseKgResponse` should try: (1) direct `JSON.parse`, (2) strip markdown fences then parse, (3) regex extract `{...}` then parse, (4) fallback to `{ pattern: 'OTHER', variants: [], lookAhead: [] }` and log.
 
-3. **Section ordering: `## Related Variants` placement**
+3. **Section ordering: `## Related Variants` placement** (RESOLVED: after Techniques, before AI Review — Plan 01 Task 2)
    - What we know: `## Techniques` is anchored. `## AI Review` is at EOF. `## Related Variants` is new.
    - What's unclear: Does `## Related Variants` go immediately after `## Techniques` or after `## AI Review`?
    - Recommendation: After `## Techniques` and before `## AI Review`. The variants are graph-topology content (like Techniques), not AI commentary. This groups related concepts.
 
-4. **Cost accounting for classification call**
+4. **Cost accounting for classification call** (RESOLVED: compute from response.usage via pricing.ts + addCostLedger — Plan 02 Task 2)
    - What we know: `addCostLedger(usd)` exists. Phase 09's review calculates cost from usage tokens.
    - What's unclear: Classification call is `AIClient.invoke` which returns `usdCost: 0` (cost added by caller pattern from Phase 08/09).
    - Recommendation: After `invoke` resolves, compute cost from `response.usage` via the `pricing.ts` module and call `addCostLedger`. Matches Phase 09 pattern exactly.
