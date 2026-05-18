@@ -11,6 +11,9 @@ import { getActiveThrottle } from '../api/requestUrlFetcher';
 import { RateLimitError } from '../shared/errors';
 import { showSessionExpiredNotice } from '../solve/SessionExpiredNotice';
 import { FilterModal } from './FilterModal';
+import { ContestListService } from '../contest/ContestListService';
+import { ContestPreviewModal } from '../contest/ContestPreview';
+import type { CachedContest } from '../contest/types';
 // WR-02: route all timers through the popout-aware helpers used by Throttle
 // so that timers on a view hosted in an Obsidian popout bind to the popout's
 // event loop, not the main window's.
@@ -90,9 +93,22 @@ export class ProblemBrowserView extends ItemView {
   private throttleFooterEl: HTMLElement | null = null;
   private throttleFooterTimer: TimerHandle | null = null;
 
+  // Phase 10 — Contests mode (D-01)
+  private mode: 'problems' | 'contests' = 'problems';
+  private contestListService: ContestListService;
+  private contestCache: CachedContest[] = [];
+  private contestSearchTerm = '';
+  private contestSearchDebounce: TimerHandle | null = null;
+  private contestRowsContainer: HTMLElement | null = null;
+  /** Pagination state for contest list — how many are currently rendered. */
+  private contestRenderedCount = 0;
+  private static readonly CONTEST_PAGE_SIZE = 50;
+  private static readonly CONTEST_SEARCH_DEBOUNCE_MS = 200;
+
   constructor(leaf: WorkspaceLeaf, private readonly plugin: LeetCodePlugin) {
     super(leaf);
     this.navigation = false;   // D-06: static dock view
+    this.contestListService = new ContestListService(this.plugin.client, this.plugin.settings);
   }
 
   getViewType(): string { return BROWSER_VIEW_TYPE; }
@@ -128,6 +144,20 @@ export class ProblemBrowserView extends ItemView {
         } as FilterRule & { __autoDefault?: boolean }],
       };
       await this.plugin.settings.setFilter(this.filter);
+    }
+
+    // Phase 10 D-01: Auto-switch to contests mode when an active session exists (Pitfall 7).
+    const activeSession = this.plugin.settings.getContestSession();
+    if (activeSession !== null) {
+      this.mode = 'contests';
+    }
+
+    // Phase 10: render mode toggle above all content
+    this.renderModeToggle(root);
+
+    if (this.mode === 'contests') {
+      await this.renderContestsMode(root);
+      return;
     }
 
     if (!this.plugin.auth.isLoggedIn()) {
@@ -172,6 +202,10 @@ export class ProblemBrowserView extends ItemView {
       clearWindowTimeout(this.searchDebounce);
       this.searchDebounce = null;
     }
+    if (this.contestSearchDebounce !== null) {
+      clearWindowTimeout(this.contestSearchDebounce);
+      this.contestSearchDebounce = null;
+    }
     // Tear down throttle subscription + pending timer (D-13 cleanup).
     this.clearThrottleFooterTimer();
     if (this.throttleUnsub) {
@@ -179,6 +213,7 @@ export class ProblemBrowserView extends ItemView {
       this.throttleUnsub = null;
     }
     this.throttleFooterEl = null;
+    this.contestRowsContainer = null;
   }
 
   private async refreshAndRender(root: HTMLElement): Promise<void> {
@@ -657,5 +692,263 @@ export class ProblemBrowserView extends ItemView {
       );
       menu.showAtMouseEvent(e);
     });
+  }
+
+  // ─── Phase 10: Contest mode methods ─────────────────────────────────────────
+
+  /**
+   * Render the Problems/Contests mode toggle at the top of the view.
+   * ARIA: container role="tablist", buttons role="tab" + aria-selected (D-01).
+   */
+  private renderModeToggle(root: HTMLElement): void {
+    const toggle = root.createDiv({ cls: 'lc-mode-toggle', attr: { role: 'tablist' } });
+
+    const problemsBtn = toggle.createEl('button', {
+      text: 'Problems',
+      cls: `lc-mode-toggle__btn${this.mode === 'problems' ? ' is-active' : ''}`,
+      attr: { role: 'tab', 'aria-selected': String(this.mode === 'problems') },
+    });
+
+    const contestsBtn = toggle.createEl('button', {
+      text: 'Contests',
+      cls: `lc-mode-toggle__btn${this.mode === 'contests' ? ' is-active' : ''}`,
+      attr: { role: 'tab', 'aria-selected': String(this.mode === 'contests') },
+    });
+
+    problemsBtn.addEventListener('click', () => {
+      if (this.mode === 'problems') return;
+      this.mode = 'problems';
+      void this.onOpen();
+    });
+
+    contestsBtn.addEventListener('click', () => {
+      if (this.mode === 'contests') return;
+      this.mode = 'contests';
+      void this.onOpen();
+    });
+  }
+
+  /**
+   * Render contests mode: auth gate, search input, shuffle button, contest rows.
+   * Mirrors the problems mode shell pattern with contest-specific rendering.
+   */
+  private async renderContestsMode(root: HTMLElement): Promise<void> {
+    // Auth gate (same pattern as existing auth check in onOpen)
+    if (!this.plugin.auth.isLoggedIn()) {
+      this.renderLoggedOutState(root, {
+        heading: 'Log in to browse contests',
+        body: 'Sign in to LeetCode to load the contest list.',
+      });
+      return;
+    }
+
+    // Top bar: search + shuffle
+    const topbar = root.createDiv({ cls: 'lc-topbar' });
+
+    // Search input
+    const searchWrap = topbar.createDiv({ cls: 'lc-search' });
+    const searchIcon = searchWrap.createSpan({ cls: 'lc-search__icon' });
+    setIcon(searchIcon, 'search');
+    const input = searchWrap.createEl('input', {
+      attr: {
+        type: 'search',
+        placeholder: 'Search contests…',
+        'aria-label': 'Search contests by title',
+      },
+    });
+    input.value = this.contestSearchTerm;
+    input.addEventListener('input', () => {
+      if (this.contestSearchDebounce !== null) clearWindowTimeout(this.contestSearchDebounce);
+      this.contestSearchDebounce = setWindowTimeout(() => {
+        this.contestSearchTerm = input.value;
+        this.renderContestRows();
+      }, ProblemBrowserView.CONTEST_SEARCH_DEBOUNCE_MS);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        input.value = '';
+        this.contestSearchTerm = '';
+        this.renderContestRows();
+      }
+    });
+
+    // Shuffle (Surprise me) button — D-03
+    const shuffleBtn = topbar.createDiv({
+      cls: 'lc-iconbtn lc-iconbtn--shuffle',
+      attr: { 'aria-label': 'Random contest', role: 'button', tabindex: '0' },
+    });
+    const shuffleIcon = shuffleBtn.createSpan({ cls: 'lc-iconbtn__icon' });
+    setIcon(shuffleIcon, 'shuffle');
+    shuffleBtn.addEventListener('click', () => { void this.handleSurpriseMe(); });
+
+    // Rows container for contest list
+    this.contestRowsContainer = root.createDiv({ cls: 'lc-rows', attr: { role: 'listbox' } });
+
+    // Loading state
+    this.renderEmptyState(this.contestRowsContainer, {
+      heading: 'Loading contests…',
+      body: 'Fetching the contest list from LeetCode.',
+    });
+
+    // Fetch contest list
+    try {
+      this.contestCache = await this.contestListService.refresh();
+      this.contestRenderedCount = 0;
+      this.renderContestRows();
+    } catch {
+      if (this.contestRowsContainer) {
+        this.contestRowsContainer.empty();
+        this.renderEmptyState(this.contestRowsContainer, {
+          heading: 'No contests found',
+          body: 'Try a different search term or check your connection.',
+          buttonText: 'Retry',
+          onAction: () => { void this.renderContestsMode(root); },
+        });
+      }
+    }
+
+    // Scroll pagination — load more contest rows when scrolling near bottom.
+    root.addEventListener('scroll', () => {
+      if (!this.contestRowsContainer) return;
+      const scrollBottom = root.scrollTop + root.clientHeight;
+      const threshold = root.scrollHeight - 100;
+      if (scrollBottom >= threshold) {
+        this.appendContestRows();
+      }
+    });
+  }
+
+  /**
+   * Render the contest rows from the filtered cache. Resets and renders
+   * the first page (50 items).
+   */
+  private renderContestRows(): void {
+    if (!this.contestRowsContainer) return;
+    this.contestRowsContainer.empty();
+    this.contestRenderedCount = 0;
+
+    const filtered = this.contestListService.search(this.contestCache, this.contestSearchTerm);
+    if (filtered.length === 0) {
+      this.renderEmptyState(this.contestRowsContainer, {
+        heading: 'No contests found',
+        body: 'Try a different search term or check your connection.',
+      });
+      return;
+    }
+
+    const page = filtered.slice(0, ProblemBrowserView.CONTEST_PAGE_SIZE);
+    for (const c of page) this.renderContestRow(this.contestRowsContainer, c);
+    this.contestRenderedCount = page.length;
+  }
+
+  /**
+   * Append the next page of contest rows for scroll pagination.
+   */
+  private appendContestRows(): void {
+    if (!this.contestRowsContainer) return;
+    const filtered = this.contestListService.search(this.contestCache, this.contestSearchTerm);
+    if (this.contestRenderedCount >= filtered.length) return;
+
+    const nextPage = filtered.slice(
+      this.contestRenderedCount,
+      this.contestRenderedCount + ProblemBrowserView.CONTEST_PAGE_SIZE,
+    );
+    for (const c of nextPage) this.renderContestRow(this.contestRowsContainer, c);
+    this.contestRenderedCount += nextPage.length;
+  }
+
+  /**
+   * Render a single contest row. Click opens ContestPreview modal.
+   * Row format: title (flex:1) + meta (date + '4 problems').
+   */
+  private renderContestRow(container: HTMLElement, contest: CachedContest): void {
+    const row = container.createDiv({
+      cls: 'lc-contest-row',
+      attr: { role: 'option' },
+    });
+
+    row.createDiv({
+      cls: 'lc-contest-row__title',
+      text: contest.title,
+    });
+
+    // Date format: locale-aware short date + ' · 4 problems'
+    const date = new Date(contest.startTime * 1000);
+    const dateStr = date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    row.createDiv({
+      cls: 'lc-contest-row__meta',
+      text: `${dateStr} · 4 problems`,
+    });
+
+    row.addEventListener('click', () => {
+      this.openContestPreview(contest);
+    });
+  }
+
+  /**
+   * D-03: "Surprise me" picks a random valid contest and opens the preview.
+   */
+  private async handleSurpriseMe(): Promise<void> {
+    const contest = await this.contestListService.surpriseMe();
+    if (!contest) {
+      new Notice("Couldn't find a contest with valid problems. Try picking one manually.", 6000);
+      return;
+    }
+    this.openContestPreview(contest);
+  }
+
+  /**
+   * Open the ContestPreview modal for a given contest. The modal's onStart
+   * callback delegates to startContest which fetches problems and creates a session.
+   */
+  private openContestPreview(contest: CachedContest): void {
+    new ContestPreviewModal(
+      this.app,
+      contest,
+      this.plugin.client,
+      async (questions) => { await this.startContest(contest, questions); },
+    ).open();
+  }
+
+  /**
+   * D-10: Fetch all 4 problem details in parallel, create a ContestSession,
+   * and notify the user. Called by ContestPreview's onStart callback.
+   */
+  async startContest(
+    contest: CachedContest,
+    questions: Array<{ credit: number; title: string; title_slug: string; difficulty: number }>,
+  ): Promise<void> {
+    // Fetch all problem details in parallel
+    const results = await Promise.allSettled(
+      questions.map((q) => this.plugin.client.getProblemDetail(q.title_slug)),
+    );
+
+    // Check if any fetch failed
+    const failed = results.some((r) => r.status === 'rejected' || (r.status === 'fulfilled' && r.value === null));
+    if (failed) {
+      new Notice("Couldn't fetch contest problems. Check your connection.", 4000);
+      return;
+    }
+
+    // Create contest session via ContestSessionManager
+    this.plugin.contestSessionManager.start({
+      contestSlug: contest.slug,
+      contestTitle: contest.title,
+      contestType: contest.type,
+      duration: contest.duration,
+      problems: questions.map((q) => ({
+        slug: q.title_slug,
+        title: q.title,
+        credit: q.credit,
+        difficulty: q.difficulty,
+      })),
+    });
+
+    const minutes = Math.round(contest.duration / 60);
+    new Notice(`Contest started: ${contest.title}. ${String(minutes)} min on the clock.`, 4000);
+
+    // Re-render in contests mode to show active contest state
+    this.mode = 'contests';
+    void this.onOpen();
   }
 }

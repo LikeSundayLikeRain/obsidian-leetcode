@@ -1420,3 +1420,64 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ── Phase 10 — Mode toggle (Problems / Contests) ────────────────────────── */
+/* Scoped under .leetcode-browser per 10-UI-SPEC §CSS conventions.           */
+/* All colors via Obsidian CSS variables — no raw hex.                        */
+.leetcode-browser .lc-mode-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.leetcode-browser .lc-mode-toggle__btn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.leetcode-browser .lc-mode-toggle__btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.leetcode-browser .lc-mode-toggle__btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+  border-color: transparent;
+}
+
+/* ── Phase 10 — Contest row (searchable list in Contests mode) ────────────── */
+.leetcode-browser .lc-contest-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.leetcode-browser .lc-contest-row:hover {
+  background: var(--background-modifier-hover);
+}
+.leetcode-browser .lc-contest-row__title {
+  flex: 1 1 auto;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leetcode-browser .lc-contest-row__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

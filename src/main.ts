@@ -145,6 +145,8 @@ import {
 import { setWindowTimeout, clearWindowTimeout, type TimerHandle } from './shared/timers';
 import { logger } from './shared/logger';
 import type { SubmitCheckResponse, RunCheckResponse } from './solve/types';
+// Phase 10 Plan 03 — contest session manager (state machine + timer).
+import { ContestSessionManager } from './contest/ContestSessionManager';
 
 /** Shape returned by getActiveProblemContext — the minimum info every Phase 3
  *  command needs: the TFile (used by RunModal / submit / starter-code paths),
@@ -194,6 +196,12 @@ export default class LeetCodePlugin extends Plugin {
   // at least one markdown leaf"). dispose() is called from onunload for a
   // deterministic wipe in test runs that re-instantiate the plugin.
   lastVerdictStore!: LastVerdictStore;
+
+  // Phase 10 Plan 03 — Contest session manager. Manages the contest lifecycle
+  // state machine (start/pause/resume/abort/finish) with epoch-based timer.
+  // Constructed in onload after settings. The callbacks (onTick, onExpired,
+  // onVerdictChange) are no-ops initially — Plan 04 wires the real handlers.
+  contestSessionManager!: ContestSessionManager;
 
   // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
   // AIProvider; values are the in-flight probe Promise. Cleared in the
@@ -320,6 +328,19 @@ export default class LeetCodePlugin extends Plugin {
     // no data.json persistence (08-CONTEXT decision B). Disposed in
     // onunload(). Order: ephemeralTabs → aiClient → lastVerdictStore.
     this.lastVerdictStore = new LastVerdictStore();
+
+    // Step 5.11 — Phase 10 Plan 03 — ContestSessionManager. State machine for
+    // contest lifecycle (start/pause/resume/abort/finish). Callbacks are no-ops
+    // initially — Plan 04 wires the real onTick/onExpired/onVerdictChange
+    // handlers that drive the timer UI in ProblemBrowserView.
+    this.contestSessionManager = new ContestSessionManager(
+      this.settings,
+      {
+        onTick: () => { /* Plan 04 wires real handler */ },
+        onExpired: () => { /* Plan 04 wires real handler */ },
+        onVerdictChange: () => { /* Plan 04 wires real handler */ },
+      },
+    );
 
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
