@@ -307,6 +307,8 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     }),
     getAutoAIReviewOnAC: () => false,
     setAutoAIReviewOnAC: vi.fn(async (_v: boolean) => undefined),
+    getAutoAIContestAnalysis: () => false,
+    setAutoAIContestAnalysis: vi.fn(async (_v: boolean) => undefined),
   };
 
   // Phase 07 Plan 04 — Settings Test connection button delegates to the
@@ -351,10 +353,12 @@ describe('SettingsTab — AI section (Phase 07 Plan 03)', () => {
     const aiHeading = headings.find((h) => h.textContent === 'AI');
     expect(aiHeading).toBeDefined();
 
-    // The next heading after AI must be Knowledge graph (proves no sub-form rendered).
+    // The next heading after AI must be Contest (Phase 10 Plan 07 added Contest
+    // section between AI and Knowledge graph). This still proves no AI sub-form
+    // rendered — the AI section contains only heading + dropdown + auto-review toggle.
     const aiHeadingIdx = headings.indexOf(aiHeading!);
     const nextHeading = headings[aiHeadingIdx + 1];
-    expect(nextHeading?.textContent).toBe('Knowledge graph');
+    expect(nextHeading?.textContent).toBe('Contest');
 
     // No password input rendered for null active provider.
     const passwordInputs = tab.containerEl.querySelectorAll('input[type="password"]');

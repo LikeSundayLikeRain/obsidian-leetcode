@@ -37,6 +37,9 @@ export interface FakeSettings {
   // Phase 09 AIREV-01 — auto AI review on Accepted toggle round-trip.
   getAutoAIReviewOnAC(): boolean;
   setAutoAIReviewOnAC(v: boolean): Promise<void>;
+  // Phase 10 Plan 07 — auto AI contest analysis toggle round-trip.
+  getAutoAIContestAnalysis(): boolean;
+  setAutoAIContestAnalysis(v: boolean): Promise<void>;
 }
 
 /** Optional seed values for `makeFakeSettingsStore`. Any field left undefined
@@ -135,6 +138,13 @@ export function makeFakeSettingsStore(overrides: FakeSettingsOverrides = {}): Fa
       return false;
     },
     async setAutoAIReviewOnAC(_v: boolean) {
+      // no-op in fake
+    },
+    // Phase 10 Plan 07 — autoAIContestAnalysis round-trip.
+    getAutoAIContestAnalysis() {
+      return false;
+    },
+    async setAutoAIContestAnalysis(_v: boolean) {
       // no-op in fake
     },
   };
