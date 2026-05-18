@@ -147,6 +147,7 @@ import { logger } from './shared/logger';
 import type { SubmitCheckResponse, RunCheckResponse } from './solve/types';
 // Phase 10 Plan 03 — contest session manager (state machine + timer).
 import { ContestSessionManager } from './contest/ContestSessionManager';
+import { getRemainingMs } from './contest/types';
 // Phase 10 Plan 04 — contest solve view (dedicated editing surface).
 import {
   ContestSolveView,
@@ -678,9 +679,14 @@ export default class LeetCodePlugin extends Plugin {
         if (!this.contestSessionManager.isActive()) return;
         const session = this.contestSessionManager.getSession();
         if (!session) return;
-        new AbortContestModal(this.app, session, () => {
-          void this.handleContestEnd(true);
-        }).open();
+        const solvedCount = session.problems.filter(p => p.verdict === 'accepted').length;
+        new AbortContestModal(
+          this.app,
+          solvedCount,
+          session.problems.length,
+          getRemainingMs(session),
+          () => { void this.handleContestEnd(true); },
+        ).open();
       },
     });
 
@@ -922,7 +928,6 @@ export default class LeetCodePlugin extends Plugin {
         aborted,
         app: this.app,
         settings: this.settings,
-        noteWriter: this.notes,
       });
     } catch (err) {
       logger.debug('contest.finalize: failed', err);
