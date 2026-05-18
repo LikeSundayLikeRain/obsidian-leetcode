@@ -39,11 +39,11 @@ Requirements for the v1.1 milestone. Each maps to a roadmap phase.
 
 ### AI Review (AIREV)
 
-- [ ] **AIREV-01**: User can opt in to automatic AI review on Accepted submissions via a settings toggle (default OFF); when on, a single combined-dimensions LLM call (Approach + Efficiency + Code Style) writes a review.
-- [ ] **AIREV-02**: AI review output is written to a new locked-heading `## AI Review` section inside the problem note via `app.vault.process` (never `cm.dispatch` or `vault.modify`); the heading is locked, the body remains editable.
-- [ ] **AIREV-03**: AI review is idempotent on re-AC — re-running the review replaces the prior review block, never appends.
-- [ ] **AIREV-04**: When AI proposes a different approach, the suggested code is rendered as a separate fence inside `## AI Review` (never auto-applied to `## Code`).
-- [ ] **AIREV-05**: User can run "Re-run AI review on current note" from the command palette to refresh a stale review on demand.
+- [x] **AIREV-01**: User can opt in to automatic AI review on Accepted submissions via a settings toggle (default OFF); when on, a single combined-dimensions LLM call (Approach + Efficiency + Code Style) writes a review.
+- [x] **AIREV-02**: AI review output is written to a new locked-heading `## AI Review` section inside the problem note via `app.vault.process` (never `cm.dispatch` or `vault.modify`); the heading is locked, the body remains editable.
+- [x] **AIREV-03**: AI review is idempotent on re-AC — re-running the review replaces the prior review block, never appends.
+- [x] **AIREV-04**: When AI proposes a different approach, the suggested code is rendered as a separate fence inside `## AI Review` (never auto-applied to `## Code`).
+- [x] **AIREV-05**: User can run "Re-run AI review on current note" from the command palette to refresh a stale review on demand.
 - [ ] **AIREV-06**: User can configure a daily AI cost cap; once exceeded, AI Review and AI Debug return a Notice instead of calling the provider until the next day.
 
 ### AI Knowledge Graph (AIKG)
@@ -148,11 +148,11 @@ Filled by the roadmapper.
 | AIDBG-01    | Phase 08 | Complete |
 | AIDBG-02    | Phase 08 | Complete |
 | AIDBG-03    | Phase 08 | Complete |
-| AIREV-01    | Phase 09 | Pending |
-| AIREV-02    | Phase 09 | Pending |
-| AIREV-03    | Phase 09 | Pending |
-| AIREV-04    | Phase 09 | Pending |
-| AIREV-05    | Phase 09 | Pending |
+| AIREV-01    | Phase 09 | Complete |
+| AIREV-02    | Phase 09 | Complete |
+| AIREV-03    | Phase 09 | Complete |
+| AIREV-04    | Phase 09 | Complete |
+| AIREV-05    | Phase 09 | Complete |
 | AIREV-06    | Phase 09 | Pending |
 | CONTEST-01  | Phase 10 | Pending |
 | CONTEST-02  | Phase 10 | Pending |
