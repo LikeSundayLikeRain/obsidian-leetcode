@@ -132,6 +132,16 @@ export interface PluginData {
    *  Null when never fetched. 24h TTL (same as problemIndex). Shape-guard
    *  validates structure at load; malformed values collapse to null. */
   contestIndex: ContestIndex | null;
+  /** Phase 11 AIKG-01 — opt-in auto AI Knowledge Graph classification on AC.
+   *  Default true (KG is a core feature, default ON when AI configured — per
+   *  RESEARCH Open Question 1 recommendation). Shape-guard collapses
+   *  non-boolean to true so corrupt data.json defaults to feature enabled. */
+  autoAIKnowledgeGraph: boolean;
+  /** Phase 11 AIKG-06 — feature flags for gated capabilities. Each flag
+   *  controls a specific sub-feature that may be experimental or optional.
+   *  Shape-guard validates each field independently; malformed values
+   *  collapse to their per-flag default. */
+  featureFlags: { lookAheadEdges: boolean };
 }
 
 /** Compound filter matching LC's "Match All/Any of the following" UI. Each
@@ -245,6 +255,11 @@ const DEFAULT_DATA: PluginData = {
   contestSession: null,
   autoAIContestAnalysis: false,
   contestIndex: null,
+  // Phase 11 — AI Knowledge Graph defaults. KG is a core feature, default ON
+  // when AI is configured (RESEARCH Open Question 1). Look-ahead edges are
+  // experimental, default OFF (D-16).
+  autoAIKnowledgeGraph: true,
+  featureFlags: { lookAheadEdges: false },
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -703,6 +718,19 @@ export class SettingsStore {
       contestIndex: isValidContestIndex(raw.contestIndex)
         ? raw.contestIndex
         : DEFAULT_DATA.contestIndex,
+      // Phase 11 AIKG-01 — autoAIKnowledgeGraph shape-guard.
+      // Non-boolean raw (string "true", number, null, object) collapses to
+      // true (default ON) — KG is a core feature.
+      autoAIKnowledgeGraph: typeof raw.autoAIKnowledgeGraph === 'boolean'
+        ? raw.autoAIKnowledgeGraph
+        : DEFAULT_DATA.autoAIKnowledgeGraph,
+      // Phase 11 AIKG-06 — featureFlags shape-guard. Each flag validated
+      // independently; missing/corrupt values collapse to per-flag default.
+      featureFlags: {
+        lookAheadEdges: typeof (raw.featureFlags as Record<string, unknown> | undefined)?.lookAheadEdges === 'boolean'
+          ? (raw.featureFlags as Record<string, unknown>).lookAheadEdges as boolean
+          : DEFAULT_DATA.featureFlags.lookAheadEdges,
+      },
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -851,6 +879,27 @@ export class SettingsStore {
   /** Phase 10 CONTEST-01 — persist the contest index (slug list + fetchedAt). */
   async setContestIndex(idx: ContestIndex | null): Promise<void> {
     this.data.contestIndex = idx;
+    await this.persist();
+  }
+
+  // --- Phase 11 AI Knowledge Graph -------------------------------------------
+
+  /** Phase 11 AIKG-01 — read the auto AI Knowledge Graph classification opt-in flag.
+   *  When true, AI classification runs on every AC. Default true (core feature). */
+  getAutoAIKnowledgeGraph(): boolean { return this.data.autoAIKnowledgeGraph; }
+
+  /** Phase 11 AIKG-01 — persist the auto AI Knowledge Graph opt-in flag. */
+  async setAutoAIKnowledgeGraph(value: boolean): Promise<void> {
+    this.data.autoAIKnowledgeGraph = value;
+    await this.persist();
+  }
+
+  /** Phase 11 AIKG-06 — read all feature flags. Returns the current flags object. */
+  getFeatureFlags(): { lookAheadEdges: boolean } { return this.data.featureFlags; }
+
+  /** Phase 11 AIKG-06 — set a single feature flag by key. Persists immediately. */
+  async setFeatureFlag(key: keyof PluginData['featureFlags'], value: boolean): Promise<void> {
+    this.data.featureFlags[key] = value;
     await this.persist();
   }
 

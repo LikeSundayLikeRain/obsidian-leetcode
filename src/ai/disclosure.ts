@@ -165,6 +165,35 @@ export function withContestAnalysisBullet(
 }
 
 /**
+ * Phase 11 Plan 01 Task 2 — `withKgBullet` composition factory that
+ * appends the AI Knowledge Graph feature-specific bullet to a frozen base
+ * disclosure copy. Mandatory composition pattern (mirrors `withDebugBullet` /
+ * `withReviewBullet` / `withContestAnalysisBullet` above): NEVER mutate the
+ * base in place — the inner arrays are `Object.freeze`'d at module load
+ * (Phase 07 Plan 07 WR-02 mitigation).
+ *
+ * `withKgBullet` returns a FRESH object whose `willSend` is a NEW array
+ * (not a reference to the base) ending with the locked verbatim AI Knowledge
+ * Graph bullet. The `neverSends` field passes through by reference equality —
+ * both arrays are frozen, no copy needed.
+ *
+ * The bullet text is locked verbatim per D-03 — describes exactly what
+ * AI Knowledge Graph sends to the provider (problem statement + accepted code
+ * for pattern classification).
+ */
+export function withKgBullet(
+  base: { willSend: readonly string[]; neverSends: readonly string[] },
+): { willSend: readonly string[]; neverSends: readonly string[] } {
+  return {
+    willSend: [
+      ...base.willSend,
+      'AI Knowledge Graph sends the problem statement and your accepted code for pattern classification',
+    ],
+    neverSends: base.neverSends,
+  };
+}
+
+/**
  * Once-per-provider-switch disclosure modal. Fired by
  * `LeetCodePlugin.requireAIDisclosure` (see src/main.ts) when the active
  * provider's `disclosureAcknowledged` flag is false. Continue persists the
