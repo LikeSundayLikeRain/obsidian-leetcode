@@ -5,7 +5,8 @@
 // OWNERSHIP: `isSessionExpired` is defined here and ONLY here (AUTH-04). Plan 03
 // (AuthService) and Plan 06 (ProblemBrowserView) both call it from error paths.
 // Neither redefines it.
-import { LeetCode, Credential } from '@leetnotion/leetcode-api';
+import { LeetCodeAdvanced, Credential } from '@leetnotion/leetcode-api';
+import type { PastContests, ContestQuestions } from '@leetnotion/leetcode-api';
 import type { SettingsStore } from '../settings/SettingsStore';
 
 /** LC's `question` object as returned by `lc.problem(slug)`.
@@ -40,7 +41,7 @@ export interface LeetCodeProblemDetail {
 }
 
 export class LeetCodeClient {
-  public lc!: InstanceType<typeof LeetCode>;
+  public lc!: InstanceType<typeof LeetCodeAdvanced>;
   private settings: SettingsStore;
 
   constructor(settings: SettingsStore) {
@@ -53,7 +54,7 @@ export class LeetCodeClient {
     // and the client was left attached to a partially-initialised Credential,
     // causing API calls to return null data indistinguishable from session
     // expiry and triggering a spurious logout notice.
-    this.lc = new LeetCode();
+    this.lc = new LeetCodeAdvanced();
   }
 
   /** Rebuild the LeetCode client with current cookies and await Credential bootstrap.
@@ -62,12 +63,12 @@ export class LeetCodeClient {
   async reauthenticate(): Promise<void> {
     const cookies = this.settings.getAuthCookies();
     if (!cookies) {
-      this.lc = new LeetCode();
+      this.lc = new LeetCodeAdvanced();
       return;
     }
     const cred = new Credential();
     await cred.init(cookies.LEETCODE_SESSION);
-    this.lc = new LeetCode(cred);
+    this.lc = new LeetCodeAdvanced(cred);
   }
 
   /** Fetch the signed-in user's username via LC's `whoami` GraphQL query.
@@ -126,6 +127,22 @@ export class LeetCodeClient {
     }).problem(slug);
     if (!q || !q.questionFrontendId) return null;
     return q;
+  }
+
+  /** Phase 10 CONTEST-01 — fetch past contests with pagination support.
+   *  Delegates to LeetCodeAdvanced.getPastContests which returns { totalNum, contests[] }. */
+  async getPastContests(opts?: { limit?: number; skip?: number }): Promise<PastContests> {
+    return this.lc.getPastContests(opts ?? {});
+  }
+
+  /** Phase 10 CONTEST-04 — fetch contest questions for a given contest slug.
+   *  Validates slug format (T-10-01 threat mitigation) before passing to the API. */
+  async getContestQuestions(contestSlug: string): Promise<ContestQuestions> {
+    // T-10-01: validate slug matches expected pattern before interpolation.
+    if (!/^(weekly|biweekly)-contest-\d+$/.test(contestSlug)) {
+      throw new Error(`Invalid contest slug format: ${contestSlug}`);
+    }
+    return this.lc.getContestQuestions(contestSlug);
   }
 }
 

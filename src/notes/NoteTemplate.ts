@@ -64,6 +64,11 @@ export const TECHNIQUES_HEADING_LINE = '## Techniques' as const;
 /** Plugin-owned H2 where the AI-generated review content lives. Heading locked
  *  (like ## Techniques / ## Notes); body editable by the AI writer. */
 export const AI_REVIEW_HEADING_LINE = '## AI Review' as const;
+// Phase 10 heading extension (CONTEST-07, D-17/D-21).
+/** Plugin-owned H2 where AI-generated contest analysis lives on summary notes.
+ *  NOT added to LOCKED_HEADINGS — it applies only to summary notes, not problem
+ *  notes with section lock (per 10-PATTERNS.md). */
+export const AI_ANALYSIS_HEADING_LINE = '## AI Analysis' as const;
 
 /**
  * Phase 05.5 D-01 / D-03 — the five heading lines locked by `sectionLockExtension`.
