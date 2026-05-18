@@ -6,6 +6,7 @@ import type { Plugin } from 'obsidian';
 import type { AuthCookies } from '../auth/types';
 import type { IndexedProblem, ProblemIndex } from '../browse/types';
 import type { AIProvider, ProviderConfig, BedrockProviderConfig, AICostLedger } from '../ai/types';
+import type { ContestSession, ContestIndex } from '../contest/types';
 import { logger } from '../shared/logger';
 
 export type { AuthCookies } from '../auth/types';
@@ -119,6 +120,18 @@ export interface PluginData {
    *  (user must explicitly enable). Shape-guard collapses non-boolean to
    *  false so corrupt data.json never enables AI calls. */
   autoAIReviewOnAC: boolean;
+  /** Phase 10 CONTEST-03 — active contest session state. Null when no contest
+   *  is in progress. Shape-guard validates structure at load time; malformed
+   *  values collapse to null (no orphan contest state). */
+  contestSession: ContestSession | null;
+  /** Phase 10 CONTEST-08 — opt-in auto AI contest analysis on contest end.
+   *  Default false (user must explicitly enable). Shape-guard collapses
+   *  non-boolean to false so corrupt data.json never enables AI calls. */
+  autoAIContestAnalysis: boolean;
+  /** Phase 10 CONTEST-01 — cached contest index for the sidebar contest list.
+   *  Null when never fetched. 24h TTL (same as problemIndex). Shape-guard
+   *  validates structure at load; malformed values collapse to null. */
+  contestIndex: ContestIndex | null;
 }
 
 /** Compound filter matching LC's "Match All/Any of the following" UI. Each
@@ -227,6 +240,11 @@ const DEFAULT_DATA: PluginData = {
   providerConfigs: DEFAULT_PROVIDER_CONFIGS,
   aiCostLedger: { date: new Date().toISOString().slice(0, 10), usdToday: 0 },
   autoAIReviewOnAC: false,  // AIREV-01 default OFF — user must opt in
+  // Phase 10 — contest defaults. No active session, analysis opt-in OFF,
+  // no cached contest index.
+  contestSession: null,
+  autoAIContestAnalysis: false,
+  contestIndex: null,
 };
 
 const VALID_DIFFICULTIES = new Set(['Easy', 'Medium', 'Hard']);
@@ -521,6 +539,67 @@ function sanitizeAICostLedger(raw: unknown): AICostLedger {
   return { date: r.date as string, usdToday: r.usdToday as number };
 }
 
+// --- Phase 10 Contest shape-guards ------------------------------------------
+// T-10-02 mitigation: every new contest field has a one-direction guard with
+// safe default fallback. Mirrors the strict posture of autoAIReviewOnAC.
+
+const VALID_CONTEST_TYPES: ReadonlySet<string> = new Set(['weekly', 'biweekly']);
+const VALID_PROBLEM_VERDICTS: ReadonlySet<string> = new Set(['unsolved', 'attempted', 'accepted']);
+
+/** Shape-guard for ContestProblemState. Rejects malformed entries so a corrupt
+ *  data.json cannot leave an orphan contest with broken problem state. */
+function isValidContestProblemState(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false;
+  const p = v as Record<string, unknown>;
+  return (
+    typeof p.slug === 'string' && p.slug.length > 0 &&
+    typeof p.title === 'string' &&
+    typeof p.credit === 'number' && Number.isFinite(p.credit) &&
+    typeof p.difficulty === 'number' &&
+    typeof p.verdict === 'string' && VALID_PROBLEM_VERDICTS.has(p.verdict) &&
+    typeof p.code === 'string' &&
+    typeof p.language === 'string' &&
+    (p.solvedAt === null || (typeof p.solvedAt === 'number' && Number.isFinite(p.solvedAt)))
+  );
+}
+
+/** Shape-guard for ContestSession. Validates all required fields + nested
+ *  problems array. Malformed input collapses to null (no orphan contest). */
+function isValidContestSession(v: unknown): v is ContestSession {
+  if (!v || typeof v !== 'object') return false;
+  const s = v as Record<string, unknown>;
+  if (typeof s.contestSlug !== 'string' || s.contestSlug.length === 0) return false;
+  if (typeof s.contestTitle !== 'string') return false;
+  if (typeof s.contestType !== 'string' || !VALID_CONTEST_TYPES.has(s.contestType)) return false;
+  if (typeof s.duration !== 'number' || !Number.isFinite(s.duration) || s.duration <= 0) return false;
+  if (typeof s.startedAt !== 'number' || !Number.isFinite(s.startedAt)) return false;
+  if (typeof s.pausedDuration !== 'number' || !Number.isFinite(s.pausedDuration)) return false;
+  if (typeof s.isPaused !== 'boolean') return false;
+  if (s.pausedAt !== null && (typeof s.pausedAt !== 'number' || !Number.isFinite(s.pausedAt))) return false;
+  if (!Array.isArray(s.problems)) return false;
+  return (s.problems as unknown[]).every(isValidContestProblemState);
+}
+
+/** Shape-guard for ContestIndex. Validates fetchedAt + contests array with
+ *  each entry checked for required fields. Malformed input collapses to null. */
+function isValidContestIndex(v: unknown): v is ContestIndex {
+  if (!v || typeof v !== 'object') return false;
+  const idx = v as Record<string, unknown>;
+  if (typeof idx.fetchedAt !== 'number' || !Number.isFinite(idx.fetchedAt)) return false;
+  if (!Array.isArray(idx.contests)) return false;
+  return (idx.contests as unknown[]).every((c) => {
+    if (!c || typeof c !== 'object') return false;
+    const e = c as Record<string, unknown>;
+    return (
+      typeof e.slug === 'string' && e.slug.length > 0 &&
+      typeof e.title === 'string' &&
+      typeof e.startTime === 'number' && Number.isFinite(e.startTime) &&
+      typeof e.duration === 'number' && Number.isFinite(e.duration) &&
+      typeof e.type === 'string' && VALID_CONTEST_TYPES.has(e.type)
+    );
+  });
+}
+
 export class SettingsStore {
   private constructor(private plugin: Plugin, private data: PluginData) {}
 
@@ -612,6 +691,18 @@ export class SettingsStore {
       autoAIReviewOnAC: typeof raw.autoAIReviewOnAC === 'boolean'
         ? raw.autoAIReviewOnAC
         : DEFAULT_DATA.autoAIReviewOnAC,
+      // Phase 10 — contest state shape-guards. Malformed values collapse to
+      // null/false so a corrupt data.json cannot leave the plugin in a broken
+      // contest state or silently enable AI calls.
+      contestSession: isValidContestSession(raw.contestSession)
+        ? raw.contestSession
+        : DEFAULT_DATA.contestSession,
+      autoAIContestAnalysis: typeof raw.autoAIContestAnalysis === 'boolean'
+        ? raw.autoAIContestAnalysis
+        : DEFAULT_DATA.autoAIContestAnalysis,
+      contestIndex: isValidContestIndex(raw.contestIndex)
+        ? raw.contestIndex
+        : DEFAULT_DATA.contestIndex,
     };
     // Warn without leaking values so a user whose disk file is corrupt knows
     // why they unexpectedly see a logged-out state or a fresh index refetch.
@@ -729,6 +820,37 @@ export class SettingsStore {
   /** Phase 09 AIREV-01 — persist the auto AI review on Accepted opt-in flag. */
   async setAutoAIReviewOnAC(value: boolean): Promise<void> {
     this.data.autoAIReviewOnAC = value;
+    await this.persist();
+  }
+
+  // --- Phase 10 Contest -----------------------------------------------------
+
+  /** Phase 10 CONTEST-03 — read the active contest session. Null when idle. */
+  getContestSession(): ContestSession | null { return this.data.contestSession; }
+
+  /** Phase 10 CONTEST-03 — persist the contest session state. Called on every
+   *  significant state change (start, pause, resume, verdict, code debounce). */
+  async setContestSession(s: ContestSession | null): Promise<void> {
+    this.data.contestSession = s;
+    await this.persist();
+  }
+
+  /** Phase 10 CONTEST-08 — read the auto AI contest analysis opt-in flag.
+   *  When false, no AI analysis is generated on contest end. Default false. */
+  getAutoAIContestAnalysis(): boolean { return this.data.autoAIContestAnalysis; }
+
+  /** Phase 10 CONTEST-08 — persist the auto AI contest analysis opt-in flag. */
+  async setAutoAIContestAnalysis(value: boolean): Promise<void> {
+    this.data.autoAIContestAnalysis = value;
+    await this.persist();
+  }
+
+  /** Phase 10 CONTEST-01 — read the cached contest index. Null when never fetched. */
+  getContestIndex(): ContestIndex | null { return this.data.contestIndex; }
+
+  /** Phase 10 CONTEST-01 — persist the contest index (slug list + fetchedAt). */
+  async setContestIndex(idx: ContestIndex | null): Promise<void> {
+    this.data.contestIndex = idx;
     await this.persist();
   }
 

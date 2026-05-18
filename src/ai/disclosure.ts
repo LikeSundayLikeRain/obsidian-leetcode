@@ -140,6 +140,31 @@ export function withReviewBullet(
 }
 
 /**
+ * Phase 10 Plan 01 Task 1 — `withContestAnalysisBullet` composition factory
+ * that appends the AI Contest Analysis feature-specific bullet to a frozen
+ * base disclosure copy. Mandatory composition pattern (mirrors
+ * `withDebugBullet` / `withReviewBullet` above): NEVER mutate the base in
+ * place — the inner arrays are `Object.freeze`'d at module load (Phase 07
+ * Plan 07 WR-02 mitigation).
+ *
+ * `withContestAnalysisBullet` returns a FRESH object whose `willSend` is a
+ * NEW array (not a reference to the base) ending with the locked verbatim
+ * AI Contest Analysis bullet (D-22). The `neverSends` field passes through
+ * by reference equality — both arrays are frozen, no copy needed.
+ */
+export function withContestAnalysisBullet(
+  base: { willSend: readonly string[]; neverSends: readonly string[] },
+): { willSend: readonly string[]; neverSends: readonly string[] } {
+  return {
+    willSend: [
+      ...base.willSend,
+      'Contest analysis sends contest metadata, per-problem summary (slug, difficulty, verdict, time, your code)',
+    ],
+    neverSends: base.neverSends,
+  };
+}
+
+/**
  * Once-per-provider-switch disclosure modal. Fired by
  * `LeetCodePlugin.requireAIDisclosure` (see src/main.ts) when the active
  * provider's `disclosureAcknowledged` flag is false. Continue persists the
