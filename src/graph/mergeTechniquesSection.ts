@@ -37,6 +37,9 @@ import {
   CUSTOM_TESTS_HEADING_LINE,
 } from '../notes/NoteTemplate';
 
+// Re-export heading constant for downstream consumers (ClusterHubWriter, etc.)
+export { TECHNIQUES_HEADING_LINE } from '../notes/NoteTemplate';
+
 const H2 = /^## /;
 /** Tolerates `-`, `*`, `+` bullets (D-13 format tolerance, RESEARCH §Pattern 3). */
 const LINK_RE = /^([-*+])\s+\[\[([^\]]+)\]\]\s*$/;
@@ -239,4 +242,47 @@ function appendNewTechniquesSection(
   const gluePre = before.length > 0 ? '\n\n' : '';
   const gluePost = after.length > 0 ? '\n\n' : '\n';
   return before + gluePre + rendered + gluePost + after.replace(/^\n+/, '');
+}
+
+// ── Phase 11 Plan 02 — AI-cluster mode (D-09 full replacement) ───────────
+
+/**
+ * AI-cluster variant of mergeTechniquesSection. Removes ALL existing link items
+ * (v1.0 lc-tag wikilinks), inserts a single `- [[patternName]]` wikilink for
+ * the AI-classified pattern cluster, and preserves all free items (user-added
+ * lines). Clean break per D-09.
+ *
+ * Purity contract: same (body, patternName) -> same output. Safe inside
+ * `vault.process` retry semantics.
+ *
+ * @param body        — full note body (post-frontmatter; vault.process contract)
+ * @param patternName — the AI-classified pattern name (already normalized)
+ * @returns new body with ## Techniques containing only the AI cluster wikilink + free items
+ */
+export function mergeTechniquesSectionAI(body: string, patternName: string): string {
+  const lines = body.split('\n');
+  const start = findSectionStart(lines);
+
+  // No existing section -> insert a fresh block with just the AI cluster link.
+  if (start < 0) {
+    return appendNewTechniquesSection(body, [{ name: patternName, slug: '' }]);
+  }
+
+  // Existing section -> parse items, discard ALL links, prepend single AI cluster link.
+  const end = findSectionEnd(lines, start);
+  const items = parseItems(lines, start + 1, end);
+
+  // Keep only free items (user-added content). Discard all link items.
+  const freeItems = items.filter((it): it is { type: 'free'; content: string } =>
+    it.type === 'free',
+  );
+
+  // Build merged list: AI cluster link first, then free items.
+  const merged: Item[] = [
+    { type: 'link', target: patternName, bullet: '-' },
+    ...freeItems,
+  ];
+
+  const rendered = renderSection(merged);
+  return spliceRegion(lines, start, end, rendered);
 }
