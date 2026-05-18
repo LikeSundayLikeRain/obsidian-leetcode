@@ -244,7 +244,28 @@ Plans:
   4. All four contest problems are fetched as notes with `lc-contest-id` frontmatter linking them back to the contest.
   5. On contest end (timer expiry or user finish), a summary note is written to `LeetCode/Contests/{date}-{id}.md` with solved/missed list, per-problem time, score (using LC's `ContestQuestion.credit`), and technique tags; missed problems are auto-tagged `#revisit`.
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+**Wave 1** *(parallel)*
+
+- [ ] 10-01-PLAN.md — Foundation: contest types + PluginData extension + LeetCodeClient upgrade to LeetCodeAdvanced + ContestListService (fetch/cache/search/surprise-me) + disclosure factory + NoteTemplate constant.
+- [ ] 10-02-PLAN.md — ContestSessionManager state machine (start/pause/resume/abort/finish/timer) + AI analysis pure helpers (buildContestAnalysisPrompt + mergeAIContestAnalysisSection).
+
+**Wave 2** *(blocked on Wave 1 completion — parallel)*
+
+- [ ] 10-03-PLAN.md — ProblemBrowserView contests mode toggle + contest list rendering + search + ContestPreview modal with Start Contest flow.
+- [ ] 10-04-PLAN.md — ContestSolveView ItemView (code editor + Run/Submit + language selector) + registerView in main.ts + openContestProblem helper.
+
+**Wave 3** *(blocked on Waves 1–2 completion — parallel)*
+
+- [ ] 10-05-PLAN.md — Active contest timer header UI (countdown + verdict badges + pause/resume/finish/abort buttons + problem cards) + AbortContestModal.
+- [ ] 10-06-PLAN.md — ContestFinalizer (batch problem note creation + summary note + #revisit tagging + D-13 merge strategy).
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 10-07-PLAN.md — main.ts wiring: ContestSessionManager lifecycle + palette commands (start-random-contest, pause-contest, abort-contest, generate-contest-analysis) + AI analysis integration (auto + manual) + Settings toggle.
+
 **UI hint**: yes
 
 ### Phase 11: AI Knowledge Graph
@@ -294,6 +315,6 @@ Plans:
 | 07. AI Provider Foundation               | v1.1      | 8/8 | Complete    | 2026-05-16 |
 | 08. AI Debug                             | v1.1      | 5/5 | Complete    | 2026-05-16 |
 | 09. AI ACed Review                       | v1.1      | 4/4 | Complete    | 2026-05-18 |
-| 10. Contest (virtual + analysis)         | v1.1      | -/-            | Not Started | -           |
+| 10. Contest (virtual + analysis)         | v1.1      | 0/7            | Planning    | -           |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
 | 12. Polish + Plugin-Store Re-submission  | v1.1      | -/-            | Not Started | -           |
