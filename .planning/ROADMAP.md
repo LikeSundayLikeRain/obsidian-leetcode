@@ -31,7 +31,7 @@ Full milestone detail: [.planning/milestones/v1.0-ROADMAP.md](milestones/v1.0-RO
 - [x] **Phase 07: AI Provider Foundation** — `AIClient`, 4 provider adapters, `obsidianFetch(mode)`, AI settings panel, first-run disclosure modal scaffolding, test-connection. (completed 2026-05-16)
 - [x] **Phase 08: AI Debug** — Streaming via `electron.net.fetch` with `requestUrl` fallback; `AIStreamModal`; `LastVerdictStore`; AI Debug button under `## Code` fence. (completed 2026-05-16)
 - [x] **Phase 08.1: Streaming transport fix + Bedrock provider** *(INSERTED)* — Native `window.fetch()` primary tier; AWS Bedrock as 5th provider with 4-option auth. (completed 2026-05-17)
-- [ ] **Phase 08.2: Bedrock canonical default-chain + credential_process auto-refresh** *(INSERTED)* — Honor `AWS_PROFILE` / `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE`; read `~/.aws/config`'s `[profile X]` syntax; resolve `credential_process` with in-memory cache + auto-refresh on `Expiration`.
+- [x] **Phase 08.2: Bedrock canonical default-chain + credential_process auto-refresh** *(INSERTED)* — Honor `AWS_PROFILE` / `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE`; read `~/.aws/config`'s `[profile X]` syntax; resolve `credential_process` with in-memory cache + auto-refresh on `Expiration`. (completed 2026-05-18)
 - [ ] **Phase 09: AI ACed Review** — First AI vault write to new locked `## AI Review` H2; opt-in auto-run; idempotent on re-AC; daily cost cap; manual re-run command.
 - [ ] **Phase 10: Contest (virtual + analysis)** — Past picker + Surprise me; persisted timer; 4 problem notes with `lc-contest-id`; status-bar UI; post-contest summary note.
 - [ ] **Phase 11: AI Knowledge Graph** — 22-pattern classifier; cluster hub notes; lazy-on-AC migration of `## Techniques`; cross-cluster `## Related Variants`; flagged look-ahead edges.
@@ -194,7 +194,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 08.2-02-PLAN.md — sessionToken field in types/adapter/shape-guard + Settings UI rename ("Profile name") + sessionToken input + helper text updates.
+- [x] 08.2-02-PLAN.md — sessionToken field in types/adapter/shape-guard + Settings UI rename ("Profile name") + sessionToken input + helper text updates.
 
 **Out of scope (explicitly deferred)**:
 - `role_arn` + `source_profile` chains (assume-role) — needs `@aws-sdk/client-sts` (~150 KB bundle).
