@@ -34,6 +34,7 @@ Full milestone detail: [.planning/milestones/v1.0-ROADMAP.md](milestones/v1.0-RO
 - [x] **Phase 08.2: Bedrock canonical default-chain + credential_process auto-refresh** *(INSERTED)* — Honor `AWS_PROFILE` / `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE`; read `~/.aws/config`'s `[profile X]` syntax; resolve `credential_process` with in-memory cache + auto-refresh on `Expiration`. (completed 2026-05-18)
 - [x] **Phase 09: AI ACed Review** — First AI vault write to new locked `## AI Review` H2; opt-in auto-run; idempotent on re-AC; daily cost cap; manual re-run command. (completed 2026-05-18)
 - [x] **Phase 10: Contest (virtual + analysis)** — Past picker + Surprise me; persisted timer; 4 problem notes with `lc-contest-id`; status-bar UI; post-contest summary note. (completed 2026-05-18)
+- [ ] **Phase 10.1: LC Virtual Contest API integration** *(INSERTED)* — Register virtual contest session with LC, use contest-specific submission endpoints, fetch virtual ranking; submissions tagged as virtual contest attempts on user's LC profile.
 - [ ] **Phase 11: AI Knowledge Graph** — 22-pattern classifier; cluster hub notes; lazy-on-AC migration of `## Techniques`; cross-cluster `## Related Variants`; flagged look-ahead edges.
 - [ ] **Phase 12: Polish + Plugin-Store Re-submission** — Final README/network audit, version bump 1.1.0, manifest re-validation, GitHub release artifacts; opt-in batch migration UI as stretch goal.
 
@@ -268,6 +269,20 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 10.1: LC Virtual Contest API integration (INSERTED)
+
+**Goal:** Register a virtual contest session with LeetCode's API so submissions during the contest are tagged as virtual attempts, and the user gets a virtual ranking against historical participants.
+**Depends on:** Phase 10
+**Requirements**: CONTEST-FUT-04 (new)
+**Success Criteria** (what must be TRUE):
+
+  1. Starting a contest registers a virtual session with LC's API (user appears in virtual ranking).
+  2. Submissions during the contest go through the contest-specific endpoint (tagged as virtual).
+  3. On contest end, the user can see their virtual rank in the summary note.
+  4. If registration fails (network, auth, contest unavailable), fall back gracefully to local-only mode with a Notice.
+
+**Plans**: TBD
+
 ### Phase 11: AI Knowledge Graph
 
 **Goal**: AI maintains a 22-pattern cluster taxonomy across the user's solved problems — hub notes, difficulty-progression edges, cross-cluster Related Variants, and (flag-gated) look-ahead edges to unsolved problems — replacing v1.0's lc-tag Techniques wikilinks lazily as each note is touched on AC.
@@ -316,5 +331,6 @@ Plans:
 | 08. AI Debug                             | v1.1      | 5/5 | Complete    | 2026-05-16 |
 | 09. AI ACed Review                       | v1.1      | 4/4 | Complete    | 2026-05-18 |
 | 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
+| 10.1. LC Virtual Contest API             | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | -/-            | Not Started | -           |
 | 12. Polish + Plugin-Store Re-submission  | v1.1      | -/-            | Not Started | -           |
