@@ -1212,6 +1212,10 @@ export default class LeetCodePlugin extends Plugin {
     // network round-trip don't contaminate the review prompt (CR-02 fix).
     const snapshotBody = ctx.currentBody();
 
+    // Show a loading indicator immediately so user knows review is in progress.
+    const spinnerEl = reviewAreaEl.createDiv({ cls: 'leetcode-ai-review-loading' });
+    spinnerEl.setText('Reviewing…');
+
     const promise = (async () => {
       // Step 1 — resolve problem markdown for prompt assembly.
       let problemHtml = '';
@@ -1406,6 +1410,7 @@ export default class LeetCodePlugin extends Plugin {
       prompt,
       aiClient: this.aiClient,
       model: providerCfg.model,
+      title: `AI Review — ${prettyName(provider)}`,
       disclosureCopy: withReviewBullet(DISCLOSURE_BASE_COPY),
       onStreamComplete: async (fullText: string) => {
         // Build attribution line (D-03 format).

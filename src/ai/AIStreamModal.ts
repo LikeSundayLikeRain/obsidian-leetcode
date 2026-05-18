@@ -100,6 +100,8 @@ export interface AIStreamModalArgs {
    * cleanup paths.
    */
   onStreamComplete?: (fullText: string) => Promise<void>;
+  /** Optional modal title override. Defaults to "AI Debug — {provider}". */
+  title?: string;
 }
 
 /**
@@ -158,7 +160,7 @@ export class AIStreamModal extends Modal {
     const { contentEl, titleEl } = this;
     contentEl.empty();
     contentEl.addClass('leetcode-ai-stream');
-    titleEl.setText(`AI Debug — ${prettyName(this.args.provider)}`);
+    titleEl.setText(this.args.title ?? `AI Debug — ${prettyName(this.args.provider)}`);
 
     this.bodyEl = contentEl.createDiv({
       cls: 'leetcode-ai-stream-body markdown-rendered',

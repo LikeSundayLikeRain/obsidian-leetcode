@@ -1371,6 +1371,27 @@
   user-select: text;
   -webkit-user-select: text;
 }
+.leetcode-ai-stream-body pre,
+.leetcode-ai-review-loading + * pre,
+.leetcode-verdict pre {
+  background-color: var(--code-background);
+  border-radius: var(--radius-s);
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+.leetcode-ai-stream-body code,
+.leetcode-verdict code {
+  background-color: var(--code-background);
+  border-radius: var(--radius-s);
+  padding: 2px 4px;
+  font-size: 0.9em;
+}
+.leetcode-ai-stream-body pre code,
+.leetcode-verdict pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
 .leetcode-ai-stream-thinking {
   text-align: center;
   padding: 16px 0;
@@ -1388,4 +1409,14 @@
   color: var(--text-error);
   font-size: 13px;
   margin: 8px 0 0 0;
+}
+.leetcode-ai-review-loading {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 12px 0;
+  animation: leetcode-pulse 1.5s ease-in-out infinite;
+}
+@keyframes leetcode-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
