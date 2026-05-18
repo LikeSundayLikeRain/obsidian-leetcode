@@ -287,9 +287,9 @@ export class AIStreamModal extends Modal {
       await this.args.aiClient.addCost(cost);
       // Phase 09 Plan 04 — invoke onStreamComplete callback (vault write on
       // manual re-run). Fires after cost ledger so the callback can safely
-      // assume accounting is done. Errors in the callback are swallowed to
-      // avoid disrupting the modal's own completion UX.
-      if (this.args.onStreamComplete) {
+      // assume accounting is done. Guard against abort race: if cancelled
+      // between stream-end and here, skip the callback to prevent partial writes.
+      if (this.args.onStreamComplete && !this.cancelled) {
         try {
           await this.args.onStreamComplete(this.buffer);
         } catch {
@@ -344,7 +344,7 @@ export class AIStreamModal extends Modal {
       // Phase 09 may revisit if buffered usage becomes available.
       await this.args.aiClient.addCost(0);
       // Phase 09 Plan 04 — onStreamComplete for buffered path (same as stream).
-      if (this.args.onStreamComplete) {
+      if (this.args.onStreamComplete && !this.cancelled) {
         try {
           await this.args.onStreamComplete(this.buffer);
         } catch {

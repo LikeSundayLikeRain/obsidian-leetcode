@@ -1315,6 +1315,9 @@ export default class LeetCodePlugin extends Plugin {
         await this.aiClient.addCost(0);
       }
 
+      // Guard: if aborted between stream-end and here, skip vault write.
+      if (abortController.signal.aborted) return;
+
       // Step 7 — write review to note via vault.process (D-20, D-21).
       // Build attribution line (D-03): local date via getFullYear/getMonth/getDate.
       const now = new Date();
