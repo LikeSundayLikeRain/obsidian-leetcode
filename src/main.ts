@@ -393,7 +393,20 @@ export default class LeetCodePlugin extends Plugin {
       {
         onTick: () => { /* ProblemBrowserView polls getSession() for display */ },
         onExpired: () => { void this.handleContestEnd(false); },
-        onVerdictChange: () => { /* ProblemBrowserView polls getSession() for badge updates */ },
+        onVerdictChange: () => {
+          // D-06: Trigger re-render on any open ProblemBrowserView so verdict
+          // badges update immediately. wireContestCallbacks() patches this
+          // callback with a direct badge-update, but this fallback ensures the
+          // sidebar refreshes even if the view was closed and re-opened without
+          // re-wiring (e.g., workspace layout restore).
+          const leaves = this.app.workspace.getLeavesOfType(BROWSER_VIEW_TYPE);
+          for (const leaf of leaves) {
+            const view = leaf.view as ProblemBrowserView;
+            if (typeof view.onOpen === 'function') {
+              void view.onOpen();
+            }
+          }
+        },
       },
     );
 
@@ -941,6 +954,14 @@ export default class LeetCodePlugin extends Plugin {
 
     // Create/update scratch file with current code + problem content
     const file = await this.contestScratch.createOrUpdate(problem, contentHtml);
+
+    // D-07: Tab idempotency — reuse existing leaf if already open for this scratch file
+    const existingLeaf = this.app.workspace.getLeavesOfType('markdown')
+      .find(l => (l.view as { file?: { path: string } }).file?.path === file.path);
+    if (existingLeaf) {
+      this.app.workspace.revealLeaf(existingLeaf);
+      return;
+    }
 
     // Open in native MarkdownView (full Obsidian editor with highlighting)
     const leaf = this.app.workspace.getLeaf('tab');
