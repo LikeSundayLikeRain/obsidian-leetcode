@@ -25,8 +25,11 @@ function buildScratchContent(problem: ContestProblemState, contentMd?: string): 
   const lines: string[] = [];
   lines.push('---');
   lines.push(`lc-slug: ${problem.slug}`);
+  lines.push(`lc-title: "${problem.title}"`);
   lines.push(`lc-language: ${problem.language}`);
   lines.push('---');
+  lines.push('');
+  lines.push(`# ${problem.title}`);
   lines.push('');
   lines.push('## Problem');
   lines.push('');
@@ -61,8 +64,12 @@ export class ContestScratchManager {
     return `${this.problemsFolder}/${SCRATCH_FOLDER}`;
   }
 
-  private scratchPath(slug: string): string {
+  getScratchPath(slug: string): string {
     return `${this.folder}/${slug}.md`;
+  }
+
+  private scratchPath(slug: string): string {
+    return this.getScratchPath(slug);
   }
 
   async ensureFolder(): Promise<void> {
@@ -103,12 +110,18 @@ export class ContestScratchManager {
   }
 
   async cleanupAll(): Promise<void> {
-    const { vault } = this.app;
+    const { vault, workspace } = this.app;
     const folder = vault.getAbstractFileByPath(this.folder);
     if (!folder) return;
     const files = vault.getFiles().filter(f => f.path.startsWith(this.folder + '/'));
+    // Close any open tabs pointing to scratch files before deleting
     for (const f of files) {
-      await vault.delete(f);
+      const leaves = workspace.getLeavesOfType('markdown')
+        .filter(l => (l.view as { file?: { path: string } }).file?.path === f.path);
+      for (const leaf of leaves) leaf.detach();
+    }
+    for (const f of files) {
+      try { await vault.delete(f); } catch { /* already gone */ }
     }
     // Remove the folder itself
     const folderAbstract = vault.getAbstractFileByPath(this.folder);

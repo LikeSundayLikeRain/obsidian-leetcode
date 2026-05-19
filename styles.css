@@ -528,8 +528,10 @@
 }
 
 /* ── Phase 12 — Verdict Modal width + AI review code scroll ────────────── */
-.leetcode-verdict-modal {
+.modal:has(.leetcode-verdict) {
   width: min(90vw, 780px);
+  max-width: min(90vw, 780px);
+  min-height: 300px;
 }
 .leetcode-verdict .leetcode-ai-review-stream pre {
   overflow-x: auto;
@@ -562,6 +564,16 @@
 }
 .leetcode-verdict .leetcode-verdict-body {
   color: var(--text-normal);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+.leetcode-verdict {
+  display: flex;
+  flex-direction: column;
+  min-height: inherit;
 }
 /* UAT 2026-05-13 — pending state has only the spinner + a single
    "Running tests…" line. Center the column vertically so it doesn't

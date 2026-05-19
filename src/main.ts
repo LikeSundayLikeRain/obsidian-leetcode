@@ -1001,12 +1001,16 @@ export default class LeetCodePlugin extends Plugin {
     const detail = this.settings.getProblemDetail(problem.slug);
     const contentHtml = detail?.contentHtml;
 
-    // Create/update scratch file with current code + problem content
-    const file = await this.contestScratch.createOrUpdate(problem, contentHtml);
+    // Only create scratch file if it doesn't exist yet — preserve user edits
+    const scratchPath = this.contestScratch.getScratchPath(problem.slug);
+    let file = this.app.vault.getAbstractFileByPath(scratchPath) as TFile | null;
+    if (!file) {
+      file = await this.contestScratch.createOrUpdate(problem, contentHtml);
+    }
 
     // D-07: Tab idempotency — reuse existing leaf if already open for this scratch file
     const existingLeaf = this.app.workspace.getLeavesOfType('markdown')
-      .find(l => (l.view as { file?: { path: string } }).file?.path === file.path);
+      .find(l => (l.view as { file?: { path: string } }).file?.path === file!.path);
     if (existingLeaf) {
       this.app.workspace.revealLeaf(existingLeaf);
       return;
@@ -1978,16 +1982,15 @@ export default class LeetCodePlugin extends Plugin {
       // it stays correct even if the user navigates away while the verdict
       // is rendering. VerdictModal handles the close-then-fire ordering.
       onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
-      // Phase 09 Plan 03 (AIREV-01) — auto-review on AC. Gates on BOTH
-      // autoAIReviewOnAC toggle AND an active provider being configured.
-      // The callback is invoked by VerdictModal AFTER renderVerdict paints
-      // "Accepted!" — the host handles prompt assembly, AIClient.invokeStream,
-      // buffer accumulation, debounced render, and vault.process write.
-      onStartReviewStream: this.settings.getAutoAIReviewOnAC() && this.settings.getActiveAIProvider()
-        ? (reviewAreaEl, component) => this.startAutoReview(ctx, reviewAreaEl, component)
-        : undefined,
-      // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC.
-      file: ctx.file,
+      // Phase 12 (D-08): suppress AI review + pattern chip during active contest
+      // because the contest opens scratch files as native MarkdownViews whose
+      // fence-row Submit button flows through this path.
+      onStartReviewStream: this.contestSessionManager.getSession() ? undefined
+        : this.settings.getAutoAIReviewOnAC() && this.settings.getActiveAIProvider()
+          ? (reviewAreaEl, component) => this.startAutoReview(ctx, reviewAreaEl, component)
+          : undefined,
+      // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC (suppress during contest).
+      file: this.contestSessionManager.getSession() ? null : ctx.file,
       getPatternHubPath: (p) => `${this.settings.getProblemsFolder()}/Patterns/${normalizePatternName(p)}.md`,
     });
     modal.open();
@@ -2058,15 +2061,22 @@ export default class LeetCodePlugin extends Plugin {
         // would be noise. Also invalidate the submission history cache so a
         // picker opened after AC sees the latest submission.
         if (classifyStatus(terminalTyped.status_code, terminalTyped.status_msg).kind === 'ac') {
-          try {
-            await this.knowledgeGraph.onAccepted(
-              { file: ctx.file, slug: ctx.slug, title: ctx.title },
-              terminalTyped,
-            );
-          } catch (err) {
-            logger.debug('graph.onAccepted: non-fatal (invisible-by-design)', err);
+          const activeContest = this.contestSessionManager.getSession();
+          if (activeContest) {
+            // Phase 12 (D-06/D-08): record verdict in contest session for badge update
+            const idx = activeContest.problems.findIndex(p => p.slug === ctx.slug);
+            if (idx >= 0) this.contestSessionManager.recordVerdict(idx, 'accepted');
+          } else {
+            try {
+              await this.knowledgeGraph.onAccepted(
+                { file: ctx.file, slug: ctx.slug, title: ctx.title },
+                terminalTyped,
+              );
+            } catch (err) {
+              logger.debug('graph.onAccepted: non-fatal (invisible-by-design)', err);
+            }
+            this.submissionHistory.invalidate(ctx.slug);
           }
-          this.submissionHistory.invalidate(ctx.slug);
         }
       } else {
         // Gate failure (Notice already fired) or orchestrator resolved
