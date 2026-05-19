@@ -330,8 +330,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion — parallel)*
 
-- [ ] 12-03-PLAN.md — Pattern chip in verdict modal (D-03, D-04) + H1 title in NoteTemplate (D-11): clickable pattern badge on AC, `# {Title}` heading in new notes.
-- [ ] 12-04-PLAN.md — Wikilink-to-preview navigation (D-12) + cold-start deferred AIClient construction (D-10): intercept unresolved wikilinks to open preview; lazy AI getter.
+- [x] 12-03-PLAN.md — Pattern chip in verdict modal (D-03, D-04) + H1 title in NoteTemplate (D-11): clickable pattern badge on AC, `# {Title}` heading in new notes.
+- [x] 12-04-PLAN.md — Wikilink-to-preview navigation (D-12) + cold-start deferred AIClient construction (D-10): intercept unresolved wikilinks to open preview; lazy AI getter.
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
@@ -360,4 +360,4 @@ Plans:
 | 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
 | 10.1. LC Virtual Contest API             | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | 3/3            | Complete    | 2026-05-19  |
-| 12. Polish + Plugin-Store Re-submission  | v1.1      | 2/5 | In Progress|  |
+| 12. Polish + Plugin-Store Re-submission  | v1.1      | 4/5 | In Progress|  |
