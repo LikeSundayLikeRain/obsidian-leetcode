@@ -196,7 +196,7 @@ export function buildNoteBody(input: {
   const langSlug = input.langSlug ?? 'python3';
   const starter = input.starterCode ?? '';
   const codeBlock = codeBlockFor(langSlug, starter);
-  const h1 = input.title ? `# ${input.title}\n\n` : '';
+  const h1 = input.title ? `# ${input.title}\n` : '';
   return `${h1}## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
 }
 

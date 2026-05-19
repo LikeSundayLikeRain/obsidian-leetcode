@@ -28,9 +28,7 @@ function buildScratchContent(problem: ContestProblemState, contentMd?: string): 
   lines.push(`lc-title: "${problem.title}"`);
   lines.push(`lc-language: ${problem.language}`);
   lines.push('---');
-  lines.push('');
   lines.push(`# ${problem.title}`);
-  lines.push('');
   lines.push('## Problem');
   lines.push('');
   if (contentMd) {

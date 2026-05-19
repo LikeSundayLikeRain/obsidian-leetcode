@@ -258,7 +258,19 @@ function renderRunResult(
     // ── Step 7a: Input section (D-08) ─────────────────────────────────────
     renderInputSection(caseBody, inputChunks[activeIdx] ?? '', md);
 
-    // ── Step 7b: Output section ──────────────────────────────────────────
+    // ── Step 7b: Stdout section (print/console.log output) ─────────────
+    const stdoutChunks = splitOutput(res.code_output, arity);
+    const stdout = stdoutChunks[activeIdx] ?? '';
+    if (stdout.length > 0) {
+      renderValueSection(
+        caseBody,
+        'Stdout',
+        stdout,
+        'leetcode-verdict-output-value',
+      );
+    }
+
+    // ── Step 7c: Output section ──────────────────────────────────────────
     renderValueSection(
       caseBody,
       'Output',
@@ -266,7 +278,7 @@ function renderRunResult(
       'leetcode-verdict-output-value',
     );
 
-    // ── Step 7c: Expected section (suppressed when no expected available) ─
+    // ── Step 7d: Expected section (suppressed when no expected available) ─
     if (passState !== null) {
       renderValueSection(
         caseBody,

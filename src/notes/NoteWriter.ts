@@ -502,7 +502,7 @@ export class NoteWriter {
         let updated = rewriteProblemSection(current, freshMarkdown);
         // Phase 12 (D-11): insert H1 title if missing on existing notes
         if (title && !updated.match(/^# .+/m)) {
-          const h1 = `# ${title}\n\n`;
+          const h1 = `# ${title}\n`;
           // Insert after frontmatter closing ---
           const fmEnd = updated.indexOf('\n---\n');
           if (fmEnd !== -1) {

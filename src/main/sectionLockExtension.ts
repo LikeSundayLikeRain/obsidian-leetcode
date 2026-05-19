@@ -192,6 +192,18 @@ export function computeLockedRanges(
         // Malformed fence — only heading locked.
         out.push(headFrom, headTo);
       }
+    } else if (cur.kind === 'title') {
+      // H1 title: lock from line above (blank after frontmatter) through to next heading.
+      const lockFrom = cur.line > 1 ? state.doc.line(cur.line - 1).from : headFrom;
+      const nextHeadingLine =
+        h + 1 < headings.length
+          ? (headings[h + 1] as HeadingHit).line
+          : total + 1;
+      const lockTo =
+        nextHeadingLine <= total
+          ? state.doc.line(nextHeadingLine).from
+          : state.doc.line(total).to;
+      out.push(lockFrom, lockTo);
     } else {
       // techniques | notes | ai-review — heading line only (D-03/D-19). Body editable.
       out.push(headFrom, headTo);
