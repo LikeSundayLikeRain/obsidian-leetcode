@@ -791,6 +791,54 @@ export default class LeetCodePlugin extends Plugin {
     // working (RESEARCH Pitfall 5).
     this.registerEditorExtension(buildSectionLockExtension(this));
 
+    // Step 6g-pre — Phase 12 Plan 04 (D-12) — wikilink-to-preview interception.
+    // When a user clicks a [[slug]] wikilink to a problem that has no local note,
+    // Obsidian creates an empty file. This handler detects that (empty file in
+    // problems folder matching a known slug from the index), deletes the blank
+    // file, and opens the preview tab instead. Registered BEFORE the starter-code
+    // file-open handler so the blank file is caught and removed before retrofit
+    // attempts to write into it.
+    //
+    // Gates:
+    //   (a) File is in the problems folder
+    //   (b) File is empty (0 bytes — just-created from wikilink click)
+    //   (c) Basename matches the {id}-{slug}.md pattern AND slug exists in index
+    // All three must pass to trigger deletion + preview open.
+    this.registerEvent(
+      this.app.workspace.on('file-open', (file: TFile | null) => {
+        if (!file) return;
+        const problemsFolder = this.settings.getProblemsFolder();
+        // Gate (a): must be in the problems folder
+        if (!file.path.startsWith(problemsFolder + '/') && file.path !== problemsFolder) return;
+        // Gate (b): file must be empty (just created from a wikilink click)
+        // stat.size is 0 for newly-created empty files
+        if (file.stat.size !== 0) return;
+        // Gate (c): extract slug from filename and verify it exists in the index
+        const basename = file.basename; // filename without .md extension
+        // Filename convention: {id}-{slug} (e.g., "1-two-sum", "42-trapping-rain-water")
+        const dashIdx = basename.indexOf('-');
+        if (dashIdx < 1) return; // no leading number portion
+        const idPart = basename.slice(0, dashIdx);
+        if (!/^\d+$/.test(idPart)) return; // id portion must be numeric
+        const slug = basename.slice(dashIdx + 1);
+        if (!slug) return;
+        // Verify slug exists in cached problem index OR problem detail cache
+        const index = this.settings.getProblemIndex();
+        const inIndex = index?.problems.some((p) => p.slug === slug) ?? false;
+        const inDetail = this.settings.getProblemDetail(slug) !== null;
+        if (!inIndex && !inDetail) return;
+        // All gates pass — delete the blank file and open preview
+        void (async () => {
+          try {
+            await this.app.vault.delete(file);
+            await openOrReusePreview(this, slug);
+          } catch (err) {
+            logger.debug('wikilink-to-preview: intercept failed (non-fatal)', err);
+          }
+        })();
+      }),
+    );
+
     // Step 6g — Phase 5.2 D-06 auto-insert starter code on file-open.
     // Fires for every note reveal; the handler gates on `lc-slug` frontmatter
     // via `isValidSlug` before calling `retrofit(...)`. retrofit is idempotent
