@@ -21,14 +21,15 @@ function makeAIClient(responseText = '{"pattern":"Two Pointers","variants":[],"l
 }
 
 function makeSettings(overrides: Record<string, unknown> = {}) {
+  const knownSlugs = (overrides.knownSlugs as string[] | undefined) ?? ['two-sum', '3sum', 'valid-anagram'];
   return {
     getAutoAIKnowledgeGraph: vi.fn(() => overrides.autoAIKG !== false),
     getActiveAIProvider: vi.fn(() => 'activeProvider' in overrides ? overrides.activeProvider : 'openai'),
     getFeatureFlags: vi.fn(() => ({ lookAheadEdges: overrides.lookAheadEdges ?? false })),
     getProblemDetail: vi.fn((slug: string) => {
-      const known = (overrides.knownSlugs as string[] | undefined) ?? ['two-sum', '3sum', 'valid-anagram'];
-      return known.includes(slug) ? { slug, title: slug } : null;
+      return knownSlugs.includes(slug) ? { slug, title: slug } : null;
     }),
+    getProblemIndex: vi.fn(() => ({ problems: knownSlugs.map((s) => ({ slug: s })) })),
     addCostLedger: vi.fn(async () => {}),
     getProblemsFolder: vi.fn(() => 'LeetCode'),
   };

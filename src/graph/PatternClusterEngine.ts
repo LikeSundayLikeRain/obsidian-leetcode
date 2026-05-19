@@ -53,6 +53,7 @@ export interface PatternClusterEngineSettings {
   getActiveAIProvider(): unknown | null;
   getFeatureFlags(): { lookAheadEdges: boolean };
   getProblemDetail(slug: string): unknown | null;
+  getProblemIndex(): { problems: Array<{ slug: string }> } | null;
   addCostLedger(usd: number): Promise<void>;
   getProblemsFolder(): string;
 }
@@ -164,6 +165,7 @@ export class PatternClusterEngine {
 
     // Assemble prompt
     const prompt = buildKgPrompt({ problemMd, code, language });
+    logger.debug('PatternClusterEngine.onAccepted: prompt', { prompt });
 
     // Invoke AI
     let responseText: string;
@@ -173,6 +175,7 @@ export class PatternClusterEngine {
       const response = await this.aiClient.invoke(req);
       responseText = response.text;
       usage = response.usage;
+      logger.debug('PatternClusterEngine.onAccepted: AI response', { responseText });
     } catch (err) {
       logger.debug('PatternClusterEngine.onAccepted: AI invoke failed', err);
       return;
@@ -224,24 +227,26 @@ export class PatternClusterEngine {
       logger.debug('PatternClusterEngine.onAccepted: techniques write failed', err);
     }
 
+    logger.debug('PatternClusterEngine.onAccepted: parsed response', {
+      pattern: parsed.pattern,
+      variants: parsed.variants,
+      lookAhead: parsed.lookAhead,
+    });
+
+    // Build a slug set from the problem index for fast validation
+    const index = this.settings.getProblemIndex();
+    const knownSlugs = new Set(index?.problems.map((p) => p.slug) ?? []);
+
     // Validate variants: keep only known slugs + cross-cluster (D-14)
     const validVariants = parsed.variants.filter((v) => {
-      // Must be known in local index
-      if (this.settings.getProblemDetail(v.slug) === null) return false;
-      // D-14: suppress same-cluster variants (they're redundant with hub)
-      // We can't easily check if the variant's pattern matches since we'd need
-      // its frontmatter. For now, keep all known-slug variants (the plan notes
-      // "the variant's pattern (if known from its frontmatter) differs from
-      // parsed.pattern"). This is conservative — keeps all cross-cluster
-      // and possibly some same-cluster. The hub member list handles dedup visually.
-      return true;
+      return knownSlugs.has(v.slug);
     }).slice(0, 2);
 
     // Validate lookAhead: only if feature flag is on + known slugs
     let validLookAhead: Array<{ slug: string; reason: string }> = [];
     if (this.settings.getFeatureFlags().lookAheadEdges) {
       validLookAhead = parsed.lookAhead.filter((v) => {
-        return this.settings.getProblemDetail(v.slug) !== null;
+        return knownSlugs.has(v.slug);
       }).slice(0, 2);
     }
 
