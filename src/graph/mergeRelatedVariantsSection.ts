@@ -36,12 +36,17 @@ export const RELATED_VARIANTS_HEADING = '## Related Variants';
  */
 export function mergeRelatedVariantsSection(
   body: string,
-  variants: Array<{ slug: string; reason: string }>,
+  variants: Array<{ slug: string; reason: string; linkTarget?: string; title?: string }>,
 ): string {
   const lines = body.split('\n');
   const headingIdx = findExactHeading(lines, RELATED_VARIANTS_HEADING);
   const content = variants
-    .map((v) => `- [[${v.slug}]] — ${v.reason}`)
+    .map((v) => {
+      const link = v.linkTarget && v.title
+        ? `[[${v.linkTarget}|${v.title}]]`
+        : `[[${v.slug}]]`;
+      return `- ${link} — ${v.reason}`;
+    })
     .join('\n');
 
   if (headingIdx >= 0) {

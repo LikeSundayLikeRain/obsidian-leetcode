@@ -53,7 +53,7 @@ export interface PatternClusterEngineSettings {
   getActiveAIProvider(): unknown | null;
   getFeatureFlags(): { lookAheadEdges: boolean };
   getProblemDetail(slug: string): unknown | null;
-  getProblemIndex(): { problems: Array<{ slug: string }> } | null;
+  getProblemIndex(): { problems: Array<{ slug: string; id: number; title: string }> } | null;
   addCostLedger(usd: number): Promise<void>;
   getProblemsFolder(): string;
 }
@@ -250,12 +250,23 @@ export class PatternClusterEngine {
       }).slice(0, 2);
     }
 
-    // Combine and write Related Variants (only if any exist)
+    // Combine and enrich with link targets for proper wikilink resolution
     const combinedVariants = [...validVariants, ...validLookAhead];
-    if (combinedVariants.length > 0) {
+    const indexProblems = index?.problems ?? [];
+    const enrichedVariants = combinedVariants.map((v) => {
+      const entry = indexProblems.find((p) => p.slug === v.slug);
+      if (entry) {
+        const linkTarget = `${entry.id}-${v.slug}`;
+        return { ...v, linkTarget, title: entry.title };
+      }
+      return v;
+    });
+
+    // Write Related Variants (only if any exist)
+    if (enrichedVariants.length > 0) {
       try {
         await this.app.vault.process(file, (body: string) => {
-          return mergeRelatedVariantsSection(body, combinedVariants);
+          return mergeRelatedVariantsSection(body, enrichedVariants);
         });
       } catch (err) {
         logger.debug('PatternClusterEngine.onAccepted: related variants write failed', err);

@@ -29,7 +29,7 @@ function makeSettings(overrides: Record<string, unknown> = {}) {
     getProblemDetail: vi.fn((slug: string) => {
       return knownSlugs.includes(slug) ? { slug, title: slug } : null;
     }),
-    getProblemIndex: vi.fn(() => ({ problems: knownSlugs.map((s) => ({ slug: s })) })),
+    getProblemIndex: vi.fn(() => ({ problems: knownSlugs.map((s, i) => ({ slug: s, id: i + 1, title: s })) })),
     addCostLedger: vi.fn(async () => {}),
     getProblemsFolder: vi.fn(() => 'LeetCode'),
   };
@@ -183,7 +183,7 @@ describe('PatternClusterEngine', () => {
     await engine.onAccepted(makeMockFile() as never, 'two-sum', '<p>desc</p>', 'code', 'python3');
     const body = m.getContent('LeetCode/two-sum.md')!;
     expect(body).toContain('## Related Variants');
-    expect(body).toContain('[[3sum]]');
+    expect(body).toContain('[[1-3sum|3sum]]');
   });
 
   it('drops unknown slugs from variants (validated against getProblemDetail)', async () => {
@@ -210,7 +210,7 @@ describe('PatternClusterEngine', () => {
     await engine.onAccepted(makeMockFile() as never, 'two-sum', '<p>desc</p>', 'code', 'python3');
     const body = m.getContent('LeetCode/two-sum.md')!;
     expect(body).not.toContain('unknown-problem');
-    expect(body).toContain('[[3sum]]');
+    expect(body).toContain('[[1-3sum|3sum]]');
   });
 
   it('respects featureFlags.lookAheadEdges gate for lookAhead edges', async () => {
@@ -259,7 +259,7 @@ describe('PatternClusterEngine', () => {
 
     await engine.onAccepted(makeMockFile() as never, 'two-sum', '<p>desc</p>', 'code', 'python3');
     const body = m.getContent('LeetCode/two-sum.md')!;
-    expect(body).toContain('[[valid-anagram]]');
+    expect(body).toContain('[[1-valid-anagram|valid-anagram]]');
   });
 
   it('calls addCostLedger after successful invoke', async () => {
