@@ -116,48 +116,48 @@ describe('buildSummaryBody', () => {
 
   it('Each problem row has wikilink to slug', () => {
     const body = buildSummaryBody(buildArgs());
-    expect(body).toContain('[[problem-a]]');
-    expect(body).toContain('[[problem-b]]');
-    expect(body).toContain('[[problem-c]]');
-    expect(body).toContain('[[problem-d]]');
+    expect(body).toContain('[[problem-a\\|Problem A]]');
+    expect(body).toContain('[[problem-b\\|Problem B]]');
+    expect(body).toContain('[[problem-c\\|Problem C]]');
+    expect(body).toContain('[[problem-d\\|Problem D]]');
   });
 
   it('Problem rows have correct difficulty words', () => {
     const body = buildSummaryBody(buildArgs());
     const lines = body.split('\n');
-    const problemARow = lines.find((l) => l.includes('[[problem-a]]'))!;
+    const problemARow = lines.find((l) => l.includes('[[problem-a\\|Problem A]]'))!;
     expect(problemARow).toContain('Easy');
-    const problemDRow = lines.find((l) => l.includes('[[problem-d]]'))!;
+    const problemDRow = lines.find((l) => l.includes('[[problem-d\\|Problem D]]'))!;
     expect(problemDRow).toContain('Hard');
   });
 
   it('Problem rows have correct verdict words', () => {
     const body = buildSummaryBody(buildArgs());
     const lines = body.split('\n');
-    const problemARow = lines.find((l) => l.includes('[[problem-a]]'))!;
+    const problemARow = lines.find((l) => l.includes('[[problem-a\\|Problem A]]'))!;
     expect(problemARow).toContain('Accepted');
-    const problemBRow = lines.find((l) => l.includes('[[problem-b]]'))!;
+    const problemBRow = lines.find((l) => l.includes('[[problem-b\\|Problem B]]'))!;
     expect(problemBRow).toContain('Attempted');
-    const problemCRow = lines.find((l) => l.includes('[[problem-c]]'))!;
+    const problemCRow = lines.find((l) => l.includes('[[problem-c\\|Problem C]]'))!;
     expect(problemCRow).toContain('Unsolved');
   });
 
   it('Accepted problems show solve time, others show dash', () => {
     const body = buildSummaryBody(buildArgs());
     const lines = body.split('\n');
-    const problemARow = lines.find((l) => l.includes('[[problem-a]]'))!;
+    const problemARow = lines.find((l) => l.includes('[[problem-a\\|Problem A]]'))!;
     // 5 min after start → "5m 0s"
     expect(problemARow).toContain('5m 0s');
-    const problemBRow = lines.find((l) => l.includes('[[problem-b]]'))!;
+    const problemBRow = lines.find((l) => l.includes('[[problem-b\\|Problem B]]'))!;
     expect(problemBRow).toMatch(/—/); // em-dash
   });
 
   it('Accepted problems show credit points, others show 0', () => {
     const body = buildSummaryBody(buildArgs());
     const lines = body.split('\n');
-    const problemARow = lines.find((l) => l.includes('[[problem-a]]'))!;
+    const problemARow = lines.find((l) => l.includes('[[problem-a\\|Problem A]]'))!;
     expect(problemARow).toMatch(/\| 3 \|$/);
-    const problemBRow = lines.find((l) => l.includes('[[problem-b]]'))!;
+    const problemBRow = lines.find((l) => l.includes('[[problem-b\\|Problem B]]'))!;
     expect(problemBRow).toMatch(/\| 0 \|$/);
   });
 

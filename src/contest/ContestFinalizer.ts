@@ -26,7 +26,8 @@
 //   - vault.create for new files
 
 import type { App, TFile } from 'obsidian';
-import { codeBlockFor, CODE_HEADING_LINE } from '../notes/NoteTemplate';
+import { codeBlockFor, CODE_HEADING_LINE, buildNoteBody, buildFrontmatterInput, applyFrontmatter } from '../notes/NoteTemplate';
+import { htmlToMarkdown } from '../notes/htmlToMarkdown';
 import type { ContestSession, ContestProblemState } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,7 +37,18 @@ import type { ContestSession, ContestProblemState } from './types';
 /** Structural port for settings access. Matches SettingsStore's public surface. */
 export interface ContestFinalizerSettings {
   getProblemsFolder(): string;
-  getProblemDetail(slug: string): { id: number; title: string } | null;
+  getDefaultLanguage(): string;
+  getProblemDetail(slug: string): ContestFinalizerDetail | null;
+}
+
+export interface ContestFinalizerDetail {
+  id: number;
+  title: string;
+  contentHtml: string;
+  difficulty: string;
+  url: string;
+  topicSlugs?: string[];
+  fetchedAt?: number;
 }
 
 /** Structural port for NoteWriter (only openOrCreateProblemNote needed). */
@@ -164,6 +176,8 @@ export interface BuildSummaryBodyArgs {
   session: ContestSession;
   aborted: boolean;
   totalElapsedMs: number;
+  /** Map of slug → numeric problem ID for wikilink construction. */
+  problemIds?: Map<string, number>;
 }
 
 /**
@@ -208,8 +222,10 @@ export function buildSummaryBody(args: BuildSummaryBodyArgs): string {
   lines.push('| Problem | Difficulty | Verdict | Time | Points |');
   lines.push('| ------- | ---------- | ------- | ---- | ------ |');
 
+  const problemIds = args.problemIds;
   for (const p of session.problems) {
-    const link = `[[${p.slug}]]`;
+    const id = problemIds?.get(p.slug);
+    const link = id ? `[[${id}-${p.slug}\\|${p.title}]]` : `[[${p.slug}\\|${p.title}]]`;
     const diff = difficultyWord(p.difficulty);
     const verdict = p.verdict === 'accepted' ? 'Accepted'
       : p.verdict === 'attempted' ? 'Attempted'
@@ -249,12 +265,8 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
 
   // 2. Determine paths
   const folder = settings.getProblemsFolder().replace(/[\\/]+$/, '');
-  const contestSubfolder = `${folder}/Contests/${safeSlug}`;
-
-  // Ensure Contests/ and contest subfolder exist
   const contestsFolder = `${folder}/Contests`;
   await ensureFolder(app, contestsFolder);
-  await ensureFolder(app, contestSubfolder);
 
   // 3. Process each problem with code
   const createdFiles: Map<string, TFile> = new Map();
@@ -265,16 +277,10 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
     const detail = settings.getProblemDetail(problem.slug);
     if (!detail) continue; // defensive — should have been cached on start
 
-    const notePath = `${contestSubfolder}/${detail.id}-${problem.slug}.md`;
+    const notePath = `${folder}/${detail.id}-${problem.slug}.md`;
 
-    // Check for existing file at contest subfolder path
+    // Check for existing file at normal problems folder path
     let existingFile = app.vault.getAbstractFileByPath(notePath) as TFile | null;
-
-    // Also check at normal problems folder path
-    if (!existingFile) {
-      const normalPath = `${folder}/${detail.id}-${problem.slug}.md`;
-      existingFile = app.vault.getAbstractFileByPath(normalPath) as TFile | null;
-    }
 
     if (existingFile) {
       // D-13 merge strategy
@@ -293,8 +299,14 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
       // But still track for #revisit tagging
       createdFiles.set(problem.slug, existingFile);
     } else {
-      // Create new note (guard against race / re-finalization)
-      const body = buildContestProblemBody(problem);
+      // Create full problem note (same as normal note creation)
+      const problemMd = detail.contentHtml ? htmlToMarkdown(detail.contentHtml) : '';
+      const body = buildNoteBody({
+        problemMarkdown: problemMd,
+        langSlug: problem.language || settings.getDefaultLanguage(),
+        starterCode: problem.code || undefined,
+        title: detail.title,
+      });
       let file: TFile;
       try {
         file = await app.vault.create(notePath, body) as TFile;
@@ -307,6 +319,13 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
           throw new Error(`Failed to create contest note: ${notePath}`);
         }
       }
+      // Apply full frontmatter (same as normal notes) + contest ID
+      const fmInput = buildFrontmatterInput(
+        { ...detail, fetchedAt: detail.fetchedAt ?? Date.now(), difficulty: detail.difficulty as 'Easy' | 'Medium' | 'Hard', topicSlugs: detail.topicSlugs ?? [] } as Parameters<typeof buildFrontmatterInput>[0],
+        settings.getDefaultLanguage(),
+        problem.verdict === 'accepted' ? 'accepted' : 'attempted',
+      );
+      await applyFrontmatter(app, file, fmInput);
       await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
         fm['lc-contest-id'] = safeSlug;
       });
@@ -336,7 +355,13 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
   const dateStr = formatDate(session.startedAt);
   const summaryPath = `${contestsFolder}/${dateStr}-${safeSlug}.md`;
 
-  const summaryBody = buildSummaryBody({ session, aborted, totalElapsedMs });
+  // Build problem ID map for wikilinks
+  const problemIds = new Map<string, number>();
+  for (const p of session.problems) {
+    const d = settings.getProblemDetail(p.slug);
+    if (d) problemIds.set(p.slug, d.id);
+  }
+  const summaryBody = buildSummaryBody({ session, aborted, totalElapsedMs, problemIds });
   const existingSummary = app.vault.getAbstractFileByPath(summaryPath) as TFile | null;
   const summaryFile = existingSummary
     ? (await app.vault.process(existingSummary, () => summaryBody), existingSummary)

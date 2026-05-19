@@ -62,11 +62,12 @@ function createMockSession(overrides?: Partial<ContestSession>): ContestSession 
 function createMockSettings(): ContestFinalizerSettings {
   return {
     getProblemsFolder: () => 'LeetCode',
+    getDefaultLanguage: () => 'python3',
     getProblemDetail: (slug: string) => {
-      const details: Record<string, { id: number; title: string }> = {
-        'accepted-problem': { id: 201, title: 'Accepted Problem' },
-        'attempted-problem': { id: 202, title: 'Attempted Problem' },
-        'unsolved-problem': { id: 203, title: 'Unsolved Problem' },
+      const details: Record<string, { id: number; title: string; contentHtml: string; difficulty: string; url: string; topicSlugs: string[] }> = {
+        'accepted-problem': { id: 201, title: 'Accepted Problem', contentHtml: '<p>Accepted</p>', difficulty: 'Easy', url: 'https://leetcode.com/problems/accepted-problem/', topicSlugs: [] },
+        'attempted-problem': { id: 202, title: 'Attempted Problem', contentHtml: '<p>Attempted</p>', difficulty: 'Medium', url: 'https://leetcode.com/problems/attempted-problem/', topicSlugs: [] },
+        'unsolved-problem': { id: 203, title: 'Unsolved Problem', contentHtml: '<p>Unsolved</p>', difficulty: 'Hard', url: 'https://leetcode.com/problems/unsolved-problem/', topicSlugs: [] },
       };
       return details[slug] ?? null;
     },
@@ -134,7 +135,7 @@ describe('#revisit tagging (CONTEST-08)', () => {
       settings: mockSettings,
     });
 
-    const fm = mockApp._frontmatters.get('LeetCode/Contests/weekly-contest-400/202-attempted-problem.md');
+    const fm = mockApp._frontmatters.get('LeetCode/202-attempted-problem.md');
     expect(fm).toBeDefined();
     expect(fm!.tags).toContain('revisit');
   });
@@ -148,7 +149,7 @@ describe('#revisit tagging (CONTEST-08)', () => {
       settings: mockSettings,
     });
 
-    const fm = mockApp._frontmatters.get('LeetCode/Contests/weekly-contest-400/203-unsolved-problem.md');
+    const fm = mockApp._frontmatters.get('LeetCode/203-unsolved-problem.md');
     expect(fm).toBeDefined();
     expect(fm!.tags).toContain('revisit');
   });
@@ -162,7 +163,7 @@ describe('#revisit tagging (CONTEST-08)', () => {
       settings: mockSettings,
     });
 
-    const fm = mockApp._frontmatters.get('LeetCode/Contests/weekly-contest-400/201-accepted-problem.md');
+    const fm = mockApp._frontmatters.get('LeetCode/201-accepted-problem.md');
     expect(fm).toBeDefined();
     // Should have lc-contest-id but NOT revisit
     expect(fm!['lc-contest-id']).toBe('weekly-contest-400');
@@ -171,7 +172,7 @@ describe('#revisit tagging (CONTEST-08)', () => {
 
   it('#revisit not duplicated if already present', async () => {
     // Pre-populate an existing file with 'revisit' already in tags
-    const existingPath = 'LeetCode/Contests/weekly-contest-400/202-attempted-problem.md';
+    const existingPath = 'LeetCode/202-attempted-problem.md';
     mockApp._files.set(existingPath, '## Problem\n\n## Code\n```javascript\nold\n```\n\n## Notes\n');
     mockApp._frontmatters.set(existingPath, { tags: ['revisit', 'other-tag'] });
 

@@ -67,10 +67,14 @@ export class VerdictModal extends Modal {
   constructor(app: App, args: VerdictModalArgs) {
     super(app);
     this.args = args;
-    this.modalEl.addClass('leetcode-verdict-modal');
-    this.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
-    this.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
-    this.containerEl.style.setProperty('--dialog-width', 'min(90vw, 780px)');
+    if (this.modalEl) {
+      this.modalEl.addClass('leetcode-verdict-modal');
+      this.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
+      this.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
+    }
+    if (this.containerEl) {
+      this.containerEl.style.setProperty('--dialog-width', 'min(90vw, 780px)');
+    }
   }
 
   private isPending = false;

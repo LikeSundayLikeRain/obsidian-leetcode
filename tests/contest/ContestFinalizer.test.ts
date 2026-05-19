@@ -73,12 +73,13 @@ function createMockSession(overrides?: Partial<ContestSession>): ContestSession 
 function createMockSettings(): ContestFinalizerSettings {
   return {
     getProblemsFolder: () => 'LeetCode',
+    getDefaultLanguage: () => 'python3',
     getProblemDetail: (slug: string) => {
-      const details: Record<string, { id: number; title: string }> = {
-        'problem-a': { id: 101, title: 'Problem A' },
-        'problem-b': { id: 102, title: 'Problem B' },
-        'problem-c': { id: 103, title: 'Problem C' },
-        'problem-d': { id: 104, title: 'Problem D' },
+      const details: Record<string, { id: number; title: string; contentHtml: string; difficulty: string; url: string; topicSlugs: string[] }> = {
+        'problem-a': { id: 101, title: 'Problem A', contentHtml: '<p>Problem A</p>', difficulty: 'Easy', url: 'https://leetcode.com/problems/problem-a/', topicSlugs: [] },
+        'problem-b': { id: 102, title: 'Problem B', contentHtml: '<p>Problem B</p>', difficulty: 'Medium', url: 'https://leetcode.com/problems/problem-b/', topicSlugs: [] },
+        'problem-c': { id: 103, title: 'Problem C', contentHtml: '<p>Problem C</p>', difficulty: 'Hard', url: 'https://leetcode.com/problems/problem-c/', topicSlugs: [] },
+        'problem-d': { id: 104, title: 'Problem D', contentHtml: '<p>Problem D</p>', difficulty: 'Medium', url: 'https://leetcode.com/problems/problem-d/', topicSlugs: [] },
       };
       return details[slug] ?? null;
     },
@@ -157,11 +158,11 @@ describe('ContestFinalizer', () => {
 
       // problem-a and problem-b have code, so they get notes
       expect(mockApp.vault.create).toHaveBeenCalledWith(
-        'LeetCode/Contests/weekly-contest-400/101-problem-a.md',
+        'LeetCode/101-problem-a.md',
         expect.any(String),
       );
       expect(mockApp.vault.create).toHaveBeenCalledWith(
-        'LeetCode/Contests/weekly-contest-400/102-problem-b.md',
+        'LeetCode/102-problem-b.md',
         expect.any(String),
       );
     });
@@ -177,13 +178,13 @@ describe('ContestFinalizer', () => {
 
       // problem-c and problem-d have empty code — no notes created for them
       const createCalls = mockApp.vault.create.mock.calls.map((c) => c[0]);
-      expect(createCalls).not.toContain('LeetCode/Contests/weekly-contest-400/103-problem-c.md');
-      expect(createCalls).not.toContain('LeetCode/Contests/weekly-contest-400/104-problem-d.md');
+      expect(createCalls).not.toContain('LeetCode/103-problem-c.md');
+      expect(createCalls).not.toContain('LeetCode/104-problem-d.md');
     });
 
     it('D-13 merge: AC on existing file overwrites ## Code via vault.process', async () => {
       // Pre-populate existing file
-      const existingPath = 'LeetCode/Contests/weekly-contest-400/101-problem-a.md';
+      const existingPath = 'LeetCode/101-problem-a.md';
       mockApp._files.set(existingPath, '## Problem\nOld\n\n## Code\n```javascript\nold code\n```\n\n## Notes\n');
 
       const session = createMockSession();
@@ -202,7 +203,7 @@ describe('ContestFinalizer', () => {
 
     it('D-13 merge: non-AC on existing file does NOT call vault.process for that file', async () => {
       // Pre-populate existing file for problem-b (attempted)
-      const existingPath = 'LeetCode/Contests/weekly-contest-400/102-problem-b.md';
+      const existingPath = 'LeetCode/102-problem-b.md';
       mockApp._files.set(existingPath, '## Problem\nOld\n\n## Code\n```javascript\nexisting code\n```\n\n## Notes\n');
 
       const session = createMockSession();
@@ -231,7 +232,7 @@ describe('ContestFinalizer', () => {
       });
 
       // Check frontmatter was applied
-      const fm = mockApp._frontmatters.get('LeetCode/Contests/weekly-contest-400/101-problem-a.md');
+      const fm = mockApp._frontmatters.get('LeetCode/101-problem-a.md');
       expect(fm).toBeDefined();
       expect(fm!['lc-contest-id']).toBe('weekly-contest-400');
     });
