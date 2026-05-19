@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Contest, AI Coach, and Preview
-status: executed
-stopped_at: Phase 11 executed — all plans complete, build + tests green
-last_updated: "2026-05-19T00:47:14Z"
+status: discussing
+stopped_at: Phase 12 context gathered
+last_updated: "2026-05-19T12:00:00Z"
 last_activity: 2026-05-19
 progress:
   total_phases: 9
@@ -21,19 +21,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-15 — v1.1 milestone opened)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** Phase 11 — AI Knowledge Graph
+**Current focus:** Phase 12 — Polish + Plugin-Store Re-submission
 
 ## Current Position
 
-Phase: 11
-Plan: 3/3 complete
-Status: Phase 11 COMPLETE — all 3 plans executed
+Phase: 12
+Plan: 0/? (context gathered, ready for planning)
+Status: Phase 12 context gathered — ready for `/gsd-plan-phase 12`
 Last activity: 2026-05-19
 
 ### Resume path
 
-1. Run `/gsd-plan-phase 8` to start planning Phase 08 (AI Debug — streaming modal + cancel; AIDBG-01..03).
-2. Phase 07 closeout state: AIClient seam (Plan 07-02/03/05) is the production AI surface. `AIClient.probe()` and `AIClient.invoke()` both consult `disclosureAcknowledged` BEFORE any HTTP — Phase 08's AI Debug will get the disclosure gate for free. Three palette commands ship in Phase 07: `test-ai-connection` (07-04), `reset-ai-disclosures` (07-05), `clear-ai-key` (07-06). README ## Network usage now enumerates all 5 AI provider hosts + leetcode.com plus Authentication and Cost expectations subsections — plugin-store-reviewer-ready.
+1. Run `/gsd-plan-phase 12` to plan Phase 12 (Polish + Plugin-Store Re-submission).
+2. Phase 12 context: 16 decisions captured covering bug fixes (contest mode defects, verdict modal layout), polish (pattern chip, H1 title, wikilink-to-preview), and release prep (README audit, version bump, manifest). Wave structure: bugs first → polish second → release last.
 
 ### v1.1 Phase Map
 

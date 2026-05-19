@@ -308,7 +308,17 @@ Plans:
   1. README's "Network use" section enumerates every endpoint contacted in v1.1 (leetcode.com + every AI provider base URL); a "Cost expectations" subsection links provider pricing pages and gives a per-AC estimate.
   2. `manifest.json` version is bumped to 1.1.0, `minAppVersion` re-validated, and a GitHub release with `main.js` + `manifest.json` artifacts is published.
   3. `community-plugins.json` PR (or update if already merged) reflects the v1.1 description; lint + bundle-size CI gates remain green at the release commit.
-  4. (Stretch) User can run an opt-in "Migrate v1.0 Techniques to clusters" command from the palette that batches 10 notes at a time, writes a backup file before each batch, skips the active note when it has unsaved changes, and resumes cleanly after a crash.
+  4. Plugin cold-start time is acceptable (< 3 s on a 100-note vault). Profile and fix any startup bottlenecks — bundle size (currently 1.2 MB), eager module evaluation, or blocking I/O during `onload`.
+  5. After AC, the verdict modal shows the AI-assigned pattern name (chip/badge UX) so the classification isn't invisible to the user.
+  6. Clicking a wikilink to a problem that has no local note opens a preview tab (via `previewRouter`) instead of creating a blank file — making Related Variants and hub note links instantly navigable.
+  7. Problem notes include a `# {Title}` H1 heading at the top of the body (before `## Problem`) so the human-readable title is visible when Obsidian's "Show inline title" is disabled.
+  8. Verdict modal layout fix: when AI review is enabled, the streaming review content renders ABOVE the Close button (not below it); Close button stays anchored at the bottom of the modal at all times so the user isn't stranded scrolling past AI output to dismiss.
+  9. Contest scratch/temp files (e.g. contest session state, intermediate fetches) are hidden from Obsidian's file explorer — either stored in `.obsidian/plugins/` data or filtered via a dot-prefixed folder convention so they never appear as vault notes.
+  10. Contest sidebar reflects AC status in real time: when a problem is Accepted during an active contest session, the corresponding problem card/badge updates immediately (no manual refresh or re-open required).
+  11. AI review after AC works correctly in contest mode: the auto-review stream must not hang or get stuck when triggered from a contest problem submission.
+  12. Contest finish lifecycle works end-to-end: clicking "Finish" must generate the summary note (`LeetCode/Contests/{date}-{id}.md`) and trigger AI contest analysis before returning to the contest browser — not silently drop back to the browser with no output.
+  13. Contest problem tabs are idempotent: clicking a problem that already has an open tab must refocus the existing tab instead of creating a duplicate. Same tab-reuse semantics as the problem preview view.
+  10. (Stretch) User can run an opt-in "Migrate v1.0 Techniques to clusters" command from the palette that batches 10 notes at a time, writes a backup file before each batch, skips the active note when it has unsaved changes, and resumes cleanly after a crash.
 
 **Plans**: TBD
 
