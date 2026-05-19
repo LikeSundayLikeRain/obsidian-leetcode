@@ -325,8 +325,8 @@ Plans:
 Plans:
 **Wave 1** *(parallel)*
 
-- [ ] 12-01-PLAN.md — Verdict modal Close button removal (D-01, D-02): remove all 5 Close buttons from verdictModalRenderer, remove focusCloseButton dead code, add empty-footer CSS hide rule.
-- [ ] 12-02-PLAN.md — Contest bug fixes (D-05, D-06, D-07, D-08, D-09): scratch folder to `.leetcode-contest`, sidebar AC status callback, tab idempotency, AI review deferral, finish lifecycle await.
+- [x] 12-01-PLAN.md — Verdict modal Close button removal (D-01, D-02): remove all 5 Close buttons from verdictModalRenderer, remove focusCloseButton dead code, add empty-footer CSS hide rule.
+- [x] 12-02-PLAN.md — Contest bug fixes (D-05, D-06, D-07, D-08, D-09): scratch folder to `.leetcode-contest`, sidebar AC status callback, tab idempotency, AI review deferral, finish lifecycle await.
 
 **Wave 2** *(blocked on Wave 1 completion — parallel)*
 
@@ -360,4 +360,4 @@ Plans:
 | 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
 | 10.1. LC Virtual Contest API             | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | 3/3            | Complete    | 2026-05-19  |
-| 12. Polish + Plugin-Store Re-submission  | v1.1      | 0/5            | In Progress | -           |
+| 12. Polish + Plugin-Store Re-submission  | v1.1      | 2/5 | In Progress|  |
