@@ -130,6 +130,7 @@ import {
 import { SubmissionPickerModal } from './graph/SubmissionPickerModal';
 import { SubmissionDetailModal } from './graph/SubmissionDetailModal';
 import { toIsoLocalTz } from './graph/dateFormat';
+import { normalizePatternName } from './graph/patternTaxonomy';
 // T-03-04-05 mitigation — classify-and-throw helper extracted for testability.
 import { assertKnownVerdictOrThrow } from './solve/verdictGuard';
 
@@ -1991,6 +1992,7 @@ export default class LeetCodePlugin extends Plugin {
         : undefined,
       // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC.
       file: ctx.file,
+      getPatternHubPath: (p) => `${this.settings.getProblemsFolder()}/Patterns/${normalizePatternName(p)}.md`,
     });
     modal.open();
 
@@ -2348,6 +2350,7 @@ export default class LeetCodePlugin extends Plugin {
       onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
       // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC.
       file: ctx.file,
+      getPatternHubPath: (p) => `${this.settings.getProblemsFolder()}/Patterns/${normalizePatternName(p)}.md`,
     });
     modal.open();
 

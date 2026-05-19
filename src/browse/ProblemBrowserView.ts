@@ -1211,10 +1211,10 @@ export class ProblemBrowserView extends ItemView {
    * Only wires once — subsequent renderActiveContest calls skip.
    */
   private wireContestCallbacks(): void {
-    if (this.contestCallbacksWired) return;
-    this.contestCallbacksWired = true;
-
     const manager = this.plugin.contestSessionManager;
+    if ((manager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired) return;
+    (manager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired = true;
+    this.contestCallbacksWired = true;
     // Patch the callbacks that were set at manager construction to include
     // our live-update behavior. The manager's callbacks object is set once
     // at construction. We need to hook into the same reference.

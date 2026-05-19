@@ -51,6 +51,9 @@ export interface VerdictModalArgs {
    *  `lc-pattern` from metadataCache for the pattern chip on AC. Contest
    *  paths pass null when no vault TFile is available at modal construction. */
   file?: TFile | null;
+  /** Phase 12 (CR-01 fix) — Resolves pattern name to the hub note path using
+   *  the user's configured problemsFolder + normalizePatternName. */
+  getPatternHubPath?: (pattern: string) => string;
 }
 
 export class VerdictModal extends Modal {
@@ -243,13 +246,12 @@ export class VerdictModal extends Modal {
     chip.setAttribute('role', 'link');
     chip.setAttribute('aria-label', 'Open ' + pattern + ' hub note');
 
+    const hubPath = this.args.getPatternHubPath
+      ? this.args.getPatternHubPath(pattern)
+      : 'LeetCode/Patterns/' + pattern + '.md';
     const navigate = (): void => {
       this.close();
-      void this.app.workspace.openLinkText(
-        'LeetCode/Patterns/' + pattern + '.md',
-        '',
-        false,
-      );
+      void this.app.workspace.openLinkText(hubPath, '', false);
     };
     chip.addEventListener('click', navigate);
     chip.addEventListener('keydown', (e: KeyboardEvent) => {

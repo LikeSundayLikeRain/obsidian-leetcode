@@ -84,7 +84,7 @@ export class ContestScratchManager {
     const content = buildScratchContent(problem, contentMd);
     const existing = this.app.vault.getAbstractFileByPath(path) as TFile | null;
     if (existing) {
-      await this.app.vault.modify(existing, content);
+      await this.app.vault.process(existing, () => content);
       return existing;
     }
     try {
@@ -93,7 +93,7 @@ export class ContestScratchManager {
       // Race condition: file was created between check and create
       const file = this.app.vault.getAbstractFileByPath(path) as TFile;
       if (file) {
-        await this.app.vault.modify(file, content);
+        await this.app.vault.process(file, () => content);
         return file;
       }
       throw new Error(`Failed to create scratch file: ${path}`);
