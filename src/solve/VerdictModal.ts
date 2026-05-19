@@ -17,7 +17,7 @@
 //
 // Logger redaction for Copy payload on unknown verdicts (T-03-06-02 mitigation).
 
-import { Component, Modal, Notice, setIcon, type App } from 'obsidian';
+import { Component, Modal, Notice, setIcon, type App, type TFile } from 'obsidian';
 import type { RunCheckResponse, SubmitCheckResponse } from './types';
 import { renderVerdict } from './verdictModalRenderer';
 import { logger } from '../shared/logger';
@@ -47,6 +47,10 @@ export interface VerdictModalArgs {
     reviewAreaEl: HTMLElement,
     component: Component,
   ) => { abort: () => void; promise: Promise<void> };
+  /** Phase 12 Plan 03 (D-03/D-04) — The problem note TFile, used to read
+   *  `lc-pattern` from metadataCache for the pattern chip on AC. Contest
+   *  paths pass null when no vault TFile is available at modal construction. */
+  file?: TFile | null;
 }
 
 export class VerdictModal extends Modal {
@@ -171,6 +175,13 @@ export class VerdictModal extends Modal {
           }
         : undefined,
     });
+    // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC. Reads lc-pattern
+    // from metadataCache; renders a clickable chip that navigates to the hub
+    // note. Placed AFTER the Accepted body and BEFORE the review stream.
+    if (this.isAccepted(res) && this.args.file) {
+      this.renderPatternChip();
+    }
+
     // Phase 09 (AIREV-01) — start the review stream on AC when the host
     // provides the callback. The callback is only supplied when
     // autoAIReviewOnAC is enabled AND a provider is configured (gated in
@@ -213,6 +224,40 @@ export class VerdictModal extends Modal {
   private isAccepted(res: TerminalResponse): boolean {
     const r = res as Record<string, unknown>;
     return typeof r.status_code === 'number' && r.status_code === 10;
+  }
+
+  /** Phase 12 Plan 03 (D-03/D-04) — render the pattern chip between the
+   *  Accepted banner and the AI review stream. Reads lc-pattern from
+   *  metadataCache; uses setText (textContent) for XSS safety (T-12-04). */
+  private renderPatternChip(): void {
+    const file = this.args.file;
+    if (!file) return;
+    const cache = this.app.metadataCache.getFileCache(file);
+    const pattern = cache?.frontmatter?.['lc-pattern'] as string | undefined;
+    if (!pattern) return;
+
+    const chip = appendEl(this.contentEl, 'div', 'leetcode-verdict-pattern-chip');
+    chip.textContent = pattern;
+    chip.setAttribute('data-lc-role', 'pattern-chip');
+    chip.setAttribute('tabindex', '0');
+    chip.setAttribute('role', 'link');
+    chip.setAttribute('aria-label', 'Open ' + pattern + ' hub note');
+
+    const navigate = (): void => {
+      this.close();
+      void this.app.workspace.openLinkText(
+        'LeetCode/Patterns/' + pattern + '.md',
+        '',
+        false,
+      );
+    };
+    chip.addEventListener('click', navigate);
+    chip.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        navigate();
+      }
+    });
   }
 
   /** Phase 09 (AIREV-01) — create the review area, start the host-provided

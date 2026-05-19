@@ -1829,3 +1829,25 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* ── Phase 12 Plan 03 (D-03/D-04) — Pattern chip in verdict modal on AC ──── */
+.leetcode-verdict .leetcode-verdict-pattern-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--background-secondary) 85%, var(--interactive-accent) 15%);
+  color: var(--text-accent);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+  border: 1px solid var(--background-modifier-border);
+  margin: 8px auto 0;
+  text-align: center;
+}
+.leetcode-verdict .leetcode-verdict-pattern-chip:hover {
+  background: color-mix(in srgb, var(--background-secondary) 70%, var(--interactive-accent) 30%);
+  border-color: var(--interactive-accent);
+}

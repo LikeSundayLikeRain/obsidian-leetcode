@@ -1937,6 +1937,8 @@ export default class LeetCodePlugin extends Plugin {
       onStartReviewStream: this.settings.getAutoAIReviewOnAC() && this.settings.getActiveAIProvider()
         ? (reviewAreaEl, component) => this.startAutoReview(ctx, reviewAreaEl, component)
         : undefined,
+      // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC.
+      file: ctx.file,
     });
     modal.open();
 
@@ -2292,6 +2294,8 @@ export default class LeetCodePlugin extends Plugin {
       // same conditional union {wa,tle,mle,re,ce} applies and the same
       // single openAIDebug entrypoint is invoked.
       onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
+      // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC.
+      file: ctx.file,
     });
     modal.open();
 
