@@ -102,7 +102,7 @@ describe('ClusterHubWriter', () => {
   it('ensureHub creates hub note at {problemsFolder}/Patterns/{pattern}.md', async () => {
     const m = makeMockVaultApp({});
     const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
-    const entry: HubEntry = { title: 'Two Sum', difficulty: 'Easy', solvedDate: '2026-05-18' };
+    const entry: HubEntry = { title: 'Two Sum', fileBasename: '1-two-sum', difficulty: 'Easy', solvedDate: '2026-05-18' };
     await writer.ensureHub('Two Pointers', entry);
     expect(m.spies.create).toHaveBeenCalled();
     const createCall = m.spies.create.mock.calls[0]!;
@@ -113,7 +113,7 @@ describe('ClusterHubWriter', () => {
     expect(body).toContain('### Easy');
     expect(body).toContain('### Medium');
     expect(body).toContain('### Hard');
-    expect(body).toContain('[[Two Sum]]');
+    expect(body).toContain('[[1-two-sum|Two Sum]]');
   });
 
   it('ensureHub no-ops when hub file already exists', async () => {
@@ -121,7 +121,7 @@ describe('ClusterHubWriter', () => {
       'LeetCode/Patterns/Two Pointers.md': '---\nlc-pattern-hub: true\n---\n# Two Pointers\n',
     });
     const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
-    const entry: HubEntry = { title: 'Two Sum', difficulty: 'Easy', solvedDate: '2026-05-18' };
+    const entry: HubEntry = { title: 'Two Sum', fileBasename: '1-two-sum', difficulty: 'Easy', solvedDate: '2026-05-18' };
     await writer.ensureHub('Two Pointers', entry);
     expect(m.spies.create).not.toHaveBeenCalled();
   });
@@ -137,7 +137,7 @@ describe('ClusterHubWriter', () => {
       '',
       '### Easy',
       '',
-      '- [[Two Sum]]',
+      '- [[1-two-sum|Two Sum]]',
       '',
       '### Medium',
       '',
@@ -148,12 +148,12 @@ describe('ClusterHubWriter', () => {
     ].join('\n');
     const m = makeMockVaultApp({ 'LeetCode/Patterns/Two Pointers.md': hubBody });
     const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
-    const entry: HubEntry = { title: '3Sum', difficulty: 'Medium', solvedDate: '2026-05-18' };
+    const entry: HubEntry = { title: '3Sum', fileBasename: '15-3sum', difficulty: 'Medium', solvedDate: '2026-05-18' };
     await writer.appendEntry('Two Pointers', entry);
     expect(m.spies.process).toHaveBeenCalled();
     const content = m.getContent('LeetCode/Patterns/Two Pointers.md')!;
     // The bullet should appear in the Medium section
-    expect(content).toContain('- [[3Sum]]');
+    expect(content).toContain('- [[15-3sum|3Sum]]');
   });
 
   it('appendEntry is idempotent (skips duplicate)', async () => {
@@ -167,7 +167,7 @@ describe('ClusterHubWriter', () => {
       '',
       '### Easy',
       '',
-      '- [[Two Sum]]',
+      '- [[1-two-sum|Two Sum]]',
       '',
       '### Medium',
       '',
@@ -178,11 +178,11 @@ describe('ClusterHubWriter', () => {
     ].join('\n');
     const m = makeMockVaultApp({ 'LeetCode/Patterns/Two Pointers.md': hubBody });
     const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
-    const entry: HubEntry = { title: 'Two Sum', difficulty: 'Easy', solvedDate: '2026-05-01' };
+    const entry: HubEntry = { title: 'Two Sum', fileBasename: '1-two-sum', difficulty: 'Easy', solvedDate: '2026-05-01' };
     await writer.appendEntry('Two Pointers', entry);
     const content = m.getContent('LeetCode/Patterns/Two Pointers.md')!;
-    // Should still have exactly 1 occurrence of [[Two Sum]]
-    const matches = content.match(/\[\[Two Sum\]\]/g) ?? [];
+    // Should still have exactly 1 occurrence of [[1-two-sum|Two Sum]]
+    const matches = content.match(/\[\[1-two-sum\|Two Sum\]\]/g) ?? [];
     expect(matches.length).toBe(1);
   });
 
@@ -198,23 +198,26 @@ describe('ClusterHubWriter', () => {
       'lc-pattern': 'Two Pointers',
       'lc-difficulty': 'Easy',
       'lc-solved-date': '2026-05-01',
+      'lc-title': 'Two Sum',
     });
     m.seedFrontmatter('LeetCode/3sum.md', {
       'lc-pattern': 'Two Pointers',
       'lc-difficulty': 'Medium',
       'lc-solved-date': '2026-05-10',
+      'lc-title': '3Sum',
     });
     m.seedFrontmatter('LeetCode/valid-anagram.md', {
       'lc-pattern': 'Arrays & Hashing',
       'lc-difficulty': 'Easy',
       'lc-solved-date': '2026-05-15',
+      'lc-title': 'Valid Anagram',
     });
 
     // Mock getMarkdownFiles to return all files in the vault
     const mockFiles = [
-      { path: 'LeetCode/two-sum.md', basename: 'Two Sum', name: 'two-sum.md', extension: 'md', stat: { ctime: 0 } },
-      { path: 'LeetCode/3sum.md', basename: '3Sum', name: '3sum.md', extension: 'md', stat: { ctime: 0 } },
-      { path: 'LeetCode/valid-anagram.md', basename: 'Valid Anagram', name: 'valid-anagram.md', extension: 'md', stat: { ctime: 0 } },
+      { path: 'LeetCode/two-sum.md', basename: '1-two-sum', name: 'two-sum.md', extension: 'md', stat: { ctime: 0 } },
+      { path: 'LeetCode/3sum.md', basename: '15-3sum', name: '3sum.md', extension: 'md', stat: { ctime: 0 } },
+      { path: 'LeetCode/valid-anagram.md', basename: '242-valid-anagram', name: 'valid-anagram.md', extension: 'md', stat: { ctime: 0 } },
     ];
     (m.app.vault as unknown as Record<string, unknown>).getMarkdownFiles = vi.fn(() => mockFiles);
 
@@ -229,14 +232,14 @@ describe('ClusterHubWriter', () => {
 
     // Two Pointers hub should have entries from both files
     const tpBody = m.getContent('LeetCode/Patterns/Two Pointers.md')!;
-    expect(tpBody).toContain('[[Two Sum]]');
-    expect(tpBody).toContain('[[3Sum]]');
+    expect(tpBody).toContain('[[1-two-sum|Two Sum]]');
+    expect(tpBody).toContain('[[15-3sum|3Sum]]');
   });
 
   it('ensureHub creates the Patterns folder if missing', async () => {
     const m = makeMockVaultApp({});
     const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
-    const entry: HubEntry = { title: 'Two Sum', difficulty: 'Easy', solvedDate: '2026-05-18' };
+    const entry: HubEntry = { title: 'Two Sum', fileBasename: '1-two-sum', difficulty: 'Easy', solvedDate: '2026-05-18' };
     await writer.ensureHub('Two Pointers', entry);
     // Should attempt to create the Patterns folder
     expect(m.spies.createFolder).toHaveBeenCalledWith('LeetCode/Patterns');
@@ -245,7 +248,7 @@ describe('ClusterHubWriter', () => {
   it('buildHubNoteBody renders correct structure with frontmatter and difficulty tables', async () => {
     const m = makeMockVaultApp({});
     const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
-    const entry: HubEntry = { title: 'Container With Most Water', difficulty: 'Medium', solvedDate: '2026-05-18' };
+    const entry: HubEntry = { title: 'Container With Most Water', fileBasename: '11-container-with-most-water', difficulty: 'Medium', solvedDate: '2026-05-18' };
     await writer.ensureHub('Two Pointers', entry);
     const body = m.spies.create.mock.calls[0]![1]! as string;
     // Check frontmatter
@@ -259,6 +262,6 @@ describe('ClusterHubWriter', () => {
     expect(body).toContain('### Medium');
     expect(body).toContain('### Hard');
     // The entry should be in the Medium section
-    expect(body).toContain('- [[Container With Most Water]]');
+    expect(body).toContain('- [[11-container-with-most-water|Container With Most Water]]');
   });
 });

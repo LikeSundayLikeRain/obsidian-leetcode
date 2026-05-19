@@ -24,6 +24,7 @@ import { logger } from '../shared/logger';
  */
 export interface HubEntry {
   title: string;
+  fileBasename: string; // e.g. '1-two-sum' (without .md)
   difficulty: 'Easy' | 'Medium' | 'Hard';
   solvedDate: string; // YYYY-MM-DD
 }
@@ -126,8 +127,11 @@ export class ClusterHubWriter {
         const difficulty = (cache?.frontmatter?.['lc-difficulty'] as string) ?? 'Medium';
         const solvedDate = (cache?.frontmatter?.['lc-solved-date'] as string) ?? '';
 
+        const basename = (file as unknown as { basename: string }).basename;
+        const title = (cache?.frontmatter?.['lc-title'] as string) ?? basename;
         const entry: HubEntry = {
-          title: (file as unknown as { basename: string }).basename,
+          title,
+          fileBasename: basename,
           difficulty: normalizeDifficulty(difficulty),
           solvedDate,
         };
@@ -204,15 +208,15 @@ function buildHubNoteBody(patternName: string, entries: HubEntry[]): string {
     '',
     '### Easy',
     '',
-    ...easy.map((e) => `- [[${e.title}]]`),
+    ...easy.map((e) => `- [[${e.fileBasename}|${e.title}]]`),
     '',
     '### Medium',
     '',
-    ...medium.map((e) => `- [[${e.title}]]`),
+    ...medium.map((e) => `- [[${e.fileBasename}|${e.title}]]`),
     '',
     '### Hard',
     '',
-    ...hard.map((e) => `- [[${e.title}]]`),
+    ...hard.map((e) => `- [[${e.fileBasename}|${e.title}]]`),
     '',
   ];
 
@@ -225,11 +229,11 @@ function buildHubNoteBody(patternName: string, entries: HubEntry[]): string {
  */
 function appendToHub(body: string, entry: HubEntry): string {
   // Idempotent check
-  if (body.includes(`[[${entry.title}]]`)) return body;
+  if (body.includes(`[[${entry.fileBasename}|`)) return body;
 
   const lines = body.split('\n');
   const sectionHeading = `### ${entry.difficulty}`;
-  const bullet = `- [[${entry.title}]]`;
+  const bullet = `- [[${entry.fileBasename}|${entry.title}]]`;
 
   // Find the difficulty section and append the bullet after existing items
   for (let i = 0; i < lines.length; i++) {

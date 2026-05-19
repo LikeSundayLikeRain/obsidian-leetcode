@@ -286,10 +286,12 @@ export class PatternClusterEngine {
       const difficulty = (cache?.frontmatter?.['lc-difficulty'] as string) ?? 'Medium';
       const normalizedDiff = normalizeDifficulty(difficulty);
       const basename = (file as unknown as { basename: string }).basename;
+      const title = (cache?.frontmatter?.['lc-title'] as string) ?? basename;
       const today = new Date().toISOString().slice(0, 10);
 
       const entry: HubEntry = {
-        title: basename,
+        title,
+        fileBasename: basename,
         difficulty: normalizedDiff,
         solvedDate: today,
       };
