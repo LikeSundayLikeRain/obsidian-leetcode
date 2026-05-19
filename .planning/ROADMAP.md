@@ -35,7 +35,7 @@ Full milestone detail: [.planning/milestones/v1.0-ROADMAP.md](milestones/v1.0-RO
 - [x] **Phase 09: AI ACed Review** — First AI vault write to new locked `## AI Review` H2; opt-in auto-run; idempotent on re-AC; daily cost cap; manual re-run command. (completed 2026-05-18)
 - [x] **Phase 10: Contest (virtual + analysis)** — Past picker + Surprise me; persisted timer; 4 problem notes with `lc-contest-id`; status-bar UI; post-contest summary note. (completed 2026-05-18)
 - [x] **Phase 11: AI Knowledge Graph** — 22-pattern classifier; cluster hub notes; lazy-on-AC migration of `## Techniques`; cross-cluster `## Related Variants`; flagged look-ahead edges.
-- [ ] **Phase 12: Polish + Plugin-Store Re-submission** — Final README/network audit, version bump 1.1.0, manifest re-validation, GitHub release artifacts; opt-in batch migration UI as stretch goal.
+- [x] **Phase 12: Polish + Plugin-Store Re-submission** — Final README/network audit, version bump 1.1.0, manifest re-validation, GitHub release artifacts; opt-in batch migration UI as stretch goal. (completed 2026-05-19)
 
 ## Phase Details
 
@@ -335,7 +335,7 @@ Plans:
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
-- [ ] 12-05-PLAN.md — Release prep (D-13, D-14, D-15): version bump to 1.1.0, README network/cost audit for all v1.1 endpoints, release validation checkpoint.
+- [x] 12-05-PLAN.md — Release prep (D-13, D-14, D-15): version bump to 1.1.0, README network/cost audit for all v1.1 endpoints, release validation checkpoint.
 
 **UI hint**: yes
 
@@ -360,4 +360,4 @@ Plans:
 | 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
 | 10.1. LC Virtual Contest API             | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | 3/3            | Complete    | 2026-05-19  |
-| 12. Polish + Plugin-Store Re-submission  | v1.1      | 4/5 | In Progress|  |
+| 12. Polish + Plugin-Store Re-submission  | v1.1      | 5/5 | Complete   | 2026-05-19 |
