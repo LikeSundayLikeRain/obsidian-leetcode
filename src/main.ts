@@ -198,11 +198,25 @@ export default class LeetCodePlugin extends Plugin {
   // markdown leaf. Constructed in onload Step 5.8; disposed in onunload.
   ephemeralTabs!: EphemeralTabStore;
 
-  // Phase 07 Plan 03 — AI provider facade. Constructed AFTER SettingsStore.load
-  // (settings are required by AIClient ctor) and BEFORE registerView (so any
-  // view that wants AIClient access can grab it from this.aiClient). Holds no
-  // listeners, no timers, no open sockets — no onunload teardown required.
-  aiClient!: AIClient;
+  // Phase 07 Plan 03 — AI provider facade. Phase 12 Plan 04 (D-10) deferred
+  // construction: backing field is null until first access via the lazy getter.
+  // All AI operations are user-initiated (AI Debug click, AC with AI review,
+  // test connection, KG classification) so the getter triggers on first user
+  // action — never during plugin cold-start. Holds no listeners, no timers,
+  // no open sockets — no onunload teardown required.
+  private _aiClient: AIClient | null = null;
+
+  /** Lazy getter — defers AIClient construction until first AI action (D-10).
+   *  Cold-start path never hits this; only user-initiated AI flows trigger it. */
+  get aiClient(): AIClient {
+    if (!this._aiClient) {
+      this._aiClient = new AIClient(
+        this.settings,
+        (provider, cfg) => this.requireAIDisclosure(provider, cfg),
+      );
+    }
+    return this._aiClient;
+  }
 
   // Phase 08 Plan 04 (AIDBG-01) — in-memory per-slug Map<slug, LastVerdict>.
   // Populated by SubmissionOrchestrator's onVerdict callback (registered in
@@ -328,34 +342,24 @@ export default class LeetCodePlugin extends Plugin {
     // called in onunload() for a deterministic wipe.
     this.ephemeralTabs = new EphemeralTabStore(this);
 
-    // Step 5.9 — Phase 07 AI client. Constructed AFTER SettingsStore.load
-    // (settings are required by AIClient ctor) and BEFORE registerView (so any
-    // future view that wants AIClient access can grab it from this.aiClient).
-    // Synchronous: AIClient ctor takes only SettingsStore + the disclosure
-    // helper, does no eager network — mirrors LeetCodeClient ctor at line 163.
-    // No onunload teardown: AIClient holds no listeners, no timers, no open
-    // sockets.
-    //
-    // Plan 07-05 — inject `requireAIDisclosure` so AIClient.probe + invoke
-    // gate on `disclosureAcknowledged` BEFORE any HTTP. The arrow keeps
-    // `this` binding without `.bind`. The helper itself opens
-    // AIDisclosureModal and resolves on the user's button click.
-    this.aiClient = new AIClient(
-      this.settings,
-      (provider, cfg) => this.requireAIDisclosure(provider, cfg),
-    );
+    // Step 5.9 — Phase 12 Plan 04 (D-10) DEFERRED AIClient construction.
+    // AIClient is now constructed lazily on first access via the `get aiClient()`
+    // getter. Cold-start no longer pays constructor cost. The getter triggers on
+    // first user-initiated AI action (AI Debug click, AC review, test connection,
+    // KG classification). SettingsStore.load is already complete so the getter
+    // can safely access settings whenever triggered.
 
     // Step 5.9b — Phase 11 Plan 03 — AI Knowledge Graph wiring. ClusterHubWriter
-    // + PatternClusterEngine are constructed AFTER AIClient (engine needs it).
-    // Late-bound into KnowledgeGraphWriter via setters since KG writer was
-    // constructed earlier in the sequence.
+    // + PatternClusterEngine are constructed AFTER settings load. Engine receives
+    // a getter function `() => this.aiClient` so AIClient construction is truly
+    // deferred until the engine's first classify call (not at onload time).
     this.hubWriter = new ClusterHubWriter({
       app: this.app,
       problemsFolder: this.settings.getProblemsFolder(),
     });
     const patternClusterEngine = new PatternClusterEngine({
       app: this.app,
-      aiClient: this.aiClient,
+      aiClient: () => this.aiClient,
       settings: this.settings,
       hubWriter: this.hubWriter,
     });

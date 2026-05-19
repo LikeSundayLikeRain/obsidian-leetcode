@@ -67,7 +67,11 @@ export type ShowOtherModalFn = (problemTitle: string) => Promise<string>;
 /** Constructor deps (DI). */
 export interface PatternClusterEngineDeps {
   app: App;
-  aiClient: AIClient;
+  /** Phase 12 Plan 04 (D-10): accepts either a direct AIClient instance or a
+   *  getter function `() => AIClient`. When a getter is passed, AIClient
+   *  construction is deferred until the engine's first classify call — cold-start
+   *  no longer pays the constructor cost. */
+  aiClient: AIClient | (() => AIClient);
   settings: PatternClusterEngineSettings;
   hubWriter: ClusterHubWriter;
   /** Optional modal factory for testability. Defaults to OtherPatternModal. */
@@ -80,7 +84,7 @@ export interface PatternClusterEngineDeps {
  */
 export class PatternClusterEngine {
   private readonly app: App;
-  private readonly aiClient: AIClient;
+  private readonly getAIClient: () => AIClient;
   private readonly settings: PatternClusterEngineSettings;
   private readonly hubWriter: ClusterHubWriter;
   private readonly showOtherModal: ShowOtherModalFn;
@@ -88,7 +92,13 @@ export class PatternClusterEngine {
 
   constructor(deps: PatternClusterEngineDeps) {
     this.app = deps.app;
-    this.aiClient = deps.aiClient;
+    // Phase 12 Plan 04 (D-10): normalize to getter function. When a direct
+    // instance is passed (e.g., in tests), wrap it in a thunk. When a getter
+    // is passed (production path), store it directly so AIClient construction
+    // is deferred until the first classify call.
+    this.getAIClient = typeof deps.aiClient === 'function'
+      ? deps.aiClient
+      : () => deps.aiClient as AIClient;
     this.settings = deps.settings;
     this.hubWriter = deps.hubWriter;
     this.showOtherModal = deps.showOtherModal ?? this.defaultShowOtherModal.bind(this);
@@ -172,7 +182,7 @@ export class PatternClusterEngine {
     let usage: { inputTokens?: number; outputTokens?: number } | undefined;
     try {
       const req: AIRequest = { prompt, maxTokens: 500, stream: false };
-      const response = await this.aiClient.invoke(req);
+      const response = await this.getAIClient().invoke(req);
       responseText = response.text;
       usage = response.usage;
       logger.debug('PatternClusterEngine.onAccepted: AI response', { responseText });
