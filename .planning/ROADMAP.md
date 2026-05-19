@@ -34,7 +34,7 @@ Full milestone detail: [.planning/milestones/v1.0-ROADMAP.md](milestones/v1.0-RO
 - [x] **Phase 08.2: Bedrock canonical default-chain + credential_process auto-refresh** *(INSERTED)* — Honor `AWS_PROFILE` / `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE`; read `~/.aws/config`'s `[profile X]` syntax; resolve `credential_process` with in-memory cache + auto-refresh on `Expiration`. (completed 2026-05-18)
 - [x] **Phase 09: AI ACed Review** — First AI vault write to new locked `## AI Review` H2; opt-in auto-run; idempotent on re-AC; daily cost cap; manual re-run command. (completed 2026-05-18)
 - [x] **Phase 10: Contest (virtual + analysis)** — Past picker + Surprise me; persisted timer; 4 problem notes with `lc-contest-id`; status-bar UI; post-contest summary note. (completed 2026-05-18)
-- [ ] **Phase 11: AI Knowledge Graph** — 22-pattern classifier; cluster hub notes; lazy-on-AC migration of `## Techniques`; cross-cluster `## Related Variants`; flagged look-ahead edges.
+- [x] **Phase 11: AI Knowledge Graph** — 22-pattern classifier; cluster hub notes; lazy-on-AC migration of `## Techniques`; cross-cluster `## Related Variants`; flagged look-ahead edges.
 - [ ] **Phase 12: Polish + Plugin-Store Re-submission** — Final README/network audit, version bump 1.1.0, manifest re-validation, GitHub release artifacts; opt-in batch migration UI as stretch goal.
 
 ## Phase Details
@@ -286,15 +286,15 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 11-01-PLAN.md — Foundation: pattern taxonomy (22 seeds), buildKgPrompt, parseKgResponse, mergeRelatedVariantsSection, withKgBullet disclosure factory, LOCKED_HEADINGS extension, PluginData schema (featureFlags.lookAheadEdges + autoAIKnowledgeGraph).
+- [x] 11-01-PLAN.md — Foundation: pattern taxonomy (22 seeds), buildKgPrompt, parseKgResponse, mergeRelatedVariantsSection, withKgBullet disclosure factory, LOCKED_HEADINGS extension, PluginData schema (featureFlags.lookAheadEdges + autoAIKnowledgeGraph).
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 11-02-PLAN.md — Service layer: ClusterHubWriter (hub create/append/reconcile with difficulty-grouped tables), PatternClusterEngine (AI classification orchestration + validation + vault writes), mergeTechniquesSectionAI (clean-break replacement of v1.0 lc-tag wikilinks).
+- [x] 11-02-PLAN.md — Service layer: ClusterHubWriter (hub create/append/reconcile with difficulty-grouped tables), PatternClusterEngine (AI classification orchestration + validation + vault writes), mergeTechniquesSectionAI (clean-break replacement of v1.0 lc-tag wikilinks).
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 11-03-PLAN.md — Wiring: KnowledgeGraphWriter pipeline extension (Step 2.5 AI classification), main.ts construction + reconcile-pattern-hubs palette command + 1-hour registerInterval, Settings tab toggles (AI KG + look-ahead edges).
+- [x] 11-03-PLAN.md — Wiring: KnowledgeGraphWriter pipeline extension (Step 2.5 AI classification), main.ts construction + reconcile-pattern-hubs palette command + 1-hour registerInterval, Settings tab toggles (AI KG + look-ahead edges).
 
 **UI hint**: yes (Settings toggles only — no new views)
 
@@ -332,5 +332,5 @@ Plans:
 | 09. AI ACed Review                       | v1.1      | 4/4 | Complete    | 2026-05-18 |
 | 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
 | 10.1. LC Virtual Contest API             | v1.1      | -/-            | Not Started | -           |
-| 11. AI Knowledge Graph                   | v1.1      | 0/3            | Planned     | -           |
+| 11. AI Knowledge Graph                   | v1.1      | 3/3            | Complete    | 2026-05-19  |
 | 12. Polish + Plugin-Store Re-submission  | v1.1      | -/-            | Not Started | -           |
