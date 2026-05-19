@@ -8,7 +8,7 @@ import type { App, TFile } from 'obsidian';
 import type { ContestProblemState } from './types';
 import { htmlToMarkdown } from '../notes/htmlToMarkdown';
 
-const SCRATCH_FOLDER = 'LeetCode/contest-scratch';
+const SCRATCH_FOLDER = '.leetcode-contest';
 
 function langToFenceTag(slug: string): string {
   const map: Record<string, string> = {

@@ -1073,7 +1073,7 @@ export class ProblemBrowserView extends ItemView {
       cls: 'leetcode-contest__btn',
     });
     finishBtn.addEventListener('click', () => {
-      this.handleFinishContest();
+      void this.handleFinishContest();
     });
 
     const abortBtn = actions.createEl('button', {
@@ -1090,7 +1090,7 @@ export class ProblemBrowserView extends ItemView {
         solvedCount,
         currentSession.problems.length,
         currentRemaining,
-        () => { this.handleAbortContest(); },
+        () => { void this.handleAbortContest(); },
       ).open();
     });
 
@@ -1239,8 +1239,13 @@ export class ProblemBrowserView extends ItemView {
     };
 
     originalCallbacks.onExpired = () => {
+      // origExpired() fires handleContestEnd(false) via main.ts which owns
+      // the full lifecycle (sync → finish → finalize → cleanup). We only
+      // need to reset the PBV UI state after it completes.
       origExpired();
-      this.handleFinishContest();
+      this.contestCallbacksWired = false;
+      this.mode = 'contests';
+      void this.onOpen();
     };
 
     originalCallbacks.onVerdictChange = (idx: number, verdict: ContestProblemState['verdict']) => {
@@ -1258,23 +1263,28 @@ export class ProblemBrowserView extends ItemView {
     };
   }
 
-  private handleFinishContest(): void {
-    const snapshot = this.plugin.contestSessionManager.finish();
-    if (!snapshot) return;
+  private async handleFinishContest(): Promise<void> {
+    // D-09: Do NOT call finish() here — handleContestEnd owns the full
+    // lifecycle (sync code → finish → finalize → Notice → cleanup).
+    // Calling finish() first would clear the session before handleContestEnd
+    // can read it, causing the finalization to silently bail out.
+    const session = this.plugin.contestSessionManager.getSession();
+    if (!session) return;
 
     this.contestCallbacksWired = false;
+    await (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(false);
     this.mode = 'contests';
-    void this.onOpen();
-    void (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(false);
+    await this.onOpen();
   }
 
-  private handleAbortContest(): void {
-    const snapshot = this.plugin.contestSessionManager.abort();
-    if (!snapshot) return;
+  private async handleAbortContest(): Promise<void> {
+    // D-09: Same fix as handleFinishContest — let handleContestEnd own abort.
+    const session = this.plugin.contestSessionManager.getSession();
+    if (!session) return;
 
     this.contestCallbacksWired = false;
+    await (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(true);
     this.mode = 'contests';
-    void this.onOpen();
-    void (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(true);
+    await this.onOpen();
   }
 }
