@@ -198,15 +198,16 @@ export class KnowledgeGraphWriter {
 
     // Step 2 — ## Techniques body write (GRAPH-03, D-09, D-13). Pure transform
     // inside a vault.process callback so it's retry-safe (CF-06).
-    try {
-      await this.app.vault.process(ctx.file, (current) =>
-        mergeTechniquesSection(current, topicTags),
-      );
-    } catch (err) {
-      logger.debug('graph.onAccepted: step 2 body write failed', err);
-      // Continue to stub creation even if body write failed — the stubs are
-      // valuable on their own and next-AC retry of step 2 will still find
-      // the same topicTags.
+    // Phase 11: Skip when patternClusterEngine is present — the AI path
+    // (Step 2.5) handles Techniques via mergeTechniquesSectionAI instead.
+    if (!this.patternClusterEngine) {
+      try {
+        await this.app.vault.process(ctx.file, (current) =>
+          mergeTechniquesSection(current, topicTags),
+        );
+      } catch (err) {
+        logger.debug('graph.onAccepted: step 2 body write failed', err);
+      }
     }
 
     // Step 2.5 — Phase 11 AI pattern classification (D-01 inline blocking).

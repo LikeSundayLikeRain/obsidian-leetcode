@@ -142,6 +142,12 @@ export class PatternClusterEngine {
       logger.debug('PatternClusterEngine.onAccepted: lc-pattern already set, skipping classification', {
         pattern: existingPattern,
       });
+      // Ensure Techniques section reflects the persisted pattern (idempotent)
+      try {
+        await this.app.vault.process(file, (body) => mergeTechniquesSectionAI(body, existingPattern));
+      } catch (err) {
+        logger.debug('PatternClusterEngine.onAccepted: techniques rewrite on re-AC failed', err);
+      }
       // Still update hub (re-add after reconcile may have cleared it)
       await this.updateHub(file, existingPattern);
       return;
