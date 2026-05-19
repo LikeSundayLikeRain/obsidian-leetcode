@@ -119,6 +119,8 @@ import { buildSectionLockExtension } from './main/sectionLockExtension';
 import { registerPython3Highlighter } from './main/python3Highlighter';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
+import { PatternClusterEngine } from './graph/PatternClusterEngine';
+import { ClusterHubWriter } from './graph/ClusterHubWriter';
 import { SubmissionHistoryStore } from './graph/SubmissionHistoryStore';
 import {
   listSubmissionsForSlug,
@@ -185,6 +187,11 @@ export default class LeetCodePlugin extends Plugin {
   // (D-03).
   knowledgeGraph!: KnowledgeGraphWriter;
   submissionHistory!: SubmissionHistoryStore;
+
+  // Phase 11 Plan 03 — AI Knowledge Graph hub writer + classification engine.
+  // Constructed after AIClient in onload. hubWriter is exposed for the
+  // reconcile-pattern-hubs palette command and 1-hour interval timer.
+  private hubWriter!: ClusterHubWriter;
 
   // Phase 5 Plan 04 (D-09) — ephemeral Run-modal tab store. In-memory only;
   // layout-change + active-leaf-change reconcile wipes slugs with no open
@@ -336,6 +343,29 @@ export default class LeetCodePlugin extends Plugin {
     this.aiClient = new AIClient(
       this.settings,
       (provider, cfg) => this.requireAIDisclosure(provider, cfg),
+    );
+
+    // Step 5.9b — Phase 11 Plan 03 — AI Knowledge Graph wiring. ClusterHubWriter
+    // + PatternClusterEngine are constructed AFTER AIClient (engine needs it).
+    // Late-bound into KnowledgeGraphWriter via setters since KG writer was
+    // constructed earlier in the sequence.
+    this.hubWriter = new ClusterHubWriter({
+      app: this.app,
+      problemsFolder: this.settings.getProblemsFolder(),
+    });
+    const patternClusterEngine = new PatternClusterEngine({
+      app: this.app,
+      aiClient: this.aiClient,
+      settings: this.settings,
+      hubWriter: this.hubWriter,
+    });
+    this.knowledgeGraph.setPatternClusterEngine(patternClusterEngine);
+    this.knowledgeGraph.setHubWriter(this.hubWriter);
+
+    // D-07 mechanism 3 — 1-hour interval for background hub reconcile.
+    // registerInterval auto-cleans on plugin unload.
+    this.registerInterval(
+      window.setInterval(() => { void this.hubWriter.reconcile(); }, 60 * 60 * 1000),
     );
 
     // Step 5.10 — Phase 08 Plan 04 (AIDBG-01) — LastVerdictStore. In-memory
@@ -703,6 +733,20 @@ export default class LeetCodePlugin extends Plugin {
         if (!fm?.['lc-contest-id']) return false;
         if (!checking) { void this.handleManualContestAnalysis(file); }
         return true;
+      },
+    });
+
+    // Phase 11 Plan 03 (D-07 mechanism 4) — palette command for manual hub reconcile.
+    // No editorCheckCallback — always available (reconcile is vault-wide, not note-specific).
+    this.addCommand({
+      id: 'reconcile-pattern-hubs',
+      name: 'Reconcile pattern hubs',
+      callback: () => {
+        void this.hubWriter.reconcile().then(() => {
+          new Notice('Pattern hubs reconciled');
+        }).catch((err) => {
+          logger.debug('reconcile-pattern-hubs: failed', err);
+        });
       },
     });
 
