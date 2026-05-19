@@ -622,6 +622,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // disable-while-in-flight are local UX polish — only this surface needs
     // them; the palette command's feedback is the Notice itself.
     new Setting(containerEl)
+      .setName('Test connection')
+      .setDesc('Verify your provider credentials and model access.')
       .addButton((b) => b
         .setButtonText('Test connection')
         .onClick(async () => {
