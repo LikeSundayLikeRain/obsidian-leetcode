@@ -65,7 +65,7 @@ Only one preview tab is open at a time — clicking another problem reuses the s
 
 This plugin communicates with the following hosts:
 
-- `leetcode.com` — fetch problems, submit solutions, poll verdicts. **All LeetCode traffic** uses Obsidian's built-in `requestUrl`; no other code path touches `leetcode.com`.
+- `leetcode.com` — fetch problems, submit solutions, poll verdicts. Contest API operations (contest list via `leetcode.com/graphql`, contest ranking/detail via `leetcode.com/contest/`) use the same authenticated session. **All LeetCode traffic** uses Obsidian's built-in `requestUrl`; no other code path touches `leetcode.com`.
 - AI provider hosts — only when you have configured an active AI provider in Settings → AI. The plugin contacts at most ONE of these per AI call, depending on your `Active AI provider` selection:
   - `https://api.anthropic.com` — when `Active AI provider = Anthropic`
   - `https://api.openai.com` — when `Active AI provider = OpenAI`
@@ -84,9 +84,18 @@ AI provider API keys are stored in plain text in `.obsidian/plugins/leetcode/dat
 
 ### Cost expectations
 
-AI features incur per-call cost charged by your selected provider. Phase 07 introduces no AI feature you can invoke yet (Debug ships in Phase 08, Review in Phase 09, KG classification in Phase 11). The "Test connection" action sends a metadata-only `GET /v1/models` (or `GET /api/tags` for Ollama) for OpenAI / OpenRouter / Custom / Ollama — these are free. For Anthropic, "Test connection" sends a 1-token chat completion (~$0.0001 per click).
+AI features incur per-call cost charged by your selected provider. The following features make AI calls:
 
-Per-feature daily cost cap UI ships in Phase 09. Default model identifiers may rot — when "Test connection" reports `model not found`, update the `Model` field manually. See your provider's pricing page for current rates.
+- **AI Debug** (Phase 08) — one streaming call per debug session to analyze your wrong-answer or TLE verdict.
+- **AI Review** (Phase 09) — one call per accepted solution when opt-in review is enabled.
+- **AI Knowledge Graph classification** (Phase 11) — approximately one call per accepted problem for pattern classification.
+- **AI Contest Analysis** (Phase 11) — approximately one call per completed contest for performance summary.
+
+Typical cost per accepted solution: ~$0.01-0.05 depending on provider and model (classification + optional review). See your provider's pricing page for current rates: [Anthropic](https://www.anthropic.com/pricing), [OpenAI](https://openai.com/pricing), [OpenRouter](https://openrouter.ai/models), [AWS Bedrock](https://aws.amazon.com/bedrock/pricing/).
+
+The "Test connection" action sends a metadata-only `GET /v1/models` (or `GET /api/tags` for Ollama) for OpenAI / OpenRouter / Custom / Ollama — these are free. For Anthropic, "Test connection" sends a 1-token chat completion (~$0.0001 per click).
+
+Per-feature daily cost cap UI ships in Phase 09. Default model identifiers may rot — when "Test connection" reports `model not found`, update the `Model` field manually.
 
 ## Configuration
 
