@@ -320,7 +320,24 @@ Plans:
   13. Contest problem tabs are idempotent: clicking a problem that already has an open tab must refocus the existing tab instead of creating a duplicate. Same tab-reuse semantics as the problem preview view.
   10. (Stretch) User can run an opt-in "Migrate v1.0 Techniques to clusters" command from the palette that batches 10 notes at a time, writes a backup file before each batch, skips the active note when it has unsaved changes, and resumes cleanly after a crash.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1** *(parallel)*
+
+- [ ] 12-01-PLAN.md — Verdict modal Close button removal (D-01, D-02): remove all 5 Close buttons from verdictModalRenderer, remove focusCloseButton dead code, add empty-footer CSS hide rule.
+- [ ] 12-02-PLAN.md — Contest bug fixes (D-05, D-06, D-07, D-08, D-09): scratch folder to `.leetcode-contest`, sidebar AC status callback, tab idempotency, AI review deferral, finish lifecycle await.
+
+**Wave 2** *(blocked on Wave 1 completion — parallel)*
+
+- [ ] 12-03-PLAN.md — Pattern chip in verdict modal (D-03, D-04) + H1 title in NoteTemplate (D-11): clickable pattern badge on AC, `# {Title}` heading in new notes.
+- [ ] 12-04-PLAN.md — Wikilink-to-preview navigation (D-12) + cold-start deferred AIClient construction (D-10): intercept unresolved wikilinks to open preview; lazy AI getter.
+
+**Wave 3** *(blocked on Waves 1–2 completion)*
+
+- [ ] 12-05-PLAN.md — Release prep (D-13, D-14, D-15): version bump to 1.1.0, README network/cost audit for all v1.1 endpoints, release validation checkpoint.
+
+**UI hint**: yes
 
 ## Progress
 
@@ -343,4 +360,4 @@ Plans:
 | 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
 | 10.1. LC Virtual Contest API             | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | 3/3            | Complete    | 2026-05-19  |
-| 12. Polish + Plugin-Store Re-submission  | v1.1      | -/-            | Not Started | -           |
+| 12. Polish + Plugin-Store Re-submission  | v1.1      | 0/5            | In Progress | -           |
