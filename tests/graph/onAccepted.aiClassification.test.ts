@@ -32,16 +32,12 @@ const TWO_SUM_DETAIL = {
   fetchedAt: Date.now(),
   id: 1,
   title: 'Two Sum',
-  difficulty: 'Easy',
+  difficulty: 'Easy' as const,
   url: 'https://leetcode.com/problems/two-sum/',
   contentHtml: '<p>Given an array of integers...</p>',
   topicSlugs: ['hash-table', 'array'],
-  topicTags: [
-    { name: 'Hash Table', slug: 'hash-table' },
-    { name: 'Array', slug: 'array' },
-  ],
   exampleTestcases: '',
-  codeSnippets: [],
+  codeSnippets: [] as Array<{ lang: string; langSlug: string; code: string }>,
 };
 
 const NOTE_BODY = `---

@@ -115,7 +115,7 @@ describe('PatternClusterEngine', () => {
 
     await engine.onAccepted(makeMockFile() as never, 'two-sum', '<p>Two Sum problem</p>', 'def twoSum()', 'python3');
     expect(aiClient.invoke).toHaveBeenCalledTimes(1);
-    const req = aiClient.invoke.mock.calls[0][0];
+    const req = (aiClient.invoke as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { prompt: string; maxTokens: number };
     expect(req.prompt).toContain('Two Sum problem');
     expect(req.prompt).toContain('def twoSum()');
     expect(req.prompt).toContain('python3');

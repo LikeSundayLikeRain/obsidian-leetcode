@@ -105,9 +105,9 @@ describe('ClusterHubWriter', () => {
     const entry: HubEntry = { title: 'Two Sum', difficulty: 'Easy', solvedDate: '2026-05-18' };
     await writer.ensureHub('Two Pointers', entry);
     expect(m.spies.create).toHaveBeenCalled();
-    const createCall = m.spies.create.mock.calls[0];
+    const createCall = m.spies.create.mock.calls[0]!;
     expect(createCall[0]).toBe('LeetCode/Patterns/Two Pointers.md');
-    const body = createCall[1] as string;
+    const body = createCall[1]! as string;
     expect(body).toContain('lc-pattern-hub: true');
     expect(body).toContain('pattern: "Two Pointers"');
     expect(body).toContain('### Easy');
@@ -260,7 +260,7 @@ describe('ClusterHubWriter', () => {
     const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
     const entry: HubEntry = { title: 'Container With Most Water', difficulty: 'Medium', solvedDate: '2026-05-18' };
     await writer.ensureHub('Two Pointers', entry);
-    const body = m.spies.create.mock.calls[0][1] as string;
+    const body = m.spies.create.mock.calls[0]![1]! as string;
     // Check frontmatter
     expect(body).toMatch(/^---\n/);
     expect(body).toContain('lc-pattern-hub: true');

@@ -98,7 +98,7 @@ function findExactHeading(lines: string[], heading: string): number {
  */
 function findNextH2(lines: string[], start: number): number {
   for (let i = start; i < lines.length; i++) {
-    if (lines[i].startsWith('## ')) return i;
+    if (lines[i]!.startsWith('## ')) return i;
   }
   return lines.length;
 }

@@ -101,7 +101,12 @@ describe('startContest flow (ProblemBrowserView.startContest)', () => {
     instance.plugin = {
       client: mockClient,
       contestSessionManager: mockSessionManager,
-      settings: { getContestSession: () => null },
+      settings: {
+        getContestSession: () => null,
+        setProblemDetail: vi.fn(),
+        getDefaultLanguage: () => 'python3',
+        getProblemDetail: () => ({ codeSnippets: [{ lang: 'Python3', langSlug: 'python3', code: 'class Solution:' }] }),
+      },
     };
     instance.mode = 'contests';
     instance.app = {};
@@ -138,10 +143,10 @@ describe('startContest flow (ProblemBrowserView.startContest)', () => {
       contestType: 'weekly',
       duration: 5400,
       problems: [
-        { slug: 'problem-a', title: 'Problem A', credit: 3, difficulty: 1 },
-        { slug: 'problem-b', title: 'Problem B', credit: 4, difficulty: 2 },
-        { slug: 'problem-c', title: 'Problem C', credit: 5, difficulty: 2 },
-        { slug: 'problem-d', title: 'Problem D', credit: 6, difficulty: 3 },
+        { slug: 'problem-a', title: 'Problem A', credit: 3, difficulty: 1, code: 'class Solution:', language: 'python3' },
+        { slug: 'problem-b', title: 'Problem B', credit: 4, difficulty: 2, code: 'class Solution:', language: 'python3' },
+        { slug: 'problem-c', title: 'Problem C', credit: 5, difficulty: 2, code: 'class Solution:', language: 'python3' },
+        { slug: 'problem-d', title: 'Problem D', credit: 6, difficulty: 3, code: 'class Solution:', language: 'python3' },
       ],
     });
   });

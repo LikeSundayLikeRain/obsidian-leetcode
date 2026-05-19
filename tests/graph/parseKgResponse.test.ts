@@ -25,9 +25,9 @@ describe('Phase 11 Plan 01 — parseKgResponse defensive parser', () => {
     const result = parseKgResponse(json);
     expect(result.pattern).toBe('Two Pointers');
     expect(result.variants).toHaveLength(1);
-    expect(result.variants[0].slug).toBe('three-sum');
+    expect(result.variants[0]!.slug).toBe('three-sum');
     expect(result.lookAhead).toHaveLength(1);
-    expect(result.lookAhead[0].slug).toBe('container-with-most-water');
+    expect(result.lookAhead[0]!.slug).toBe('container-with-most-water');
   });
 
   it('JSON wrapped in markdown fences parses successfully', () => {
@@ -47,7 +47,7 @@ I classified it as Binary Search because the solution uses a divide and conquer 
     const result = parseKgResponse(input);
     expect(result.pattern).toBe('Binary Search');
     expect(result.variants).toHaveLength(1);
-    expect(result.variants[0].slug).toBe('search-in-rotated-sorted-array');
+    expect(result.variants[0]!.slug).toBe('search-in-rotated-sorted-array');
   });
 
   it('malformed input returns fallback { pattern: OTHER, variants: [], lookAhead: [] }', () => {
@@ -70,8 +70,8 @@ I classified it as Binary Search because the solution uses a divide and conquer 
     });
     const result = parseKgResponse(json);
     expect(result.variants).toHaveLength(2);
-    expect(result.variants[0].slug).toBe('a');
-    expect(result.variants[1].slug).toBe('b');
+    expect(result.variants[0]!.slug).toBe('a');
+    expect(result.variants[1]!.slug).toBe('b');
   });
 
   it('lookAhead array capped at 2', () => {
@@ -86,8 +86,8 @@ I classified it as Binary Search because the solution uses a divide and conquer 
     });
     const result = parseKgResponse(json);
     expect(result.lookAhead).toHaveLength(2);
-    expect(result.lookAhead[0].slug).toBe('x');
-    expect(result.lookAhead[1].slug).toBe('y');
+    expect(result.lookAhead[0]!.slug).toBe('x');
+    expect(result.lookAhead[1]!.slug).toBe('y');
   });
 
   it('pattern name is normalized via normalizePatternName', () => {
@@ -123,8 +123,8 @@ I classified it as Binary Search because the solution uses a divide and conquer 
     });
     const result = parseKgResponse(json);
     expect(result.variants).toHaveLength(1);
-    expect(result.variants[0].slug).toBe('valid-slug');
+    expect(result.variants[0]!.slug).toBe('valid-slug');
     expect(result.lookAhead).toHaveLength(1);
-    expect(result.lookAhead[0].slug).toBe('good');
+    expect(result.lookAhead[0]!.slug).toBe('good');
   });
 });

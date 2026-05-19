@@ -73,7 +73,7 @@ function stripCodeFences(text: string): string {
   // Match ```json or ``` at start/end (with optional language tag)
   const fenceRe = /^```[a-zA-Z]*\s*\n([\s\S]*?)\n```\s*$/;
   const m = fenceRe.exec(text.trim());
-  return m ? m[1] : text;
+  return m ? m[1]! : text;
 }
 
 function extractJsonObject(text: string): string | null {

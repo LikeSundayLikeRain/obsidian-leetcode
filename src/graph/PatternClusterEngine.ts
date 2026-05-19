@@ -161,7 +161,7 @@ export class PatternClusterEngine {
 
     // Invoke AI
     let responseText: string;
-    let usage: { promptTokens: number; completionTokens: number } | undefined;
+    let usage: { inputTokens?: number; outputTokens?: number } | undefined;
     try {
       const req: AIRequest = { prompt, maxTokens: 500, stream: false };
       const response = await this.aiClient.invoke(req);
@@ -176,7 +176,7 @@ export class PatternClusterEngine {
     try {
       // Rough cost estimate: use token counts if available
       // Approximate at $0.01 per 1K tokens (conservative estimate)
-      const tokens = (usage?.promptTokens ?? 0) + (usage?.completionTokens ?? 0);
+      const tokens = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
       const cost = tokens > 0 ? (tokens / 1000) * 0.01 : 0;
       await this.settings.addCostLedger(cost);
     } catch (err) {

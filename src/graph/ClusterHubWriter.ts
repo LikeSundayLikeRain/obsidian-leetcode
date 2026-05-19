@@ -244,13 +244,13 @@ function appendToHub(body: string, entry: HubEntry): string {
       // Look for the last table row or the separator line
       let insertIdx = i + 1;
       // Skip blank lines after heading
-      while (insertIdx < lines.length && lines[insertIdx] === '') insertIdx++;
+      while (insertIdx < lines.length && lines[insertIdx]! === '') insertIdx++;
       // Skip table header line (| Problem | Date Solved |)
-      if (insertIdx < lines.length && lines[insertIdx].startsWith('|')) insertIdx++;
+      if (insertIdx < lines.length && lines[insertIdx]!.startsWith('|')) insertIdx++;
       // Skip separator line (| ------- | ----------- |)
-      if (insertIdx < lines.length && lines[insertIdx].startsWith('|')) insertIdx++;
+      if (insertIdx < lines.length && lines[insertIdx]!.startsWith('|')) insertIdx++;
       // Skip existing table rows
-      while (insertIdx < lines.length && lines[insertIdx].startsWith('| [[')) insertIdx++;
+      while (insertIdx < lines.length && lines[insertIdx]!.startsWith('| [[')) insertIdx++;
       // Insert the new row
       lines.splice(insertIdx, 0, row);
       return lines.join('\n');
