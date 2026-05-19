@@ -133,10 +133,6 @@ function renderTimeout(titleEl: HTMLElement, contentEl: HTMLElement): void {
   setText(titleEl, 'Judge timeout');
   const p = appendEl(contentEl, 'p');
   setText(p, 'LeetCode judge timed out. Try again or check leetcode.com.');
-  const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
 }
 
 // ── Render state: Run (sample / custom) ──────────────────────────────────
@@ -314,7 +310,7 @@ function renderRunResult(
   // First tab active by default.
   renderActiveCase(0);
 
-  // ── Step 8: Footer — single Close, NO Copy button (D-16 Run side) ──────
+  // ── Step 8: Footer — AI Debug button on failure (D-16 Run side) ─────────
   const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
   // Phase 08 dogfood — Plan 08-05 originally only wired the AI Debug button
   // into renderSubmitVerdict + renderRunErrorBlock. Sample-test failures
@@ -328,9 +324,6 @@ function renderRunResult(
       onOpenAIDebug();
     });
   }
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
 }
 
 /** Phase 5.4 D-15 — Run-mode compile/runtime error renderer.
@@ -377,9 +370,6 @@ function renderRunErrorBlock(
       onOpenAIDebug();
     });
   }
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
 }
 
 /** Phase 5.4 D-08 — Input section renderer for the active case. When
@@ -556,9 +546,6 @@ function renderSubmitVerdict(
       onOpenAIDebug();
     });
   }
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
 }
 
 function renderAcBody(body: HTMLElement, res: SubmitCheckResponse): void {
@@ -646,9 +633,6 @@ function renderUnknownVerdict(
   copyBtn.addEventListener('click', () => {
     void writeClipboard(safeStringify(payload));
   });
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

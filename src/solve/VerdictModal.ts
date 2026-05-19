@@ -171,9 +171,6 @@ export class VerdictModal extends Modal {
           }
         : undefined,
     });
-    // Primary-focus the Close button if the renderer exposed it.
-    this.focusCloseButton();
-
     // Phase 09 (AIREV-01) — start the review stream on AC when the host
     // provides the callback. The callback is only supplied when
     // autoAIReviewOnAC is enabled AND a provider is configured (gated in
@@ -199,7 +196,6 @@ export class VerdictModal extends Modal {
     });
     // Swap the renderer's best-effort copy handler for a redacted-aware one.
     this.rewireCopyPayloadButton(payload);
-    this.focusCloseButton();
   }
 
   renderTimeout(): void {
@@ -209,7 +205,6 @@ export class VerdictModal extends Modal {
       contentEl: this.contentEl,
       payload: { _phase3_timeout: true },
     });
-    this.focusCloseButton();
   }
 
   // ── Internal ───────────────────────────────────────────────────────────
@@ -249,19 +244,6 @@ export class VerdictModal extends Modal {
       el.classList.remove('leetcode-verdict-pending');
     }
     addClass(el, 'leetcode-verdict');
-  }
-
-  private focusCloseButton(): void {
-    const buttons = Array.from(
-      this.contentEl?.querySelectorAll<HTMLButtonElement>('button[data-lc-role="close"]') ?? [],
-    );
-    for (const btn of buttons) {
-      btn.addEventListener('click', () => { this.close(); });
-    }
-    const first = buttons[0];
-    if (first && typeof first.focus === 'function') {
-      try { first.focus(); } catch { /* headless */ }
-    }
   }
 
   private rewireCopyPayloadButton(payload: unknown): void {
