@@ -257,31 +257,29 @@ describe('verdictModalRenderer — AI Debug button visibility union (Plan 08-05)
     expect(onOpenAIDebug).toHaveBeenCalledTimes(1);
   });
 
-  // ── DOM order: [Copy failing?][Copy error?][AI: Debug?][Close] ─────────
-  it('DOM order for kind=wa with both callbacks: [Copy failing][AI: Debug][Close]', () => {
+  // ── DOM order: [Copy failing?][Copy error?][AI: Debug?] (Close removed per D-01) ──
+  it('DOM order for kind=wa with both callbacks: [Copy failing][AI: Debug]', () => {
     const onOpenAIDebug = vi.fn();
     const onCopyFailingInput = vi.fn();
     const { contentEl } = render(wa, { onOpenAIDebug, onCopyFailingInput });
     const footer = contentEl.querySelector('.leetcode-verdict-footer');
     expect(footer).not.toBeNull();
     const buttons = Array.from(footer!.querySelectorAll('button'));
-    expect(buttons.length).toBe(3);
+    expect(buttons.length).toBe(2);
     expect(buttons[0]?.textContent).toMatch(/Copy failing testcase/);
     expect(buttons[1]?.textContent).toBe('AI: Debug');
-    expect(buttons[2]?.textContent).toBe('Close');
   });
 
-  it('DOM order for kind=ce with both callbacks: [Copy error][AI: Debug][Close]', () => {
+  it('DOM order for kind=ce with both callbacks: [Copy error][AI: Debug]', () => {
     const onOpenAIDebug = vi.fn();
     const onCopyFailingInput = vi.fn();
     const { contentEl } = render(ce, { onOpenAIDebug, onCopyFailingInput });
     const footer = contentEl.querySelector('.leetcode-verdict-footer');
     expect(footer).not.toBeNull();
     const buttons = Array.from(footer!.querySelectorAll('button'));
-    expect(buttons.length).toBe(3);
+    expect(buttons.length).toBe(2);
     expect(buttons[0]?.textContent).toBe('Copy error');
     expect(buttons[1]?.textContent).toBe('AI: Debug');
-    expect(buttons[2]?.textContent).toBe('Close');
   });
 
   // ── Color contract: NO mod-cta on AI Debug button ──────────────────────
@@ -301,7 +299,6 @@ describe('verdictModalRenderer — AI Debug button visibility union (Plan 08-05)
     });
     expect(getCopyFailingBtn(contentEl)).toBeDefined();
     expect(getAIDebugBtn(contentEl)).toBeDefined();
-    expect(getCloseBtn(contentEl)).toBeDefined();
   });
 
   // ── Co-existence guard — Copy error button still works on CE ───────────
@@ -309,7 +306,6 @@ describe('verdictModalRenderer — AI Debug button visibility union (Plan 08-05)
     const { contentEl } = render(ce, { onOpenAIDebug: vi.fn() });
     expect(getCopyErrorBtn(contentEl)).toBeDefined();
     expect(getAIDebugBtn(contentEl)).toBeDefined();
-    expect(getCloseBtn(contentEl)).toBeDefined();
   });
 });
 
