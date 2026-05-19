@@ -309,6 +309,10 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     setAutoAIReviewOnAC: vi.fn(async (_v: boolean) => undefined),
     getAutoAIContestAnalysis: () => false,
     setAutoAIContestAnalysis: vi.fn(async (_v: boolean) => undefined),
+    getAutoAIKnowledgeGraph: () => true,
+    setAutoAIKnowledgeGraph: vi.fn(async (_v: boolean) => undefined),
+    getFeatureFlags: () => ({ lookAheadEdges: false }),
+    setFeatureFlag: vi.fn(async (_k: string, _v: boolean) => undefined),
   };
 
   // Phase 07 Plan 04 — Settings Test connection button delegates to the

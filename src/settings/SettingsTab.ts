@@ -279,6 +279,31 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         }),
       );
 
+    // Phase 11 Plan 03 — AI Knowledge Graph toggles. Position: after
+    // autoAIReviewOnAC, before Contest section. Sentence-case names per
+    // eslint-plugin-obsidianmd ui/sentence-case rule.
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accept" is the LC verdict name (proper noun in this domain).
+      .setName('AI pattern classification on Accept')
+      .setDesc('When enabled, AI classifies accepted solutions into algorithmic patterns and maintains hub notes.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getAutoAIKnowledgeGraph())
+        .onChange(async (value) => {
+          await this.plugin.settings.setAutoAIKnowledgeGraph(value);
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName('Look-ahead edges (experimental)')
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "## Related Variants" is a verbatim section heading reference.
+      .setDesc('When enabled, AI may suggest unsolved problems related to the pattern. Adds wikilinks to unsolved problems in ## Related Variants.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getFeatureFlags().lookAheadEdges)
+        .onChange(async (value) => {
+          await this.plugin.settings.setFeatureFlag('lookAheadEdges', value);
+        }),
+      );
+
     // =============================
     //   Contest section (Phase 10 Plan 07 — UI-SPEC §Settings)
     // =============================

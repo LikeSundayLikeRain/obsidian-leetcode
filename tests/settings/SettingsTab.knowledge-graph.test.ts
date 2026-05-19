@@ -174,6 +174,14 @@ function makeFakePluginForSettingsTab(settings: KnowledgeGraphCapableStore) {
       disclosureAcknowledged: false,
     }),
     setProviderConfig: vi.fn(async (_p: unknown, _cfg: unknown) => undefined),
+    getAutoAIReviewOnAC: () => false,
+    setAutoAIReviewOnAC: vi.fn(async (_v: boolean) => undefined),
+    getAutoAIContestAnalysis: () => false,
+    setAutoAIContestAnalysis: vi.fn(async (_v: boolean) => undefined),
+    getAutoAIKnowledgeGraph: () => true,
+    setAutoAIKnowledgeGraph: vi.fn(async (_v: boolean) => undefined),
+    getFeatureFlags: () => ({ lookAheadEdges: false }),
+    setFeatureFlag: vi.fn(async (_k: string, _v: boolean) => undefined),
   } as unknown as KnowledgeGraphCapableStore & { getUsername(): string | null };
   return {
     auth: {
