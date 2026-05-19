@@ -137,19 +137,13 @@ describe('ClusterHubWriter', () => {
       '',
       '### Easy',
       '',
-      '| Problem | Date Solved |',
-      '| ------- | ----------- |',
-      '| [[Two Sum]] | 2026-05-01 |',
+      '- [[Two Sum]]',
       '',
       '### Medium',
       '',
-      '| Problem | Date Solved |',
-      '| ------- | ----------- |',
       '',
       '### Hard',
       '',
-      '| Problem | Date Solved |',
-      '| ------- | ----------- |',
       '',
     ].join('\n');
     const m = makeMockVaultApp({ 'LeetCode/Patterns/Two Pointers.md': hubBody });
@@ -158,9 +152,8 @@ describe('ClusterHubWriter', () => {
     await writer.appendEntry('Two Pointers', entry);
     expect(m.spies.process).toHaveBeenCalled();
     const content = m.getContent('LeetCode/Patterns/Two Pointers.md')!;
-    // The row should appear in the Medium section
-    expect(content).toContain('[[3Sum]]');
-    expect(content).toContain('2026-05-18');
+    // The bullet should appear in the Medium section
+    expect(content).toContain('- [[3Sum]]');
   });
 
   it('appendEntry is idempotent (skips duplicate)', async () => {
@@ -174,19 +167,13 @@ describe('ClusterHubWriter', () => {
       '',
       '### Easy',
       '',
-      '| Problem | Date Solved |',
-      '| ------- | ----------- |',
-      '| [[Two Sum]] | 2026-05-01 |',
+      '- [[Two Sum]]',
       '',
       '### Medium',
       '',
-      '| Problem | Date Solved |',
-      '| ------- | ----------- |',
       '',
       '### Hard',
       '',
-      '| Problem | Date Solved |',
-      '| ------- | ----------- |',
       '',
     ].join('\n');
     const m = makeMockVaultApp({ 'LeetCode/Patterns/Two Pointers.md': hubBody });
@@ -267,11 +254,11 @@ describe('ClusterHubWriter', () => {
     expect(body).toContain('pattern: "Two Pointers"');
     // Check heading
     expect(body).toContain('# Two Pointers');
-    // Check difficulty sections with tables
+    // Check difficulty sections with bullet lists
     expect(body).toContain('### Easy');
     expect(body).toContain('### Medium');
     expect(body).toContain('### Hard');
     // The entry should be in the Medium section
-    expect(body).toContain('| [[Container With Most Water]] | 2026-05-18 |');
+    expect(body).toContain('- [[Container With Most Water]]');
   });
 });

@@ -204,21 +204,15 @@ function buildHubNoteBody(patternName: string, entries: HubEntry[]): string {
     '',
     '### Easy',
     '',
-    '| Problem | Date Solved |',
-    '| ------- | ----------- |',
-    ...easy.map((e) => `| [[${e.title}]] | ${e.solvedDate} |`),
+    ...easy.map((e) => `- [[${e.title}]]`),
     '',
     '### Medium',
     '',
-    '| Problem | Date Solved |',
-    '| ------- | ----------- |',
-    ...medium.map((e) => `| [[${e.title}]] | ${e.solvedDate} |`),
+    ...medium.map((e) => `- [[${e.title}]]`),
     '',
     '### Hard',
     '',
-    '| Problem | Date Solved |',
-    '| ------- | ----------- |',
-    ...hard.map((e) => `| [[${e.title}]] | ${e.solvedDate} |`),
+    ...hard.map((e) => `- [[${e.title}]]`),
     '',
   ];
 
@@ -235,28 +229,22 @@ function appendToHub(body: string, entry: HubEntry): string {
 
   const lines = body.split('\n');
   const sectionHeading = `### ${entry.difficulty}`;
-  const row = `| [[${entry.title}]] | ${entry.solvedDate} |`;
+  const bullet = `- [[${entry.title}]]`;
 
-  // Find the difficulty section and insert the row after the table header
+  // Find the difficulty section and append the bullet after existing items
   for (let i = 0; i < lines.length; i++) {
     if (lines[i] === sectionHeading) {
-      // Find the end of the table (skip heading, blank line, table header, separator)
-      // Look for the last table row or the separator line
       let insertIdx = i + 1;
       // Skip blank lines after heading
       while (insertIdx < lines.length && lines[insertIdx]! === '') insertIdx++;
-      // Skip table header line (| Problem | Date Solved |)
-      if (insertIdx < lines.length && lines[insertIdx]!.startsWith('|')) insertIdx++;
-      // Skip separator line (| ------- | ----------- |)
-      if (insertIdx < lines.length && lines[insertIdx]!.startsWith('|')) insertIdx++;
-      // Skip existing table rows
-      while (insertIdx < lines.length && lines[insertIdx]!.startsWith('| [[')) insertIdx++;
-      // Insert the new row
-      lines.splice(insertIdx, 0, row);
+      // Skip existing bullet items
+      while (insertIdx < lines.length && lines[insertIdx]!.startsWith('- [[')) insertIdx++;
+      // Insert the new bullet
+      lines.splice(insertIdx, 0, bullet);
       return lines.join('\n');
     }
   }
 
   // Section not found — shouldn't happen with a well-formed hub, but append at end
-  return body + '\n' + row + '\n';
+  return body + '\n' + bullet + '\n';
 }
