@@ -331,6 +331,7 @@ export class NoteWriter {
       problemMarkdown: htmlToMarkdown(newEntry.contentHtml),
       langSlug: defaultLang || undefined,
       starterCode,
+      title: newEntry.title,
     });
     const createdRaw = await this.app.vault.create(filePath, body);
     const file = narrowToTFile(createdRaw);

@@ -188,11 +188,16 @@ export function buildNoteBody(input: {
   problemMarkdown: string;
   langSlug?: string;
   starterCode?: string;
+  /** Phase 12 Plan 03 (D-11) — optional H1 title prepended before ## Problem.
+   *  When provided, output starts with `# {Title}\n\n## Problem`. When omitted,
+   *  output starts with `## Problem` (backward-compat for existing callers). */
+  title?: string;
 }): string {
   const langSlug = input.langSlug ?? 'python3';
   const starter = input.starterCode ?? '';
   const codeBlock = codeBlockFor(langSlug, starter);
-  return `## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
+  const h1 = input.title ? `# ${input.title}\n\n` : '';
+  return `${h1}## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
 }
 
 /**
