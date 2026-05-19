@@ -360,4 +360,4 @@ Plans:
 | 10. Contest (virtual + analysis)         | v1.1      | 7/7            | Complete    | 2026-05-18  |
 | 10.1. LC Virtual Contest API             | v1.1      | -/-            | Not Started | -           |
 | 11. AI Knowledge Graph                   | v1.1      | 3/3            | Complete    | 2026-05-19  |
-| 12. Polish + Plugin-Store Re-submission  | v1.1      | 5/5 | Complete   | 2026-05-19 |
+| 12. Polish + Plugin-Store Re-submission  | v1.1      | 5/5 | Complete    | 2026-05-19 |
