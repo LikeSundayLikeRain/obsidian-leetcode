@@ -632,6 +632,8 @@
   gap: 8px;
   margin-top: 16px;
 }
+/* Phase 12 D-02 — hide empty footer divs (no action buttons in AC-only state). */
+.leetcode-verdict .leetcode-verdict-footer:empty { display: none; }
 .leetcode-verdict .leetcode-verdict-unknown-details {
   margin-top: 8px;
   font-size: 12px;
