@@ -425,22 +425,13 @@ async openContestProblem(problemIdx: number): Promise<void> {
 | A4 | Contest sidebar not updating is due to onVerdictChange being a no-op | Code Examples | If it's a rendering bug in ProblemBrowserView, fix location differs |
 | A5 | Cold-start improvement from deferred AI construction is meaningful (~1-2s) | D-10 | If the bottleneck is elsewhere (index build, data.json parse), different fix needed |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Wikilink interception mechanism**
-   - What we know: Obsidian creates blank files when clicking unresolved wikilinks. The `file-open` event fires after creation. Reading-mode links can be targeted via MarkdownPostProcessor.
-   - What's unclear: Whether there's a pre-creation hook (e.g., `file-will-open` or `beforeCreate`) in the Obsidian API. Whether Edit-mode wikilink clicks can be intercepted at all.
-   - Recommendation: Start with Reading-mode MarkdownPostProcessor for rendered `[[link]]` elements (covers hub notes and Related Variants sections which are read in Reading mode). For Edit mode, accept that clicking creates a blank file and use the `file-open` event to detect + redirect.
+1. **Wikilink interception mechanism** — RESOLVED: Use `file-open` workspace event with empty-file gate (per Plan 12-04 action). Reading-mode links covered via MarkdownPostProcessor for rendered `[[link]]` elements in hub notes and Related Variants. Edit-mode accepts create-then-redirect pattern. No pre-creation hook exists in the Obsidian API.
 
-2. **Contest finish lifecycle — exact failure point**
-   - What we know: `handleContestEnd` captures the session, calls `finalizeContest`, has a try/catch, but the session is already cleared by `.finish()` before finalization runs.
-   - What's unclear: What specific step fails in production (note creation? summary write? folder creation?).
-   - Recommendation: Add error boundary around each step in `finalizeContest` so partial completion is visible. The session snapshot is already captured, so retry is possible.
+2. **Contest finish lifecycle — exact failure point** — RESOLVED: Executor to identify exact failure point per Plan 12-02 Task 2 investigation approach. Error boundary added around each step in `finalizeContest` so partial completion is visible. Session snapshot is already captured before `.finish()` clears the session.
 
-3. **Cold-start profiling — actual bottleneck**
-   - What we know: Bundle is 1.2 MB. AI SDK contributes ~650 KB. First-load is noticeably slow.
-   - What's unclear: Whether the bottleneck is module evaluation (esbuild output parsing) or constructor-time initialization (SettingsStore.load, index fetch).
-   - Recommendation: Profile with `performance.now()` around onload steps. If AI SDK evaluation is not the bottleneck, focus on making the problem index fetch non-blocking instead.
+3. **Cold-start profiling — actual bottleneck** — RESOLVED: Implement deferred AIClient construction until first AI call (per Plan 12-04 Task 2). Profiling deferred to UAT. esbuild CJS cannot code-split, so deferred construction is the only viable lever.
 
 ## Validation Architecture
 
