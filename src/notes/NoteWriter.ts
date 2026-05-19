@@ -495,9 +495,25 @@ export class NoteWriter {
     // Rewrite the plugin-owned `## Problem` region; everything else is
     // preserved by rewriteProblemSection (pure string transform — D-08).
     const freshMarkdown = htmlToMarkdown(entry.contentHtml);
+    const title = detail.title ?? cached?.title ?? '';
     await this.app.vault.process(
       existingFile,
-      (current) => rewriteProblemSection(current, freshMarkdown),
+      (current) => {
+        let updated = rewriteProblemSection(current, freshMarkdown);
+        // Phase 12 (D-11): insert H1 title if missing on existing notes
+        if (title && !updated.match(/^# .+/m)) {
+          const h1 = `# ${title}\n\n`;
+          // Insert after frontmatter closing ---
+          const fmEnd = updated.indexOf('\n---\n');
+          if (fmEnd !== -1) {
+            const insertAt = fmEnd + 5; // after \n---\n
+            updated = updated.slice(0, insertAt) + h1 + updated.slice(insertAt);
+          } else {
+            updated = h1 + updated;
+          }
+        }
+        return updated;
+      },
     );
 
     // Union-merge frontmatter. D-04 status non-downgrade + D-10 user-key

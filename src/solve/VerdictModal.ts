@@ -67,6 +67,7 @@ export class VerdictModal extends Modal {
   constructor(app: App, args: VerdictModalArgs) {
     super(app);
     this.args = args;
+    this.modalEl.addClass('leetcode-verdict-modal');
   }
 
   private isPending = false;

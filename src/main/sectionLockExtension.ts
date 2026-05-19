@@ -75,7 +75,7 @@ export { LOCKED_HEADINGS } from '../notes/NoteTemplate';
  * lets each kind branch into its own per-section range emission rule
  * (see the second pass in `computeLockedRanges` below).
  */
-type HeadingKind = 'problem' | 'code' | 'techniques' | 'notes' | 'ai-review';
+type HeadingKind = 'title' | 'problem' | 'code' | 'techniques' | 'notes' | 'ai-review';
 
 interface HeadingHit {
   readonly kind: HeadingKind;
@@ -114,7 +114,9 @@ export function computeLockedRanges(
   const total = state.doc.lines;
   for (let i = 1; i <= total; i++) {
     const text = state.doc.line(i).text;
-    if (text === PROBLEM_HEADING_LINE) {
+    if (text.startsWith('# ') && !text.startsWith('## ') && !headings.some(h => h.kind === 'title')) {
+      headings.push({ kind: 'title', line: i });
+    } else if (text === PROBLEM_HEADING_LINE) {
       headings.push({ kind: 'problem', line: i });
     } else if (text === CODE_HEADING_LINE) {
       headings.push({ kind: 'code', line: i });

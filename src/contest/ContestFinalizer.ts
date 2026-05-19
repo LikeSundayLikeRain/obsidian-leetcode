@@ -293,10 +293,20 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
       // But still track for #revisit tagging
       createdFiles.set(problem.slug, existingFile);
     } else {
-      // Create new note
+      // Create new note (guard against race / re-finalization)
       const body = buildContestProblemBody(problem);
-      const file = await app.vault.create(notePath, body) as TFile;
-      // Apply frontmatter
+      let file: TFile;
+      try {
+        file = await app.vault.create(notePath, body) as TFile;
+      } catch {
+        const raced = app.vault.getAbstractFileByPath(notePath) as TFile | null;
+        if (raced) {
+          await app.vault.process(raced, () => body);
+          file = raced;
+        } else {
+          throw new Error(`Failed to create contest note: ${notePath}`);
+        }
+      }
       await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
         fm['lc-contest-id'] = safeSlug;
       });
@@ -327,7 +337,10 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
   const summaryPath = `${contestsFolder}/${dateStr}-${safeSlug}.md`;
 
   const summaryBody = buildSummaryBody({ session, aborted, totalElapsedMs });
-  const summaryFile = await app.vault.create(summaryPath, summaryBody) as TFile;
+  const existingSummary = app.vault.getAbstractFileByPath(summaryPath) as TFile | null;
+  const summaryFile = existingSummary
+    ? (await app.vault.process(existingSummary, () => summaryBody), existingSummary)
+    : await app.vault.create(summaryPath, summaryBody) as TFile;
 
   // Apply summary frontmatter (D-14)
   const scored = session.problems

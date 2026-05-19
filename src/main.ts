@@ -386,7 +386,7 @@ export default class LeetCodePlugin extends Plugin {
     // ProblemBrowserView constructs its own instance (Plan 03 pattern) so this
     // plugin-level instance is only for the palette command surface.
     this.contestListService = new ContestListService(this.client, this.settings);
-    this.contestScratch = new ContestScratchManager(this.app);
+    this.contestScratch = new ContestScratchManager(this.app, this.settings.getProblemsFolder());
 
     // Step 5.11 — Phase 10 Plan 03 + Plan 07 — ContestSessionManager. State
     // machine for contest lifecycle (start/pause/resume/abort/finish). Plan 07
@@ -812,22 +812,18 @@ export default class LeetCodePlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on('file-open', (file: TFile | null) => {
         if (!file) return;
-        const problemsFolder = this.settings.getProblemsFolder();
-        // Gate (a): must be in the problems folder
-        if (!file.path.startsWith(problemsFolder + '/') && file.path !== problemsFolder) return;
-        // Gate (b): file must be empty (just created from a wikilink click)
-        // stat.size is 0 for newly-created empty files
+        // Gate (a): file must be empty (just created from a wikilink click)
         if (file.stat.size !== 0) return;
-        // Gate (c): extract slug from filename and verify it exists in the index
-        const basename = file.basename; // filename without .md extension
+        // Gate (b): extract slug from filename and verify it matches problem pattern
+        const basename = file.basename;
         // Filename convention: {id}-{slug} (e.g., "1-two-sum", "42-trapping-rain-water")
         const dashIdx = basename.indexOf('-');
-        if (dashIdx < 1) return; // no leading number portion
+        if (dashIdx < 1) return;
         const idPart = basename.slice(0, dashIdx);
-        if (!/^\d+$/.test(idPart)) return; // id portion must be numeric
+        if (!/^\d+$/.test(idPart)) return;
         const slug = basename.slice(dashIdx + 1);
         if (!slug) return;
-        // Verify slug exists in cached problem index OR problem detail cache
+        // Gate (c): verify slug exists in cached problem index OR detail cache
         const index = this.settings.getProblemIndex();
         const inIndex = index?.problems.some((p) => p.slug === slug) ?? false;
         const inDetail = this.settings.getProblemDetail(slug) !== null;

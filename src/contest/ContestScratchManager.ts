@@ -8,7 +8,7 @@ import type { App, TFile } from 'obsidian';
 import type { ContestProblemState } from './types';
 import { htmlToMarkdown } from '../notes/htmlToMarkdown';
 
-const SCRATCH_FOLDER = '.leetcode-contest';
+const SCRATCH_FOLDER = '_leetcode-contest';
 
 function langToFenceTag(slug: string): string {
   const map: Record<string, string> = {
@@ -50,13 +50,15 @@ export function extractCodeFromScratch(content: string): string | null {
 
 export class ContestScratchManager {
   private app: App;
+  private problemsFolder: string;
 
-  constructor(app: App) {
+  constructor(app: App, problemsFolder: string) {
     this.app = app;
+    this.problemsFolder = problemsFolder;
   }
 
   private get folder(): string {
-    return SCRATCH_FOLDER;
+    return `${this.problemsFolder}/${SCRATCH_FOLDER}`;
   }
 
   private scratchPath(slug: string): string {
@@ -65,15 +67,8 @@ export class ContestScratchManager {
 
   async ensureFolder(): Promise<void> {
     const { vault } = this.app;
-    const parts = this.folder.split('/');
-    let current = '';
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      try {
-        await vault.createFolder(current);
-      } catch {
-        // Folder already exists — continue
-      }
+    if (!vault.getAbstractFileByPath(this.folder)) {
+      await vault.createFolder(this.folder);
     }
   }
 
@@ -90,7 +85,6 @@ export class ContestScratchManager {
     try {
       return await this.app.vault.create(path, content);
     } catch {
-      // Race condition: file was created between check and create
       const file = this.app.vault.getAbstractFileByPath(path) as TFile;
       if (file) {
         await this.app.vault.process(file, () => content);
