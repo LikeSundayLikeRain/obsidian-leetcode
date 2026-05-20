@@ -503,10 +503,12 @@ export class NoteWriter {
         // Phase 12 (D-11): insert H1 title if missing on existing notes
         if (title && !updated.match(/^# .+/m)) {
           const h1 = `# ${title}\n`;
-          // Insert after frontmatter closing ---
-          const fmEnd = updated.indexOf('\n---\n');
-          if (fmEnd !== -1) {
-            const insertAt = fmEnd + 5; // after \n---\n
+          // Insert after frontmatter: find second --- delimiter (closing)
+          const firstDelim = updated.indexOf('---');
+          const secondDelim = firstDelim >= 0 ? updated.indexOf('---', firstDelim + 3) : -1;
+          if (secondDelim >= 0) {
+            const afterFm = updated.indexOf('\n', secondDelim);
+            const insertAt = afterFm >= 0 ? afterFm + 1 : secondDelim + 3;
             updated = updated.slice(0, insertAt) + h1 + updated.slice(insertAt);
           } else {
             updated = h1 + updated;

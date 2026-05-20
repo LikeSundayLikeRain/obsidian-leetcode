@@ -70,7 +70,7 @@ import {
   PREVIEW_VIEW_TYPE,
 } from './preview/ProblemPreviewView';
 import { openOrReusePreview } from './preview/previewRouter';
-import { NoteWriter } from './notes/NoteWriter';
+import { NoteWriter, toDetailCacheEntry } from './notes/NoteWriter';
 import { isLegacyLeetcodeBaseV010 } from './notes/BaseFile';
 import { LeetCodeSettingTab } from './settings/SettingsTab';
 // Phase 3 Plan 07 imports — orchestrator + modals + REST + pure utilities.
@@ -1173,18 +1173,34 @@ export default class LeetCodePlugin extends Plugin {
       return;
     }
     new ContestPreviewModal(this.app, contest, this.client, async (questions) => {
-      // Start the contest session via the session manager.
+      // Cache problem details + resolve starter code (same as PBV.startContest)
+      const results = await Promise.allSettled(
+        questions.map((q) => this.client.getProblemDetail(q.title_slug)),
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value) {
+          const entry = toDetailCacheEntry(r.value);
+          await this.settings.setProblemDetail(r.value.titleSlug, entry);
+        }
+      }
+      const defaultLang = this.settings.getDefaultLanguage() || 'python3';
       this.contestSessionManager.start({
         contestSlug: contest.slug,
         contestTitle: contest.title,
         contestType: contest.type,
         duration: contest.duration,
-        problems: questions.map((q) => ({
-          slug: q.title_slug,
-          title: q.title,
-          credit: q.credit,
-          difficulty: q.difficulty,
-        })),
+        problems: questions.map((q) => {
+          const detail = this.settings.getProblemDetail(q.title_slug);
+          const snippet = detail?.codeSnippets?.find((s: { langSlug: string }) => s.langSlug === defaultLang);
+          return {
+            slug: q.title_slug,
+            title: q.title,
+            credit: q.credit,
+            difficulty: q.difficulty,
+            code: snippet?.code ?? '',
+            language: defaultLang,
+          };
+        }),
       });
       new Notice(`Contest started: ${contest.title}`, 3000);
     }).open();
@@ -2060,23 +2076,29 @@ export default class LeetCodePlugin extends Plugin {
         // CF-19 — VerdictModal already shows "Accepted"; a graph-write toast
         // would be noise. Also invalidate the submission history cache so a
         // picker opened after AC sees the latest submission.
-        if (classifyStatus(terminalTyped.status_code, terminalTyped.status_msg).kind === 'ac') {
-          const activeContest = this.contestSessionManager.getSession();
-          if (activeContest) {
-            // Phase 12 (D-06/D-08): record verdict in contest session for badge update
-            const idx = activeContest.problems.findIndex(p => p.slug === ctx.slug);
-            if (idx >= 0) this.contestSessionManager.recordVerdict(idx, 'accepted');
-          } else {
-            try {
-              await this.knowledgeGraph.onAccepted(
-                { file: ctx.file, slug: ctx.slug, title: ctx.title },
-                terminalTyped,
-              );
-            } catch (err) {
-              logger.debug('graph.onAccepted: non-fatal (invisible-by-design)', err);
+        const verdictKind = classifyStatus(terminalTyped.status_code, terminalTyped.status_msg).kind;
+        const activeContest = this.contestSessionManager.getSession();
+        if (activeContest) {
+          const idx = activeContest.problems.findIndex(p => p.slug === ctx.slug);
+          if (idx >= 0) {
+            if (verdictKind === 'ac') {
+              this.contestSessionManager.recordVerdict(idx, 'accepted');
+            } else if (verdictKind !== 'unknown' && verdictKind !== 'unknown-lc') {
+              if (activeContest.problems[idx]?.verdict === 'unsolved') {
+                this.contestSessionManager.recordVerdict(idx, 'attempted');
+              }
             }
-            this.submissionHistory.invalidate(ctx.slug);
           }
+        } else if (verdictKind === 'ac') {
+          try {
+            await this.knowledgeGraph.onAccepted(
+              { file: ctx.file, slug: ctx.slug, title: ctx.title },
+              terminalTyped,
+            );
+          } catch (err) {
+            logger.debug('graph.onAccepted: non-fatal (invisible-by-design)', err);
+          }
+          this.submissionHistory.invalidate(ctx.slug);
         }
       } else {
         // Gate failure (Notice already fired) or orchestrator resolved

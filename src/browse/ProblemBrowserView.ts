@@ -1244,6 +1244,7 @@ export class ProblemBrowserView extends ItemView {
       // need to reset the PBV UI state after it completes.
       origExpired();
       this.contestCallbacksWired = false;
+      (manager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired = false;
       this.mode = 'contests';
       void this.onOpen();
     };
@@ -1272,6 +1273,7 @@ export class ProblemBrowserView extends ItemView {
     if (!session) return;
 
     this.contestCallbacksWired = false;
+    (this.plugin.contestSessionManager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired = false;
     await (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(false);
     this.mode = 'contests';
     await this.onOpen();
@@ -1283,6 +1285,7 @@ export class ProblemBrowserView extends ItemView {
     if (!session) return;
 
     this.contestCallbacksWired = false;
+    (this.plugin.contestSessionManager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired = false;
     await (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(true);
     this.mode = 'contests';
     await this.onOpen();

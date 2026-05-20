@@ -73,7 +73,12 @@ export class ContestScratchManager {
   async ensureFolder(): Promise<void> {
     const { vault } = this.app;
     if (!vault.getAbstractFileByPath(this.folder)) {
-      await vault.createFolder(this.folder);
+      try {
+        await vault.createFolder(this.folder);
+      } catch {
+        // Folder may have been created concurrently — verify it exists
+        if (!vault.getAbstractFileByPath(this.folder)) throw new Error(`Failed to create folder: ${this.folder}`);
+      }
     }
   }
 

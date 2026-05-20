@@ -528,10 +528,6 @@
 }
 
 /* ── Phase 12 — Verdict Modal width + AI review code scroll ────────────── */
-.modal:has(.leetcode-verdict) {
-  width: min(90vw, 780px);
-  max-width: min(90vw, 780px);
-}
 .leetcode-verdict .leetcode-ai-review-stream pre {
   overflow-x: auto;
   white-space: pre;

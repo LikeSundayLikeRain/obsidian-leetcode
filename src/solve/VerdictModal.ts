@@ -69,10 +69,12 @@ export class VerdictModal extends Modal {
     this.args = args;
     if (this.modalEl) {
       this.modalEl.addClass('leetcode-verdict-modal');
-      this.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
-      this.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
+      if (args.onStartReviewStream) {
+        this.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
+        this.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
+      }
     }
-    if (this.containerEl) {
+    if (this.containerEl && args.onStartReviewStream) {
       this.containerEl.style.setProperty('--dialog-width', 'min(90vw, 780px)');
     }
   }
