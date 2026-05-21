@@ -21,7 +21,7 @@ import {
   StateField,
   RangeSetBuilder,
   EditorSelection,
-  type EditorState,
+  EditorState,
   type Extension,
 } from '@codemirror/state';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
