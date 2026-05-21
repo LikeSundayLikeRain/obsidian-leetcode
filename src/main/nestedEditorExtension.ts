@@ -212,11 +212,6 @@ export function buildNestedEditorExtension(plugin: PluginHost): Extension {
       if (userEvent && userEvent.startsWith('leetcode.')) {
         return old.map(tr.changes);
       }
-      // Detect external fence-body changes (vault.process, AI review, etc.)
-      // and propagate to child editor (side-effect only — no early return)
-      if (tr.docChanged) {
-        detectAndPropagateExternalChange(tr, plugin, registry);
-      }
       // Rebuild on doc change OR reconfigure (file switch triggers reconfigure without docChanged)
       if (tr.docChanged || tr.reconfigured) {
         return buildNestedDecorations(tr.state, plugin, registry);
