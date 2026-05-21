@@ -172,6 +172,7 @@ interface ProblemContext {
   file: TFile;
   slug: string;
   title: string;
+  lcLanguage: string | null;
   currentBody: () => string;
 }
 
@@ -1322,12 +1323,14 @@ export default class LeetCodePlugin extends Plugin {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
     const slug = fm?.['lc-slug'];
     const title = fm?.['lc-title'];
+    const lcLanguage = typeof fm?.['lc-language'] === 'string' ? fm['lc-language'] : null;
     if (!isValidSlug(slug)) return null;
     return {
       view,
       file,
       slug,
       title: typeof title === 'string' ? title : slug,
+      lcLanguage,
       currentBody: () => view.editor.getValue(),
     };
   }
@@ -2140,6 +2143,7 @@ export default class LeetCodePlugin extends Plugin {
         getProblemDetail: (s) => this.settings.getProblemDetail(s),
       },
       slug: ctx.slug,
+      lcLanguage: ctx.lcLanguage,
       getCurrentBody: ctx.currentBody,
       // D-21 — login wiring for the sticky session-expired Notice's button.
       login: () => { void this.auth.login(); },
@@ -2452,7 +2456,7 @@ export default class LeetCodePlugin extends Plugin {
       return;
     }
 
-    const lang = resolveLangSlug(extracted.lang, this.settings.getDefaultLanguage());
+    const lang = ctx.lcLanguage ?? resolveLangSlug(extracted.lang, this.settings.getDefaultLanguage());
     const detail = this.settings.getProblemDetail(ctx.slug);
     const questionId = detail?.internalQuestionId ?? (detail ? String(detail.id) : '');
 

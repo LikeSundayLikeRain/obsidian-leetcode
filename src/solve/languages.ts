@@ -37,16 +37,10 @@ export const LC_LANG_SLUGS: ReadonlySet<string> = new Set([
 ]);
 
 /** Common fence-tag aliases → canonical LC slug.
- *  Keys are lowercase; resolveLangSlug lowercases input before lookup.
- *
- *  NOTE: `python` maps to `python3` because LC deprecated Python 2 in 2020
- *  and `lcSlugToFenceTag` remaps `python3` → `python` for Prism/Lezer
- *  highlighting (D-04). Without this alias the round-trip breaks: notes
- *  written with a `python` fence would submit as Python 2. */
+ *  Keys are lowercase; resolveLangSlug lowercases input before lookup. */
 export const FENCE_TAG_ALIASES: Readonly<Record<string, string>> = {
   'py': 'python3',
   'py3': 'python3',
-  'python': 'python3',
   'python2': 'python',
   'ts': 'typescript',
   'js': 'javascript',
@@ -66,9 +60,8 @@ export const FENCE_TAG_ALIASES: Readonly<Record<string, string>> = {
  *
  * Contract (D-02 / D-03 / D-05):
  *   - null / undefined / empty string → fallback (D-03: global default from SettingsStore)
- *   - alias hit → canonical slug (checked FIRST so D-04 round-trip works:
- *     `python3` is written as `python` fence, `python` fence resolves back to `python3`)
  *   - exact LC slug (case-insensitive) → canonical slug
+ *   - alias hit → canonical slug
  *   - unknown tag → fallback (D-05: same treatment as untagged)
  */
 export function resolveLangSlug(
@@ -77,9 +70,9 @@ export function resolveLangSlug(
 ): string {
   if (!fenceTag) return fallback;
   const lower = fenceTag.toLowerCase();
+  if (LC_LANG_SLUGS.has(lower)) return lower;
   const alias = FENCE_TAG_ALIASES[lower];
   if (alias) return alias;
-  if (LC_LANG_SLUGS.has(lower)) return lower;
   return fallback;
 }
 
