@@ -74,7 +74,7 @@ describe('createChildEditor', () => {
     createChildEditor(content, parent);
 
     expect(EditorState.create).toHaveBeenCalledOnce();
-    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(createArgs.doc).toBe(content);
   });
 
@@ -92,7 +92,7 @@ describe('createChildEditor', () => {
     createChildEditor('code', parent);
 
     expect(python).toHaveBeenCalledOnce();
-    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(createArgs.extensions).toContain('mock-python-extension');
   });
 
@@ -100,7 +100,7 @@ describe('createChildEditor', () => {
     createChildEditor('code', parent);
 
     expect(syntaxHighlighting).toHaveBeenCalledWith(defaultHighlightStyle);
-    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(createArgs.extensions).toContain('mock-syntax-highlighting');
   });
 
@@ -108,7 +108,7 @@ describe('createChildEditor', () => {
     createChildEditor('code', parent);
 
     expect(bracketMatching).toHaveBeenCalledOnce();
-    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(createArgs.extensions).toContain('mock-bracket-matching');
   });
 
@@ -116,7 +116,7 @@ describe('createChildEditor', () => {
     createChildEditor('code', parent);
 
     expect(history).toHaveBeenCalledOnce();
-    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(createArgs.extensions).toContain('mock-history-extension');
   });
 
@@ -125,7 +125,7 @@ describe('createChildEditor', () => {
 
     expect(drawSelection).toHaveBeenCalledOnce();
     expect(highlightActiveLine).toHaveBeenCalledOnce();
-    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(createArgs.extensions).toContain('mock-draw-selection');
     expect(createArgs.extensions).toContain('mock-highlight-active-line');
   });
@@ -134,14 +134,14 @@ describe('createChildEditor', () => {
     createChildEditor('code', parent);
 
     expect((EditorView as unknown as { theme: ReturnType<typeof vi.fn> }).theme).toHaveBeenCalledOnce();
-    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(createArgs.extensions).toContain('mock-theme-extension');
   });
 
   it('includes EditorView.lineWrapping in extensions', () => {
     createChildEditor('code', parent);
 
-    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(createArgs.extensions).toContain(EditorView.lineWrapping);
   });
 
@@ -149,7 +149,7 @@ describe('createChildEditor', () => {
     createChildEditor('code', parent);
 
     expect(keymap.of).toHaveBeenCalled();
-    const keymapArgs = (keymap.of as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const keymapArgs = (keymap.of as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(keymapArgs).toEqual(expect.arrayContaining(defaultKeymap as []));
     expect(keymapArgs).toEqual(expect.arrayContaining(historyKeymap as []));
   });
