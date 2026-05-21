@@ -50,7 +50,7 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
 **Architecture:** Nested EditorView (Path B) — a standalone child CM6 editor with language packs replaces the visible fence body, syncing changes back to the parent markdown document. This provides syntax-tree-based indent, bracket handling, highlighting, and comment toggling natively.
 
 - [x] **Phase 13: Nested Editor Foundation** (3/3 plans) — Widget + CSS-hide approach, child EditorView registry, lifecycle management, single-language proof-of-concept rendering
-- [ ] **Phase 14: Bidirectional Sync** — Child↔parent sync protocol (CM6 split-view pattern), offset derivation, vault.process conflict handling, section lock coexistence
+- [x] **Phase 14: Bidirectional Sync** — Child↔parent sync protocol (CM6 split-view pattern), offset derivation, vault.process conflict handling, section lock coexistence (completed 2026-05-21)
 - [ ] **Phase 15: Focus, Undo & Cursor** — Focus model (child/parent/Obsidian), cursor transitions, undo stack isolation, Tab/keyboard routing, scroll integration
 - [ ] **Phase 16: Language Packs & Switching** — All 8 LC languages with full LanguageSupport, Compartment-based language switching via chevron, indent/bracket/comment/highlight all active
 - [ ] **Phase 17: Polish & Edge Cases** — Paste/clipboard, IME/CJK, Find/Replace, event propagation, plugin review prep, bundle size validation
@@ -98,8 +98,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 14-02-PLAN.md — Wiring (childEditorFactory + nestedEditorExtension integration)
-- [ ] 14-03-PLAN.md — Unit tests for sync module
+- [x] 14-02-PLAN.md — Wiring (childEditorFactory + nestedEditorExtension integration)
+- [x] 14-03-PLAN.md — Unit tests for sync module
 
 ### Phase 15: Focus, Undo & Cursor
 
@@ -185,7 +185,7 @@ Plans:
 | 11. AI Knowledge Graph                      | v1.1      | 3/3            | Complete    | 2026-05-19 |
 | 12. Polish + Plugin-Store Re-submission     | v1.1      | 5/5            | Complete    | 2026-05-19 |
 | 13. Nested Editor Foundation                | v1.2      | 3/3 | Complete    | 2026-05-21 |
-| 14. Bidirectional Sync                      | v1.2      | 1/3 | In Progress|  |
+| 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete   | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 0/TBD          | Not started | -          |
 | 16. Language Packs & Switching              | v1.2      | 0/TBD          | Not started | -          |
 | 17. Polish & Edge Cases                     | v1.2      | 0/TBD          | Not started | -          |
