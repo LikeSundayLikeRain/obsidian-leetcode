@@ -102,7 +102,7 @@ Plans:
 **Plans**: 3 plans
 Plans:
 - [x] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
-- [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
+- [x] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
 - [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ### Phase 16: Language Packs & Switching
@@ -133,7 +133,7 @@ Plans:
   5. All lifecycle cleanup verified: no memory leaks after 20 note open/close cycles; plugin unload destroys all child editors
 **Plans**: 3 plans
 Plans:
-- [ ] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
+- [x] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
 - [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
 - [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
@@ -160,7 +160,7 @@ Plans:
 | 10. Contest (virtual + analysis)            | v1.1      | 7/7            | Complete    | 2026-05-18 |
 | 11. AI Knowledge Graph                      | v1.1      | 3/3            | Complete    | 2026-05-19 |
 | 12. Polish + Plugin-Store Re-submission     | v1.1      | 5/5            | Complete    | 2026-05-19 |
-| 13. Nested Editor Foundation                | v1.2      | 2/3 | In Progress|  |
+| 13. Nested Editor Foundation                | v1.2      | 3/3 | Complete   | 2026-05-21 |
 | 14. Bidirectional Sync                      | v1.2      | 0/TBD          | Not started | -          |
 | 15. Focus, Undo & Cursor                    | v1.2      | 0/TBD          | Not started | -          |
 | 16. Language Packs & Switching              | v1.2      | 0/TBD          | Not started | -          |
