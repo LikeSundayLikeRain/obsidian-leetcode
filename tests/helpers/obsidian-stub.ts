@@ -52,6 +52,34 @@ export function setIcon(_el: HTMLElement, _name: string): void {
   /* no-op in tests */
 }
 
+// Phase 06 Plan 03 — Menu stub for the right-click context menu in
+// ProblemBrowserView (PREVIEW-01). Tests that exercise the menu wiring
+// override this via vi.mock factories with a per-test capture array; this
+// stub keeps `import { Menu } from 'obsidian'` resolution happy for source
+// modules that don't directly exercise the menu under test.
+export interface MenuItemBuilder {
+  setTitle(title: string): MenuItemBuilder;
+  setIcon(name: string): MenuItemBuilder;
+  onClick(cb: (evt?: MouseEvent | KeyboardEvent) => unknown): MenuItemBuilder;
+}
+export class Menu {
+  private items: Array<{ title?: string; icon?: string; onClick?: () => unknown }> = [];
+  addItem(cb: (item: MenuItemBuilder) => unknown): this {
+    const record: { title?: string; icon?: string; onClick?: () => unknown } = {};
+    const builder: MenuItemBuilder = {
+      setTitle(t: string) { record.title = t; return builder; },
+      setIcon(n: string) { record.icon = n; return builder; },
+      onClick(fn: () => unknown) { record.onClick = fn; return builder; },
+    };
+    cb(builder);
+    this.items.push(record);
+    return this;
+  }
+  showAtMouseEvent(_e: MouseEvent): void {
+    /* no-op in tests; tests assert via vi.mock factories */
+  }
+}
+
 // Plugin / PluginSettingTab / Modal / Setting / WorkspaceLeaf / App /
 // MarkdownView — all used as type imports in source today. Exporting class
 // stubs keeps `import { X }` resolution happy for future tests that might
@@ -63,7 +91,50 @@ export class Setting {}
 export class WorkspaceLeaf {}
 export class App {}
 export class MarkdownView {}
-export class ItemView {}
+
+// Phase 06 Plan 05 (gap closure) — Scope stub for the preview's Enter-key
+// registration. The real Obsidian `Scope` exposes `register(modifiers, key,
+// callback)` that returns a handler reference; tests can introspect the
+// captured `handlers` array (and pull the Enter callback by `key`) to drive
+// the keyboard-activation paths without standing up a real Workspace.
+// Additive only — existing tests that never touch `scope` remain unaffected.
+export interface ScopeHandler {
+  mods: string[];
+  key: string;
+  cb: (evt?: KeyboardEvent) => unknown;
+}
+export class Scope {
+  handlers: ScopeHandler[] = [];
+  // The real Scope constructor accepts an optional parent scope; tests
+  // never inspect it, so we accept-and-ignore for shape compatibility.
+  constructor(_parent?: Scope) {
+    /* no-op stub */
+  }
+  register(
+    mods: string[],
+    key: string,
+    cb: (evt?: KeyboardEvent) => unknown,
+  ): ScopeHandler {
+    const handler: ScopeHandler = { mods, key, cb };
+    this.handlers.push(handler);
+    return handler;
+  }
+  unregister(_handler: unknown): void {
+    /* no-op stub; tests reset handlers directly when needed */
+  }
+}
+
+// Phase 06 Plan 05 — ItemView gains a `scope` field so production code can
+// call `this.scope.register(...)` from the test path. The real Obsidian
+// ItemView inherits scope from View → Component; mirroring it here keeps
+// `this.scope` defined even when the view is constructed via
+// `Object.create(prototype)` (the start-button + enter-key test patterns).
+// Existing tests that never touch scope remain unaffected because they
+// also never construct an ItemView via `new`.
+export class ItemView {
+  scope: Scope = new Scope();
+}
+
 export class FileManager {}
 export class Vault {}
 

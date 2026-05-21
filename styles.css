@@ -195,6 +195,23 @@
   font-family: var(--font-monospace);
   font-size: 12px;
 }
+/* Phase 07 Plan 03 — AI provider input fields (API key, Base URL, Model).
+   Extends the .lc-cookie-input precedent so masked password + monospace
+   editable fields share the same monospace rhythm. Bundle delta < 0.5 KB
+   per 07-UI-SPEC §"Bundle constraint". */
+.leetcode-settings .lc-ai-input {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+}
+/* Phase 07 Plan 05 — AIDisclosureModal scoping class. Empty rule by design:
+   Obsidian's default modal chrome owns the visual layout; this scoping hook
+   exists so Phase 08/09/11 can attach per-modal CSS (extra spacing tweaks,
+   feature-specific bullet emphasis) without re-scaffolding. Bundle delta
+   < 0.1 KB. Mirrors the .leetcode-verdict precedent at the bottom of this
+   file (also a content-scoping anchor with no own paint). */
+.leetcode-ai-disclosure {
+  /* scoping only — Obsidian default modal chrome handles layout */
+}
 /* Progress bar — sticky at the top of the view so it stays visible while the
    row list grows under it. Slim blue fill + muted label.
    When `total` is unknown we flip to an indeterminate shimmer animation. */
@@ -510,6 +527,12 @@
   height: 14px;
 }
 
+/* ── Phase 12 — Verdict Modal width + AI review code scroll ────────────── */
+.leetcode-verdict .leetcode-ai-review-stream pre {
+  overflow-x: auto;
+  white-space: pre;
+}
+
 /* ── Phase 3 — Verdict Modal (UI-SPEC §CSS skeleton) ───────────────────── */
 /* All colors via Obsidian CSS variables — no raw hex, no rgba literals.    */
 .leetcode-verdict .leetcode-verdict-runtime {
@@ -608,12 +631,15 @@
   text-align: center;
 }
 .leetcode-verdict .leetcode-verdict-action-row,
-.leetcode-verdict .leetcode-verdict-footer {
+.leetcode-verdict .leetcode-verdict-footer,
+.leetcode-ai-stream-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 16px;
 }
+/* Phase 12 D-02 — hide empty footer divs (no action buttons in AC-only state). */
+.leetcode-verdict .leetcode-verdict-footer:empty { display: none; }
 .leetcode-verdict .leetcode-verdict-unknown-details {
   margin-top: 8px;
   font-size: 12px;
@@ -944,7 +970,24 @@
 .cm-editor .leetcode-locked-heading-line .cm-formatting-header-2 {
   display: none;
 }
-.leetcode-code-actions .leetcode-code-action-run {
+.leetcode-code-actions .leetcode-code-action-ai-solution {
+  padding: 2px 14px;
+  min-height: 30px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+  transition: opacity 150ms ease, box-shadow 150ms ease;
+}
+.leetcode-code-actions .leetcode-code-action-ai-solution:hover {
+  opacity: 0.9;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.45);
+}
+.leetcode-code-actions .leetcode-code-action-ai-solution {
   margin-left: auto;
 }
 /* Phase 5.4 D-12a — inline Run/Submit ported to the .lc-fm__picker neutral
@@ -1220,3 +1263,619 @@
   width: 100%;
 }
 
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Phase 06 Plan 03 — Preview view chrome (06-UI-SPEC §CSS conventions).
+ *
+ * Scoped under .leetcode-preview. Reuses Obsidian CSS variables only — no
+ * raw hex, no rgba(literal), no !important (Phase 06 hard rule + UI-SPEC).
+ * The `.lc-diff--*` rules below are scoped under .leetcode-preview as a
+ * parallel cluster to the v1.0 .leetcode-browser .lc-diff--* rules at
+ * styles.css:184-186 — Phase 06 MUST NOT modify those v1.0 rules.
+ * ───────────────────────────────────────────────────────────────────────── */
+/* Gap-closure 06-05: chrome font-size lifted off the root selector and onto
+   the header only, so the rendered body (`.leetcode-preview__body
+   markdown-rendered`) inherits Obsidian's reading-mode font cascade instead
+   of the chrome's `--font-ui-small` shrink. Closes 06-UAT gap #1 (body
+   parity). */
+.leetcode-preview {
+  padding: 0;
+}
+
+.leetcode-preview__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding: 16px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--font-ui-small);
+}
+
+.leetcode-preview__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.leetcode-preview .lc-diff {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-right: 4px;
+}
+.leetcode-preview .lc-diff--easy {
+  color: var(--color-green);
+  background: color-mix(in srgb, var(--color-green) 15%, transparent);
+}
+.leetcode-preview .lc-diff--medium {
+  color: var(--color-yellow);
+  background: color-mix(in srgb, var(--color-yellow) 15%, transparent);
+}
+.leetcode-preview .lc-diff--hard {
+  color: var(--color-red);
+  background: color-mix(in srgb, var(--color-red) 15%, transparent);
+}
+
+/* Gap-closure 06-05: `.leetcode-preview__topic` rule deleted. Topic chips
+   were dropped from `renderHeader` per user override of CONTEXT.md decision
+   C — the sticky header collapses to a single horizontal strip (title +
+   difficulty pill + action button). Topic-chip surfacing remains a deferred
+   backlog candidate. */
+
+.leetcode-preview__action {
+  margin-left: auto;
+  min-height: 30px;
+  padding: 2px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.leetcode-preview__action:hover {
+  background: var(--background-secondary);
+  border-color: var(--text-muted);
+}
+.leetcode-preview__action.is-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: transparent;
+}
+.leetcode-preview__action.is-primary:hover {
+  background: var(--interactive-accent-hover, var(--interactive-accent));
+  border-color: transparent;
+}
+.leetcode-preview__action[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.leetcode-preview__body {
+  padding: 24px 16px 16px 16px;
+}
+
+/* ── Phase 08 — AI Debug stream modal (Plan 03) ────────────────────────── */
+/* 5 new selectors targeting < 1 KB total. All colors via Obsidian CSS
+   variables (no raw hex / rgba). Spacing values from {4, 8, 16, 24} only.
+   Mirrors .leetcode-submissions-loading and .leetcode-verdict precedents.
+   The .leetcode-ai-stream-footer comma-extends the existing
+   .leetcode-verdict-footer rule above (zero net new layout — just adds the
+   footer scoping selector to the already-styled token group).            */
+.leetcode-ai-stream {
+  /* scoping anchor — Obsidian default modal chrome handles layout */
+}
+.leetcode-ai-stream-body {
+  padding: 0;
+  /* Override Obsidian's modal default `user-select: none` so users can copy
+     fragments of the AI response by selection (in addition to the explicit
+     Copy button on stream-end). Also relax cursor for affordance. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+.leetcode-ai-stream-body * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+.leetcode-ai-stream-body pre,
+.leetcode-ai-review-loading + * pre,
+.leetcode-verdict pre {
+  background-color: var(--code-background);
+  border-radius: var(--radius-s);
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+.leetcode-ai-stream-body code,
+.leetcode-verdict code {
+  background-color: var(--code-background);
+  border-radius: var(--radius-s);
+  padding: 2px 4px;
+  font-size: 0.9em;
+}
+.leetcode-ai-stream-body pre code,
+.leetcode-verdict pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+.leetcode-ai-stream-thinking {
+  text-align: center;
+  padding: 16px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.leetcode-ai-stream-cancelled {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+  margin: 0 0 8px 0;
+}
+.leetcode-ai-stream-error {
+  color: var(--text-error);
+  font-size: 13px;
+  margin: 8px 0 0 0;
+}
+.leetcode-ai-review-loading {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 12px 0;
+  animation: leetcode-pulse 1.5s ease-in-out infinite;
+}
+@keyframes leetcode-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Phase 10 — Mode toggle (Problems / Contests) ────────────────────────── */
+/* Scoped under .leetcode-browser per 10-UI-SPEC §CSS conventions.           */
+/* All colors via Obsidian CSS variables — no raw hex.                        */
+.leetcode-browser .lc-mode-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.leetcode-browser .lc-mode-toggle__btn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.leetcode-browser .lc-mode-toggle__btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.leetcode-browser .lc-mode-toggle__btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+  border-color: transparent;
+}
+
+/* ── Phase 10 — Contest row (searchable list in Contests mode) ────────────── */
+.leetcode-browser .lc-contest-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.leetcode-browser .lc-contest-row:hover {
+  background: var(--background-modifier-hover);
+}
+.leetcode-browser .lc-contest-row__title {
+  flex: 1 1 auto;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leetcode-browser .lc-contest-row__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Phase 10 Plan 04 — ContestSolveView (solving surface) ─────────────── */
+.leetcode-contest-solve {
+  padding: 16px;
+}
+.leetcode-contest-solve__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--background-primary);
+  padding: 8px 0 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 12px;
+}
+.leetcode-contest-solve__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.leetcode-contest-solve__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+.leetcode-contest-solve__position {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.leetcode-contest-solve__body {
+  margin-bottom: 16px;
+}
+.leetcode-contest-solve__no-detail {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.leetcode-contest-solve__code {
+  width: 100%;
+  min-height: 200px;
+  max-height: 60vh;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  margin-bottom: 12px;
+  overflow: auto;
+}
+.leetcode-contest-solve__highlight {
+  cursor: text;
+}
+.leetcode-contest-solve__highlight pre {
+  margin: 0;
+  padding: 12px;
+}
+.leetcode-contest-solve__highlight code {
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  font-family: var(--font-monospace) !important;
+}
+.leetcode-contest-solve__highlight.is-hidden {
+  display: none;
+}
+.leetcode-contest-solve__textarea {
+  display: block;
+  width: 100%;
+  min-height: 200px;
+  max-height: 60vh;
+  resize: vertical;
+  padding: 12px;
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  border: none;
+  outline: none;
+  overflow: auto;
+  white-space: pre;
+  tab-size: 4;
+}
+.leetcode-contest-solve__textarea.is-hidden {
+  display: none;
+}
+.leetcode-contest-solve__textarea:focus {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+.leetcode-contest-solve__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+.leetcode-contest-solve__lang-select {
+  padding: 4px 24px 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 12px;
+  font-weight: 500;
+  margin-right: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  cursor: pointer;
+  min-width: 100px;
+}
+.leetcode-contest-solve__run-btn,
+.leetcode-contest-solve__submit-btn {
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+}
+.leetcode-contest-solve__run-btn:hover,
+.leetcode-contest-solve__submit-btn:hover {
+  background: var(--interactive-hover);
+}
+.leetcode-contest-solve__submit-btn.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.leetcode-contest-solve__submit-btn.mod-cta:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* ── Phase 10 Plan 05 — Active Contest Timer Header ────────────────────── */
+.leetcode-contest__timer {
+  position: sticky;
+  top: -16px;
+  z-index: 10;
+  padding: 16px;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.leetcode-contest__timer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.leetcode-contest__timer-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.leetcode-contest__timer-display {
+  font-size: 20px;
+  font-weight: 600;
+  font-family: var(--font-monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-normal);
+}
+.leetcode-contest__timer-display.is-warning {
+  color: var(--color-yellow);
+}
+.leetcode-contest__timer-display.is-critical {
+  color: var(--color-red);
+}
+.leetcode-contest__timer-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.leetcode-contest__timer-paused {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Verdict badges */
+.leetcode-contest__badges {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+.leetcode-contest__badge {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.leetcode-contest__badge--ac {
+  color: var(--color-green);
+}
+.leetcode-contest__badge--failed {
+  color: var(--color-red);
+}
+.leetcode-contest__badge--unsolved {
+  color: var(--text-faint);
+}
+
+/* Progress bar */
+.leetcode-contest__progress {
+  height: 3px;
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.leetcode-contest__progress-fill {
+  height: 100%;
+  background: var(--interactive-accent);
+  transition: width 1s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .leetcode-contest__progress-fill {
+    transition: none;
+  }
+}
+
+/* Action buttons */
+.leetcode-contest__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.leetcode-contest__btn {
+  min-height: 30px;
+  padding: 2px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+.leetcode-contest__btn:hover {
+  background: var(--interactive-hover);
+}
+.leetcode-contest__btn-abort {
+  color: var(--text-error);
+}
+.leetcode-contest__btn-abort:hover {
+  border-color: var(--text-error);
+}
+
+/* Problem cards container */
+.leetcode-contest__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 0 4px;
+}
+
+/* Verdict chip in problem cards */
+.leetcode-contest__verdict-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  height: 20px;
+}
+.leetcode-contest__verdict-chip--accepted {
+  color: var(--color-green);
+  background: color-mix(in srgb, var(--background-secondary) 85%, var(--color-green) 15%);
+}
+.leetcode-contest__verdict-chip--attempted {
+  color: var(--color-red);
+  background: color-mix(in srgb, var(--background-secondary) 85%, var(--color-red) 15%);
+}
+.leetcode-contest__verdict-chip--unsolved {
+  color: var(--text-faint);
+  background: var(--background-secondary);
+}
+
+/* Abort modal actions */
+.leetcode-contest__modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ─── Contest Preview Modal ─── */
+.lc-contest-preview__duration {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+.lc-contest-preview__list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.lc-contest-preview__problem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.lc-contest-preview__problem:last-child {
+  border-bottom: none;
+}
+.lc-contest-preview__problem-title {
+  flex: 1;
+}
+.lc-contest-preview__problem .lc-diff--easy,
+.lc-contest-preview__problem .lc-diff--medium,
+.lc-contest-preview__problem .lc-diff--hard {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  width: 60px;
+  text-align: center;
+}
+.lc-contest-preview__problem .lc-diff--easy {
+  color: var(--color-green);
+  background: color-mix(in srgb, var(--color-green) 15%, transparent);
+}
+.lc-contest-preview__problem .lc-diff--medium {
+  color: var(--color-yellow);
+  background: color-mix(in srgb, var(--color-yellow) 15%, transparent);
+}
+.lc-contest-preview__problem .lc-diff--hard {
+  color: var(--color-red);
+  background: color-mix(in srgb, var(--color-red) 15%, transparent);
+}
+.lc-contest-preview__footer {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+.lc-contest-preview__start {
+  font-size: 14px;
+  padding: 8px 16px;
+}
+.lc-contest-preview__loading,
+.lc-contest-preview__error {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Phase 12 Plan 03 (D-03/D-04) — Pattern chip in verdict modal on AC ──── */
+.leetcode-verdict .leetcode-verdict-pattern-chips {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 8px auto 0;
+  flex-wrap: wrap;
+}
+.leetcode-verdict .leetcode-verdict-pattern-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--background-secondary) 85%, var(--interactive-accent) 15%);
+  color: var(--text-accent);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+  border: 1px solid var(--background-modifier-border);
+}
+.leetcode-verdict .leetcode-verdict-pattern-chip:hover {
+  background: color-mix(in srgb, var(--background-secondary) 70%, var(--interactive-accent) 30%);
+  border-color: var(--interactive-accent);
+}

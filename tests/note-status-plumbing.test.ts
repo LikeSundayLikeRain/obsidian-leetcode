@@ -107,7 +107,7 @@ describe('NoteWriter.openProblem status plumbing (GAP-2a, NOTE-03, D-04)', () =>
 
     // Let the background refresh promise settle.
      
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => window.setTimeout(r, 20));
 
     const fm = m.getFrontmatter('LeetCode/1-two-sum.md');
     expect(fm!['lc-status']).toBe('accepted');

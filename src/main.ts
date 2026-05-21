@@ -19,15 +19,58 @@
 // This keeps the Plan 05 orchestrator untouched (its public API is just
 // submit/cancel/isInFlight) while still satisfying Plan 07's user-facing
 // contract (pending → verdict / abort / timeout).
-import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { Component, MarkdownRenderer, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SettingsStore } from './settings/SettingsStore';
+// Phase 08 Plan 04 — type-only import; openAIDebug coerces a freshly-fetched
+// LeetCodeProblemDetail into the cached shape (both share contentHtml).
+import type { DetailCacheEntry } from './settings/SettingsStore';
 import { installRequestUrlFetcher, throttledRequestUrl } from './api/requestUrlFetcher';
 import { LeetCodeClient } from './api/LeetCodeClient';
+import { AIClient } from './ai/AIClient';
+// Phase 08 Plan 04 (AIDBG-01) — single-entrypoint AI Debug surface.
+//   AIStreamModal: live-streaming response modal (Plan 08-03).
+//   buildDebugPrompt: pure prompt assembler (Plan 08-03).
+//   DISCLOSURE_BASE_COPY + withDebugBullet: composition factory for the
+//     extended disclosure copy (Plan 08-03; the base const is frozen at
+//     module load — withDebugBullet returns a fresh object).
+//   LastVerdictStore: in-memory per-slug verdict map (Plan 08-01).
+//   htmlToMarkdown: same converter Preview uses (already in repo) so the
+//     ## Problem text shipped to the AI provider matches what the user sees
+//     in their preview.
+import { AIStreamModal } from './ai/AIStreamModal';
+import { buildDebugPrompt } from './ai/buildDebugPrompt';
+import { DISCLOSURE_BASE_COPY, withDebugBullet, withReviewBullet, withContestAnalysisBullet } from './ai/disclosure';
+import { LastVerdictStore } from './solve/lastVerdictStore';
+import { htmlToMarkdown } from './notes/htmlToMarkdown';
+// Phase 09 Plan 03 (AIREV-01) — auto-review on AC wiring.
+import { buildReviewPrompt } from './ai/buildReviewPrompt';
+import { mergeAIReviewSection } from './ai/mergeAIReviewSection';
+import { estimateCostUsd } from './ai/pricing';
+// Phase 07 Plan 04 — `prettyName` provides the verbatim brand string for
+// every Test connection Notice. `AIProvider` + `ProbeResult` are imported as
+// types only (no runtime cost). The aiProbeInflight Map debounces concurrent
+// probes per provider per CONTEXT decision E + 07-UI-SPEC §"Test connection
+// — debouncing": single in-flight per provider, subsequent clicks are no-ops.
+import { prettyName } from './ai/types';
+import type { AIProvider, ProbeResult, ProviderConfig } from './ai/types';
+// Phase 07 Plan 05 — disclosure modal (AIPROV-04). The plugin owns the
+// helper because the modal needs `this.app` + SettingsStore access; AIClient
+// gets the helper via constructor injection. AIDisclosureModal itself is
+// UI-only — see src/ai/disclosure.ts.
+import { AIDisclosureModal } from './ai/disclosure';
 import { AuthService } from './auth/AuthService';
 import { ProblemListService } from './browse/ProblemListService';
 import { ProblemBrowserView, BROWSER_VIEW_TYPE } from './browse/ProblemBrowserView';
-import { NoteWriter } from './notes/NoteWriter';
+// Phase 06 Plan 03 — preview view + tab-reuse router. Static imports keep
+// the module graph deterministic; cyclic-type risk is avoided because both
+// preview modules type-import from `./main` rather than runtime-importing.
+import {
+  ProblemPreviewView,
+  PREVIEW_VIEW_TYPE,
+} from './preview/ProblemPreviewView';
+import { openOrReusePreview } from './preview/previewRouter';
+import { NoteWriter, toDetailCacheEntry } from './notes/NoteWriter';
 import { isLegacyLeetcodeBaseV010 } from './notes/BaseFile';
 import { LeetCodeSettingTab } from './settings/SettingsTab';
 // Phase 3 Plan 07 imports — orchestrator + modals + REST + pure utilities.
@@ -76,6 +119,8 @@ import { buildSectionLockExtension } from './main/sectionLockExtension';
 import { registerPython3Highlighter } from './main/python3Highlighter';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
+import { PatternClusterEngine } from './graph/PatternClusterEngine';
+import { ClusterHubWriter } from './graph/ClusterHubWriter';
 import { SubmissionHistoryStore } from './graph/SubmissionHistoryStore';
 import {
   listSubmissionsForSlug,
@@ -85,6 +130,7 @@ import {
 import { SubmissionPickerModal } from './graph/SubmissionPickerModal';
 import { SubmissionDetailModal } from './graph/SubmissionDetailModal';
 import { toIsoLocalTz } from './graph/dateFormat';
+import { normalizePatternName } from './graph/patternTaxonomy';
 // T-03-04-05 mitigation — classify-and-throw helper extracted for testability.
 import { assertKnownVerdictOrThrow } from './solve/verdictGuard';
 
@@ -99,9 +145,23 @@ import {
   type AbortLike,
   type TerminalCheckResponse,
 } from './solve/pollingOrchestrator';
-import { setWindowTimeout } from './shared/timers';
+import { setWindowTimeout, clearWindowTimeout, type TimerHandle } from './shared/timers';
 import { logger } from './shared/logger';
 import type { SubmitCheckResponse, RunCheckResponse } from './solve/types';
+// Phase 10 Plan 03 — contest session manager (state machine + timer).
+import { ContestSessionManager } from './contest/ContestSessionManager';
+import { getRemainingMs } from './contest/types';
+// Phase 10 Plan 04 — contest solve view (dedicated editing surface).
+import { ContestSolveView, CONTEST_SOLVE_VIEW_TYPE } from './contest/ContestSolveView';
+import { ContestScratchManager } from './contest/ContestScratchManager';
+// Phase 10 Plan 07 — contest integration wiring (finalizer, AI analysis,
+// list service, preview modal, abort modal).
+import { finalizeContest } from './contest/ContestFinalizer';
+import { ContestListService } from './contest/ContestListService';
+import { ContestPreviewModal } from './contest/ContestPreview';
+import { AbortContestModal } from './contest/AbortContestModal';
+import { buildContestAnalysisPrompt } from './contest/buildContestAnalysisPrompt';
+import { mergeAIContestAnalysisSection } from './contest/mergeAIContestAnalysisSection';
 
 /** Shape returned by getActiveProblemContext — the minimum info every Phase 3
  *  command needs: the TFile (used by RunModal / submit / starter-code paths),
@@ -129,10 +189,66 @@ export default class LeetCodePlugin extends Plugin {
   knowledgeGraph!: KnowledgeGraphWriter;
   submissionHistory!: SubmissionHistoryStore;
 
+  // Phase 11 Plan 03 — AI Knowledge Graph hub writer + classification engine.
+  // Constructed after AIClient in onload. hubWriter is exposed for the
+  // reconcile-pattern-hubs palette command and 1-hour interval timer.
+  private hubWriter!: ClusterHubWriter;
+
   // Phase 5 Plan 04 (D-09) — ephemeral Run-modal tab store. In-memory only;
   // layout-change + active-leaf-change reconcile wipes slugs with no open
   // markdown leaf. Constructed in onload Step 5.8; disposed in onunload.
   ephemeralTabs!: EphemeralTabStore;
+
+  // Phase 07 Plan 03 — AI provider facade. Phase 12 Plan 04 (D-10) deferred
+  // construction: backing field is null until first access via the lazy getter.
+  // All AI operations are user-initiated (AI Debug click, AC with AI review,
+  // test connection, KG classification) so the getter triggers on first user
+  // action — never during plugin cold-start. Holds no listeners, no timers,
+  // no open sockets — no onunload teardown required.
+  private _aiClient: AIClient | null = null;
+
+  /** Lazy getter — defers AIClient construction until first AI action (D-10).
+   *  Cold-start path never hits this; only user-initiated AI flows trigger it. */
+  get aiClient(): AIClient {
+    if (!this._aiClient) {
+      this._aiClient = new AIClient(
+        this.settings,
+        (provider, cfg) => this.requireAIDisclosure(provider, cfg),
+      );
+    }
+    return this._aiClient;
+  }
+
+  // Phase 08 Plan 04 (AIDBG-01) — in-memory per-slug Map<slug, LastVerdict>.
+  // Populated by SubmissionOrchestrator's onVerdict callback (registered in
+  // onload below). Read by openAIDebug to feed the last failing verdict into
+  // buildDebugPrompt. NO Plugin arg, NO data.json persistence, NO workspace
+  // event subscriptions — verdicts have no "tab is open" lifecycle, plain
+  // Map + clear() on plugin unload is sufficient (08-PATTERNS §"Anti-Patterns
+  // to Avoid" #6 deviates from EphemeralTabStore which DOES need a reconcile
+  // loop because tab-input state is scoped to "the problem note is open in
+  // at least one markdown leaf"). dispose() is called from onunload for a
+  // deterministic wipe in test runs that re-instantiate the plugin.
+  lastVerdictStore!: LastVerdictStore;
+
+  // Phase 10 Plan 03 — Contest session manager. Manages the contest lifecycle
+  // state machine (start/pause/resume/abort/finish) with epoch-based timer.
+  // Constructed in onload after settings. Plan 07 wires the real callbacks.
+  contestSessionManager!: ContestSessionManager;
+
+  // Phase 10 Plan 07 — Contest list service. Constructed in onload after client
+  // + settings. Provides refresh/search/surpriseMe for ProblemBrowserView's
+  // contest mode and the `start-random-contest` palette command.
+  contestListService!: ContestListService;
+  contestScratch!: ContestScratchManager;
+
+  // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
+  // AIProvider; values are the in-flight probe Promise. Cleared in the
+  // testActiveAIConnection() finally block so a fresh click after the probe
+  // resolves goes through. Subsequent clicks WHILE a probe is running are
+  // no-ops (07-UI-SPEC §"Test connection — debouncing"). The Map is local to
+  // the plugin instance — no need for global serialization across plugins.
+  private aiProbeInflight = new Map<AIProvider, Promise<ProbeResult>>();
 
   // Phase 3 solve-path state (Phase 5 D-01 consolidated Run commands).
   //   activeSolve: currently-in-flight submission/run orchestrator-wrapper.
@@ -142,6 +258,13 @@ export default class LeetCodePlugin extends Plugin {
   private activeSolve: ActiveSolve | null = null;
 
   async onload(): Promise<void> {
+    // Step 0.5 — warm the login-shell PATH cache so credential_process
+    // can find tools like isengardcli/aws-vault in ~/.toolbox/bin etc.
+    // Async fire-and-forget — never blocks plugin load.
+    import('./ai/credentialProcess')
+      .then(m => m.warmLoginShellPath())
+      .catch(() => { /* non-critical */ });
+
     // Step 1 — load persisted settings (cookies, folder, language, index)
     this.settings = await SettingsStore.load(this);
 
@@ -220,9 +343,100 @@ export default class LeetCodePlugin extends Plugin {
     // called in onunload() for a deterministic wipe.
     this.ephemeralTabs = new EphemeralTabStore(this);
 
+    // Step 5.9 — Phase 12 Plan 04 (D-10) DEFERRED AIClient construction.
+    // AIClient is now constructed lazily on first access via the `get aiClient()`
+    // getter. Cold-start no longer pays constructor cost. The getter triggers on
+    // first user-initiated AI action (AI Debug click, AC review, test connection,
+    // KG classification). SettingsStore.load is already complete so the getter
+    // can safely access settings whenever triggered.
+
+    // Step 5.9b — Phase 11 Plan 03 — AI Knowledge Graph wiring. ClusterHubWriter
+    // + PatternClusterEngine are constructed AFTER settings load. Engine receives
+    // a getter function `() => this.aiClient` so AIClient construction is truly
+    // deferred until the engine's first classify call (not at onload time).
+    this.hubWriter = new ClusterHubWriter({
+      app: this.app,
+      problemsFolder: this.settings.getProblemsFolder(),
+    });
+    const patternClusterEngine = new PatternClusterEngine({
+      app: this.app,
+      aiClient: () => this.aiClient,
+      settings: this.settings,
+      hubWriter: this.hubWriter,
+    });
+    this.knowledgeGraph.setPatternClusterEngine(patternClusterEngine);
+    this.knowledgeGraph.setHubWriter(this.hubWriter);
+
+    // D-07 mechanism 3 — 1-hour interval for background hub reconcile.
+    // registerInterval auto-cleans on plugin unload.
+    this.registerInterval(
+      window.setInterval(() => { void this.hubWriter.reconcile(); }, 60 * 60 * 1000),
+    );
+
+    // Step 5.10 — Phase 08 Plan 04 (AIDBG-01) — LastVerdictStore. In-memory
+    // per-slug Map populated by the SubmissionOrchestrator's onVerdict
+    // callback (registered at orchestrator construction below in
+    // submitFromActive). Plain Map; no Plugin arg; no workspace events;
+    // no data.json persistence (08-CONTEXT decision B). Disposed in
+    // onunload(). Order: ephemeralTabs → aiClient → lastVerdictStore.
+    this.lastVerdictStore = new LastVerdictStore();
+
+    // Step 5.10 — Phase 10 Plan 07 — ContestListService. Provides
+    // refresh/search/surpriseMe for the start-random-contest palette command.
+    // ProblemBrowserView constructs its own instance (Plan 03 pattern) so this
+    // plugin-level instance is only for the palette command surface.
+    this.contestListService = new ContestListService(this.client, this.settings);
+    this.contestScratch = new ContestScratchManager(this.app, this.settings.getProblemsFolder());
+
+    // Step 5.11 — Phase 10 Plan 03 + Plan 07 — ContestSessionManager. State
+    // machine for contest lifecycle (start/pause/resume/abort/finish). Plan 07
+    // wires the real callbacks: onExpired triggers finalization, onTick and
+    // onVerdictChange are display-layer concerns handled by ProblemBrowserView's
+    // internal polling of getSession().
+    this.contestSessionManager = new ContestSessionManager(
+      this.settings,
+      {
+        onTick: () => { /* ProblemBrowserView polls getSession() for display */ },
+        onExpired: () => { void this.handleContestEnd(false); },
+        onVerdictChange: () => {
+          // D-06: Trigger re-render on any open ProblemBrowserView so verdict
+          // badges update immediately. wireContestCallbacks() patches this
+          // callback with a direct badge-update, but this fallback ensures the
+          // sidebar refreshes even if the view was closed and re-opened without
+          // re-wiring (e.g., workspace layout restore).
+          const leaves = this.app.workspace.getLeavesOfType(BROWSER_VIEW_TYPE);
+          for (const leaf of leaves) {
+            const view = leaf.view as ProblemBrowserView;
+            if (typeof view.onOpen === 'function') {
+              void view.onOpen();
+            }
+          }
+        },
+      },
+    );
+
+    // Step 5.12 — Phase 10 Plan 07 — restore any active contest session from
+    // PluginData. Resumes tick if session is still running; fires onExpired if
+    // the contest timed out while the plugin was unloaded.
+    this.contestSessionManager.restore();
+
     // Step 6a — register the browser view.
     this.registerView(BROWSER_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
       new ProblemBrowserView(leaf, this));
+
+    // Phase 06 Plan 03 — register the preview view. View type
+    // 'leetcode-preview' is the canonical SSoT (PREVIEW_VIEW_TYPE constant);
+    // tab-reuse + setViewState in `previewRouter.ts` rely on it. The factory
+    // wires the plugin instance through to the view so action-button clicks
+    // can call `plugin.openProblem(slug)` (existing v1.0 path).
+    this.registerView(PREVIEW_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
+      new ProblemPreviewView(leaf, this));
+
+    // Phase 10 Plan 04 — register the contest solve view. Dedicated ItemView
+    // for solving contest problems (code editor + Run/Submit). Tab-reuse via
+    // openContestProblem() helper below.
+    this.registerView(CONTEST_SOLVE_VIEW_TYPE, (leaf: WorkspaceLeaf) =>
+      new ContestSolveView(leaf, this));
 
     // Step 6b — ribbon icon (BROWSE-01). Lucide name from UI-SPEC.md § Icons.
      
@@ -250,6 +464,78 @@ export default class LeetCodePlugin extends Plugin {
     //   - id does NOT contain the plugin id 'leetcode' (no-plugin-id-in-command-id)
     //   - name is sentence case and does NOT start with the plugin name
     //   - NO hotkeys field (commands/no-default-hotkeys)
+    // Phase 06 Plan 03 FOUND-03 — clean-ID palette command for
+    // `Open in preview`. Mirrors the editorCheckCallback shape from
+    // `refresh-current-problem` below: gates on the active note having an
+    // `lc-slug` frontmatter entry via `isValidSlug`. Action calls
+    // `routeProblemClick(slug, undefined, 'preview', { force: true })` so the
+    // command works even when the user has set `Click behavior = open`
+    // (palette is an explicit user action, not a default affordance —
+    // matches the right-click escape contract). ID has NO plugin-id prefix,
+    // NO `command` substring, NO hotkey — passes `obsidianmd/commands/no-*`
+    // lint rules introduced by 06-01's eslint-plugin-obsidianmd@0.3.0 bump.
+    this.addCommand({
+      id: 'open-in-preview',
+      name: 'Open in preview',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm: Record<string, unknown> | undefined = cache?.frontmatter;
+        const slug = fm?.['lc-slug'];
+        if (!isValidSlug(slug)) return false;
+        if (!checking) {
+          void this.routeProblemClick(slug, undefined, 'preview', { force: true });
+        }
+        return true;
+      },
+    });
+
+    // Phase 07 Plan 04 — palette entry for AI Test connection. Shares the
+    // exact same probe path as the Settings button via the plugin-level
+    // testActiveAIConnection() method, so Notice copy + debounce semantics
+    // are identical across both surfaces. ID rules (eslint-plugin-obsidianmd
+    // commands/no-* family): no plugin-id prefix ('leetcode-'), no 'command'
+    // substring, no hotkey field. Sentence-case name does not start with the
+    // plugin name — Obsidian's palette already prefixes it with "LeetCode: ".
+    // Global callback (NOT editorCheckCallback): the command is always
+    // available; gating is internal (provider null → empty-state Notice).
+    this.addCommand({
+      id: 'test-ai-connection',
+      name: 'Test AI connection',
+      callback: () => { void this.testActiveAIConnection(); },
+    });
+
+    // Phase 07 Plan 05 — palette entry for AIPROV-04 reset escape hatch.
+    // Clears all 5 providers' `disclosureAcknowledged` flags so the
+    // AIDisclosureModal re-fires on the next AI call regardless of which
+    // provider is active. ID rules (eslint-plugin-obsidianmd commands/no-*
+    // family): no plugin-id prefix ('leetcode-'), no 'command' substring,
+    // no hotkey field. Sentence-case name does not start with the plugin
+    // name — Obsidian's palette already prefixes it with "LeetCode: ".
+    this.addCommand({
+      id: 'reset-ai-disclosures',
+      name: 'Reset AI provider disclosures',
+      callback: () => { void this.resetAIDisclosures(); },
+    });
+
+    // Phase 07 Plan 06 — palette entry for AIPROV-06 credential-rotation
+    // escape hatch. Wipes ONLY the active provider's `apiKey` (other
+    // providers' keys preserved per CONTEXT decision C; disclosure flag
+    // preserved per T-07-06-disclosure — clearing the key is a credential
+    // lifecycle action, NOT a disclosure-reset action). ID rules
+    // (eslint-plugin-obsidianmd commands/no-* family): no plugin-id prefix
+    // ('leetcode-'), no 'command' substring, no hotkey field. Sentence-case
+    // name does not start with the plugin name — Obsidian's palette already
+    // prefixes it with "LeetCode: ". UI-SPEC §"Destructive actions" rules
+    // out a confirmation modal: user typed the command name explicitly,
+    // re-pasting from provider dashboard is trivial recovery.
+    this.addCommand({
+      id: 'clear-ai-key',
+      name: 'Clear AI key',
+      callback: () => { void this.clearActiveAIKey(); },
+    });
+
     this.addCommand({
       id: 'refresh-current-problem',
       // Name deliberately omits "LeetCode" — Obsidian's command palette already
@@ -299,6 +585,52 @@ export default class LeetCodePlugin extends Plugin {
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
         if (!isValidSlug(fm?.['lc-slug'])) return false;
         if (!checking) { void this.submitFromActive(); }
+        return true;
+      },
+    });
+
+    // Phase 08 Plan 04 (AIDBG-01) — palette command for AI Debug. Verbatim
+    // mirror of the Submit command shape: editorCheckCallback returns false
+    // for non-LC notes (hides the command from palette in that context),
+    // returns true and dispatches openAIDebug(slug) on confirm. Clean ID
+    // (no plugin-id prefix per FOUND-03), sentence-case name (Obsidian
+    // already prefixes "LeetCode: " in the palette so the locked label
+    // surfaces as "LeetCode: AI: Debug current code"). NO default hotkey
+    // per project rule (commands/no-default-hotkeys lint rule).
+    //
+    // openAIDebug(slug) is the SOLE entrypoint — fence-row button (via
+    // aiDebugFromActive) AND palette command BOTH funnel through it so
+    // the disclosure gate, prompt assembly, and modal open are
+    // single-sourced (locked T-08-04-T-host mitigation).
+    this.addCommand({
+      id: 'ai-debug',
+      name: 'AI: Debug current code',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+        const slug = fm?.['lc-slug'];
+        if (!isValidSlug(slug)) return false;
+        if (!checking) { void this.openAIDebug(slug); }
+        return true;
+      },
+    });
+
+    // Phase 09 Plan 04 (AIREV-05) — palette command for manual AI Review
+    // re-run. Same editorCheckCallback gate shape as ai-debug: returns false
+    // for non-LC notes (hides from palette), returns true and dispatches
+    // runAIReview(slug, file) on confirm. Clean ID (no plugin-id prefix per
+    // FOUND-03), sentence-case name. NO default hotkey per project rule.
+    this.addCommand({
+      id: 'rerun-ai-review',
+      name: 'Re-run AI review on current note',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+        const slug = fm?.['lc-slug'];
+        if (!isValidSlug(slug)) return false;
+        if (!checking) { void this.runAIReview(slug, file); }
         return true;
       },
     });
@@ -361,6 +693,81 @@ export default class LeetCodePlugin extends Plugin {
       },
     });
 
+    // ── Phase 10 Plan 07 contest command set (4 commands) ────────────────
+    // All IDs: no plugin-id prefix, no 'command' substring, no hotkey.
+    // Per D-03: start-random-contest from palette.
+    this.addCommand({
+      id: 'start-random-contest',
+      name: 'Start random contest',
+      callback: () => { void this.handleStartRandomContest(); },
+    });
+
+    // Per CONTEST-06: pause/resume toggle.
+    this.addCommand({
+      id: 'pause-contest',
+      name: 'Pause contest',
+      callback: () => {
+        const session = this.contestSessionManager.getSession();
+        if (!session) return;
+        if (session.isPaused) {
+          this.contestSessionManager.resume();
+          new Notice('Contest resumed.', 3000);
+        } else {
+          this.contestSessionManager.pause();
+          new Notice('Contest paused.', 3000);
+        }
+      },
+    });
+
+    // Per CONTEST-06: abort with confirmation modal (D-07).
+    this.addCommand({
+      id: 'abort-contest',
+      name: 'Abort contest',
+      callback: () => {
+        if (!this.contestSessionManager.isActive()) return;
+        const session = this.contestSessionManager.getSession();
+        if (!session) return;
+        const solvedCount = session.problems.filter(p => p.verdict === 'accepted').length;
+        new AbortContestModal(
+          this.app,
+          solvedCount,
+          session.problems.length,
+          getRemainingMs(session),
+          () => { void this.handleContestEnd(true); },
+        ).open();
+      },
+    });
+
+    // Per D-20: manual AI contest analysis on a summary note.
+    // editorCheckCallback gates on lc-contest-id frontmatter (T-10-14 mitigation).
+    this.addCommand({
+      id: 'generate-contest-analysis',
+      name: 'Generate contest analysis',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+        if (!fm?.['lc-contest-id']) return false;
+        if (!checking) { void this.handleManualContestAnalysis(file); }
+        return true;
+      },
+    });
+
+    // Phase 11 Plan 03 (D-07 mechanism 4) — palette command for manual hub reconcile.
+    // No editorCheckCallback — always available (reconcile is vault-wide, not note-specific).
+    this.addCommand({
+      id: 'reconcile-pattern-hubs',
+      name: 'Reconcile pattern hubs',
+      callback: () => {
+        void this.hubWriter.reconcile().then(() => {
+          new Notice('Pattern hubs reconciled');
+        }).catch((err) => {
+          logger.debug('reconcile-pattern-hubs: failed', err);
+        });
+      },
+    });
+
     // Step 6d — settings tab.
     this.addSettingTab(new LeetCodeSettingTab(this.app, this));
 
@@ -388,6 +795,50 @@ export default class LeetCodePlugin extends Plugin {
     // with userEvent='leetcode.*' bypass the lock so chevron switch keeps
     // working (RESEARCH Pitfall 5).
     this.registerEditorExtension(buildSectionLockExtension(this));
+
+    // Step 6g-pre — Phase 12 Plan 04 (D-12) — wikilink-to-preview interception.
+    // When a user clicks a [[slug]] wikilink to a problem that has no local note,
+    // Obsidian creates an empty file. This handler detects that (empty file in
+    // problems folder matching a known slug from the index), deletes the blank
+    // file, and opens the preview tab instead. Registered BEFORE the starter-code
+    // file-open handler so the blank file is caught and removed before retrofit
+    // attempts to write into it.
+    //
+    // Gates:
+    //   (a) File is in the problems folder
+    //   (b) File is empty (0 bytes — just-created from wikilink click)
+    //   (c) Basename matches the {id}-{slug}.md pattern AND slug exists in index
+    // All three must pass to trigger deletion + preview open.
+    this.registerEvent(
+      this.app.workspace.on('file-open', (file: TFile | null) => {
+        if (!file) return;
+        // Gate (a): file must be empty (just created from a wikilink click)
+        if (file.stat.size !== 0) return;
+        // Gate (b): extract slug from filename and verify it matches problem pattern
+        const basename = file.basename;
+        // Filename convention: {id}-{slug} (e.g., "1-two-sum", "42-trapping-rain-water")
+        const dashIdx = basename.indexOf('-');
+        if (dashIdx < 1) return;
+        const idPart = basename.slice(0, dashIdx);
+        if (!/^\d+$/.test(idPart)) return;
+        const slug = basename.slice(dashIdx + 1);
+        if (!slug) return;
+        // Gate (c): verify slug exists in cached problem index OR detail cache
+        const index = this.settings.getProblemIndex();
+        const inIndex = index?.problems.some((p) => p.slug === slug) ?? false;
+        const inDetail = this.settings.getProblemDetail(slug) !== null;
+        if (!inIndex && !inDetail) return;
+        // All gates pass — delete the blank file and open preview
+        void (async () => {
+          try {
+            await this.app.vault.delete(file);
+            await openOrReusePreview(this, slug);
+          } catch (err) {
+            logger.debug('wikilink-to-preview: intercept failed (non-fatal)', err);
+          }
+        })();
+      }),
+    );
 
     // Step 6g — Phase 5.2 D-06 auto-insert starter code on file-open.
     // Fires for every note reveal; the handler gates on `lc-slug` frontmatter
@@ -456,6 +907,11 @@ export default class LeetCodePlugin extends Plugin {
     // registerEvent subscriptions also auto-detach here, but dispose() keeps
     // the in-memory Maps clean for test runs that re-instantiate the plugin.
     this.ephemeralTabs?.dispose();
+
+    // Phase 08 Plan 04 (AIDBG-01) — deterministic wipe of the LastVerdictStore.
+    // No subscriptions/timers to detach (Map-only), but dispose() resets the
+    // in-memory Map so plugin reload starts with a clean slate.
+    this.lastVerdictStore?.dispose();
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
@@ -475,6 +931,49 @@ export default class LeetCodePlugin extends Plugin {
     return this.notes.openProblem(slug, initialStatus);
   }
 
+  /**
+   * Phase 06 PREVIEW-02 — single row-activation entry point. ProblemBrowserView's
+   * row click handler delegates here; future surfaces (right-click context
+   * menu in Plan 06-04, palette `Open in preview` command, Phase 10 contest
+   * mode) reuse the same router.
+   *
+   * Decision flow (06-PLAN <interfaces> + 06-RESEARCH §Code Examples §Example 2;
+   * CONTEXT.md decision A locks the precedence):
+   *   1. intent === 'open'  → ALWAYS opens the note. Shift-click bypass + the
+   *      `Click behavior = open` setting both land here.
+   *   2. intent === 'preview' && opts?.force  → preview path. Right-click ->
+   *      Preview (Plan 06-04) sets force=true so the user's setting can't
+   *      suppress an explicit menu choice.
+   *   3. intent === 'preview' && setting === 'open'  → opens the note. The
+   *      user has opted into v1.0 click-to-open behavior.
+   *   4. intent === 'preview'  → preview path.
+   *
+   * Plan 06-02 shipped a placeholder `Notice` for the preview path so the
+   * routing seam was observable in dev without standing up the view; Plan
+   * 06-03 (this commit) lands `ProblemPreviewView` and swaps the Notice for
+   * `await openOrReusePreview(this, slug)` — the preview leaf is reused if
+   * one is already open, otherwise a new center tab opens.
+   */
+  async routeProblemClick(
+    slug: string,
+    status: 'solved' | 'attempted' | 'untouched' | undefined,
+    intent: 'preview' | 'open',
+    opts?: { force?: boolean },
+  ): Promise<void> {
+    if (intent === 'open') {
+      return this.openProblem(slug, status);
+    }
+    // intent === 'preview' from here on.
+    if (!opts?.force && this.settings.getPreviewClickBehavior() === 'open') {
+      return this.openProblem(slug, status);
+    }
+    // Phase 06 Plan 03 — preview path. Reuses an existing leetcode-preview
+    // leaf (via `getLeavesOfType` + `setViewState`) or opens a new center
+    // tab; either way the new slug renders into the SAME leaf. Replaces
+    // Plan 06-02's placeholder Notice (#TODO(06-03) anchor).
+    return openOrReusePreview(this, slug);
+  }
+
   /** GAP-11: force-refresh the `## Problem` body of the currently-open note,
    *  bypassing the 7-day cache TTL. Invoked by the "Refresh current problem"
    *  command palette entry. Delegates to NoteWriter.forceRefresh which owns
@@ -484,6 +983,312 @@ export default class LeetCodePlugin extends Plugin {
    *  failure copy is surfaced. */
   async refreshProblem(slug: string): Promise<void> {
     return this.notes.forceRefresh(slug);
+  }
+
+  /**
+   * Phase 10 Plan 04 — open a contest problem in the dedicated ContestSolveView.
+   * Reuses the tab-reuse pattern from previewRouter: if a ContestSolveView leaf
+   * already exists, swap its state; otherwise open a new center tab. Plan 05's
+   * timer header problem badges delegate here.
+   */
+  async openContestProblem(problemIdx: number): Promise<void> {
+    const session = this.contestSessionManager.getSession();
+    if (!session) return;
+    const problem = session.problems[problemIdx];
+    if (!problem) return;
+
+    // Get problem HTML content from cache for the scratch file
+    const detail = this.settings.getProblemDetail(problem.slug);
+    const contentHtml = detail?.contentHtml;
+
+    // Only create scratch file if it doesn't exist yet — preserve user edits
+    const scratchPath = this.contestScratch.getScratchPath(problem.slug);
+    const scratchAbstract = this.app.vault.getAbstractFileByPath(scratchPath);
+    let file = scratchAbstract instanceof TFile ? scratchAbstract : null;
+    if (!file) {
+      file = await this.contestScratch.createOrUpdate(problem, contentHtml);
+    }
+
+    // D-07: Tab idempotency — reuse existing leaf if already open for this scratch file
+    const existingLeaf = this.app.workspace.getLeavesOfType('markdown')
+      .find(l => (l.view as { file?: { path: string } }).file?.path === file.path);
+    if (existingLeaf) {
+      void this.app.workspace.revealLeaf(existingLeaf);
+      return;
+    }
+
+    // Open in native MarkdownView (full Obsidian editor with highlighting)
+    const leaf = this.app.workspace.getLeaf('tab');
+    await leaf.openFile(file);
+  }
+
+  // ── Phase 10 Plan 07 contest integration helpers ─────────────────────
+
+  /**
+   * Phase 10 Plan 07 — handle contest end (timer expired or user abort).
+   * Calls ContestFinalizer to write problem notes + summary, then optionally
+   * triggers AI analysis when the toggle is ON and a provider is configured.
+   * Closes any open ContestSolveView leaves.
+   */
+  private async handleContestEnd(aborted: boolean): Promise<void> {
+    // Sync code from scratch files back to session before finalizing
+    const activeSession = this.contestSessionManager.getSession();
+    if (activeSession) {
+      for (const problem of activeSession.problems) {
+        const code = await this.contestScratch.readCode(problem.slug);
+        if (code !== null) problem.code = code;
+      }
+      await this.settings.setContestSession(activeSession);
+    }
+
+    const session = aborted
+      ? this.contestSessionManager.abort()
+      : this.contestSessionManager.finish();
+    if (!session) return;
+
+    let summaryPath: string;
+    try {
+      summaryPath = await finalizeContest({
+        session,
+        aborted,
+        app: this.app,
+        settings: this.settings,
+      });
+    } catch (err) {
+      logger.debug('contest.finalize: failed', err);
+      new Notice('Contest finalization failed. Check the console for details.', 6000);
+      return;
+    }
+
+    // Notice per UI-SPEC: context-sensitive text.
+    if (aborted) {
+      new Notice(`Contest aborted. Summary written to ${summaryPath}.`, 4000);
+    } else {
+      new Notice(`Time’s up! Contest ended. Summary written to ${summaryPath}.`, 4000);
+    }
+
+    // Run knowledge graph on AC'd problems (pattern classification + variants)
+    const folder = this.settings.getProblemsFolder().replace(/[\\/]+$/, '');
+    for (const problem of session.problems) {
+      if (problem.verdict !== 'accepted') continue;
+      const detail = this.settings.getProblemDetail(problem.slug);
+      if (!detail) continue;
+      const notePath = `${folder}/${detail.id}-${problem.slug}.md`;
+      const noteAbstract = this.app.vault.getAbstractFileByPath(notePath);
+      const noteFile = noteAbstract instanceof TFile ? noteAbstract : null;
+      if (!noteFile) continue;
+      try {
+        await this.knowledgeGraph.onAccepted(
+          { file: noteFile, slug: problem.slug, title: detail.title },
+          { status_code: 10, status_msg: 'Accepted' } as Parameters<typeof this.knowledgeGraph.onAccepted>[1],
+        );
+      } catch (err) {
+        logger.debug('contest.onAccepted: non-fatal', err);
+      }
+    }
+
+    // Close any open ContestSolveView leaves and scratch file tabs.
+    const leaves = this.app.workspace.getLeavesOfType(CONTEST_SOLVE_VIEW_TYPE);
+    for (const leaf of leaves) { leaf.detach(); }
+
+    // Close scratch file tabs and delete scratch files
+    for (const problem of session.problems) {
+      const file = this.contestScratch.getFile(problem.slug);
+      if (file) {
+        // Close any leaves showing this file
+        this.app.workspace.getLeavesOfType('markdown').forEach(leaf => {
+          if ((leaf.view as { file?: { path: string } }).file?.path === file.path) {
+            leaf.detach();
+          }
+        });
+      }
+    }
+    await this.contestScratch.cleanupAll();
+
+    // Auto AI contest analysis (D-20): gated on toggle + active provider.
+    if (this.settings.getAutoAIContestAnalysis() && this.settings.getActiveAIProvider()) {
+      void this.runContestAnalysis(summaryPath, session);
+    }
+  }
+
+  /**
+   * Phase 10 Plan 07 — run AI contest analysis (auto or manual).
+   * Opens AIStreamModal with onStreamComplete callback writing the analysis
+   * to the summary note via vault.process + mergeAIContestAnalysisSection.
+   */
+  private async runContestAnalysis(summaryPath: string, session: import('./contest/types').ContestSession): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(summaryPath);
+    if (!(file instanceof TFile)) {
+      new Notice('Summary note not found — cannot generate contest analysis.', 4000);
+      return;
+    }
+
+    // Gate on active provider.
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    // Build prompt from session data.
+    const DIFFICULTY_MAP: Record<number, string> = { 1: 'Easy', 2: 'Medium', 3: 'Hard' };
+    const mappedProblems = session.problems.map((p) => {
+      let timeToSolveMin: number | null = null;
+      if (p.solvedAt !== null) {
+        // Compute actual solving time: solvedAt - startedAt - pausedDuration at solve time
+        // Simplified: use the overall session pausedDuration as an approximation.
+        const solveElapsed = p.solvedAt - session.startedAt - session.pausedDuration;
+        timeToSolveMin = Math.max(1, Math.round(solveElapsed / 60000));
+      }
+      return {
+        slug: p.slug,
+        difficulty: DIFFICULTY_MAP[p.difficulty] ?? 'Unknown',
+        verdict: p.verdict,
+        timeToSolveMin,
+        code: p.code,
+        language: p.language,
+      };
+    });
+
+    const prompt = buildContestAnalysisPrompt({
+      contestTitle: session.contestTitle,
+      contestType: session.contestType,
+      durationMin: Math.round(session.duration / 60),
+      problems: mappedProblems,
+    });
+
+    // Open AIStreamModal with onStreamComplete writing via vault.process.
+    new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      title: `Contest analysis — ${prettyName(provider)}`,
+      disclosureCopy: withContestAnalysisBullet(DISCLOSURE_BASE_COPY),
+      onStreamComplete: async (fullText: string) => {
+        // Build attribution line.
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const attributionLine = `*Analyzed by ${prettyName(provider)} (${providerCfg.model ?? 'unknown'}) — ${yyyy}-${mm}-${dd}*`;
+        const analysisContent = fullText + '\n\n' + attributionLine;
+
+        await this.app.vault.process(file, (body) =>
+          mergeAIContestAnalysisSection(body, analysisContent),
+        );
+        new Notice(`Contest analysis written to ${summaryPath}.`, 4000);
+      },
+    }).open();
+  }
+
+  /**
+   * Phase 10 Plan 07 — palette command: Start random contest.
+   * Calls ContestListService.surpriseMe() and opens ContestPreviewModal on success.
+   */
+  private async handleStartRandomContest(): Promise<void> {
+    const contest = await this.contestListService.surpriseMe();
+    if (!contest) {
+      new Notice('No contests available. Check your connection or try again.', 4000);
+      return;
+    }
+    new ContestPreviewModal(this.app, contest, this.client, async (questions) => {
+      // Cache problem details + resolve starter code (same as PBV.startContest)
+      const results = await Promise.allSettled(
+        questions.map((q) => this.client.getProblemDetail(q.title_slug)),
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value) {
+          const entry = toDetailCacheEntry(r.value);
+          await this.settings.setProblemDetail(r.value.titleSlug, entry);
+        }
+      }
+      const defaultLang = this.settings.getDefaultLanguage() || 'python3';
+      this.contestSessionManager.start({
+        contestSlug: contest.slug,
+        contestTitle: contest.title,
+        contestType: contest.type,
+        duration: contest.duration,
+        problems: questions.map((q) => {
+          const detail = this.settings.getProblemDetail(q.title_slug);
+          const snippet = detail?.codeSnippets?.find((s: { langSlug: string }) => s.langSlug === defaultLang);
+          return {
+            slug: q.title_slug,
+            title: q.title,
+            credit: q.credit,
+            difficulty: q.difficulty,
+            code: snippet?.code ?? '',
+            language: defaultLang,
+          };
+        }),
+      });
+      new Notice(`Contest started: ${contest.title}`, 3000);
+    }).open();
+  }
+
+  /**
+   * Phase 10 Plan 07 — manual contest analysis on a summary note.
+   * Reads lc-contest-id from frontmatter, reconstructs session data from
+   * the note's frontmatter fields, and runs AI analysis.
+   */
+  private async handleManualContestAnalysis(file: TFile): Promise<void> {
+    // Read frontmatter to reconstruct a minimal session for prompt building.
+    const cache = this.app.metadataCache.getFileCache(file);
+    const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+    if (!fm) return;
+
+    const contestTitle = (fm['lc-contest-id'] as string) ?? 'Unknown Contest';
+    const contestType = (fm['lc-contest-type'] as 'weekly' | 'biweekly') ?? 'weekly';
+    const durationMin = typeof fm['duration'] === 'number' ? fm['duration'] : 90;
+
+    // Reconstruct problems from frontmatter 'problems' array if available.
+    const problemSlugs = Array.isArray(fm['problems']) ? fm['problems'] as string[] : [];
+    const problems = problemSlugs.map((slug) => ({
+      slug: typeof slug === 'string' ? slug : String(slug),
+      difficulty: 'Unknown',
+      verdict: 'unknown',
+      timeToSolveMin: null as number | null,
+      code: '',
+      language: '',
+    }));
+
+    // Gate on active provider.
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    const prompt = buildContestAnalysisPrompt({
+      contestTitle,
+      contestType,
+      durationMin,
+      problems,
+    });
+
+    new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      title: `Contest analysis — ${prettyName(provider)}`,
+      disclosureCopy: withContestAnalysisBullet(DISCLOSURE_BASE_COPY),
+      onStreamComplete: async (fullText: string) => {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const attributionLine = `*Analyzed by ${prettyName(provider)} (${providerCfg.model ?? 'unknown'}) — ${yyyy}-${mm}-${dd}*`;
+        const analysisContent = fullText + '\n\n' + attributionLine;
+
+        await this.app.vault.process(file, (body) =>
+          mergeAIContestAnalysisSection(body, analysisContent),
+        );
+        new Notice(`Contest analysis written to ${file.path}.`, 4000);
+      },
+    }).open();
   }
 
   private async activateBrowser(): Promise<void> {
@@ -560,6 +1365,710 @@ export default class LeetCodePlugin extends Plugin {
     this.activeSolve = null;
   }
 
+  /**
+   * Phase 07 Plan 04 — shared entry point for the Settings "Test connection"
+   * button + the `test-ai-connection` palette command. NEVER throws — every
+   * branch ends in a `Notice` (success / failure / empty-state guard) so
+   * callers (Settings + palette) treat this as fire-and-forget.
+   *
+   * Flow (07-UI-SPEC §"Notice copy" + §"Test connection — debouncing"):
+   *   1. Read activeAIProvider; if null, fire the no-provider Notice
+   *      (3000ms) and return without contacting the network.
+   *   2. Read provider config. If provider is anthropic/openai/openrouter AND
+   *      apiKey is empty, fire the empty-key Notice (3000ms) and return —
+   *      the guard prevents a wasted 401-bound network call. Ollama and
+   *      Custom may legitimately have empty keys (default install / no-auth
+   *      backends) so they fall through to probe.
+   *   3. Single-in-flight gate: if aiProbeInflight has an entry for this
+   *      provider, return immediately — concurrent click during in-flight
+   *      probe is a no-op. The button label flip + Notice arrive when the
+   *      original probe resolves.
+   *   4. Store the probe promise in the map, await it, fire the result Notice
+   *      per the 07-UI-SPEC matrix (success-with-count / Anthropic / Ollama
+   *      zero-models / failure-truncated). The whole Notice text is truncated
+   *      to 200 chars per CONTEXT decision E.
+   *   5. Always clear the map entry in `finally`.
+   *
+   * Plan 07-05 will wrap `aiClient.probe()` with the disclosure gate by
+   * modifying AIClient.probe's body — this caller-side method does NOT need
+   * to change for that wrapping. Phase 08 reuses the same probe surface for
+   * pre-invoke connectivity checks.
+   */
+  async testActiveAIConnection(): Promise<void> {
+    const provider = this.settings.getActiveAIProvider();
+    if (!provider) {
+
+      new Notice('Pick an AI provider first.', 3000);
+      return;
+    }
+    const cfg = this.settings.getProviderConfig(provider);
+    if (
+      (provider === 'anthropic' || provider === 'openai' || provider === 'openrouter') &&
+      cfg.apiKey === ''
+    ) {
+
+      new Notice(`Enter an API key for ${prettyName(provider)} first.`, 3000);
+      return;
+    }
+    // Phase 07 Plan 07 — CR-02 main.ts guard. Symmetric with the apiKey
+    // guard above: custom + ollama require a Base URL before probe is
+    // worth attempting. The probe-side guards (probeCustom, probeOllama)
+    // also early-return on empty baseUrl, but this caller-side guard
+    // surfaces a friendlier Notice ('Enter a Base URL for X first.') and
+    // skips the aiProbeInflight Map churn entirely. Defense-in-depth.
+    //
+    // Phase 07 Plan 08 — WR-03-whitespace tightens this guard from
+    // `cfg.baseUrl === ''` (strict empty) to `!cfg.baseUrl?.trim()` so
+    // single-space, tab, and mixed-whitespace inputs are also rejected
+    // — symmetric with probeCustom and probeOllama. The `?.` is
+    // belt-and-braces against future shape drift; sanitizeProviderConfig
+    // currently coerces missing/non-string baseUrl to '' so it cannot be
+    // undefined in practice today.
+    if (
+      (provider === 'custom' || provider === 'ollama') &&
+      !cfg.baseUrl?.trim()
+    ) {
+
+      new Notice(`Enter a Base URL for ${prettyName(provider)} first.`, 3000);
+      return;
+    }
+    if (this.aiProbeInflight.has(provider)) {
+      // Single-in-flight: subsequent clicks while a probe is running are
+      // no-ops. The original click's Notice will fire when the in-flight
+      // probe resolves.
+      return;
+    }
+    const probePromise = this.aiClient.probe(provider);
+    this.aiProbeInflight.set(provider, probePromise);
+    try {
+      const result = await probePromise;
+      if (result.ok) {
+        if (result.modelCount === null) {
+          // Anthropic — no public model-list endpoint, modelCount is null.
+
+          new Notice('AI provider connection OK (Anthropic)', 4000);
+        } else if (result.modelCount === 0 && provider === 'ollama') {
+          // Ollama reachable but no models pulled yet — special-case copy
+          // (07-UI-SPEC §"Notice copy" with the pull-suggestion hint).
+
+          new Notice(
+            'Ollama reachable, 0 models installed — run `ollama pull llama3.2`',
+            6000,
+          );
+        } else {
+          // Standard success branch — modelCount is a non-null number.
+          // `?? 0` is defensive against a future adapter returning undefined;
+          // the 07-UI-SPEC copy renders the number directly.
+
+          new Notice(
+            `AI provider connection OK (${prettyName(provider)}, ${String(result.modelCount ?? 0)} models available)`,
+            4000,
+          );
+        }
+      } else {
+        // Failure — the adapter already truncated errorMessage to 200 chars
+        // (provider adapter discipline from Plan 07-02), but truncate again
+        // on the COMBINED prefix+message string per 07-UI-SPEC §"Error state
+        // copy posture" (200 chars TOTAL including the `{provider name}: `
+        // prefix).
+        const combined = `${prettyName(provider)}: ${result.errorMessage ?? 'unknown error'}`;
+
+        new Notice(combined.slice(0, 200), 6000);
+      }
+    } finally {
+      this.aiProbeInflight.delete(provider);
+    }
+  }
+
+  /**
+   * Phase 07 Plan 05 — disclosure gate helper injected into AIClient. Opens
+   * AIDisclosureModal for the given (provider, cfg) pair and resolves with
+   * `true` on Continue, `false` on Cancel. AIClient.probe + invoke await
+   * this Promise BEFORE issuing any HTTP — Cancel short-circuits the call.
+   *
+   * Lives on the plugin (not in disclosure.ts) because it needs both the
+   * App reference (for `new AIDisclosureModal(this.app, ...)`) and the
+   * SettingsStore (so the cancel Notice can use locked verbatim copy).
+   * The `resolved` guard prevents double-resolution if both onCancel (from
+   * onClose Esc fallback) AND a direct button click somehow fire — defensive
+   * complement to the modal's own `acknowledged`/`decided` guard.
+   *
+   * Cancel fires the locked Notice 'AI call cancelled' (3000ms — 07-UI-SPEC
+   * §"Notice copy"). The Notice surfaces in addition to the Plan-07-04
+   * testActiveAIConnection failure Notice ('<provider name>: AI call
+   * cancelled'); the two are deliberately distinct so the user sees both
+   * the cancel acknowledgement AND the per-call disposition.
+   */
+  requireAIDisclosure(provider: AIProvider, cfg: ProviderConfig): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      let resolved = false;
+      const modal = new AIDisclosureModal(
+        this.app,
+        provider,
+        cfg,
+        () => {
+          if (!resolved) {
+            resolved = true;
+            resolve(true);
+          }
+        },
+        () => {
+          if (!resolved) {
+            resolved = true;
+
+            new Notice('AI call cancelled', 3000);
+            resolve(false);
+          }
+        },
+      );
+      modal.open();
+    });
+  }
+
+  /**
+   * Phase 07 Plan 05 — palette command implementation for
+   * `reset-ai-disclosures`. Iterates over all 5 AIProvider literals; when a
+   * provider's `disclosureAcknowledged` is true, persists a sanitized copy
+   * with the flag flipped to false. After the iteration completes, fires
+   * the locked Notice (07-UI-SPEC §"Notice copy", 4000ms duration).
+   *
+   * Idempotent skip path: providers whose flag is already false are NOT
+   * written. Avoids churning data.json on every reset (and the ledger
+   * day-rollover discipline relies on the setter being side-effect-free
+   * when no actual change is needed).
+   */
+  async resetAIDisclosures(): Promise<void> {
+    const providers: AIProvider[] = ['anthropic', 'openai', 'openrouter', 'ollama', 'custom'];
+    for (const p of providers) {
+      const cfg = this.settings.getProviderConfig(p);
+      if (cfg.disclosureAcknowledged) {
+        await this.settings.setProviderConfig(p, {
+          ...cfg,
+          disclosureAcknowledged: false,
+        });
+      }
+    }
+
+    new Notice(
+      'AI provider disclosures reset. The disclosure modal will show on the next AI call.',
+      4000,
+    );
+  }
+
+  /**
+   * Phase 07 Plan 06 — palette command implementation for `clear-ai-key`
+   * (AIPROV-06). Wipes the ACTIVE provider's `apiKey` only; every other
+   * field (baseUrl, model, disclosureAcknowledged) is preserved, and other
+   * providers' configs are untouched (T-07-06-other-keys mitigation).
+   *
+   * Empty-state guard: when activeAIProvider is null, the locked Notice
+   * fires and the method returns without touching SettingsStore. Notice
+   * copy is verbatim from 07-UI-SPEC §"Notice copy" — both branches at
+   * 3000ms duration.
+   *
+   * NOT a disclosure-reset path — clearing the key is a credential
+   * lifecycle action; users who want to re-trigger the disclosure modal
+   * should run `reset-ai-disclosures` (Plan 07-05). Both palette commands
+   * are intentionally separate so users can rotate keys without losing
+   * the prior disclosure acknowledgement.
+   */
+  async clearActiveAIKey(): Promise<void> {
+    const provider = this.settings.getActiveAIProvider();
+    if (!provider) {
+
+      new Notice('No active AI provider — nothing to clear.', 3000);
+      return;
+    }
+    const cfg = this.settings.getProviderConfig(provider);
+    await this.settings.setProviderConfig(provider, { ...cfg, apiKey: '' });
+
+    new Notice(`Cleared AI key for ${prettyName(provider)}`, 3000);
+  }
+
+  /**
+   * Phase 08 Plan 04 (AIDBG-01) — single entrypoint for the AI Debug surface.
+   *
+   * Called from THREE surfaces (locked T-08-04-T-host mitigation): the
+   * fence-row "AI: Debug" button (via `aiDebugFromActive`), the `ai-debug`
+   * palette command, and (Plan 08-05) the verdict-modal-footer "AI: Debug"
+   * button. All three surfaces funnel through this method so the disclosure
+   * gate, prompt assembly, and modal open are single-sourced.
+   *
+   * Flow (08-UI-SPEC §"Open path" + 08-PATTERNS §"src/main.ts"):
+   *   1. Resolve problem markdown via DetailCache (cache-first; fetch on
+   *      miss). Same path Preview uses — htmlToMarkdown(detail.contentHtml)
+   *      so the ## Problem text shipped to the AI matches the reading-mode
+   *      preview byte-for-byte.
+   *   2. Read the active note's body via the active MarkdownView's editor
+   *      (mirrors getActiveProblemContext.currentBody — read-at-invocation
+   *      per SOLVE-09; the AI sees the user's CURRENT code).
+   *   3. extractFirstFencedBlock(body) → { lang, code }. If null, surface a
+   *      Notice and bail (no fence ⇒ nothing to debug).
+   *   4. Read the last verdict (may be undefined — buildDebugPrompt's
+   *      empty-store path handles this with a literal placeholder).
+   *   5. buildDebugPrompt({ problemMd, code, language, lastVerdict }) —
+   *      pure transform; ## Notes is NEVER included (locked decision A).
+   *   6. Read activeAIProvider; bail with Notice when null.
+   *   7. Open AIStreamModal with `disclosureCopy: withDebugBullet(...)` —
+   *      the disclosure gate inside AIClient.invokeStream fires on first
+   *      use of an unacknowledged provider; the disclosureCopy field is
+   *      a forward-compat anchor so future phases (Phase 09 review) that
+   *      surface the extended copy in the confirm strip can read it from
+   *      the modal args.
+   *
+   * Notice paths (3 fail surfaces):
+   *   - No active MarkdownView with valid lc-slug → caller (aiDebugFromActive
+   *     / palette command) gates BEFORE openAIDebug. openAIDebug itself
+   *     assumes a valid slug came in; this is enforced by the verbatim
+   *     editorCheckCallback shape that mirrors the Submit command.
+   *   - No fence found in the active body → "No `## Code` block found.";
+   *     same wording as run/submit (no need to invent new copy).
+   *   - No active AI provider → "No AI provider configured. Open
+   *     Settings → AI." (locked verbatim per UI-SPEC §"Open path").
+   */
+  async openAIDebug(slug: string): Promise<void> {
+    // Step 1 — resolve the active MarkdownView (we need the editor body
+    // even though the caller already validated lc-slug at the gate). If
+    // the active view has shifted off the LC note between the gate firing
+    // and this method running, bail with the generic Notice.
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const body = view.editor.getValue();
+
+    // Step 2 — read the first fenced code block. extractFirstFencedBlock
+    // is scoped to ## Code when the heading exists (CodeExtractor §preference
+    // order); locked decision A guarantees ## Notes content can't leak in
+    // because the helper rejects fences in other sections.
+    const extracted = extractFirstFencedBlock(body);
+    if (!extracted) {
+      new Notice('No `## Code` block found. Add a fenced block with your solution.', 6000);
+      return;
+    }
+    const language = extracted.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+
+    // Step 3 — resolve problem markdown. DetailCache first (same path Preview
+    // uses); on miss, fetch via the LeetCodeClient. Failures bail with a
+    // Notice (the user can still attempt AI Debug — but we'd be sending an
+    // empty problem statement, which buys nothing).
+    // DetailCache hit (DetailCacheEntry shape — `.contentHtml`) OR fetch
+    // (LeetCodeProblemDetail shape — `.content`). The two field names differ;
+    // we read whichever is present so the prompt always gets the problem
+    // markdown, regardless of which path populated `detail`.
+    let problemHtml = '';
+    const cached = this.settings.getProblemDetail(slug);
+    if (cached?.contentHtml) {
+      problemHtml = cached.contentHtml;
+    } else {
+      try {
+        const fetched = await this.client.getProblemDetail(slug);
+        if (!fetched) {
+          new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+          return;
+        }
+        problemHtml = fetched.content ?? '';
+      } catch {
+        new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+        return;
+      }
+    }
+    const problemMd = htmlToMarkdown(problemHtml);
+
+    // Step 4 — last verdict (may be undefined — buildDebugPrompt handles).
+    const lastVerdict = this.lastVerdictStore.get(slug);
+
+    // Step 5 — assemble the prompt (pure transform).
+    const prompt = buildDebugPrompt({
+      problemMd,
+      code: extracted.code,
+      language,
+      lastVerdict,
+    });
+
+    // Step 6 — gate on active provider. Empty-state Notice copy locked per
+    // 08-UI-SPEC §"Open path". The AIClient.invokeStream call would also
+    // throw 'No AI provider configured' but surfacing it here gives the
+    // user actionable copy ("Open Settings → AI.") instead of a generic
+    // error.
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      // Sentence case per Obsidian community-plugin guidelines
+      // (eslint-plugin-obsidianmd ui/sentence-case rule). The "settings"
+      // word is lowercased to match plugin store expectations.
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    // Step 7 — open the modal. disclosureCopy is the composition-factory
+    // output (locked: NEW object, NEVER mutates the frozen base). The
+    // disclosure gate itself fires inside AIClient.invokeStream via the
+    // plugin-injected requireAIDisclosure factory — disclosureCopy is a
+    // contract anchor on the modal args (08-04-PLAN.md key_links lock).
+    new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      disclosureCopy: withDebugBullet(DISCLOSURE_BASE_COPY),
+    }).open();
+  }
+
+  /**
+   * Phase 09 Plan 03 (AIREV-01) — host implementation for the auto-review
+   * stream. Invoked by VerdictModal's onStartReviewStream callback after
+   * "Accepted!" renders. Assembles the prompt, calls AIClient.invokeStream,
+   * streams chunks into reviewAreaEl via debounced MarkdownRenderer.render,
+   * and writes the completed review to the note via vault.process.
+   *
+   * Ordering (D-07, D-13, Pitfall 1): knowledgeGraph.onAccepted has already
+   * completed by the time VerdictModal calls this callback (it fires after
+   * renderVerdict which is called after the AC gate awaits onAccepted).
+   *
+   * Anti-zombie (Pitfall 2): VerdictModal.onClose calls abort() on the
+   * returned handle — if the modal closes mid-stream, vault.process is
+   * never called.
+   */
+  private startAutoReview(
+    ctx: { file: TFile; slug: string; title: string; currentBody: () => string },
+    reviewAreaEl: HTMLElement,
+    component: Component,
+  ): { abort: () => void; promise: Promise<void> } {
+    const abortController = new AbortController();
+    const RENDER_DEBOUNCE_MS = 100;
+    // Snapshot body immediately — before any async work — so edits during the
+    // network round-trip don't contaminate the review prompt (CR-02 fix).
+    const snapshotBody = ctx.currentBody();
+
+    // Show a loading indicator immediately so user knows review is in progress.
+    const spinnerEl = reviewAreaEl.createDiv({ cls: 'leetcode-ai-review-loading' });
+    spinnerEl.setText('Reviewing…');
+
+    const promise = (async () => {
+      // Step 1 — resolve problem markdown for prompt assembly.
+      let problemHtml = '';
+      const cached = this.settings.getProblemDetail(ctx.slug);
+      if (cached?.contentHtml) {
+        problemHtml = cached.contentHtml;
+      } else {
+        try {
+          const fetched = await this.client.getProblemDetail(ctx.slug);
+          problemHtml = fetched?.content ?? '';
+        } catch {
+          problemHtml = '';
+        }
+      }
+      const problemMd = htmlToMarkdown(problemHtml);
+
+      // Step 2 — extract code from the snapshotted body.
+      const body = snapshotBody;
+      const extracted = extractFirstFencedBlock(body);
+      const code = extracted?.code ?? '';
+      const language = extracted?.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+
+      // Step 3 — assemble the prompt.
+      const prompt = buildReviewPrompt({ problemMd, code, language });
+
+      // Step 4 — resolve provider (already gated at modal construction).
+      const provider = this.settings.getActiveAIProvider()!;
+      const providerCfg = this.settings.getProviderConfig(provider);
+
+      // Step 5 — invoke the AI stream. Disclosure gate fires automatically
+      // inside AIClient.invokeStream via requireAIDisclosure (Phase 07).
+      const handle = await this.aiClient.invokeStream({
+        prompt,
+        stream: true,
+        signal: abortController.signal,
+      });
+
+      // Step 6 — consume stream / buffered response.
+      let buffer = '';
+      let renderTimer: TimerHandle | null = null;
+
+      const scheduleRender = (): void => {
+        if (renderTimer != null) return;
+        renderTimer = setWindowTimeout(() => {
+          renderTimer = null;
+          void flushRender();
+        }, RENDER_DEBOUNCE_MS);
+      };
+
+      const flushRender = async (): Promise<void> => {
+        if (renderTimer != null) {
+          clearWindowTimeout(renderTimer);
+          renderTimer = null;
+        }
+        // Empty + re-render (same pattern as AIStreamModal).
+        while (reviewAreaEl.firstChild) reviewAreaEl.removeChild(reviewAreaEl.firstChild);
+        await MarkdownRenderer.render(this.app, buffer, reviewAreaEl, '', component);
+      };
+
+      if (handle.kind === 'stream') {
+        const textStream = (
+          // eslint-disable-next-line no-undef -- AsyncIterable is a TS lib type
+          handle.result as unknown as { textStream: AsyncIterable<string> }
+        ).textStream;
+        for await (const chunk of textStream) {
+          if (abortController.signal.aborted) throw new Error('aborted');
+          if (typeof chunk !== 'string' || chunk.length === 0) continue;
+          buffer += chunk;
+          scheduleRender();
+        }
+        // Natural completion — flush final render.
+        await flushRender();
+
+        // Cost ledger.
+        let cost = 0;
+        try {
+          const usage = await (
+            handle.result as unknown as {
+              usage: PromiseLike<{ inputTokens?: number; outputTokens?: number }>;
+            }
+          ).usage;
+          if (usage) {
+            cost = estimateCostUsd(providerCfg.model ?? '', {
+              inputTokens: usage.inputTokens ?? 0,
+              outputTokens: usage.outputTokens ?? 0,
+            });
+          }
+        } catch {
+          cost = 0;
+        }
+        await this.aiClient.addCost(cost);
+      } else {
+        // Buffered fallback — await text, render once.
+        const text = await handle.text;
+        if (abortController.signal.aborted) throw new Error('aborted');
+        buffer = text;
+        await flushRender();
+        await this.aiClient.addCost(0);
+      }
+
+      // Guard: if aborted between stream-end and here, skip vault write.
+      if (abortController.signal.aborted) return;
+
+      // Step 7 — write review to note via vault.process (D-20, D-21).
+      // Build attribution line (D-03): local date via getFullYear/getMonth/getDate.
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const attributionLine = `*Reviewed by ${prettyName(provider)} (${providerCfg.model ?? 'unknown'}) — ${yyyy}-${mm}-${dd}*`;
+      const reviewContent = buffer + '\n\n' + attributionLine;
+
+      await this.app.vault.process(ctx.file, (noteBody) =>
+        mergeAIReviewSection(noteBody, reviewContent),
+      );
+    })().catch((err) => {
+      // Anti-zombie: if aborted (modal closed), silently swallow.
+      if (abortController.signal.aborted) {
+        void this.aiClient.addCost(0);
+        return;
+      }
+      // D-11: non-blocking failure — subtle Notice, no vault write.
+      const reason = err instanceof Error ? err.message : String(err);
+      new Notice(`AI review skipped — ${reason.slice(0, 100)}`, 4000);
+      void this.aiClient.addCost(0);
+    });
+
+    return {
+      abort: () => abortController.abort(),
+      promise,
+    };
+  }
+
+  /**
+   * Phase 09 Plan 04 (AIREV-05) — manual AI Review re-run. Invoked by the
+   * `rerun-ai-review` palette command. Opens AIStreamModal with the review
+   * prompt; on stream completion, writes the review + attribution to the
+   * note via vault.process (idempotent — replaces existing ## AI Review).
+   *
+   * Notice paths:
+   *   - No active AI provider → "No AI provider configured. Open settings → AI."
+   *   - No code fence found → "No `## Code` block found."
+   *   - Problem details unavailable → "Problem details unavailable."
+   */
+  async runAIReview(slug: string, file: TFile): Promise<void> {
+    // Step 1 — gate on active provider (same pattern as openAIDebug Step 6).
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    // Step 2 — resolve the active MarkdownView for reading the editor body.
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const body = view.editor.getValue();
+
+    // Step 3 — extract first fenced code block.
+    const extracted = extractFirstFencedBlock(body);
+    if (!extracted) {
+      new Notice('No `## Code` block found. Add a fenced block with your solution.', 6000);
+      return;
+    }
+    const language = extracted.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+
+    // Step 4 — resolve problem markdown (DetailCache hit or fetch).
+    let problemHtml = '';
+    const cached = this.settings.getProblemDetail(slug);
+    if (cached?.contentHtml) {
+      problemHtml = cached.contentHtml;
+    } else {
+      try {
+        const fetched = await this.client.getProblemDetail(slug);
+        if (!fetched) {
+          new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+          return;
+        }
+        problemHtml = fetched.content ?? '';
+      } catch {
+        new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+        return;
+      }
+    }
+    const problemMd = htmlToMarkdown(problemHtml);
+
+    // Step 5 — assemble the review prompt (pure transform).
+    const prompt = buildReviewPrompt({ problemMd, code: extracted.code, language });
+
+    // Step 6 — open AIStreamModal with onStreamComplete callback for vault write.
+    new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      title: `AI Review — ${prettyName(provider)}`,
+      disclosureCopy: withReviewBullet(DISCLOSURE_BASE_COPY),
+      onStreamComplete: async (fullText: string) => {
+        // Build attribution line (D-03 format).
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const attributionLine = `*Reviewed by ${prettyName(provider)} (${providerCfg.model ?? 'unknown'}) — ${yyyy}-${mm}-${dd}*`;
+        const reviewContent = fullText + '\n\n' + attributionLine;
+
+        // D-20/D-21: vault.process is atomic + idempotent (replaces existing).
+        await this.app.vault.process(file, (noteBody) =>
+          mergeAIReviewSection(noteBody, reviewContent),
+        );
+      },
+    }).open();
+  }
+
+  /**
+   * Phase 08 Plan 04 (AIDBG-01) — host method invoked by the fence-row
+   * "AI: Debug" button (via the CodeBlockButtonRowHost interface). Resolves
+   * the active MarkdownView's lc-slug frontmatter, validates it, then
+   * delegates to `openAIDebug(slug)`.
+   *
+   * The fence-row factory is shared between Edit Mode (CM6 widget) and
+   * Reading Mode (post-processor) so this single host method serves both
+   * surfaces. Uses `getActiveViewOfType(MarkdownView)` per project rule
+   * (NEVER `workspace.activeLeaf` direct access).
+   *
+   * Notice paths (3 surfaces):
+   *   - No active MarkdownView → "Open a LeetCode problem note first."
+   *   - No frontmatter / no lc-slug → "Active note has no `lc-slug` frontmatter."
+   *   - Valid slug → delegates to openAIDebug (which has its own Notice paths).
+   */
+  async aiDebugFromActive(): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const fm = this.app.metadataCache.getFileCache(view.file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const slug = fm?.['lc-slug'];
+    if (!isValidSlug(slug)) {
+      new Notice('Active note has no `lc-slug` frontmatter.', 4000);
+      return;
+    }
+    await this.openAIDebug(slug);
+  }
+
+  async aiSolutionFromActive(): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const fm = this.app.metadataCache.getFileCache(view.file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const slug = fm?.['lc-slug'];
+    if (!isValidSlug(slug)) {
+      new Notice('Active note has no `lc-slug` frontmatter.', 4000);
+      return;
+    }
+    await this.openAISolution(slug);
+  }
+
+  private async openAISolution(slug: string): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const fm = this.app.metadataCache.getFileCache(view.file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+
+    let problemHtml = '';
+    const cached = this.settings.getProblemDetail(slug);
+    if (cached?.contentHtml) {
+      problemHtml = cached.contentHtml;
+    } else {
+      try {
+        const fetched = await this.client.getProblemDetail(slug);
+        if (!fetched) {
+          new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+          return;
+        }
+        problemHtml = fetched.content ?? '';
+      } catch {
+        new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+        return;
+      }
+    }
+    const problemMd = htmlToMarkdown(problemHtml);
+    const language = (fm?.['lc-language'] as string) ?? this.settings.getDefaultLanguage() ?? 'python3';
+
+    const prompt = `You are a LeetCode expert. Given the problem below, provide:\n\n1. **Approach** — Explain the optimal algorithm and data structures to use. Include time and space complexity.\n2. **Solution** — Write a clean, well-commented solution in ${language}.\n\n## Problem\n\n${problemMd}\n\nRespond with the approach explanation first, then the complete solution code in a fenced code block.`;
+
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    const modal = new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      title: `AI Solution — ${prettyName(provider)}`,
+      disclosureCopy: withDebugBullet(DISCLOSURE_BASE_COPY),
+    });
+    if (modal.modalEl) {
+      // eslint-disable-next-line obsidianmd/no-static-styles-assignment -- dynamic viewport-relative width; cannot use a static CSS class
+      modal.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
+      // eslint-disable-next-line obsidianmd/no-static-styles-assignment -- dynamic viewport-relative max-width; cannot use a static CSS class
+      modal.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
+    }
+    modal.open();
+  }
+
   /** Submit the active note via SubmissionOrchestrator (Plan 05). Opens a
    *  VerdictModal, drives it through pending → terminal / abort / timeout. */
   async submitFromActive(): Promise<void> {
@@ -577,6 +2086,23 @@ export default class LeetCodePlugin extends Plugin {
       onCopyFailingInput: (input: string) => {
         void this.openRunModalWithSeedAppended(input);
       },
+      // Phase 08 Plan 05 (AIDBG-01) — AI: Debug button in verdict modal
+      // footer. Same single entrypoint as the fence-row + palette surfaces
+      // (T-08-05-T-host single-host mitigation). slug captured at modal
+      // construction time — this is the active problem at submit time so
+      // it stays correct even if the user navigates away while the verdict
+      // is rendering. VerdictModal handles the close-then-fire ordering.
+      onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
+      // Phase 12 (D-08): suppress AI review + pattern chip during active contest
+      // because the contest opens scratch files as native MarkdownViews whose
+      // fence-row Submit button flows through this path.
+      onStartReviewStream: this.contestSessionManager.getSession() ? undefined
+        : this.settings.getAutoAIReviewOnAC() && this.settings.getActiveAIProvider()
+          ? (reviewAreaEl, component) => this.startAutoReview(ctx, reviewAreaEl, component)
+          : undefined,
+      // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC (suppress during contest).
+      file: this.contestSessionManager.getSession() ? null : ctx.file,
+      getPatternHubPath: (p) => `${this.settings.getProblemsFolder()}/Patterns/${normalizePatternName(p)}.md`,
     });
     modal.open();
 
@@ -617,6 +2143,15 @@ export default class LeetCodePlugin extends Plugin {
       getCurrentBody: ctx.currentBody,
       // D-21 — login wiring for the sticky session-expired Notice's button.
       login: () => { void this.auth.login(); },
+      // Phase 08 Plan 04 (AIDBG-01) — capture non-Accepted verdicts into the
+      // LastVerdictStore so openAIDebug can feed them into buildDebugPrompt.
+      // Plan 08-01 locked the capture filter inside the orchestrator
+      // (kind !== 'ac' && kind !== 'unknown' && kind !== 'unknown-lc');
+      // main.ts only registers the sink. The orchestrator stays pure: it
+      // imports only the LastVerdict TYPE — never the store class itself —
+      // so test instantiations without a store remain valid (locked
+      // T-08-04-T-orch mitigation).
+      onVerdict: (slug, verdict) => this.lastVerdictStore.set(slug, verdict),
     });
     this.activeSolve = { modal, abort, orchestrator: orch };
 
@@ -629,14 +2164,10 @@ export default class LeetCodePlugin extends Plugin {
         // no-op for all known codes so renderVerdict proceeds normally.
         const terminalTyped = terminal as SubmitCheckResponse;
         assertKnownVerdictOrThrow(terminalTyped);
-        modal.renderVerdict(terminalTyped, ctx.title);
-        // Phase 4 Plan 05 (D-08, D-23) — on-AC knowledge-graph write. Fires
-        // only when classifyStatus confirms Accepted; KnowledgeGraphWriter's
-        // own gate double-checks (defense-in-depth). Silent on failure per
-        // CF-19 — VerdictModal already shows "Accepted"; a graph-write toast
-        // would be noise. Also invalidate the submission history cache so a
-        // picker opened after AC sees the latest submission.
-        if (classifyStatus(terminalTyped.status_code, terminalTyped.status_msg).kind === 'ac') {
+        const verdictKind = classifyStatus(terminalTyped.status_code, terminalTyped.status_msg).kind;
+        const activeContest = this.contestSessionManager.getSession();
+        // Run knowledge graph BEFORE renderVerdict so lc-pattern is available for chip
+        if (!activeContest && verdictKind === 'ac') {
           try {
             await this.knowledgeGraph.onAccepted(
               { file: ctx.file, slug: ctx.slug, title: ctx.title },
@@ -646,6 +2177,20 @@ export default class LeetCodePlugin extends Plugin {
             logger.debug('graph.onAccepted: non-fatal (invisible-by-design)', err);
           }
           this.submissionHistory.invalidate(ctx.slug);
+        }
+        modal.renderVerdict(terminalTyped, ctx.title);
+        // Contest verdict recording (badge update)
+        if (activeContest) {
+          const idx = activeContest.problems.findIndex(p => p.slug === ctx.slug);
+          if (idx >= 0) {
+            if (verdictKind === 'ac') {
+              this.contestSessionManager.recordVerdict(idx, 'accepted');
+            } else if (verdictKind !== 'unknown' && verdictKind !== 'unknown-lc') {
+              if (activeContest.problems[idx]?.verdict === 'unsolved') {
+                this.contestSessionManager.recordVerdict(idx, 'attempted');
+              }
+            }
+          }
         }
       } else {
         // Gate failure (Notice already fired) or orchestrator resolved
@@ -917,6 +2462,12 @@ export default class LeetCodePlugin extends Plugin {
       onCopyFailingInput: (input: string) => {
         void this.openRunModalWithSeedAppended(input);
       },
+      // Phase 08 Plan 05 (AIDBG-01) — AI: Debug button in verdict modal
+      // footer for the Run path too (custom-input runs that fail). The
+      // verdict footer is rendered by the SAME renderer as Submit, so the
+      // same conditional union {wa,tle,mle,re,ce} applies and the same
+      // single openAIDebug entrypoint is invoked.
+      onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
     });
     modal.open();
 

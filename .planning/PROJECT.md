@@ -14,6 +14,29 @@ Every LeetCode problem you solve becomes a first-class note in your Obsidian vau
 
 The plugin is functionally complete and ship-ready. Plan 07 (GitHub release / community-plugins.json PR) is documented as a deferred manual step in `.planning/milestones/v1.0-phases/05-polish-ship/05-07-SUMMARY.md` — version bump + tag + release artifacts are ready to execute whenever the user is.
 
+## Current Milestone: v1.1 Contest, AI Coach, and Preview
+
+**Goal:** Turn the v1.0 "solve and capture" plugin into a practice + coaching + AI-curated knowledge graph — adding contest training (including random virtual), AI debug & review, AI-maintained problem edges (including forward-looking edges to unsolved problems), and a non-destructive problem preview surface.
+
+**Target features:**
+
+- **Preview mode** — Clicking a problem opens a read-mode preview tab (problem statement only) with a "Start Problem" / "Open Problem" button. No accidental note creation.
+- **Contest (virtual + analysis + random)** — Pick a past LC contest or "Surprise me"; virtual timer; 4 problems as notes; verdict tracking; post-contest summary note with solved/missed, per-problem time, score, technique tags.
+- **AI debug** — User-triggered "AI: Debug" button while solving. Sends current code + problem + last run/submit failure to LLM; streams suggestions inline.
+- **AI ACed-solution review** — On Accepted, AI produces a 3-dimension review: Approach (Current vs Suggested + Key Idea + Consider), Efficiency (Current O / Suggested O + suggestions), Code Style (Readability / Structure + suggestions).
+- **AI knowledge-graph maintenance** — AI-named pattern-cluster hub notes (supersede v1.0 lc-tag-based Techniques links); difficulty-progression edges (Easy → Medium → Hard on same pattern); `## Related Variants` for cross-cluster structural twins only; look-ahead edges to problems not yet solved when the AI judges them load-bearing for the pattern.
+- **AI provider support** — Multi-provider via BYO API key + custom base URL (Anthropic, OpenAI, OpenRouter, Bedrock, Ollama). Settings: provider, base URL, model, key. No telemetry, no proxy, key stored locally only.
+
+**Key context:**
+
+- Phase numbering continues from v1.0 (next phase = **06**).
+- Pattern-cluster wikilinks REPLACE the v1.0 lc-tag-based Techniques links — migration path for already-solved notes TBD in discuss-phase.
+- Look-ahead edges may materialize as dangling wikilinks or stub notes — TBD in discuss-phase.
+- AI calls go via `requestUrl` (inherits v1.0 Electron CORS-bypass convention).
+- Plugin-store rules still apply: no telemetry, no innerHTML, key + AI usage disclosed in README.
+- Contest scope = past contests only (no live, no leaderboard).
+- Desktop-only and leetcode.com-only inherited from v1.0.
+
 ## Requirements
 
 ### Validated
@@ -39,9 +62,15 @@ The plugin is functionally complete and ship-ready. Plan 07 (GitHub release / co
 
 ### Active
 
-<!-- v2+ scope. Empty — v1 shipped. -->
+<!-- v1.1 milestone — see Current Milestone section above for full scope. -->
 
-(None — awaiting v1.1 milestone scoping)
+- Preview mode (read-mode tab + Start/Open Problem button) — v1.1
+- Contest virtual mode (past + random + post-contest analysis) — v1.1
+- AI debug (user-triggered) — v1.1
+- AI ACed-solution review (3 dimensions: Approach, Efficiency, Code Style) — v1.1
+- AI knowledge-graph maintenance (pattern clusters supersede lc-tag Techniques) — v1.1
+- AI difficulty-progression + cross-cluster Related Variants + look-ahead edges — v1.1
+- Multi-provider AI support (BYO key + custom base URL) — v1.1
 
 ### Out of Scope
 
@@ -50,7 +79,9 @@ The plugin is functionally complete and ship-ready. Plan 07 (GitHub release / co
 - **Obsidian mobile support** — Embedded login and some LC integration paths need Electron APIs that don't exist on mobile; defer to a later milestone.
 - **leetcode.cn (Chinese LeetCode)** — Different API surface, URLs, and auth. Adds significant scope; v2 milestone.
 - **Spaced repetition / review scheduling** — Deferred to v2. Graph + tags alone are enough to surface problems to revisit for v1.
-- **AI-powered tagging** — Future enhancement once core solving/tagging flow is stable.
+<!-- AI-powered tagging moved to Active for v1.1 -->
+- **Live contest participation** — v1.1 ships virtual-only (past contests). Live contests need real-time leaderboards, simultaneous global submission throttling, and contest-day rankings; out of scope for v1.1.
+- **AI key proxy / hosted AI service** — v1.1 is BYO key only. Operating a proxy creates telemetry surface, hosting cost, and plugin-store risk; users own their AI cost and provider choice.
 - **Local code execution** — LeetCode's Run Code endpoint handles remote execution for all supported languages; no need for local runtimes.
 - **IDE-style features** (IntelliSense, linting, debugger) — Obsidian isn't an IDE; for deep editing, users can still use their IDE of choice. This plugin is for solve-and-capture.
 
@@ -107,4 +138,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-14 after v1.0 milestone*
+*Last updated: 2026-05-14 — v1.1 milestone (Contest, AI Coach, Preview) opened*

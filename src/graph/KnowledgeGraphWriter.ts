@@ -58,9 +58,12 @@ import { applySolveTimeFrontmatter } from '../notes/NoteTemplate';
 import { mergeTechniquesSection } from './mergeTechniquesSection';
 import { ensureTechniquesFolder, createStubIfMissing } from './StubNoteCreator';
 import { buildTechniqueStubBody, buildTechniqueFilename } from '../notes/NoteTemplate';
+import { extractFirstFencedBlock } from '../solve/codeExtractor';
 import { logger } from '../shared/logger';
 import type { SubmitCheckResponse } from '../solve/types';
 import type { DetailCacheEntry } from '../settings/SettingsStore';
+import type { PatternClusterEngine } from './PatternClusterEngine';
+import type { ClusterHubWriter } from './ClusterHubWriter';
 
 /** The Phase-3 submission context fragments the writer needs. Intentionally
  *  minimal — the writer doesn't pull in ProblemContext's full shape so tests
@@ -83,15 +86,37 @@ export interface KnowledgeGraphSettings {
 export interface KnowledgeGraphWriterDeps {
   app: App;
   settings: KnowledgeGraphSettings;
+  /** Phase 11 — AI pattern classification engine. Optional so existing tests
+   *  (which don't supply it) continue to pass without changes. */
+  patternClusterEngine?: PatternClusterEngine;
+  /** Phase 11 — hub note writer for reconcile operations. Optional for the
+   *  same DI-compatibility reason. */
+  hubWriter?: ClusterHubWriter;
 }
 
 export class KnowledgeGraphWriter {
   private readonly app: App;
   private readonly settings: KnowledgeGraphSettings;
+  /** Phase 11 — injected after AIClient construction in main.ts onload. */
+  private patternClusterEngine?: PatternClusterEngine;
+  /** Phase 11 — injected after AIClient construction in main.ts onload. */
+  private hubWriter?: ClusterHubWriter;
 
   constructor(deps: KnowledgeGraphWriterDeps) {
     this.app = deps.app;
     this.settings = deps.settings;
+    this.patternClusterEngine = deps.patternClusterEngine;
+    this.hubWriter = deps.hubWriter;
+  }
+
+  /** Late-bind the PatternClusterEngine (constructed after AIClient). */
+  setPatternClusterEngine(engine: PatternClusterEngine): void {
+    this.patternClusterEngine = engine;
+  }
+
+  /** Late-bind the ClusterHubWriter (constructed after AIClient). */
+  setHubWriter(writer: ClusterHubWriter): void {
+    this.hubWriter = writer;
   }
 
   /**
@@ -163,53 +188,85 @@ export class KnowledgeGraphWriter {
       return;
     }
 
-    // Pitfall 10 — no topicTags in cache → no name source for wikilinks.
-    // Skip body + stubs; step 1 already handled the tags contribution using
-    // topicSlugs so the graph isn't empty.
-    if (topicTags.length === 0) {
-      logger.debug('graph.onAccepted: detail.topicTags empty/missing, skipping body + stubs');
-      return;
-    }
-
     // Step 2 — ## Techniques body write (GRAPH-03, D-09, D-13). Pure transform
     // inside a vault.process callback so it's retry-safe (CF-06).
-    try {
-      await this.app.vault.process(ctx.file, (current) =>
-        mergeTechniquesSection(current, topicTags),
+    // Phase 11: Skip when patternClusterEngine is present — the AI path
+    // (Step 2.5) handles Techniques via mergeTechniquesSectionAI instead.
+    // Also skip when topicTags is empty (Pitfall 10 — no name source for wikilinks).
+    if (!this.patternClusterEngine && topicTags.length > 0) {
+      try {
+        await this.app.vault.process(ctx.file, (current) =>
+          mergeTechniquesSection(current, topicTags),
+        );
+      } catch (err) {
+        logger.debug('graph.onAccepted: step 2 body write failed', err);
+      }
+    }
+
+    // Step 2.5 — Phase 11 AI pattern classification (D-01 inline blocking).
+    // When patternClusterEngine is present, classify the accepted solution into
+    // an algorithmic pattern. Awaited (not fire-and-forget) so hub writes are
+    // sequenced correctly. On success, Step 3 stubs are skipped (hub notes
+    // replace technique stubs). When absent (legacy path), stubs still fire.
+    let classificationRan = false;
+    if (this.patternClusterEngine) {
+      try {
+        const problemHtml = this.settings.getProblemDetail(ctx.slug)?.contentHtml ?? '';
+        // Read current file body to extract the code fence content.
+        const body = await this.app.vault.cachedRead(ctx.file);
+        const extracted = extractFirstFencedBlock(body);
+        const code = extracted?.code ?? '';
+        const language = typeof terminal.lang === 'string' && terminal.lang.length > 0
+          ? terminal.lang
+          : 'unknown';
+        await this.patternClusterEngine.onAccepted(ctx.file, ctx.slug, problemHtml, code, language);
+        classificationRan = true;
+      } catch (err) {
+        logger.debug('graph.onAccepted: step 2.5 AI classification failed', err);
+      }
+    }
+
+    // Step 2.6 — D-07 mechanism 2: background full reconcile after each AC.
+    // Fire-and-forget (NOT awaited) — catches drift from the incremental append
+    // without blocking the AC flow. Fires regardless of whether classification
+    // succeeded or failed (hub state may still need reconciliation from prior
+    // incremental appends).
+    if (this.hubWriter) {
+      void this.hubWriter.reconcile().catch((e) =>
+        logger.debug('graph.onAccepted: background reconcile failed', e),
       );
-    } catch (err) {
-      logger.debug('graph.onAccepted: step 2 body write failed', err);
-      // Continue to stub creation even if body write failed — the stubs are
-      // valuable on their own and next-AC retry of step 2 will still find
-      // the same topicTags.
     }
 
     // Step 3 — stub technique-note creation (GRAPH-04, D-09, D-18, D-19).
-    // Non-atomic per-stub loop; per-stub failures are silent so one disk-full
-    // error doesn't block the rest. D-15: folder = {problemsFolder}/Techniques.
-    const techniquesFolder = this.settings.getTechniquesFolder();
-    try {
-      await ensureTechniquesFolder(this.app, techniquesFolder);
-    } catch (err) {
-      // Folder create is itself silent-on-race, but defense-in-depth.
-      logger.debug('graph.onAccepted: ensureTechniquesFolder failed', err);
-    }
-
-    for (const tag of topicTags) {
+    // When patternClusterEngine is present AND classification ran, skip stubs —
+    // hub notes replace technique stubs as the cross-problem linkage mechanism.
+    // When patternClusterEngine is absent (legacy path), stubs still fire.
+    if (!classificationRan) {
+      const techniquesFolder = this.settings.getTechniquesFolder();
       try {
-        const filename = buildTechniqueFilename(tag.name);
-        const path = `${techniquesFolder.replace(/[\\/]+$/, '')}/${filename}`;
-        const body = buildTechniqueStubBody(tag.slug, tag.name);
-        await createStubIfMissing(this.app, path, body);
+        await ensureTechniquesFolder(this.app, techniquesFolder);
       } catch (err) {
-        // D-19: per-stub failure is silent. The ## Techniques wikilink remains
-        // dangling (correct — Obsidian shows unresolved-link styling). Next AC
-        // retries the check.
-        logger.debug('graph.onAccepted: step 3 stub create failed', { tag, err });
+        // Folder create is itself silent-on-race, but defense-in-depth.
+        logger.debug('graph.onAccepted: ensureTechniquesFolder failed', err);
+      }
+
+      for (const tag of topicTags) {
+        try {
+          const filename = buildTechniqueFilename(tag.name);
+          const path = `${techniquesFolder.replace(/[\\/]+$/, '')}/${filename}`;
+          const body = buildTechniqueStubBody(tag.slug, tag.name);
+          await createStubIfMissing(this.app, path, body);
+        } catch (err) {
+          // D-19: per-stub failure is silent. The ## Techniques wikilink remains
+          // dangling (correct — Obsidian shows unresolved-link styling). Next AC
+          // retries the check.
+          logger.debug('graph.onAccepted: step 3 stub create failed', { tag, err });
+        }
       }
     }
   }
 }
+
 
 // Phase 5.3 D-01/D-02: solve-time runtime/memory parse helpers + frontmatter
 // writes were removed. Display reads runtime/memory fresh from LC GraphQL

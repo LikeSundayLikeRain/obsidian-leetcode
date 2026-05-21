@@ -161,14 +161,16 @@ describe('LOCKED_HEADINGS SSoT', () => {
   it('imports from NoteTemplate.ts (no string duplication) — anchor D-01', () => {
     // Wave 1 LOCKED_HEADINGS export is either the same object as
     // NoteTemplate.LOCKED_HEADINGS or a structurally-equal tuple. Assert
-    // by element-wise string equality + length === 4 + ## Custom Tests
-    // not present.
+    // by element-wise string equality + length === 6 + ## Custom Tests
+    // not present. Phase 11 added ## Related Variants (AIKG-07, D-15).
     expect(LOCKED_HEADINGS).toBeDefined();
-    expect(LOCKED_HEADINGS.length).toBe(4);
+    expect(LOCKED_HEADINGS.length).toBe(6);
     expect(LOCKED_HEADINGS[0]).toBe(PROBLEM_HEADING_LINE);
     expect(LOCKED_HEADINGS[1]).toBe(CODE_HEADING_LINE);
     expect(LOCKED_HEADINGS[2]).toBe(TECHNIQUES_HEADING_LINE);
     expect(LOCKED_HEADINGS[3]).toBe(NOTES_HEADING_LINE);
+    expect(LOCKED_HEADINGS[4]).toBe('## Related Variants');
+    expect(LOCKED_HEADINGS[5]).toBe('## AI Review');
     // Custom Tests intentionally NOT in the tuple per D-03 + Phase 5 D-08.
     expect(
       (LOCKED_HEADINGS as readonly string[]).includes(CUSTOM_TESTS_HEADING_LINE),
@@ -770,9 +772,10 @@ describe('computeSnapTarget — snap-direction decision tree', () => {
   it('stay-put: prevHead past lockTo, backTarget falls in another cluster → return prevHead', () => {
     // 3-cluster scenario where backTarget = 49 IS inside cluster [40, 60).
     // The middle cluster has no editable space behind it.
-    const _triple: ReadonlyArray<readonly [number, number]> = [
-      [10, 30], [40, 60], [70, 90],
-    ];
+    // (Phase 06 FOUND-01: dropped the original `_triple` draft fixture
+    // — the test was rewritten below to use `adjacent` instead, and
+    // 0.3.0's `@typescript-eslint/no-unused-vars` flags `_`-prefixed
+    // local consts.)
     // prevHead = 95 (past third cluster), motion lands in third cluster.
     // backTarget = 69. Inside [70, 90)? No, 69 < 70. So this snap is
     // valid. Test the inner stay-put scenario instead:

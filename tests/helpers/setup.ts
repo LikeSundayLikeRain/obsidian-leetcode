@@ -7,7 +7,7 @@
 // createSpan, createEl) on the document and HTMLElement prototype so source
 // modules can call them without runtime-pathway divergence between
 // production and tests.
-const g = globalThis as unknown as {
+const g = window as unknown as {
   document?: Document;
   window?: Window;
   activeDocument?: Document;
@@ -90,6 +90,42 @@ function installHelpers(
       return el;
     } as unknown;
   }
+  // Phase 06 Plan 03 — polyfill `empty()`, `addClass()`, `removeClass()`,
+  // `setText()`, `setAttribute helpers` so production source modules that
+  // call them (e.g. ProblemBrowserView, ProblemPreviewView) can run under
+  // happy-dom in unit tests without case-by-case mocking. Production
+  // Obsidian ships these as runtime extensions on HTMLElement.prototype.
+  if (typeof target.empty !== 'function') {
+    target.empty = function (this: HTMLElement): void {
+      while (this.firstChild) this.removeChild(this.firstChild);
+    } as unknown;
+  }
+  if (typeof target.addClass !== 'function') {
+    target.addClass = function (this: HTMLElement, ...classes: string[]): void {
+      // Obsidian accepts multiple classes; happy-dom's classList.add does too.
+      this.classList.add(...classes);
+    } as unknown;
+  }
+  if (typeof target.removeClass !== 'function') {
+    target.removeClass = function (this: HTMLElement, ...classes: string[]): void {
+      this.classList.remove(...classes);
+    } as unknown;
+  }
+  if (typeof target.setText !== 'function') {
+    target.setText = function (this: HTMLElement, text: string): void {
+      this.textContent = text;
+    } as unknown;
+  }
+  if (typeof target.setCssStyles !== 'function') {
+    target.setCssStyles = function (
+      this: HTMLElement,
+      styles: Record<string, string>,
+    ): void {
+      for (const [k, v] of Object.entries(styles)) {
+        this.style.setProperty(k, v);
+      }
+    } as unknown;
+  }
 }
 
 if (g.document) {
@@ -105,6 +141,33 @@ if (g.document) {
     doc,
     true,
   );
+  // Expose createDiv / createEl / createSpan as globalThis functions so
+  // source modules that call the bare global form (e.g. `createDiv(...)`)
+  // — which is how Obsidian injects them on window in production — work in
+  // happy-dom tests without runtime errors.
+  // eslint-disable-next-line obsidianmd/no-global-this
+  const gThis = globalThis as Record<string, unknown>;
+  if (typeof gThis['createDiv'] !== 'function') {
+    gThis['createDiv'] = function (options?: CreateElOptions): HTMLElement {
+      const el = doc.createElement('div');
+      applyOptions(el, options);
+      return el;
+    };
+  }
+  if (typeof gThis['createEl'] !== 'function') {
+    gThis['createEl'] = function (tag: string, options?: CreateElOptions): HTMLElement {
+      const el = doc.createElement(tag);
+      applyOptions(el, options);
+      return el;
+    };
+  }
+  if (typeof gThis['createSpan'] !== 'function') {
+    gThis['createSpan'] = function (options?: CreateElOptions): HTMLElement {
+      const el = doc.createElement('span');
+      applyOptions(el, options);
+      return el;
+    };
+  }
   // Document also exposes `createFragment`. The native `createDocumentFragment`
   // is what happy-dom ships; alias it onto `createFragment` so source modules
   // calling `activeDocument.createFragment()` resolve.

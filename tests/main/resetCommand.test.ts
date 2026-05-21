@@ -40,14 +40,14 @@ function makeSettings(
 }
 
 describe('resetCodeWithConfirm helper (D-07)', () => {
-  it('when fence is non-empty, opens ConfirmOverwriteModal and cancel skips write', async () => {
+  it('when fence is non-empty, resets without confirmation (confirm gate removed)', async () => {
     const initial = '---\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD\n```\n';
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
     const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
     const settings = makeSettings({
       codeSnippets: [{ lang: "Python3", langSlug: "python3", code: "class S: pass" }],
     });
-    const confirm = vi.fn(async () => false); // user cancels
+    const confirm = vi.fn(async () => false);
 
     const notices: string[] = [];
     await resetCodeWithConfirm({
@@ -59,15 +59,16 @@ describe('resetCodeWithConfirm helper (D-07)', () => {
       notify: (msg) => notices.push(msg),
     });
 
-    expect(confirm).toHaveBeenCalledTimes(1);
-    expect(m.spies.process).not.toHaveBeenCalled();
+    // confirm gate removed — confirm is never called regardless of fence content
+    expect(confirm).not.toHaveBeenCalled();
+    expect(m.spies.process).toHaveBeenCalledTimes(1);
     const body = m.getContent('LeetCode/1-two-sum.md')!;
-    expect(body).toContain('OLD');
-    expect(body).not.toContain('class S: pass');
-    expect(notices).toEqual([]);
+    expect(body).toContain('class S: pass');
+    expect(body).not.toContain('OLD');
+    expect(notices).toEqual(['Code reset to starter.']);
   });
 
-  it('when fence is non-empty and user confirms, force-injects starter + fires success Notice', async () => {
+  it('when fence is non-empty, force-injects starter + fires success Notice', async () => {
     const initial = '---\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD\n```\n';
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
     const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
@@ -86,7 +87,7 @@ describe('resetCodeWithConfirm helper (D-07)', () => {
       notify: (msg) => notices.push(msg),
     });
 
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
     expect(m.spies.process).toHaveBeenCalledTimes(1);
     const body = m.getContent('LeetCode/1-two-sum.md')!;
     expect(body).toContain('class S: pass');
@@ -94,7 +95,7 @@ describe('resetCodeWithConfirm helper (D-07)', () => {
     expect(notices).toEqual(['Code reset to starter.']);
   });
 
-  it('when fence is empty, skips confirm and writes starter immediately', async () => {
+  it('when fence is empty, writes starter immediately (no confirm)', async () => {
     const initial = '---\nlc-slug: two-sum\n---\n\n## Code\n```python3\n\n```\n';
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
     const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;

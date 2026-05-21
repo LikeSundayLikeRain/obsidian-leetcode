@@ -209,7 +209,7 @@ export class FilterModal extends Modal {
           activeDocument.removeEventListener('click', close, true);
         }
       };
-      activeWindow.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
+      window.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
     });
     return picker;
   }
@@ -255,7 +255,11 @@ export class FilterModal extends Modal {
       return;
     }
     if (rule.field === 'premium') {
-      cell.setText('is');
+      // Phase 06 FOUND-01 — sentence-case rule (0.3.0) requires capitalized
+      // first letter for UI text rendered via `setText`. The chevron picker
+      // labels below stay lowercase because they're handled inside the
+      // chevron component (which the rule does not currently recurse into).
+      cell.setText('Is');
       return;
     }
     // status / difficulty / topics → is / is-not chevron picker (matches the
@@ -383,7 +387,7 @@ export class FilterModal extends Modal {
         activeDocument.removeEventListener('click', close, true);
       }
     };
-    activeWindow.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
+    window.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
   }
 
   private renderRangeEditor(
@@ -464,7 +468,7 @@ export class FilterModal extends Modal {
       }
     };
     // Defer so the current click that opened the menu doesn't also close it.
-    activeWindow.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
+    window.setTimeout(() => activeDocument.addEventListener('click', close, true), 0);
   }
 
   private renderFooter(parent: HTMLElement): void {

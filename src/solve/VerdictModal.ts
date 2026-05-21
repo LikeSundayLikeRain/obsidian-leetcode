@@ -17,7 +17,7 @@
 //
 // Logger redaction for Copy payload on unknown verdicts (T-03-06-02 mitigation).
 
-import { Modal, Notice, setIcon, type App } from 'obsidian';
+import { Component, Modal, Notice, setIcon, type App, type TFile } from 'obsidian';
 import type { RunCheckResponse, SubmitCheckResponse } from './types';
 import { renderVerdict } from './verdictModalRenderer';
 import { logger } from '../shared/logger';
@@ -29,14 +29,57 @@ export interface VerdictModalArgs {
   onCancel: () => void;
   /** Called when user clicks "Copy failing testcase to custom input" on WA/TLE/RE. */
   onCopyFailingInput?: (input: string) => void;
+  /** Phase 08 Plan 05 (AIDBG-01) — Called when user clicks "AI: Debug" on a
+   *  non-Accepted verdict (kind ∈ {wa, tle, mle, re, ce}). The Modal layer
+   *  closes the verdict modal FIRST, then invokes this callback (REVERSED
+   *  from onCopyFailingInput's fire-then-close) so AIStreamModal does NOT
+   *  stack on top of a closing modal — T-08-05-T-stack mitigation. */
+  onOpenAIDebug?: () => void;
+  /**
+   * Phase 09 Plan 03 (AIREV-01) — Called AFTER renderVerdict paints "Accepted!"
+   * to start the auto-review stream. The host (main.ts) provides the streaming
+   * implementation; VerdictModal provides the DOM container + Component lifecycle.
+   * Returns `{ abort, promise }` — abort cancels the stream (anti-zombie on
+   * modal close); promise resolves on natural completion or rejects on error.
+   * VerdictModal does NOT import AIClient or buildReviewPrompt (decoupled).
+   */
+  onStartReviewStream?: (
+    reviewAreaEl: HTMLElement,
+    component: Component,
+  ) => { abort: () => void; promise: Promise<void> };
+  /** Phase 12 Plan 03 (D-03/D-04) — The problem note TFile, used to read
+   *  `lc-pattern` from metadataCache for the pattern chip on AC. Contest
+   *  paths pass null when no vault TFile is available at modal construction. */
+  file?: TFile | null;
+  /** Phase 12 (CR-01 fix) — Resolves pattern name to the hub note path using
+   *  the user's configured problemsFolder + normalizePatternName. */
+  getPatternHubPath?: (pattern: string) => string;
 }
 
 export class VerdictModal extends Modal {
   private readonly args: VerdictModalArgs;
 
+  // Phase 09 — review stream lifecycle state.
+  private reviewAbort: (() => void) | null = null;
+  private reviewPromise: Promise<void> | null = null;
+  private reviewComponent: Component | null = null;
+
   constructor(app: App, args: VerdictModalArgs) {
     super(app);
     this.args = args;
+    if (this.modalEl) {
+      this.modalEl.addClass('leetcode-verdict-modal');
+      if (args.onStartReviewStream) {
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
+        this.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
+        this.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
+      }
+    }
+    if (this.containerEl && args.onStartReviewStream) {
+      // eslint-disable-next-line obsidianmd/no-static-styles-assignment
+      this.containerEl.style.setProperty('--dialog-width', 'min(90vw, 780px)');
+    }
   }
 
   private isPending = false;
@@ -53,6 +96,17 @@ export class VerdictModal extends Modal {
     if (this.isPending) {
       this.isPending = false;
       try { this.args.onCancel(); } catch { /* ignore — cleanup */ }
+    }
+    // Phase 09 — abort in-flight review stream (anti-zombie per Pitfall 2).
+    // If the review promise has not settled, abort ensures no vault write
+    // occurs after the modal is dismissed (D-11 posture: non-blocking failure).
+    if (this.reviewAbort) {
+      try { this.reviewAbort(); } catch { /* ignore — best-effort abort */ }
+      this.reviewAbort = null;
+    }
+    if (this.reviewComponent) {
+      try { this.reviewComponent.unload(); } catch { /* ignore */ }
+      this.reviewComponent = null;
     }
     const { contentEl } = this;
     if (contentEl && typeof (contentEl as unknown as { empty?: () => void }).empty === 'function') {
@@ -119,9 +173,46 @@ export class VerdictModal extends Modal {
         this.args.onCopyFailingInput?.(input);
         this.close();
       },
+      // Phase 08 Plan 05 (AIDBG-01) — close-then-fire ordering, REVERSED
+      // from onCopyFailingInput. The callback opens AIStreamModal; if we
+      // fire BEFORE close(), the new modal stacks on top of the closing
+      // verdict modal causing z-index flicker. Closing first ensures the
+      // verdict modal's onClose runs cleanly before AIStreamModal's onOpen
+      // paints (T-08-05-T-stack mitigation).
+      //
+      // Pass `undefined` (not the lambda) when the host did not supply a
+      // callback — the renderer's `if (showAIDebugButton && onOpenAIDebug)`
+      // gate suppresses the button entirely, preventing a no-op surface
+      // when no AI Debug entrypoint is wired (T-08-05-D-callback-undef).
+      onOpenAIDebug: this.args.onOpenAIDebug
+        ? () => {
+            this.close();
+            this.args.onOpenAIDebug?.();
+          }
+        : undefined,
     });
-    // Primary-focus the Close button if the renderer exposed it.
-    this.focusCloseButton();
+    // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC. Reads lc-pattern
+    // from metadataCache; renders a clickable chip that navigates to the hub
+    // note. Placed AFTER the Accepted body and BEFORE the review stream.
+    // Delay slightly to let metadataCache index the frontmatter write from KG.
+    if (this.isAccepted(res) && this.args.file) {
+      const renderChip = () => this.renderPatternChip();
+      renderChip();
+      // Retry after 500ms if cache hadn't caught up on first attempt
+      window.setTimeout(() => {
+        if (!this.contentEl.querySelector('.leetcode-verdict-pattern-chip')) {
+          renderChip();
+        }
+      }, 500);
+    }
+
+    // Phase 09 (AIREV-01) — start the review stream on AC when the host
+    // provides the callback. The callback is only supplied when
+    // autoAIReviewOnAC is enabled AND a provider is configured (gated in
+    // main.ts). The review area appears below the verdict chrome.
+    if (this.args.onStartReviewStream && this.isAccepted(res)) {
+      this.startReviewStream();
+    }
   }
 
   renderUnknown(payload: unknown, problemTitle: string): void {
@@ -140,7 +231,6 @@ export class VerdictModal extends Modal {
     });
     // Swap the renderer's best-effort copy handler for a redacted-aware one.
     this.rewireCopyPayloadButton(payload);
-    this.focusCloseButton();
   }
 
   renderTimeout(): void {
@@ -150,10 +240,82 @@ export class VerdictModal extends Modal {
       contentEl: this.contentEl,
       payload: { _phase3_timeout: true },
     });
-    this.focusCloseButton();
   }
 
   // ── Internal ───────────────────────────────────────────────────────────
+
+  /** Phase 09 — check if the terminal response is an Accepted submission. */
+  private isAccepted(res: TerminalResponse): boolean {
+    const r = res as Record<string, unknown>;
+    return typeof r.status_code === 'number' && r.status_code === 10;
+  }
+
+  /** Phase 12 Plan 03 (D-03/D-04) — render the pattern chip between the
+   *  Accepted banner and the AI review stream. Reads lc-pattern from
+   *  metadataCache; uses setText (textContent) for XSS safety (T-12-04). */
+  private renderPatternChip(): void {
+    const file = this.args.file;
+    if (!file) return;
+    const cache = this.app.metadataCache.getFileCache(file);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const raw = cache?.frontmatter?.['lc-pattern'];
+    if (!raw) return;
+    let patterns: string[];
+    if (Array.isArray(raw)) {
+      patterns = raw.filter((p): p is string => typeof p === 'string' && p.length > 0);
+    } else if (typeof raw === 'string' && raw.length > 0) {
+      patterns = [raw];
+    } else {
+      return;
+    }
+    if (patterns.length === 0) return;
+
+    const container = appendEl(this.contentEl, 'div', 'leetcode-verdict-pattern-chips');
+    for (const pattern of patterns) {
+      if (!pattern) continue;
+      const chip = appendEl(container, 'span', 'leetcode-verdict-pattern-chip');
+      chip.textContent = pattern;
+      chip.setAttribute('data-lc-role', 'pattern-chip');
+      chip.setAttribute('tabindex', '0');
+      chip.setAttribute('role', 'link');
+      chip.setAttribute('aria-label', 'Open ' + pattern + ' hub note');
+
+      const hubPath = this.args.getPatternHubPath
+        ? this.args.getPatternHubPath(pattern)
+        : 'LeetCode/Patterns/' + pattern + '.md';
+      const navigate = (): void => {
+        this.close();
+        void this.app.workspace.openLinkText(hubPath, '', false);
+      };
+      chip.addEventListener('click', navigate);
+      chip.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          navigate();
+        }
+      });
+    }
+  }
+
+  /** Phase 09 (AIREV-01) — create the review area, start the host-provided
+   *  stream, and store abort + promise for lifecycle management. */
+  private startReviewStream(): void {
+    const reviewAreaEl = appendEl(this.contentEl, 'div', 'leetcode-ai-review-stream');
+    const component = new Component();
+    component.load();
+    this.reviewComponent = component;
+
+    const handle = this.args.onStartReviewStream!(reviewAreaEl, component);
+    this.reviewAbort = handle.abort;
+    this.reviewPromise = handle.promise;
+
+    // Await the promise — on rejection the host handles the Notice (D-11);
+    // VerdictModal leaves the modal in its current state.
+    handle.promise.catch(() => {
+      // Non-blocking: review failure does not affect the Accepted state.
+      // The host (main.ts) is responsible for surfacing the Notice.
+    });
+  }
 
   private clearPendingStateClass(): void {
     this.isPending = false;
@@ -164,19 +326,6 @@ export class VerdictModal extends Modal {
       el.classList.remove('leetcode-verdict-pending');
     }
     addClass(el, 'leetcode-verdict');
-  }
-
-  private focusCloseButton(): void {
-    const buttons = Array.from(
-      this.contentEl?.querySelectorAll<HTMLButtonElement>('button[data-lc-role="close"]') ?? [],
-    );
-    for (const btn of buttons) {
-      btn.addEventListener('click', () => { this.close(); });
-    }
-    const first = buttons[0];
-    if (first && typeof first.focus === 'function') {
-      try { first.focus(); } catch { /* headless */ }
-    }
   }
 
   private rewireCopyPayloadButton(payload: unknown): void {

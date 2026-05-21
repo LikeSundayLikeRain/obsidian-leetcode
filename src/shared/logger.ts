@@ -9,15 +9,115 @@
  * historical `info` level is kept as a public API but maps to `console.debug`
  * so the wrapper itself never invokes a forbidden console method.
  */
-const REDACT = /session|csrf|cookie|token/i;
+// Phase 07 T-07-05 — extended to cover AI key field names (apiKey, api_key,
+// api-key, x-api-key) and Authorization-header tokens (bearer, authorization).
+// `api[_-]?key` covers all four common spellings; the case-insensitive flag
+// also handles camelCase (apiKey, ApiKey, APIKEY). Old v1.0 tokens stay in
+// the same order so existing logger-redact tests remain green.
+//
+// Phase 08.1 Plan 02 (T-08.1-02) — extended for AWS Bedrock secret fields:
+//   - accesskeyid           — covers BedrockProviderConfig.accessKeyId
+//   - secretaccesskey       — covers BedrockProviderConfig.secretAccessKey
+//   - aws_session_token     — env var / INI key form
+//   - bedrockapikey         — covers BedrockProviderConfig.bedrockApiKey
+//   - sso_?profile          — covers BedrockProviderConfig.ssoProfile (no
+//                             secret value — but the profile NAME may
+//                             reveal customer / project identity, so we
+//                             redact the field-name match conservatively)
+// The case-insensitive `/i` flag handles camelCase (`accessKeyId`) AND
+// snake_case (`aws_access_key_id`) AND uppercase env-var form.
+const REDACT = /session|csrf|cookie|token|apikey|api[_-]?key|bearer|authorization|accesskeyid|secretaccesskey|aws_access_key_id|aws_secret_access_key|aws_session_token|aws_bearer_token_bedrock|bedrockapikey|sso_?profile/i;
 // Value-level redaction pattern: auth-ish kv pairs embedded in error messages,
 // stack traces, or config/request/response strings. e.g. "LEETCODE_SESSION=xyz"
 // or "Cookie: csrftoken=abc". We redact the value while keeping the key visible
 // for debugging context (AUTH-06 — cookies never logged in plaintext).
-const SECRET_VALUE_PATTERN = /\b(LEETCODE_SESSION|csrftoken|session|csrf|cookie|token|authorization)\s*[=:]\s*[^\s;,"'&}\]]+/gi;
+//
+// Phase 07 T-07-05 extension:
+//   - apikey / api_key / api-key / x-api-key — AI provider header names
+//   - bearer — captures `Bearer sk-xyz` substrings that survive after the
+//     `authorization:` prefix has already been redacted (e.g. when the header
+//     value itself is logged separately or the prefix uses `:` followed by a
+//     space which the original token consumed before the value).
+//
+// Phase 07 Plan 07 (CR-01 fix): replaced the v1 two-pass approach
+// (BEARER_VALUE_PATTERN then SECRET_VALUE_PATTERN) with a single-pattern
+// ordered alternation. The v1 two-pass produced garbled output for
+// `'Authorization: Bearer sk-xyz'`:
+//   pass 1 (BEARER_VALUE_PATTERN) → `'Authorization: Bearer [REDACTED]'`
+//   pass 2 (SECRET_VALUE_PATTERN's `authorization` alternate) re-matched
+//     `'Authorization: Bearer'` as a kv pair (with `Bearer` as the value
+//     since the value char class permitted it), replacing the whole
+//     match with `'Authorization=[REDACTED]'`, leaving the trailing
+//     `[REDACTED]` token dangling — final shape:
+//     `'Authorization=[REDACTED] [REDACTED]'`.
+// The single-pattern fix below lists the `authorization: bearer <token>`
+// shape FIRST in an ordered alternation so it wins as a single match
+// before the bare `authorization` alternate ever sees the input. The
+// replacement function keeps the original `:` separator instead of
+// rewriting it as `=`. The bare `authorization` alternate stays in the
+// pattern as a fallback for stringified forms like `Authorization=xyz`
+// (no `Bearer` keyword) and for the other auth-ish keys.
+//
+// Phase 07 Plan 08 (CR-01-A + WR-02-separator advisory cleanup):
+//   1. CR-01-A — `'Authorization: Bearer'` (no trailing token) was being
+//      consumed by the second alternate with `Bearer` as the value,
+//      producing `'Authorization=[REDACTED]'`. The `Bearer` token is a
+//      scheme keyword, not a secret. The fix adds a negative lookahead
+//      `(?!bearer\b)` in the second alternate's value char class so the
+//      bare `Bearer` keyword can never match as a secret value. The
+//      `/i` flag already on this regex means the lookahead is also
+//      case-insensitive (matches Bearer, BEARER, bearer, etc.). After
+//      this fix, `'Authorization: Bearer'` (no token) survives the
+//      regex untouched — neither alternate matches.
+//   2. WR-02-separator — the second alternate's replacement hardcoded
+//      `=` as the separator, normalizing `'x-api-key: val'` to
+//      `'x-api-key=[REDACTED]'`. The fix captures `[:=]` as a numbered
+//      group and replays it in the replacement so the original
+//      separator (`:` for header style, `=` for env-var style) is
+//      preserved in the output.
+//
+// `s` flag NOT set — we do not want `.` to cross newlines; the pattern
+// should match within a single header line.
+// Phase 08.1 Plan 02 (T-08.1-02) — extended second alternation with AWS /
+// Bedrock secret-bearing key names so embedded `key=value` pairs in error
+// messages or stringified configs are redacted at the value layer. Same
+// alternation order rules as the v1 set: longer / more specific patterns
+// before bare alternates. The `bearer`-first alternate (auth header) is
+// preserved verbatim — it must remain BEFORE any alternate that could
+// re-consume the redacted token (CR-01 Plan 07-07 invariant).
+const SECRET_VALUE_PATTERN =
+  /\b(authorization)\s*:\s*(bearer)\s+([^\s;,"'&}\][]+)|\b(LEETCODE_SESSION|csrftoken|session|csrf|cookie|token|authorization|apikey|api[_-]?key|x-api-key|aws_access_key_id|aws_secret_access_key|aws_session_token|aws_bearer_token_bedrock|accesskeyid|secretaccesskey|bedrockapikey)(\s*[=:]\s*)(?!bearer\b)([^\s;,"'&}\][]+)/gi;
 
 function redactString(s: string): string {
-  return s.replace(SECRET_VALUE_PATTERN, (_m, key: string) => `${key}=[REDACTED]`);
+  // Single-pass ordered-alternation redaction — see the doc comment above
+  // SECRET_VALUE_PATTERN for the CR-01 fix rationale and the Plan 07-08
+  // CR-01-A + WR-02-separator extensions.
+  //
+  // The replacement function chooses the output shape based on which
+  // alternate fired:
+  //   - authorization: bearer <token> → `<authKey>: <bearer> [REDACTED]`
+  //     (preserves the original `:` separator and the `Bearer` keyword)
+  //   - <key><sep><value>             → `<key><sep>[REDACTED]`
+  //     where <sep> is the captured `:` or `=` from the input — preserves
+  //     the input separator for both header style ('x-api-key: val') and
+  //     env-var style ('LEETCODE_SESSION=val').
+  return s.replace(
+    SECRET_VALUE_PATTERN,
+    (
+      _m,
+      authKey: string | undefined,
+      bearerKey: string | undefined,
+      _bearerTok: string | undefined,
+      otherKey: string | undefined,
+      otherSep: string | undefined,
+      _otherVal: string | undefined,
+    ) => {
+      if (authKey !== undefined && bearerKey !== undefined) {
+        return `${authKey}: ${bearerKey} [REDACTED]`;
+      }
+      return `${otherKey ?? ''}${otherSep ?? '='}[REDACTED]`;
+    },
+  );
 }
 
 function redact(obj: unknown, depth = 0): unknown {

@@ -155,7 +155,7 @@ export async function throttledRequestUrl(
  *  same path works in popouts and in vitest's happy-dom env (vi.useFakeTimers
  *  patches the active window's timer functions). */
 function delay(ms: number): Promise<void> {
-  return new Promise((r) => { activeWindow.setTimeout(r, ms); });
+  return new Promise((r) => { window.setTimeout(r, ms); });
 }
 
 /** Race a promise against a TimeoutError. Clears the pending timer in `finally`
@@ -163,10 +163,10 @@ function delay(ms: number): Promise<void> {
 function raceWithTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: number | undefined;
   const timeout = new Promise<T>((_, reject) => {
-    timer = activeWindow.setTimeout(() => { reject(new TimeoutError()); }, ms);
+    timer = window.setTimeout(() => { reject(new TimeoutError()); }, ms);
   });
   return Promise.race<T>([p, timeout]).finally(() => {
-    if (timer !== undefined) activeWindow.clearTimeout(timer);
+    if (timer !== undefined) window.clearTimeout(timer);
   });
 }
 

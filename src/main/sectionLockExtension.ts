@@ -54,6 +54,7 @@ import {
 } from '@codemirror/view';
 import { editorInfoField, type Plugin } from 'obsidian';
 import {
+  AI_REVIEW_HEADING_LINE,
   CODE_HEADING_LINE,
   NOTES_HEADING_LINE,
   PROBLEM_HEADING_LINE,
@@ -74,7 +75,7 @@ export { LOCKED_HEADINGS } from '../notes/NoteTemplate';
  * lets each kind branch into its own per-section range emission rule
  * (see the second pass in `computeLockedRanges` below).
  */
-type HeadingKind = 'problem' | 'code' | 'techniques' | 'notes';
+type HeadingKind = 'title' | 'problem' | 'code' | 'techniques' | 'notes' | 'ai-review';
 
 interface HeadingHit {
   readonly kind: HeadingKind;
@@ -113,7 +114,9 @@ export function computeLockedRanges(
   const total = state.doc.lines;
   for (let i = 1; i <= total; i++) {
     const text = state.doc.line(i).text;
-    if (text === PROBLEM_HEADING_LINE) {
+    if (text.startsWith('# ') && !text.startsWith('## ') && !headings.some(h => h.kind === 'title')) {
+      headings.push({ kind: 'title', line: i });
+    } else if (text === PROBLEM_HEADING_LINE) {
       headings.push({ kind: 'problem', line: i });
     } else if (text === CODE_HEADING_LINE) {
       headings.push({ kind: 'code', line: i });
@@ -121,6 +124,8 @@ export function computeLockedRanges(
       headings.push({ kind: 'techniques', line: i });
     } else if (text === NOTES_HEADING_LINE) {
       headings.push({ kind: 'notes', line: i });
+    } else if (text === AI_REVIEW_HEADING_LINE) {
+      headings.push({ kind: 'ai-review', line: i });
     }
     // The legacy `## Custom Tests` heading is intentionally NOT matched
     // (Phase 5 D-08; CONTEXT D-03; Pitfall 4) — leaving it editable.
@@ -187,8 +192,20 @@ export function computeLockedRanges(
         // Malformed fence — only heading locked.
         out.push(headFrom, headTo);
       }
+    } else if (cur.kind === 'title') {
+      // H1 title: lock from line above (blank after frontmatter) through to next heading.
+      const lockFrom = cur.line > 1 ? state.doc.line(cur.line - 1).from : headFrom;
+      const nextHeadingLine =
+        h + 1 < headings.length
+          ? (headings[h + 1] as HeadingHit).line
+          : total + 1;
+      const lockTo =
+        nextHeadingLine <= total
+          ? state.doc.line(nextHeadingLine).from
+          : state.doc.line(total).to;
+      out.push(lockFrom, lockTo);
     } else {
-      // techniques | notes — heading line only (D-03). Body editable.
+      // techniques | notes | ai-review — heading line only (D-03/D-19). Body editable.
       out.push(headFrom, headTo);
     }
   }
@@ -292,7 +309,8 @@ function buildLockedDecorations(state: EditorStateType): DecorationSet {
       text === PROBLEM_HEADING_LINE ||
       text === CODE_HEADING_LINE ||
       text === TECHNIQUES_HEADING_LINE ||
-      text === NOTES_HEADING_LINE
+      text === NOTES_HEADING_LINE ||
+      text === AI_REVIEW_HEADING_LINE
     ) {
       b.add(state.doc.line(i).from, state.doc.line(i).from, lineDeco);
     }

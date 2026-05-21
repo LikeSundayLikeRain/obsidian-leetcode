@@ -1,279 +1,435 @@
-# Feature Research
+# Feature Research — v1.1 Milestone
 
-**Domain:** Obsidian community plugin — LeetCode integration
-**Researched:** 2026-05-07
-**Confidence:** HIGH (vscode-leetcode fully audited; LC REST endpoints confirmed via leetcode-cli source; 5 existing Obsidian LC plugins surveyed)
+**Domain:** Obsidian plugin for LeetCode practice + AI coaching + knowledge graph (v1.1 milestone)
+**Researched:** 2026-05-14
+**Confidence:** MEDIUM-HIGH (HIGH for vscode-leetcode + NeetCode patterns + Obsidian Copilot provider list — verified from source. MEDIUM for contest scoring formula and AI review presentation patterns — corroborated across multiple sources but not single-source canonical.)
+
+> **Note:** This file is the v1.1 milestone feature landscape. The original v1.0 feature research has been superseded — v1.0 features are documented as "Validated" in `.planning/PROJECT.md` and as the "Delivered" capabilities in `.planning/MILESTONES.md`.
+
+---
+
+## Scope
+
+This research covers the **v1.1 milestone** features ONLY:
+
+1. **Preview Mode** — read-mode tab rendering ONLY the LC problem statement; "Start Problem" CTA creates the note.
+2. **Virtual Contest** — past contest OR random; 90/100-min virtual timer; 4 problems; verdict tracking; post-contest summary.
+3. **AI Debug** — user-triggered while solving; LLM gets code + problem + last failure; streams suggestions inline.
+4. **AI ACed-Solution Review** — Approach / Efficiency / Code Style on Accepted.
+5. **AI Knowledge-Graph Maintenance** — pattern-cluster hub notes, difficulty-progression edges, cross-cluster Related Variants, look-ahead edges.
+6. **AI Provider Support** — multi-provider, BYO key + custom base URL.
+
+---
+
+## Comparable Products Investigated
+
+| Product | What it informs | Confidence |
+|---------|-----------------|------------|
+| **vscode-leetcode** (LeetCode-OpenSource/vscode-leetcode) | Reference for preview UX, problem editor model, NO contest, NO AI | HIGH (README verified via `gh api`) |
+| **LeetHub V2** (QasimWani/LeetHub) | Per-problem README pattern, post-AC capture model | HIGH (`scripts/leetcode.js` inspected) |
+| **NeetCode 150** (`neetcode-gh/leetcode/.problemSiteData.json`) | Canonical pattern names + structure | HIGH (450 entries, 18 patterns extracted from source data) |
+| **Obsidian Copilot** (logancyang/obsidian-copilot) | Multi-provider BYO key UX in Obsidian | HIGH (`src/constants.ts` inspected; 17 providers enumerated) |
+| **Continue.dev** | Multi-provider config schema (apiKey + apiBase + roles) | MEDIUM (overview docs verified) |
+| **LeetCode native virtual contest** | 90 / 100 min duration; per-problem score; ICPC-style penalty | MEDIUM (training-data + community references; live page 403'd to scraper) |
+| **Cursor / GitHub Copilot Chat** | BYO key + user-triggered-AI precedent | LOW (docs page 404'd; relying on training data corroboration) |
 
 ---
 
 ## Feature Landscape
 
-### Table Stakes (Users Expect These)
+### A. Preview Mode
 
-Features users assume exist. Missing these = product feels incomplete.
-Benchmark: vscode-leetcode is the reference implementation users will compare against.
+#### Table Stakes (Users Expect These)
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| **Authentication / login** | Can't do anything without a session | M | Electron BrowserWindow captures `LEETCODE_SESSION` + `csrftoken` cookies after normal LC login flow. Cookie-paste fallback for edge cases. vscode-leetcode broke its bespoke `/authorize-login/vscode/` endpoint — we must not depend on that. |
-| **Session persistence + expiry handling** | Sessions expire; re-login must be smooth | S | Store cookie in Obsidian plugin data (never plaintext in vault). Detect 401/403 and prompt re-login gracefully. |
-| **Problem browser / list** | Users need to find problems | M | Fetch full problem list via LC GraphQL (`problemsetQuestionList`). Show #, title, difficulty, solved-status. Filter by difficulty, tag, status. Search by keyword. |
-| **Problem detail view** | Read the problem before solving | M | Render problem description (HTML→Markdown) in a note. Include constraints, examples, hints. Cache to disk after first fetch — enables offline reading. |
-| **Solved / attempted status indicator** | Core progress tracking | S | Mirror LC's status per problem (solved/attempted/unattempted) in the problem list view and in note frontmatter (`status` field). |
-| **Code editor per language** | Write solution without leaving Obsidian | M | Code block in note (fenced, language-tagged). Default language in settings. All LC-supported languages selectable per problem. Scaffold from LC's starter code template fetched via GraphQL. |
-| **Run code against sample test cases** | Verify before submitting | L | POST to `https://leetcode.com/problems/{slug}/interpret_solution/` with `{lang, question_id, typed_code, data_input}`. Poll `https://leetcode.com/submissions/detail/{interpret_id}/check/` until `state === "SUCCESS"`. Display output vs expected per test case. Custom test case input supported. |
-| **Submit code to judge** | The core action | L | POST to `https://leetcode.com/problems/{slug}/submit/` with `{lang, question_id, typed_code, judge_type: "large"}`. Poll `/check/` endpoint. Display verdict (Accepted / Wrong Answer / TLE / MLE / Runtime Error / Compile Error). |
-| **Verdict display** | Users need to know what happened | S | Show: status string, runtime (ms + percentile), memory (MB + percentile), failed test case on WA, compile error message. Render in a modal or panel within Obsidian. |
-| **Rate limit + downtime error handling** | LC is flaky; polling must be robust | S | Exponential backoff on polling. Surface friendly errors for 429 (rate limit), 503 (LC downtime), cookie expiry. Never silently fail. |
-| **Settings UI** | Plugin configuration | S | Obsidian settings tab with: session cookie display/clear, default language, vault folder for problem notes, file naming template. Uses standard Obsidian `addSettingTab` API — text inputs, dropdowns, toggles. |
-| **Default language selection** | Workflow preference | S | Setting stored in plugin config. Overridable per-problem on open. Matches vscode-leetcode's `leetcode.defaultLanguage`. |
+| Feature | Why Expected | Complexity | Notes / Dependencies |
+|---------|--------------|------------|----------------------|
+| Right-click problem → "Preview" without creating a note | vscode-leetcode does exactly this verbatim ("right click the problem in the `LeetCode Explorer` and select `Preview Problem`"). Users coming from vscode-leetcode expect this. | LOW | Renders cached HTML→Markdown content. **Depends on v1.0:** `ProblemBrowser` view, problem-cache layer (`data.json`), turndown HTML→MD pipeline. |
+| Read-mode rendering (formatted, not raw HTML) | Users expect Obsidian-native rendering | LOW | Reuse v1.0 `turndown` + `MarkdownRenderer.render()`. **Depends on v1.0:** existing turndown integration. |
+| "Start Problem" / "Open Problem" CTA toggle (label changes based on whether note exists) | Avoids confusing users who already have the note | LOW | Check vault for `LeetCode/{id}-{slug}.md`; toggle button label. **Depends on v1.0:** note-creation pipeline (Phase 02). |
+| Difficulty + topic-tag chips visible in preview | Decision-support before committing to solving | LOW | Already in cached metadata. |
+| Closeable as a tab (not a blocking modal) | Users want to keep preview open while browsing | LOW | Use `ItemView` not `Modal`. **Depends on v1.0:** ItemView registration pattern. |
 
----
+#### Differentiators (Competitive Advantage)
 
-### Differentiators (Obsidian-Native Value)
+| Feature | Value Proposition | Complexity | Notes / Dependencies |
+|---------|-------------------|------------|----------------------|
+| Preview shows: "you have N notes already linked to patterns this problem touches" | Decision aid: do I need to solve this for coverage? | MEDIUM | **Depends on:** Feature E (pattern-cluster hubs). Defer to phase that ships pattern hubs. |
+| Preview shows: cached daily-challenge / contest membership badge | "Oh, this is a contest problem — virtual-contest it instead" | LOW | Cross-reference contest list cache. |
+| Preview is the default click target (single-click previews; double-click or "Start" creates note) | Explicit motivation in milestone scope: "no accidental note creation" | MEDIUM | Behavior change vs v1.0; needs settings toggle for users who want v1.0 click-to-create back. **Depends on v1.0:** ProblemBrowser click handler. |
 
-Features that exploit what Obsidian uniquely provides. Not in vscode-leetcode (it has no note graph). These are the core competitive advantage.
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| **One note per problem (vault layout)** | Every problem is a first-class Obsidian note — searchable, linkable, taggable | S | Create `{vault}/{folder}/{id}-{slug}.md` on first open. Idempotent: re-opening an existing problem opens the same note. File naming template configurable. Enables all other Obsidian-native features downstream. |
-| **LC tag import as Obsidian tags** | Problem topics (Array, DP, Sliding Window…) become vault-wide tags instantly | S | Fetch `topicTags` from LC GraphQL on problem open. Write as YAML frontmatter `tags: [array, dynamic-programming, ...]`. Normalized to lowercase-hyphen. Users can then use Obsidian tag search and tag pane across all problems. |
-| **User-added personal tags** | `#revisit`, `#tricky`, `#interview-asked` — custom taxonomy on top of LC's | S | Frontmatter `user_tags` field (separate from LC `tags` to avoid clobbering on re-sync). Plugin never overwrites `user_tags`. Edit directly in note frontmatter. |
-| **Auto-append accepted solution to note** | Solved problem → solution captured in the note permanently | S | On verdict = Accepted: extract code from the active code block, append a `## Solution (YYYY-MM-DD)` section with fenced code block. Subsequent accepted submissions append (don't overwrite) — preserves history. |
-| **Auto-update frontmatter on accepted submission** | Rich metadata: solved date, runtime, memory, language | S | On verdict = Accepted: update frontmatter fields `solved_date`, `runtime_ms`, `memory_mb`, `language`, `status: solved`. Uses Obsidian's `app.vault.process()` to surgically update YAML without touching note body. |
-| **Auto-backlinks to technique notes on accept** | Solving compounds into a knowledge graph — the plugin's unique value | M | On verdict = Accepted: for each LC topic tag on the problem, ensure a wikilink `[[Two Pointers]]` exists in a `## Techniques` section of the problem note. Creates stub technique notes (e.g. `Two Pointers.md`) in a configurable `techniques/` folder if they don't exist. Backlinks "just work" in Obsidian graph. |
-| **Graph-friendly wikilinks** | Problem notes participate in Obsidian's graph view without manual linking | S | Wikilinks to technique notes + difficulty-based tags → rich graph. No special graph API needed — standard `[[link]]` syntax in the note body is enough. Configurable: user can opt out of auto-linking. |
-| **Offline-readable cached problem content** | Problems readable on a plane, without LC session | S | Problem description (converted to Markdown) stored in note on first fetch. No re-fetch needed to read. Code submissions still require internet (by definition). Problem list cache stored in plugin data with TTL. |
-| **Dataview compatibility** | Power users can query their problem database with the popular Dataview plugin | S | Design frontmatter schema to be Dataview-friendly (`tags`, `difficulty`, `status`, `solved_date`, `runtime_ms`, `memory_mb`, `language`, `leetcode_id`, `url`). Zero extra work — just good frontmatter design. Document example Dataview queries in README. |
-| **Obsidian settings-UI integration** | Native settings feel, not a separate config file | S | Use `addSettingTab` with `Setting` components. No raw JSON editing. Matches every other Obsidian plugin's UX contract. |
-
----
-
-### Anti-Features (Explicitly Not Building)
-
-Features that seem reasonable but are out of scope for v1.
+#### Anti-Features (Tempting but Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **Local code execution runtimes** | "Run without internet" sounds useful | Requires bundling language runtimes (Python/JVM/Node) — massive binary size, security surface, platform matrix. LC's remote `/interpret_solution/` endpoint already handles this for free. | Use LC's remote run endpoint. |
-| **IDE-grade editing** (IntelliSense, linting, debugger) | Developers want autocompletion | Obsidian is not an IDE; implementing LSP in a plugin is a full project. Users with IDE needs should use their IDE alongside this plugin. | Document: "for deep editing, open in your IDE; use this plugin for capture." |
-| **leetcode.cn support in v1** | Chinese users want it | Different domain, different GraphQL schema variants, different auth flow (WeChat, phone). Doubles the auth/API surface. | Design the API abstraction layer (endpoint-agnostic) so v2 can add CN without rewrite. |
-| **Mobile (iOS/Android) support in v1** | Obsidian mobile exists | Electron BrowserWindow (used for embedded login) does not exist on mobile. Capacitor plugin API diverges. Re-login via cookie paste is clunky on mobile. | Document desktop-only scope. Revisit in v2 with cookie-paste-only auth path. |
-| **Spaced repetition / review scheduling** | "Tell me what to practice" is valuable | Full SR system (SM-2/FSRS algorithms, due-date tracking, review UI) is a separate product. V1's graph + tags already answer "what should I revisit?" | Defer to v2. Document the integration point (frontmatter `last_reviewed`, `ease_factor` fields) so v2 can bolt on. |
-| **AI-powered auto-tagging** | "Automatically categorize my solution" | Requires LLM API key, adds cost, privacy concerns (code sent externally), non-deterministic. Fragile until core is stable. | Defer to v2 after LC tag import is solid. |
-| **Top-voted solution viewer** | vscode-leetcode has it | Useful but not core to the note-taking value prop. LC's solution page is one browser click away. | Link to LC solutions page from the note; don't replicate in-plugin. |
-| **Contest participation features** | Some LC users do contests | Contest timing, ranking, virtual contests — completely different UX. Out of scope for problem-practice focus. | Out of scope permanently unless a milestone proposal adds it. |
+| Render LC HTML inline via `innerHTML` for fidelity | LC's HTML has nice tables/code blocks | Forbidden by Obsidian plugin guidelines (XSS); will fail community store review | Use existing v1.0 `turndown` + `MarkdownRenderer.render()` — battle-tested |
+| Auto-cache the full problem set on preview-tab open | "Make preview instant for everything" | Already-rejected by v1.0 (3,000 problems × 10–50 KB = 30–150 MB; destroys `data.json`) | On-demand fetch + 7-day cache (existing v1.0 rule) |
+| Inline "Start Problem" actions that pre-pick a language | Saves a click | The default-language setting already handles this | Honor `defaultLanguage` setting — no extra knob |
+
+---
+
+### B. Virtual Contest
+
+#### Table Stakes (Users Expect These)
+
+| Feature | Why Expected | Complexity | Notes / Dependencies |
+|---------|--------------|------------|----------------------|
+| 90-min weekly + 100-min biweekly timer (visible, persistent) | LC's native virtual contest does exactly this | LOW | Two static durations: weekly = 5400 s, biweekly = 6000 s. Persist start time to `data.json`. **Depends on v1.0:** `data.json` plugin storage. |
+| 4 problems materialized as notes at contest start | LC contests are always 4 problems (Q1–Q4) | LOW | Reuse v1.0 note-creation pipeline; create all four atomically on Start. **Depends on v1.0:** problems-as-notes pipeline (Phase 02). |
+| Per-problem run/submit during contest (not different from normal flow) | Muscle memory should work | LOW | Already there in v1.0 — route through during contest. **Depends on v1.0:** Run/Submit pipeline (Phase 03). |
+| Verdict tracked per problem with timestamp (first-AC time + WA count) | Required for scoring + penalty | LOW | **Depends on v1.0:** verdict pipeline + `KnowledgeGraphWriter.onAccepted` event hook. |
+| Post-contest summary (solved count, per-problem time, WA count, total score) as a vault note | LC's native contest UI shows this; Codeforces virtual practice shows this | MEDIUM | Generate `LeetCode/contests/{contestSlug}-{date}.md`. Frontmatter: `lc-contest-slug`, `lc-contest-type`, contest score. |
+| Pause/abort contest with confirmation | Users will accidentally hit Stop | LOW | Modal confirmation; persisted state cleared on confirm. |
+| "Surprise me" random past-contest picker | Explicit milestone scope | LOW | Random selection from cached contest list (uniform). |
+
+#### Differentiators (Competitive Advantage)
+
+| Feature | Value Proposition | Complexity | Notes / Dependencies |
+|---------|-------------------|------------|----------------------|
+| Post-contest summary is a **first-class vault note** (graph-citizen, tagged, linkable) | LC's contest-history page disappears when browser closes; in Obsidian it joins the graph forever | LOW | Just write Markdown to `LeetCode/contests/`. **Depends on v1.0:** vault.create + frontmatter pipeline. |
+| Post-contest summary auto-tags missed problems with `#revisit` | Personal-tag union-merge already shipped | LOW | **Depends on v1.0:** personal-tag union-merge (Phase 02). |
+| Post-contest report includes **AI technique-tag inference** for solved problems | AI fills `## Techniques` with cluster-link wikilinks immediately | MEDIUM | **Depends on:** Feature E (AI knowledge-graph). Skippable in early phase. |
+| LC's actual scoring rendered in summary (1+2+3+4 base, with WA-time penalty) | "How would I have ranked?" | MEDIUM | LC contest scoring: each Q has base points (Q1=3, Q2=4, Q3=5, Q4=6 typically; varies per contest); penalty = 5 min × WA count added to first-AC time. **Confidence MEDIUM** — exact base points published per-contest; render LC's published values, don't invent. |
+| Random contest picker with difficulty-weighting ("give me a hard one") | Bias toward weak areas | LOW | UI toggle: hardest-Q1, balanced, hardest-Q4. |
+| Resume in-progress contest on Obsidian restart | Power-user; users hate losing state | MEDIUM | Persist `ContestSession` state in `data.json` + heartbeat; on plugin load, prompt "Resume contest started X minutes ago?" |
+
+#### Anti-Features
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **Live contest participation** | Users will ask | Already explicitly out-of-scope in PROJECT.md: real-time leaderboards, simultaneous-submission throttling, contest-day rankings — plugin store will scrutinize | Virtual past contests only. Document in README. |
+| **Leaderboard scraping** | "Compare to people who did it live" | Massive scope creep; LC may rate-limit; scraping ethics | Show user's score against contest's published rank cutoffs (1500/1700/2000) — static metadata. |
+| **Auto-submit on timer expiry** | "Don't waste my code that I almost finished" | Users hate auto-submit (lose chance to review); pollutes submission history with broken code | Show "Time's up — Submit when ready / End contest" modal. Submit only on explicit click. |
+| **Hard-mode timer (block editor when time is up)** | Simulates real contest pressure | Annoying; users will close timer to keep coding; fights Obsidian's open-editor model | Soft timer: red "OVERTIME +N:NN" badge; do not block edits. |
+| **Built-in rank prediction with LC API integration** | Curiosity feature | Requires post-contest API not exposed for arbitrary virtual; rate limits | Show static cutoffs only. |
+
+---
+
+### C. AI Debug (User-Triggered)
+
+#### Table Stakes
+
+| Feature | Why Expected | Complexity | Notes / Dependencies |
+|---------|--------------|------------|----------------------|
+| User-triggered (button), NOT automatic | Cursor / Copilot Chat / Continue.dev all use explicit-trigger; auto-AI is universally hated | LOW | Action button under `## Code` action row. **Depends on v1.0:** `CodeActionsWidget` (Phase 05.2). |
+| Include problem statement + current code + last failure verdict in prompt | Without these, LLM can't help | LOW | Pull from frontmatter (`lc-id`), `## Code` fence content, last `VerdictModal` event. **Depends on v1.0:** verdict pipeline + section-aware fence extraction. |
+| Stream tokens (don't block on full response) | Users abandon non-streaming AI | MEDIUM | **CRITICAL:** `requestUrl` returns full body (no streaming). Must use native `fetch` for AI providers. (CORS isn't a problem for AI providers — they all set `Access-Control-Allow-Origin: *`.) v1.0 `requestUrl`-everywhere convention is **LeetCode-specific**, not universal. |
+| Inline rendering in the note (not in a side panel) | Obsidian's value-prop is everything-in-the-note | MEDIUM | Append under `## AI Debug` OR transient widget under action row. **Decision needed in design phase.** Section-lock-aware (extend `sectionLockExtension.ts`). |
+| Cancel / abort mid-stream | LLM can hang 30+ seconds | LOW | `AbortController` on fetch. |
+| Per-call cost transparency | BYO-key users care; Continue.dev shows; Copilot does not | LOW | Compute from input/output tokens × provider price table. |
+
+#### Differentiators
+
+| Feature | Value Proposition | Complexity | Notes / Dependencies |
+|---------|-------------------|------------|----------------------|
+| Auto-include the **failing test case** in prompt | v1.0 already extracts it ("Copy failing testcase" button in VerdictModal) | LOW | **Depends on v1.0:** Phase 05.4 VerdictModal failing-testcase extraction. |
+| Auto-include the user's **`## Notes` section** as context (opt-in checkbox) | "I think it's an off-by-one" — let user steer LLM | LOW | Checkbox in AI Debug button menu. |
+| Suggestions include **Apply Patch** affordance like Cursor / Copilot Chat | Differentiated; users will copy-paste otherwise | HIGH | Diff parsing + safe apply within `## Code` fence. v1.0 section-lock applies — would need `'leetcode.ai-apply'` userEvent annotation per CLAUDE.md convention. **Defer to v1.2.** |
+| Stop mid-stream with `Esc` keystroke | Power users want this | LOW | Keybinding bound only when stream active. |
+
+#### Anti-Features
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **AI auto-debug whenever a Run or Submit fails** | "Save the user a click" | Universally hated; burns API budget without user consent | Always user-triggered. Optionally: dismissible toast suggesting AI Debug after WA — opt-in setting. |
+| **Send full vault to LLM as context** | "Maximum context" | Privacy nightmare; token cost; mostly irrelevant; plugin-store red flag | Send: problem statement, current code, last verdict, failing test case, optionally `## Notes`. Nothing else. |
+| **Pre-submit "would this be accepted?" oracle** | "Skip the LC round trip" | LLMs wrong about correctness ~30% of the time; users submit broken code on the LLM's say-so | LC's actual judge is free + authoritative; just submit. |
+| **AI generates full solution from scratch when triggered with no code** | "I'm stuck, write it" | (a) Defeats practice purpose. (b) "Homework cheat tool" framing → plugin-store risk | Require non-empty `## Code` fence. Show "Write something first" if empty. |
+
+---
+
+### D. AI ACed-Solution Review (3 Dimensions)
+
+#### Table Stakes
+
+| Feature | Why Expected | Complexity | Notes / Dependencies |
+|---------|--------------|------------|----------------------|
+| Triggered on Accepted verdict (not on every run) | Submitting AC is when user is ready to learn | LOW | **Depends on v1.0:** `KnowledgeGraphWriter.onAccepted` hook (Phase 04). |
+| Three sections: Approach (Current vs Suggested + Key Idea + Consider) / Efficiency (Current O / Suggested O) / Code Style | Milestone scope spelled this out; matches Cursor "Improvements" + Sourcegraph Cody "Code Smell" | MEDIUM | Single LLM call, structured output → `## AI Review` section. |
+| Review **lives inline in the note** (not separate file, not sidebar) | Obsidian's value-prop = everything-in-the-note | LOW | Append `## AI Review` after `## Notes`. **Depends on v1.0:** section-aware writes via `vault.process` (CLAUDE.md convention). |
+| Idempotent (re-AC'ing overwrites cleanly, doesn't append) | Users re-solve; multiple stale reviews would clutter | LOW | Replace existing `## AI Review` block. **Depends on v1.0:** section replace helpers. |
+| Skippable / disable-able in settings | BYO-key cost / privacy | LOW | Toggle: "Auto-review on Accepted". **Default OFF** (privacy-first per plugin-store guidance). |
+
+#### Differentiators
+
+| Feature | Value Proposition | Complexity | Notes / Dependencies |
+|---------|-------------------|------------|----------------------|
+| Review is **non-streaming** (sync request) | Different from Debug. Users have shipped; want a complete report not real-time stream. Matches "GitHub PR review" model. | LOW | Single-shot fetch; "Reviewing..." toast; fill section when done. |
+| **Suggested code** in a separate fence — preserves user's original code untouched | Side-by-side comparison; never overwrite user code | LOW | Two fences in `## AI Review`. |
+| Time/space complexity comparison rendered as Markdown table | Easier to scan than prose | LOW | Current / Suggested rows. |
+| Review references the **pattern-cluster** the AI assigned (deep-link) | Connects review to graph; user can click through | MEDIUM | **Depends on:** Feature E (pattern-cluster work). |
+
+#### Anti-Features
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **Auto-apply suggested code on AC** | "Save my best code automatically" | Catastrophic. (a) Users hate AI rewriting their code without consent. (b) User's code AC'd — by definition it's correct; AI's "improvement" might be slower/buggier. (c) Re-AC creates a loop. | Display in `## AI Review` only. User copies if they want. |
+| **Re-use whatever provider streamed Debug seconds ago, even if user's default differs** | "Use whatever's connected" | Users may have specifically switched (cheap-Ollama-debug → Anthropic-review) | Always use the user's currently-configured provider per call. |
+| **Comparative leaderboard ("you're top 50%")** | Gamification | Requires LC's percentile API on every AC; rate-limited; v1.0 explicitly dropped runtime/memory frontmatter (PROJECT.md: "no production reader; staleness risk"). Don't reintroduce in disguise. | Show LC runtime/memory percentile fresh from GraphQL only when user opens the submission detail modal. AI review focuses on approach not percentile. |
+| **Review every Run (including failures)** | "More feedback" | Burns budget; "feedback" on broken code is noise | AC-only trigger. Failed runs use AI Debug. |
+| **Open the review in a separate split or modal** | "Preserve the note" | Users close modals + forget; loses graph value | Inline `## AI Review` section, period. |
+
+---
+
+### E. AI Knowledge-Graph Maintenance
+
+This is the **most differentiated feature** in the milestone. v1.0 already has lc-tag-based Techniques (`[[Two Pointers]]` from LC topic slug). v1.1 supersedes with AI-named pattern clusters + difficulty progression + cross-cluster variants + look-ahead edges.
+
+#### Table Stakes
+
+| Feature | Why Expected | Complexity | Notes / Dependencies |
+|---------|--------------|------------|----------------------|
+| Pattern cluster names match community conventions | Users come pre-trained on NeetCode 150 / Blind 75 names | MEDIUM | **Constrain LLM to fixed taxonomy.** NeetCode's canonical 18 patterns (extracted from `.problemSiteData.json`, 450 entries): `Arrays & Hashing`, `Two Pointers`, `Sliding Window`, `Stack`, `Binary Search`, `Linked List`, `Trees`, `Tries`, `Heap / Priority Queue`, `Backtracking`, `Graphs`, `Advanced Graphs`, `1-D Dynamic Programming`, `2-D Dynamic Programming`, `Greedy`, `Intervals`, `Math & Geometry`, `Bit Manipulation`. Add: `Prefix Sum`, `Monotonic Stack`, `Topological Sort`, `Union-Find`. **LLM picks from list — cannot invent free-form names.** |
+| Each cluster gets a **hub note** in the vault | Single navigation point for the cluster | LOW | Auto-create on first AC mapping to cluster; idempotent. **Depends on v1.0:** technique-stub creation pipeline (Phase 04). |
+| Hub note auto-lists problems in the cluster (sorted by difficulty) | "I have 12 sliding-window problems — here they are" | LOW | Use Obsidian Bases query (matches v1.0 `LeetCode.base`). **Depends on v1.0:** Bases integration. |
+| Difficulty-progression edges: Easy → Medium → Hard within cluster | Learning path | MEDIUM | "Next" link in hub OR `## Progression` section. AI determines order based on conceptual scaffolding. |
+| `## Related Variants` section lists **cross-cluster structural twins ONLY** | Avoids redundancy with same-cluster siblings | MEDIUM | AI prompt constraint: "list only problems in OTHER clusters". |
+
+#### Differentiators
+
+| Feature | Value Proposition | Complexity | Notes / Dependencies |
+|---------|-------------------|------------|----------------------|
+| **Look-ahead edges to UNSOLVED problems** when AI judges them load-bearing | **UNIQUE.** No comparable product has this. NeetCode shows static roadmap; LeetHub captures only solved; Obsidian Copilot semantic-searches existing notes. Look-ahead is the v1.1 USP. | HIGH | Materialize as: dangling wikilinks `[[1234-skyline-problem]]` in `## Related Variants`. Click → v1.1 Preview tab → "Open Problem (creates note)". Obsidian shows dangling links lighter in graph view → "unexplored next-steps" visible. **Depends on:** Feature A (Preview tab). |
+| Look-ahead edge target stub gets `#suggested` + `#unsolved` tags | Filterable in graph view | LOW | When user previews a dangling link, stub note (created on first preview/Start) gets these tags. |
+| **Pattern hubs supersede `[[Two Pointers]]` v1.0 lc-tag links** | AI-named clusters are higher quality than LC's noisy topic tags (LC tags everything "Array") | MEDIUM | See **Migration** section below. |
+| Hub notes get a 1-paragraph AI-written summary | Users learn the pattern when they open the hub | LOW | One-shot LLM call per hub on first creation. Cache in note body. |
+| Pattern-cluster names visible in graph view as cluster-color-coded nodes | Obsidian graph view supports node color via group filters → pattern hubs become visual cluster centers | LOW | Document recommended graph-view filter in README; don't bake in. |
+
+#### Anti-Features
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **AI invents free-form pattern names** ("Sliding Optimization Window") | Sounds creative | Fragments graph; users searching "Sliding Window" find nothing; conflicts with NeetCode terminology users are pre-trained on | Constrained taxonomy (18 NeetCode + ~4 additions). LLM picks from list; cannot invent. |
+| **Same-cluster Related Variants** (Sliding Window problem links to other Sliding Window problems in `## Related Variants`) | "Show everything related" | Redundant — they're already siblings in the hub. Bloats graph. | `## Related Variants` is **cross-cluster ONLY** (per milestone spec). |
+| **Auto-rewrite all v1.0 notes on plugin update** | "Make my whole vault consistent" | (a) Massive LLM cost (1 call × N solved). (b) Network user didn't authorize. (c) Plugin-store red flag. (d) User horror when personal `## Notes` are touched. | See **Migration** strategy below. |
+| **AI rewrites user's `## Notes` with "improvements"** | Open-ended graph-curation | Users hate that. `## Notes` is the user's voice. | Clear write-zones: AI owns `## Techniques`, `## Related Variants`, `## AI Review`. User owns `## Notes`. v1.0 section-lock enforces. |
+| **Look-ahead edges as TODO checkboxes inside the current note** | "Make it actionable" | Pollutes note; users check off without solving; turns practice file into task tracker | Look-ahead = wikilinks under `## Related Variants` — same model as solved variants, distinguished by Obsidian's dangling-link styling + `#unsolved` tag on stub. |
+| **Forward-edge spamming** (every problem points to 5+ unsolved next-problems) | "Maximum guidance" | Bloats note; AI confidence on "what's next" is genuinely low; users get analysis paralysis | Cap: at most 2 look-ahead edges per problem note. AI prompt constraint. |
+
+#### Migration Strategy for v1.0 Notes (Required by Quality Gate)
+
+v1.0 shipped `## Techniques` with wikilinks generated from LC's topic slugs (`[[Two Pointers]]`, `[[Hash Table]]`). v1.1 changes to AI-named cluster hubs. **Three options analyzed:**
+
+| Strategy | Pros | Cons | Recommendation |
+|----------|------|------|----------------|
+| **Eager batch on plugin update** | Vault consistent immediately. | (a) Surprising — N LLM calls fire on Obsidian launch. (b) Cost: ~$0.01/note × 200 = $2 just to upgrade. (c) Plugin-store red flag (mass network on load). (d) No undo. (e) `## Notes` at risk if pipeline buggy. | **REJECT.** Anti-feature. |
+| **Lazy migrate on note open** | Distributed cost; only what user opens. | (a) Surprise on every old-note open. (b) Inconsistent vault state during transition. (c) Still costs LLM calls. | **REJECT.** Surprise on normal navigation. |
+| **Opt-in batch with preview** (Settings UI: "Migrate v1.0 notes" — count + estimated cost + preview of changes + explicit Run + per-note skip) | (a) User-driven. (b) Cost-transparent. (c) Reversible. (d) Plugin-store-safe. | More UI work. | **RECOMMEND.** |
+| **Never migrate, only new ACs use clusters** | Zero risk. Zero migration cost. | Vault has dual conventions. Pattern-hub names overlap with NeetCode/lc-tag names. | **FALLBACK.** Ship if opt-in batch can't make v1.1. Document dual-convention coexistence in README. |
+
+**Recommendation:** **Default = no automatic rewrite.** Opt-in batch with preview is the GOAL; if it slips, ship the "never migrate, new ACs use clusters" fallback.
+
+**Naming-collision insight:** v1.0 generates `[[Two Pointers]]` from LC topic. v1.1 may generate `[[Two Pointers]]` for the AI cluster. Same wikilink → resolves to same note. **Migration only needed where AI cluster ≠ LC topic** (e.g., LC tagged `[[Array]]`, AI clusters `[[Sliding Window]]`). Reduces the migration surface significantly.
+
+**REQ candidate:** "Migration of v1.0 notes is opt-in; default = no automatic rewrite."
+
+---
+
+### F. Multi-Provider AI (BYO Key + Custom Base URL)
+
+Sourced from Obsidian Copilot's `src/constants.ts` (verified 17 providers via `gh api`) and Continue.dev overview docs (40+ providers).
+
+#### Table Stakes
+
+| Feature | Why Expected | Complexity | Notes / Dependencies |
+|---------|--------------|------------|----------------------|
+| Anthropic + OpenAI + OpenRouter + Ollama out-of-the-box | These four cover ~90% of users (Anthropic = best Claude; OpenAI = GPT default; OpenRouter = aggregator BYO; Ollama = local privacy) | MEDIUM | Each ≈ 1 hand-rolled fetch wrapper. Avoid bundling Anthropic/OpenAI native SDKs (heavy). |
+| Bedrock support (per milestone spec) | User explicitly listed Bedrock | HIGH | Bedrock auth = SigV4 signing — significantly more complex. May want to defer to v1.1.x or use a wrapper. |
+| Custom base URL field per provider | OpenRouter / LiteLLM / Azure OpenAI / Anthropic-compatible proxies need this. Continue.dev exposes `apiBase`. Obsidian Copilot has `OPENAI_FORMAT = "3rd party (openai-format)"` provider. | LOW | Settings field per provider; validate scheme = https. |
+| API key stored in `data.json` (plain text) | Per v1.0 convention (session cookie also lives in `data.json`); per Obsidian community norm | LOW | Plain text. Document in README. **NEVER log it.** **Depends on v1.0:** plugin-data save/load. |
+| Settings show: provider dropdown, model name, base URL, API key (masked), test-connection button | Standard pattern across Continue / Copilot | LOW | One section per active provider; "+ Add Provider" button. |
+| Switch active provider per call type (Debug = Ollama local, Review = Anthropic) | Power users want this; saves money on Debug | MEDIUM | Setting: 3 dropdowns (Debug / Review / KG). Default = same for all. Continue.dev calls these "roles". |
+| README discloses external API calls | Plugin-store requirement (PROJECT.md: "Network use disclosed in README") | LOW | Add: "v1.1 sends prompts to your configured AI provider when you trigger AI Debug or on Accepted submission (if enabled). Your API key is stored locally in `data.json` and is never transmitted anywhere except your chosen provider." |
+
+#### Differentiators
+
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| Per-feature provider routing (Debug / Review / KG separately configurable) | Continue.dev ships `roles: [chat, edit, apply]` | MEDIUM | 3 dropdowns. |
+| Token / cost telemetry **shown locally only**, never transmitted | Privacy-first BYO is a differentiator (Copilot Plus uploads telemetry — free does not) | LOW | Track in `data.json`. Optional sidebar "AI usage this month". |
+| Sane defaults (model dropdowns pre-populated per provider; user doesn't need to know model names) | Continue.dev requires user to type model names; Copilot pre-populates | LOW | Hardcode current model list per provider; allow override. |
+| Connection test (1-token call) before saving | Saves debugging when key is wrong | LOW | "Test" button per provider; ✓ / ✗ feedback. |
+
+#### Anti-Features
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **Plugin-hosted proxy / shared API key** | "Make it free for users" | Already explicitly out-of-scope in PROJECT.md: telemetry surface, hosting cost, plugin-store risk | BYO-key only. |
+| **OS keychain integration** | "Encrypted at rest" | Adds Electron native dependency (keytar bindings); cross-platform pain; not in v1.0 stack; minimal security gain | Plain text in `data.json`. Document in README. |
+| **Auto-fallback to different provider if primary fails** | "Resilience" | Surprising; user might not want prompt sent to OpenAI when Anthropic fails (privacy/cost) | Show error; let user retry or switch manually. |
+| **Telemetry: anonymized usage stats** | "Help us help you" | Plugin-store explicit denial. v1.0's "no telemetry" is a feature. | None — no telemetry at all. |
+| **Built-in "smart routing"** | "Magic" | Requires usage telemetry; opaque cost; users don't trust black boxes for billable resources | User picks per feature. |
+| **Streaming via `requestUrl`** | "Use the v1.0 HTTP convention everywhere" | `requestUrl` returns full body — no progressive streaming | Use native `fetch` for AI providers (CORS not an issue — providers all set `*`). v1.0's `requestUrl` convention applies to **leetcode.com** specifically. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Authentication (session cookie)
-    └──required by──> Problem List (GraphQL calls need session)
-    └──required by──> Problem Detail (fetch starter code, tags)
-    └──required by──> Run Code (POST to LC with cookie)
-    └──required by──> Submit Code (POST to LC with cookie)
-    └──required by──> Session Management (list/switch sessions)
+[F: Multi-Provider AI Settings]
+    └──required by──> [C: AI Debug]
+    └──required by──> [D: AI ACed Review]
+    └──required by──> [E: AI Knowledge-Graph]
 
-Problem Detail
-    └──required by──> Code Editor (need starter code template + language list)
-    └──required by──> LC Tag Import (tags fetched with problem detail)
-    └──enables──>     Offline Caching (description stored after first fetch)
+[E: AI Knowledge-Graph (pattern hubs)]
+    └──enhances──> [B: Virtual Contest summary] (auto-tag missed problems by cluster)
+    └──enhances──> [A: Preview Mode] (show "you have N notes in this cluster")
+    └──enhances──> [D: AI Review] (deep-link to cluster from review)
 
-Problem Browser
-    └──required by──> Open Problem as Note (select → open)
-    └──enhances──>    Solved/Attempted Status (status shown in list)
+[A: Preview Mode]
+    └──enhances──> [B: Virtual Contest] (preview a contest problem before starting)
+    └──required by──> [E.4: Look-ahead edges] (click dangling link → preview before commit)
 
-Run Code
-    └──required by──> Verdict Display (run result is a verdict variant)
-    └──requires──>    Code Editor (code must exist to run)
+[B: Virtual Contest]
+    └──independent──> (works without AI; AI auto-tagging is bonus enhancement)
 
-Submit Code
-    └──required by──> Auto-append Accepted Solution
-    └──required by──> Auto-update Frontmatter on Accept
-    └──required by──> Auto-backlinks to Technique Notes
-    └──requires──>    Code Editor (code must exist to submit)
+[D: AI Review] ──conflicts──> [Auto-apply suggested code] — explicit anti-feature
 
-Auto-backlinks to Technique Notes
-    └──enhances──>    Graph-friendly Wikilinks (backlinks make graph interesting)
-    └──requires──>    LC Tag Import (need topic tags to know which techniques to link)
+[E: KG migration] ──conflicts──> [auto-rewrite-on-load] — explicit anti-feature
 
-One Note Per Problem
-    └──required by──> ALL Obsidian-native differentiators (everything lives in the note)
+[v1.0: KnowledgeGraphWriter.onAccepted] ──hooks──> [D: AI Review trigger] + [E: cluster assignment trigger]
 
-LC Tag Import
-    └──enhances──>    Dataview Compatibility (tags in frontmatter = Dataview-queryable)
-    └──enhances──>    User-added Personal Tags (separate field alongside LC tags)
+[v1.0: CodeActionsWidget action row] ──hosts──> [C: AI Debug button]
+
+[v1.0: section-lock + 'leetcode.*' userEvent] ──governs──> [C inline render] + [D: ## AI Review writes]
+
+[v1.0: data.json plugin storage] ──hosts──> [F: API keys] + [B: contest session state]
+
+[v1.0: turndown HTML→MD pipeline] ──used by──> [A: Preview rendering]
+
+[v1.0: ProblemBrowser ItemView] ──hosts──> [A: right-click → Preview action]
 ```
 
-### Dependency Notes
+### Critical Dependency Notes
 
-- **Run Code and Submit Code are independent of each other** — a user can submit without running first (uncommon but valid). Neither depends on the other.
-- **Auto-frontmatter update requires Submit Code** — triggered only on Accepted verdict from a real submission, not from Run Code results.
-- **Offline caching is a side-effect of Problem Detail fetch** — no separate feature gate needed; just write to disk when detail is fetched.
-- **Dataview compatibility requires zero extra implementation** — it's a frontmatter schema design choice, not a feature to build.
-
----
-
-## vscode-leetcode Feature Parity Analysis
-
-| vscode-leetcode Feature | In Our Plugin? | Notes |
-|-------------------------|---------------|-------|
-| Sign in / sign out | YES | Different mechanism: embedded BrowserWindow vs bespoke LC redirect. |
-| leetcode.cn endpoint | NO (v2) | Explicitly deferred. |
-| Problem Explorer (sidebar list) | YES | Obsidian leaf/view instead of VS Code tree view. |
-| Search by keyword | YES | Filter in problem list view. |
-| Hide solved problems toggle | YES | Settings toggle + list filter. |
-| Difficulty colorization | YES | Difficulty shown in list; frontmatter `difficulty` enables Obsidian CSS snippet coloring. |
-| Show problem description | YES | In the note itself (Markdown). vscode-leetcode opens a webview; we render Markdown. |
-| 16 language support | YES | All LC-supported languages; language-agnostic API call. |
-| Default language setting | YES | Obsidian settings tab. |
-| Submit code (Code Lens) | YES | Obsidian command palette + ribbon button. |
-| Test code with custom cases | YES | Run Code feature with custom test case input. |
-| Star / favorite | NO | Not in v1. LC favorites are useful but not graph-native. |
-| Show top voted solution | NO (by design) | Anti-feature: link to LC solutions page instead. |
-| Manage sessions (create/delete) | PARTIAL | Session switch in v1 (display active session); create/delete deferred — low usage. |
-| Status bar session indicator | YES | Obsidian status bar item showing current LC user. |
-| Side-by-side mode | N/A | Obsidian's split panes cover this natively; no special implementation needed. |
-| WSL support | N/A | vscode-leetcode needs WSL because it shells out to Node.js CLI. We call LC REST/GraphQL directly — no shell dependency. |
-| File path / naming customization | YES | Settings: vault folder + file name template `{{id}}-{{slug}}`. |
-
-**Key features vscode-leetcode has that don't translate to Obsidian:**
-- Code Lens (VS Code-specific inline buttons above code) → replaced by Obsidian command palette + toolbar buttons
-- VS Code integrated terminal running Node CLI → not needed; we call LC APIs directly via fetch
-- VS Code webview for problem description → replaced by native Markdown note rendering
-- WSL path translation → irrelevant (no shell exec)
-
-**Features Obsidian uniquely enables (no vscode-leetcode equivalent):**
-- Note permanence: problem notes live in user's vault forever, not temp files
-- YAML frontmatter as structured data (queryable via Dataview)
-- Backlinks and graph view across all solved problems
-- Tag cloud across entire problem set via Obsidian tag pane
-- Offline reading from cached Markdown (vscode-leetcode re-fetches from LC)
-- Inter-problem linking via `[[wikilinks]]`
-- Technique stub notes creating a personal knowledge base
+- **C/D/E all require F.** F (provider settings) must ship first or in same phase as any AI feature. **F is foundational.**
+- **A is independent.** Can ship in parallel with anything; only depends on v1.0 cache + browser. Decoupled from AI.
+- **B is independent of AI.** Ships without AI; AI auto-tagging is v1.1.x enhancement.
+- **E.4 (look-ahead) blocks on A.** Look-ahead edges materialize as dangling wikilinks; clicking one needs the Preview tab to land on something useful.
+- **D section-lock interaction.** `## AI Review` must be added to `sectionLockExtension.ts` lock-list. Plugin writes via `app.vault.process(...)` (vault-layer, bypasses lock by design — same pattern as v1.0 `copyToCode.ts`).
+- **C streaming transport.** AI Debug needs streaming; v1.0 `requestUrl` cannot stream. Adds `fetch` for AI providers ONLY. **STACK addition required.**
 
 ---
 
-## MVP Definition
+## MVP Definition (for v1.1 milestone)
 
-### Launch With (v1)
+### Launch With (v1.1 ship — P1)
 
-Minimum viable product — validates the core "solve → note" loop.
+Minimum viable for the milestone — what's needed to validate the v1.1 thesis ("AI coaching + contest practice + curated graph make solving compound").
 
-- [ ] **Authentication** — can't do anything without it; embedded login + cookie fallback
-- [ ] **Problem browser** — find problems by number/title/difficulty/tag
-- [ ] **Problem detail view** — read problem in a note (HTML→Markdown, cached offline)
-- [ ] **Solved/attempted status** — reflected in list and frontmatter
-- [ ] **Code editor (in note)** — starter code scaffold, language selection
-- [ ] **Run code against sample cases** — verify before submit; custom test case input
-- [ ] **Submit code** — the core action
-- [ ] **Verdict display** — Accepted/WA/TLE/etc. with runtime + memory
-- [ ] **Auto-append accepted solution to note** — captures the win
-- [ ] **Auto-update frontmatter on accept** — solved_date, runtime, memory, language
-- [ ] **LC tag import as Obsidian tags** — instant topic taxonomy
-- [ ] **Auto-backlinks to technique notes** — core graph value
-- [ ] **Offline-readable cached problem content** — problem description readable without internet
-- [ ] **Settings UI** — login, default language, vault folder
-- [ ] **Graceful error handling** — rate limits, expired session, LC downtime
-- [ ] **README + screenshots** — required for community plugin submission
+- [ ] **F1: Multi-provider settings UI** (Anthropic + OpenAI + OpenRouter + Ollama; custom base URL per provider; key in `data.json`; test-connection button) — Foundation for all AI.
+- [ ] **F2: Single active provider per AI feature type** (one Debug provider, one Review provider, one KG provider — defaults to same).
+- [ ] **A1: Preview tab** (right-click → preview; CTA toggle Start/Open) — Decoupled; ships independently.
+- [ ] **B1: Virtual contest core** (past contest picker + Surprise me + 90/100-min timer + 4 notes + verdict tracking + post-contest summary note) — Decoupled.
+- [ ] **C1: AI Debug button** (under `## Code` action row; problem + code + last failure + failing test in prompt; streamed inline render) — Requires F.
+- [ ] **D1: AI ACed Review** (3-section review on Accepted; settings toggle default OFF; inline `## AI Review` section; non-streaming) — Requires F.
+- [ ] **E1: Pattern-cluster hubs** (constrained 22-pattern taxonomy: 18 NeetCode + ~4 additions; auto-create hubs on AC; replace `## Techniques` with cluster wikilinks for **NEW ACs only**; v1.0 lc-tag links untouched by default) — Requires F.
+- [ ] **E2: Difficulty-progression edges** (within a cluster) — Requires E1.
+- [ ] **E3: Cross-cluster `## Related Variants` (structural twins only)** — Requires E1.
+- [ ] **E4: Look-ahead edges to unsolved problems** (capped at 2 per note; surface as dangling wikilinks; preview on click) — Requires E1 + A1.
+- [ ] **README disclosure update** (AI provider network calls, key storage location).
 
-### Add After Validation (v1.x)
+### Add After Validation (v1.1.x patches — P2)
 
-Features to add once core solving loop is confirmed working:
+- [ ] **E5: Opt-in migration UI** for v1.0 notes — preview, cost estimate, run button.
+- [ ] **B2: Contest summary AI-pattern auto-tagging** (after E1).
+- [ ] **F3: Cost telemetry sidebar** (local-only token/cost tracker).
+- [ ] **C2: AI Debug "include `## Notes`" checkbox**.
+- [ ] **A2: Preview shows pattern-cluster coverage** (after E1).
 
-- [ ] **User-added personal tags** — `#revisit` etc.; low complexity, add after frontmatter schema is settled
-- [ ] **Session management UI** — list/switch sessions; useful for power users with multiple LC accounts
-- [ ] **Problem list sorting strategies** — sort by acceptance rate, ID, difficulty; trivial once list is built
+### Future Consideration (v1.2+ — P3)
 
-### Future Consideration (v2+)
-
-- [ ] **leetcode.cn support** — different auth + API surface; design abstraction layer in v1
-- [ ] **Mobile support** — blocked on BrowserWindow; revisit with cookie-paste-only path
-- [ ] **Spaced repetition** — full SR system (SM-2/FSRS); defer until graph/tags prove insufficient
-- [ ] **AI auto-tagging** — requires LLM API; defer until core tagging is stable
-- [ ] **Top-voted solution viewer** — nice-to-have; link to LC page suffices for v1
+- [ ] **C3: AI Debug Apply-Patch** (Cursor-style diff apply) — HIGH complexity, section-lock-aware diff merge.
+- [ ] **F4: Bedrock SigV4 support** — complex auth.
+- [ ] **F5: GitHub Copilot / Azure OpenAI providers** — enterprise nice-to-have.
+- [ ] **B3: Resume in-progress contest after Obsidian restart** — needs reliable persistence.
+- [ ] **E6: Pattern-cluster summaries auto-regenerate when N new problems join** — graph-curation polish.
+- [ ] **E7: Manual cluster override** (user disagrees with AI assignment) — defer; surface as known limitation.
 
 ---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| Authentication | HIGH | MEDIUM | P1 |
-| Problem Browser | HIGH | MEDIUM | P1 |
-| Problem Detail View | HIGH | MEDIUM | P1 |
-| Code Editor in Note | HIGH | MEDIUM | P1 |
-| Run Code | HIGH | HIGH | P1 |
-| Submit Code | HIGH | HIGH | P1 |
-| Verdict Display | HIGH | LOW | P1 |
-| One Note Per Problem | HIGH | LOW | P1 |
-| LC Tag Import | HIGH | LOW | P1 |
-| Auto-append Solution on Accept | HIGH | LOW | P1 |
-| Auto-update Frontmatter on Accept | HIGH | LOW | P1 |
-| Auto-backlinks to Technique Notes | HIGH | MEDIUM | P1 |
-| Offline Caching | HIGH | LOW | P1 |
-| Settings UI | MEDIUM | LOW | P1 |
-| Error Handling | HIGH | LOW | P1 |
-| Solved/Attempted Status | MEDIUM | LOW | P1 |
-| User-added Personal Tags | MEDIUM | LOW | P2 |
-| Session Management UI | LOW | LOW | P2 |
-| Problem List Sorting | LOW | LOW | P2 |
-| Dataview Compatibility | MEDIUM | LOW | P2 (schema design choice, no build cost) |
-| Star / Favorite | LOW | MEDIUM | P3 |
-| Top-Voted Solution Viewer | LOW | MEDIUM | P3 |
-| leetcode.cn | MEDIUM | HIGH | P3 (v2) |
-| Spaced Repetition | MEDIUM | HIGH | P3 (v2) |
-| AI Tagging | LOW | HIGH | P3 (v2) |
+| Feature | User Value | Implementation Cost | Priority | Depends On |
+|---------|------------|---------------------|----------|------------|
+| F1 Provider settings (4 providers) | HIGH | MEDIUM | P1 | — |
+| F2 Per-feature provider routing | MEDIUM | LOW | P1 | F1 |
+| A1 Preview tab | HIGH | LOW | P1 | v1.0 cache + ProblemBrowser |
+| B1 Virtual contest core | HIGH | MEDIUM | P1 | v1.0 note pipeline + verdict pipeline |
+| C1 AI Debug | HIGH | MEDIUM | P1 | F1 + v1.0 CodeActionsWidget |
+| D1 AI ACed Review | HIGH | MEDIUM | P1 | F1 + v1.0 onAccepted hook |
+| E1 Pattern-cluster hubs | HIGH | MEDIUM | P1 | F1 |
+| E2 Difficulty-progression | MEDIUM | LOW | P1 | E1 |
+| E3 Cross-cluster Variants | MEDIUM | MEDIUM | P1 | E1 |
+| E4 Look-ahead edges | HIGH (USP) | MEDIUM | P1 | E1 + A1 |
+| E5 Opt-in migration UI | MEDIUM | MEDIUM | P2 | E1 |
+| B2 Contest AI auto-tag | MEDIUM | LOW | P2 | E1 |
+| F3 Cost telemetry | MEDIUM | LOW | P2 | F1 |
+| C3 AI Debug Apply-Patch | LOW (nice) | HIGH | P3 | C1 |
+| F4 Bedrock SigV4 | LOW (niche) | HIGH | P3 | F1 |
 
 ---
 
-## Complexity Breakdown (S/M/L/XL)
+## Competitor Feature Analysis
 
-| Feature | Size | Rationale |
-|---------|------|-----------|
-| Authentication (BrowserWindow + cookie capture) | M | BrowserWindow in Electron is well-understood, but cookie interception + storage + refresh detection adds non-trivial state management |
-| Session persistence + expiry detection | S | Store cookie in plugin data; detect 401/403 on any request |
-| Problem browser / list | M | GraphQL fetch + pagination + filter UI (Obsidian modal) + status indicators |
-| Problem detail view (HTML→Markdown) | M | HTML→Markdown conversion is the tricky part (LC's HTML is non-standard); rendering is just a note |
-| Offline caching | S | Write description to note on fetch; that's the cache. Problem list needs a TTL-based JSON cache |
-| Code editor in note | M | Starter code scaffold from LC GraphQL (`codeSnippets`), fenced code block insertion, language selector |
-| Run code (interpret_solution + polling) | L | Two-step HTTP: POST to `/interpret_solution/`, poll `/check/` with backoff; parse multi-test-case result; custom test case input UI |
-| Submit code (submit + polling) | L | Same polling pattern as run; parse verdict, runtime percentile, memory percentile, error messages |
-| Verdict display | S | Modal or panel in Obsidian showing parsed result; no logic, just rendering |
-| Solved/attempted status | S | Read from problem list GraphQL response; write to frontmatter |
-| Auto-append accepted solution | S | Detect accepted verdict, extract code block from note, append new section. Obsidian vault API. |
-| Auto-update frontmatter on accept | S | `app.vault.process()` to update YAML fields; well-understood pattern in Obsidian plugin ecosystem |
-| LC tag import | S | `topicTags` already in GraphQL problem detail response; write to frontmatter |
-| User-added personal tags | S | Separate frontmatter field; plugin never overwrites it |
-| Auto-backlinks to technique notes | M | Map LC topic tags → readable technique names; create/update `## Techniques` section; stub note creation |
-| Graph-friendly wikilinks | S | Falls out of auto-backlinks; `[[Two Pointers]]` syntax in note body |
-| Dataview compatibility | S | Frontmatter schema design decision; zero runtime cost |
-| Settings UI | S | Standard Obsidian `addSettingTab` with text/dropdown/toggle settings |
-| Error handling (rate limits, downtime, expiry) | S | Try/catch + backoff strategy + user-facing notices in Obsidian notification system |
-| README + community plugin submission | S | Documentation effort, not code |
+| Feature | vscode-leetcode | LeetHub V2 | NeetCode 150 | Obsidian Copilot | Continue.dev | Our Approach (v1.1) |
+|---------|-----------------|------------|--------------|------------------|--------------|---------------------|
+| Problem preview before opening | YES (right-click) | N/A | N/A | N/A | N/A | YES — default click target. |
+| Virtual contest mode | NO | NO | NO | N/A | N/A | YES — past + Surprise me + summary note. |
+| AI debug | NO | NO | NO | YES (chat — vault-context, not problem-aware) | YES (chat + edit) | YES — problem-aware, user-triggered, streaming. |
+| AI code review | NO | NO | NO | YES (manual) | YES (PR checks) | YES — auto on AC, 3 dimensions, inline. |
+| Pattern-cluster knowledge graph | NO | NO (filenames only) | YES (static 18 patterns) | NO (semantic search instead) | NO | YES — AI-curated within NeetCode taxonomy + look-ahead. |
+| Multi-provider BYO key | N/A | N/A | N/A | YES (17 providers) | YES (40+) | YES (4 launch + custom base URL). |
+| Custom base URL | N/A | N/A | N/A | YES (`OPENAI_FORMAT`) | YES (`apiBase`) | YES per provider. |
+| Per-feature provider routing | N/A | N/A | N/A | NO | YES (`roles`) | YES (Debug / Review / KG). |
+| Per-problem README + metadata | NO (just code file) | YES (README + code) | N/A | N/A | N/A | YES (v1.0 already structured note). |
+| Look-ahead "you should try X next" | NO | NO | NO (static, not personalized) | NO (semantic, not progression-aware) | NO | YES — AI-judged, capped 2/note, dangling-link UX. |
 
-**Size definitions:**
-- S = 0.5–1 day
-- M = 2–4 days
-- L = 1–2 weeks (involves async polling, multiple states, edge cases)
-- XL = 2+ weeks (not applicable to any v1 feature)
+**Key insight:** **No comparable product has the AI-curated personalized look-ahead edge to unsolved problems.** NeetCode shows a static roadmap; Obsidian Copilot semantic-searches existing notes; LeetHub captures only past. **Look-ahead edges are the v1.1 differentiator.**
 
 ---
 
 ## Sources
 
-- **vscode-leetcode** full README and `leetCodeExecutor.ts` source: https://github.com/LeetCode-OpenSource/vscode-leetcode
-- **leetcode-cli** (the underlying CLI vscode-leetcode wraps): https://github.com/skygragon/leetcode-cli — confirmed REST endpoints: `/interpret_solution/`, `/submit/`, `/check/`
-- **leetcode-query** library source (GraphQL read-only; no run/submit): https://github.com/jacoblincool/leetcode-query
-- **fennr/obsidian_leetcode_template** (Russian-language Obsidian LC plugin with frontmatter schema + cookie auth): https://github.com/fennr/obsidian_leetcode_template
-- **hanbyul-kim/obsidian-leetcode** (Obsidian LC importer — URL→note with frontmatter, Python template, Dataview examples): https://github.com/hanbyul-kim/obsidian-leetcode
-- **luis-kueng/obsidian-leetcode** (daily problem → note): https://github.com/luis-kueng/obsidian-leetcode
-- **alfa-leetcode-api** (read-only LC API, confirms GraphQL schema for problem list/detail): https://github.com/alfaarghya/alfa-leetcode-api
-- **clearloop/leetcode-cli** data models (VerifyResult fields: status_code, status_msg, runtime_percentile, memory_percentile, compile errors): https://github.com/clearloop/leetcode-cli
+| Source | Confidence | Used For |
+|--------|------------|----------|
+| `LeetCode-OpenSource/vscode-leetcode` README (verified via `gh api`) | HIGH | Preview UX precedent, "no AI / no contest" gap analysis |
+| `QasimWani/LeetHub` `scripts/leetcode.js` (verified via `gh api`) | HIGH | Per-problem README capture model, post-AC trigger |
+| `neetcode-gh/leetcode/.problemSiteData.json` (450 entries, verified via curl + grep) | HIGH | Canonical 18-pattern taxonomy |
+| `logancyang/obsidian-copilot/src/constants.ts` (verified via `gh api`) | HIGH | Multi-provider enum: OPENROUTERAI, OPENAI, OPENAI_FORMAT, ANTHROPIC, GOOGLE, XAI, AMAZON_BEDROCK, AZURE_OPENAI, GROQ, OLLAMA, LM_STUDIO, COPILOT_PLUS, MISTRAL, DEEPSEEK, COHEREAI, SILICONFLOW, GITHUB_COPILOT |
+| `logancyang/obsidian-copilot` README (verified via `gh api`) | HIGH | Set-Keys flow, OpenRouter recommended-default pattern |
+| Continue.dev `docs.continue.dev/customize/model-providers/overview` (WebFetch) | MEDIUM | YAML config schema with `apiKey` + roles `[chat, edit, apply]`; 40+ provider list |
+| LeetCode native virtual contest UI behavior | MEDIUM | 90-min weekly / 100-min biweekly; ICPC-style penalty pattern (training data + community wiki references; live page 403'd) |
+| Project's `CLAUDE.md` Conventions section | HIGH | `'leetcode.*'` userEvent annotation requirement for plugin CM6 dispatches into locked ranges |
+| Project's `PROJECT.md` Out-of-Scope + Constraints | HIGH | "BYO key only", "no telemetry", "leetcode.com only", "isDesktopOnly" — non-negotiable boundaries |
+| Project's `MILESTONES.md` v1.0 Delivered | HIGH | What v1.1 can build on (CodeActionsWidget, KnowledgeGraphWriter.onAccepted, section-lock, ProblemBrowser, turndown, etc.) |
+| Cursor / Copilot Chat (training data; docs URL 404'd) | LOW | "User-triggered AI universally preferred over auto-AI" pattern recognition |
 
 ---
 
-*Feature research for: Obsidian LeetCode integration plugin*
-*Researched: 2026-05-07*
+## Confidence Summary
+
+| Domain | Confidence | Why |
+|--------|------------|-----|
+| Pattern-cluster taxonomy (18 NeetCode patterns) | HIGH | Source data file verified; 450 entries enumerated |
+| Multi-provider settings UX pattern | HIGH | 17-provider enum + Set-Keys flow extracted from Obsidian Copilot source |
+| Preview UX (right-click / preview-before-create) | HIGH | vscode-leetcode README explicit |
+| Inline-vs-sidebar AI rendering decision | MEDIUM | Obsidian Copilot uses both; choice for our case driven by Obsidian-native graph philosophy from PROJECT.md, not single canonical source |
+| Contest scoring formula (LC virtual) | MEDIUM | Penalty pattern (5 min/wrong) corroborated across LC + Codeforces ICPC; exact base points vary per contest — recommendation is "render LC's published values, don't invent" |
+| Look-ahead edges UX | LOW | No direct precedent in any comparable product; recommendation is novel synthesis. **Validation needed during v1.1 dogfood.** |
+| Migration strategy | MEDIUM | Three-option analysis is structured; recommendation is conservative (opt-in default); real-world validation requires v1.1 dogfood |
+
+---
+
+## Gaps and Open Questions for Roadmap
+
+1. **Streaming HTTP transport for AI providers.** v1.0 uses `requestUrl` for LC. AI streaming requires `fetch` (since `requestUrl` returns full body). Crosses v1.0 convention. **Likely a STACK addition, not a FEATURE concern.**
+2. **Section-lock extension for `## AI Review`.** Need to extend `sectionLockExtension.ts` to lock the new section. Per CLAUDE.md, plugin writes via `vault.process` bypass the lock — same pattern as `copyToCode.ts`. Document up front.
+3. **Look-ahead edge target stub generation.** When AI references `[[1234-skyline-problem]]` and user clicks, what fires? Preview tab? Auto-create stub? Recommendation: preview-first, stub-on-explicit-Start. Confirm in design phase.
+4. **Cost-disclosure threshold.** Per-call estimate in toast? Settings-tab summary? Sidebar widget? Recommendation: settings-tab summary + per-call toast — defer details.
+5. **Pattern-cluster hub note format.** Bases query? Dataview-style code block? Static auto-updated list? Likely Bases (matches v1.0 `LeetCode.base`); confirm in design phase.
+6. **AI cluster disagreement handling.** "Wrong, this isn't sliding window, it's prefix sum." Manual override mechanism? Recommendation: defer to v1.2; surface as known limitation in v1.1 README.
+
+---
+
+*Feature research for: Obsidian LeetCode v1.1 (Contest, AI Coach, Preview).*
+*Researched: 2026-05-14*

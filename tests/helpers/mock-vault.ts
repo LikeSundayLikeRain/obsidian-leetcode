@@ -60,6 +60,7 @@ export function makeMockVaultApp(initialFiles: Record<string, string> = {}) {
     return next;
   });
   const read = vi.fn(async (file: MockVaultFile) => state.contents.get(file.path) ?? '');
+  const cachedRead = vi.fn(async (file: MockVaultFile) => state.contents.get(file.path) ?? '');
 
   const processFrontMatter = vi.fn(
     async (file: MockVaultFile, fn: (fm: Record<string, unknown>) => void) => {
@@ -97,6 +98,7 @@ export function makeMockVaultApp(initialFiles: Record<string, string> = {}) {
         createFolder,
         process,
         read,
+        cachedRead,
       },
       fileManager: {
         processFrontMatter,
@@ -112,7 +114,7 @@ export function makeMockVaultApp(initialFiles: Record<string, string> = {}) {
     state,
     // Convenience: expose spies at the top level for assertion ergonomics.
     spies: {
-      getAbstractFileByPath, create, createFolder, process, read,
+      getAbstractFileByPath, create, createFolder, process, read, cachedRead,
       processFrontMatter, openLinkText, getActiveViewOfType, getFileCache,
     },
     /** Pre-populate frontmatter for a file (e.g., in regeneration tests). */

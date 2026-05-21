@@ -44,6 +44,13 @@ export interface RenderVerdictArgs {
   problemTitle?: string;
   /** Called when the user clicks `Copy failing testcase to custom input`. */
   onCopyFailingInput?: (input: string) => void;
+  /** Phase 08 Plan 05 (AIDBG-01) — Called when the user clicks `AI: Debug`
+   *  on a non-Accepted verdict. Visibility union LOCKED to
+   *  `kind ∈ {wa, tle, mle, re, ce}` per RESEARCH §Pitfall 7. The Modal-
+   *  layer caller (VerdictModal.renderVerdict) wraps this callback in a
+   *  close-then-fire lambda so AIStreamModal does not stack on top of a
+   *  closing verdict modal (T-08-05-T-stack mitigation). */
+  onOpenAIDebug?: () => void;
   // ── Phase 5.4 (D-08) — Run-path-only optional inputs ─────────────────────
   // Backward-compatible: every existing call site (Submit / Pending / Timeout
   // / Unknown / Run path callers that haven't been updated) continues to
@@ -88,6 +95,7 @@ export function renderVerdict(args: RenderVerdictArgs): void {
       problemTitle,
       args.metaData,
       args.joinedDataInput,
+      args.onOpenAIDebug,
     );
     return;
   }
@@ -102,7 +110,16 @@ export function renderVerdict(args: RenderVerdictArgs): void {
       renderUnknownVerdict(titleEl, contentEl, payload, problemTitle);
       return;
     }
-    renderSubmitVerdict(titleEl, contentEl, payload as SubmitCheckResponse, info.kind, info.displayName, problemTitle, args.onCopyFailingInput);
+    renderSubmitVerdict(
+      titleEl,
+      contentEl,
+      payload as SubmitCheckResponse,
+      info.kind,
+      info.displayName,
+      problemTitle,
+      args.onCopyFailingInput,
+      args.onOpenAIDebug,
+    );
     return;
   }
 
@@ -116,10 +133,6 @@ function renderTimeout(titleEl: HTMLElement, contentEl: HTMLElement): void {
   setText(titleEl, 'Judge timeout');
   const p = appendEl(contentEl, 'p');
   setText(p, 'LeetCode judge timed out. Try again or check leetcode.com.');
-  const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
 }
 
 // ── Render state: Run (sample / custom) ──────────────────────────────────
@@ -134,10 +147,11 @@ function renderRunResult(
   _problemTitle: string | undefined,
   metaData?: string,
   joinedDataInput?: string,
+  onOpenAIDebug?: () => void,
 ): void {
   // ── Step 1: D-15 error sniff — single error block + zero tabs ──────────
   if (hasRunErrorPayload(res)) {
-    renderRunErrorBlock(titleEl, contentEl, res);
+    renderRunErrorBlock(titleEl, contentEl, res, onOpenAIDebug);
     return;
   }
 
@@ -244,7 +258,19 @@ function renderRunResult(
     // ── Step 7a: Input section (D-08) ─────────────────────────────────────
     renderInputSection(caseBody, inputChunks[activeIdx] ?? '', md);
 
-    // ── Step 7b: Output section ──────────────────────────────────────────
+    // ── Step 7b: Stdout section (print/console.log output) ─────────────
+    const stdoutChunks = splitOutput(res.code_output, arity);
+    const stdout = stdoutChunks[activeIdx] ?? '';
+    if (stdout.length > 0) {
+      renderValueSection(
+        caseBody,
+        'Stdout',
+        stdout,
+        'leetcode-verdict-output-value',
+      );
+    }
+
+    // ── Step 7c: Output section ──────────────────────────────────────────
     renderValueSection(
       caseBody,
       'Output',
@@ -252,7 +278,7 @@ function renderRunResult(
       'leetcode-verdict-output-value',
     );
 
-    // ── Step 7c: Expected section (suppressed when no expected available) ─
+    // ── Step 7d: Expected section (suppressed when no expected available) ─
     if (passState !== null) {
       renderValueSection(
         caseBody,
@@ -296,11 +322,20 @@ function renderRunResult(
   // First tab active by default.
   renderActiveCase(0);
 
-  // ── Step 8: Footer — single Close, NO Copy button (D-16 Run side) ──────
+  // ── Step 8: Footer — AI Debug button on failure (D-16 Run side) ─────────
   const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
+  // Phase 08 dogfood — Plan 08-05 originally only wired the AI Debug button
+  // into renderSubmitVerdict + renderRunErrorBlock. Sample-test failures
+  // (Wrong Answer with case tabs) route through this path and were missing
+  // the button. Visibility: any per-case FAIL → button shows. ABSENT when
+  // every case passes (treated as no-op success on Run; user can submit).
+  if (!aggregatePass && onOpenAIDebug) {
+    const aiBtn = appendEl(footer, 'button', 'leetcode-ai-debug-action');
+    setText(aiBtn, 'AI: Debug');
+    aiBtn.addEventListener('click', () => {
+      onOpenAIDebug();
+    });
+  }
 }
 
 /** Phase 5.4 D-15 — Run-mode compile/runtime error renderer.
@@ -311,6 +346,7 @@ function renderRunErrorBlock(
   titleEl: HTMLElement,
   contentEl: HTMLElement,
   res: RunCheckResponse,
+  onOpenAIDebug?: () => void,
 ): void {
   const statusInfo = classifyStatus(
     typeof res.status_code === 'number' ? res.status_code : 0,
@@ -337,9 +373,15 @@ function renderRunErrorBlock(
   setText(pre, errText);
 
   const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
+  // Phase 08 dogfood — Run-side compile/runtime errors are non-Accepted and
+  // should expose AI Debug like Submit-side ce/re do.
+  if (onOpenAIDebug) {
+    const aiBtn = appendEl(footer, 'button', 'leetcode-ai-debug-action');
+    setText(aiBtn, 'AI: Debug');
+    aiBtn.addEventListener('click', () => {
+      onOpenAIDebug();
+    });
+  }
 }
 
 /** Phase 5.4 D-08 — Input section renderer for the active case. When
@@ -432,6 +474,7 @@ function renderSubmitVerdict(
   displayName: string,
   problemTitle: string | undefined,
   onCopyFailingInput: ((input: string) => void) | undefined,
+  onOpenAIDebug: (() => void) | undefined,
 ): void {
   setText(titleEl, problemTitle ? `${displayName} — ${problemTitle}` : displayName);
   const body = appendEl(contentEl, 'div', 'leetcode-verdict-body');
@@ -500,9 +543,21 @@ function renderSubmitVerdict(
       });
     }
   }
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
+  // Phase 08 Plan 05 (AIDBG-01) — Conditional `AI: Debug` button. Locked
+  // visibility union (RESEARCH §Pitfall 7): kind ∈ {wa, tle, mle, re, ce}.
+  // ABSENT for ac (Phase 09 territory), ole/ie/unknown/unknown-lc (no
+  // actionable failing case). Neutral class — NO .mod-cta (UI-SPEC §Color).
+  // Defensive gate on `onOpenAIDebug` truthiness so the button never paints
+  // without a wired callback (T-08-05-D-callback-undef mitigation).
+  const showAIDebugButton =
+    kind === 'wa' || kind === 'tle' || kind === 'mle' || kind === 're' || kind === 'ce';
+  if (showAIDebugButton && onOpenAIDebug) {
+    const aiBtn = appendEl(footer, 'button', 'leetcode-ai-debug-action');
+    setText(aiBtn, 'AI: Debug');
+    aiBtn.addEventListener('click', () => {
+      onOpenAIDebug();
+    });
+  }
 }
 
 function renderAcBody(body: HTMLElement, res: SubmitCheckResponse): void {
@@ -590,9 +645,6 @@ function renderUnknownVerdict(
   copyBtn.addEventListener('click', () => {
     void writeClipboard(safeStringify(payload));
   });
-  const closeBtn = appendEl(footer, 'button', 'mod-cta');
-  setText(closeBtn, 'Close');
-  closeBtn.setAttribute('data-lc-role', 'close');
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
