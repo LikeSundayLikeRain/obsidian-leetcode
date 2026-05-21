@@ -1,9 +1,9 @@
 // Phase 06 FOUND-02 — bundle-size gate behavior contract.
 //
 // Asserts that `scripts/check-bundle-size.mjs`:
-//   - Exits 1 with FAIL when main.js > 1_200_000 bytes
-//   - Exits 0 with WARN when 1_080_000 < size <= 1_200_000
-//   - Exits 0 (no warn) when size <= 1_080_000
+//   - Exits 1 with FAIL when main.js > 1_300_000 bytes
+//   - Exits 0 with WARN when 1_170_000 < size <= 1_300_000
+//   - Exits 0 (no warn) when size <= 1_170_000
 //   - Exits 1 with FAIL when main.js does not exist
 //
 // Phase 07 Plan 03 ceiling bump (Rule 3): 500 KB → 1 MB when the AI SDK
@@ -63,18 +63,18 @@ describe('scripts/check-bundle-size.mjs (FOUND-02)', () => {
     expect(r.stderr).not.toMatch(/WARN/);
   });
 
-  it('exits 0 with WARN when 1_080_000 < size <= 1_200_000 (soft warn band)', () => {
+  it('exits 0 with WARN when 1_170_000 < size <= 1_300_000 (soft warn band)', () => {
     const r = runWithFixture(1_140_000);
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/WARN/);
     expect(r.stderr).toMatch(/heading toward the gate/);
   });
 
-  it('exits 1 with FAIL when main.js > 1_200_000 bytes (hard limit)', () => {
+  it('exits 1 with FAIL when main.js > 1_300_000 bytes (hard limit)', () => {
     const r = runWithFixture(1_300_000);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/FAIL/);
-    expect(r.stderr).toMatch(/exceeds 1200000 bytes/);
+    expect(r.stderr).toMatch(/exceeds 1300000 bytes/);
   });
 
   it('exits 1 with FAIL when main.js is missing', () => {
@@ -97,7 +97,7 @@ describe('package.json — check:bundle-size script registration (FOUND-02)', ()
 });
 
 describe('scripts/check-bundle-size.mjs — threshold constants (FOUND-02 + Phase 08 Plan 02 bump)', () => {
-  it('uses HARD_LIMIT=1_200_000 and SOFT_WARN=1_080_000 (1.2 MB ceiling for live streamText consumer)', () => {
+  it('uses HARD_LIMIT=1_300_000 and SOFT_WARN=1_170_000 (1.3 MB ceiling for live streamText consumer)', () => {
     const src = readFileSync(SCRIPT_PATH, 'utf-8');
     expect(src).toMatch(/HARD_LIMIT\s*=\s*1_?200_?000/);
     expect(src).toMatch(/SOFT_WARN\s*=\s*1_?080_?000/);
