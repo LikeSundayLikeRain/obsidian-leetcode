@@ -124,6 +124,13 @@ export function openLogin(): Promise<AuthCookies | null> {
   // `BrowserWindow` constructor lives under `.remote` (shimmed by Obsidian's
   // host via @electron/remote) or must be loaded via @electron/remote directly.
   // Probe both paths so the plugin works across Obsidian versions.
+  //
+  // Phase 06 FOUND-01: `require('electron')` is the canonical pattern per
+  // CLAUDE.md / PROJECT.md (avoiding the deprecated `@electron/remote`
+  // dependency). `import electron from 'electron'` does not work in
+  // Obsidian's bundled renderer — only the dynamic `require` resolves the
+  // host-injected Electron surface.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const electron = require('electron') as ElectronModule;
   let BrowserWindow: BrowserWindowCtor | undefined = electron.BrowserWindow;
   if (!BrowserWindow && electron.remote) {

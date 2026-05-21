@@ -7,6 +7,7 @@ so practice builds a knowledge graph instead of scattered code files.
 ## Features
 
 - Browse the LeetCode problem list with search + difficulty/status filters
+- Preview any problem in a read-only tab before committing — single-click previews by default; shift-click still opens the note directly
 - Open any problem as an Obsidian note with locked frontmatter and a `## Problem` statement rendered as Markdown
 - Write solutions in a native fenced code block — no custom editor, no separate editor pane
 - Run your code against sample or custom test cases with `LeetCode: Run`
@@ -50,11 +51,51 @@ so practice builds a knowledge graph instead of scattered code files.
 
    ![Graph view](docs/graph-view.png)
 
+## Previewing problems
+
+Single-click on a problem in the LeetCode browser previews it in a new tab. Shift-click opens the note directly. The preview tab is read-only — it shows the problem statement, difficulty, and topic chips with a sticky `Start Problem` button at the top, and creates no `.md` file in your vault until you click `Start Problem` (or shift-click the row in the browser).
+
+- **Right-click** any problem in the browser and pick `Preview problem` to preview regardless of your default click behavior.
+- Run `Open in preview` from the command palette while viewing a problem note to re-open the preview tab for that problem.
+- Open Settings → Preview → Click behavior. Choose `Preview first` (default) or `Open note directly` to restore v1.0 behavior. The setting persists across reloads.
+
+Only one preview tab is open at a time — clicking another problem reuses the same tab. After you click `Start Problem`, the preview detaches itself and the new note takes focus.
+
 ## Network usage
 
-This plugin communicates with leetcode.com to fetch problems and submit solutions. No other network endpoints are contacted.
+This plugin communicates with the following hosts:
+
+- `leetcode.com` — fetch problems, submit solutions, poll verdicts. Contest API operations (contest list via `leetcode.com/graphql`, contest ranking/detail via `leetcode.com/contest/`) use the same authenticated session. **All LeetCode traffic** uses Obsidian's built-in `requestUrl`; no other code path touches `leetcode.com`.
+- AI provider hosts — only when you have configured an active AI provider in Settings → AI. The plugin contacts at most ONE of these per AI call, depending on your `Active AI provider` selection:
+  - `https://api.anthropic.com` — when `Active AI provider = Anthropic`
+  - `https://api.openai.com` — when `Active AI provider = OpenAI`
+  - `https://openrouter.ai` — when `Active AI provider = OpenRouter`
+  - your local Ollama host (default `http://localhost:11434`) — when `Active AI provider = Ollama`
+  - your custom OpenAI-compatible endpoint URL — when `Active AI provider = Custom`
+  - **AWS Bedrock**: `https://bedrock-runtime.{region}.amazonaws.com` where `{region}` is your configured AWS region (e.g. `us-east-1`) — when `Active AI provider = AWS Bedrock`
+
+No telemetry. No analytics. No other endpoints.
+
+### Authentication
 
 Authentication is handled via an embedded Obsidian `BrowserWindow` that captures your LC session cookie after you sign in. The cookie is stored only in `.obsidian/plugins/leetcode/data.json` on your local machine, is never transmitted anywhere except leetcode.com, and is never logged.
+
+AI provider API keys are stored in plain text in `.obsidian/plugins/leetcode/data.json` on your local machine. Keys are never logged (the plugin's logger redacts every known key field name; see `src/shared/logger.ts`). Keys are transmitted only to the configured provider's endpoint.
+
+### Cost expectations
+
+AI features incur per-call cost charged by your selected provider. The following features make AI calls:
+
+- **AI Debug** (Phase 08) — one streaming call per debug session to analyze your wrong-answer or TLE verdict.
+- **AI Review** (Phase 09) — one call per accepted solution when opt-in review is enabled.
+- **AI Knowledge Graph classification** (Phase 11) — approximately one call per accepted problem for pattern classification.
+- **AI Contest Analysis** (Phase 11) — approximately one call per completed contest for performance summary.
+
+Typical cost per accepted solution: ~$0.01-0.05 depending on provider and model (classification + optional review). See your provider's pricing page for current rates: [Anthropic](https://www.anthropic.com/pricing), [OpenAI](https://openai.com/pricing), [OpenRouter](https://openrouter.ai/models), [AWS Bedrock](https://aws.amazon.com/bedrock/pricing/).
+
+The "Test connection" action sends a metadata-only `GET /v1/models` (or `GET /api/tags` for Ollama) for OpenAI / OpenRouter / Custom / Ollama — these are free. For Anthropic, "Test connection" sends a 1-token chat completion (~$0.0001 per click).
+
+Per-feature daily cost cap UI ships in Phase 09. Default model identifiers may rot — when "Test connection" reports `model not found`, update the `Model` field manually.
 
 ## Configuration
 
@@ -108,7 +149,7 @@ Released under the [MIT License](LICENSE).
 
 Issues and pull requests welcome at [github.com/LikeSundayLikeRain/obsidian-leetcode](https://github.com/LikeSundayLikeRain/obsidian-leetcode).
 
-### Development
+## Development
 
 ```bash
 git clone https://github.com/LikeSundayLikeRain/obsidian-leetcode
@@ -119,3 +160,20 @@ npm test      # vitest
 ```
 
 For local testing, copy `main.js`, `manifest.json`, and `styles.css` into `<your-vault>/.obsidian/plugins/leetcode/` and reload the plugin.
+
+### Bundle size
+
+The production bundle (`main.js`) is gated by a portable Node script, `scripts/check-bundle-size.mjs`, which runs as the last step of `.github/workflows/ci.yml` (after lint, test, and build).
+
+- **Hard ceiling: 1 MB.** PRs that push `main.js` over 1,000,000 bytes fail CI and cannot be merged.
+- **Soft warning: 900 KB.** Builds between 900 KB and 1 MB log a warning but still pass — treat warnings as a signal to investigate before the next release.
+- **Current baseline (v1.1 Phase 07):** the AI Provider runtime (`@ai-sdk/*` family) lands the bundle in the ~800 KB range when `AIClient` is wired into `main.ts:onload`. The 1 MB ceiling was set after measuring the cost of static imports under Obsidian's CJS-no-splitting esbuild profile, which prevents `await import()` from deferring the AI SDK out of the hot path. Mainstream Obsidian AI plugins (Smart Connections, Copilot) ship at comparable sizes.
+- **v1.1 entry baseline (pre-AI-wiring): ~165.0 KB (168,953 bytes)** — preserved here for historical reference; this baseline applied while the AI SDK was tree-shaken because no entry path imported it.
+
+Run the gate locally before pushing:
+
+```bash
+npm run build && npm run check:bundle-size
+```
+
+Thresholds are hardcoded constants in the script (no baseline file is committed); CI is the source of truth.

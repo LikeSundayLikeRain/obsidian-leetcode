@@ -40,7 +40,7 @@ describe('NoteWriter cache TTL (D-11, D-14)', () => {
     const writer = new NoteWriter(m.app as never, client as never, settings as never);
     await writer.openProblem('two-sum');
     // Give the background-refresh a tick to run.
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => window.setTimeout(r, 10));
     expect(client.getProblemDetail).toHaveBeenCalledWith('two-sum');
   });
 

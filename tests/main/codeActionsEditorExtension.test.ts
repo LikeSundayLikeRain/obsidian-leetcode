@@ -91,6 +91,9 @@ type HostOverrides = {
   runFromActive?: ReturnType<typeof vi.fn>;
   submitFromActive?: ReturnType<typeof vi.fn>;
   switchLanguage?: ReturnType<typeof vi.fn>;
+  // Phase 08 Plan 04 (AIDBG-01) — fence-row factory now requires a 3rd
+  aiDebugFromActive?: ReturnType<typeof vi.fn>;
+  aiSolutionFromActive?: ReturnType<typeof vi.fn>;
   defaultLanguage?: string;
 };
 function withHostMethods(
@@ -101,6 +104,8 @@ function withHostMethods(
   host.runFromActive = overrides.runFromActive ?? vi.fn();
   host.submitFromActive = overrides.submitFromActive ?? vi.fn();
   host.switchLanguage = overrides.switchLanguage ?? vi.fn();
+  host.aiDebugFromActive = overrides.aiDebugFromActive ?? vi.fn();
+  host.aiSolutionFromActive = overrides.aiSolutionFromActive ?? vi.fn();
   host.settings = {
     getDefaultLanguage: () => overrides.defaultLanguage ?? 'python3',
   };
@@ -211,14 +216,12 @@ describe('buildDecorations — widget emits .leetcode-code-actions', () => {
     expect(set.size).toBe(1);
   });
 
-  it('widget emits .leetcode-code-actions container with chevron + Run + Submit buttons (Phase 5.3 D-06)', () => {
+  it('widget emits .leetcode-code-actions container with chevron + AI Solution + Run + Submit buttons', () => {
     const metadataCache = createFakeMetadataCache();
     metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', { 'lc-slug': 'two-sum' });
     const plugin = withHostMethods(createFakePlugin({ metadataCache }));
     const fakeFile = { path: 'LeetCode/0001-two-sum.md' };
     const widget = new CodeActionsWidget(plugin as never, fakeFile as never, 'python3');
-    // WidgetType.toDOM expects an EditorView; for this DOM-shape assertion we only
-    // need the view.dom.ownerDocument hook the helper reads.
     const fakeView = { dom: { ownerDocument: document } } as unknown as Parameters<
       CodeActionsWidget['toDOM']
     >[0];
@@ -226,19 +229,18 @@ describe('buildDecorations — widget emits .leetcode-code-actions', () => {
     const root = widget.toDOM(fakeView);
 
     expect(root.classList.contains('leetcode-code-actions')).toBe(true);
-    // Phase 5.3 D-06: row now includes a chevron prefix BEFORE Run + Submit.
-    // Direct children: chevron-wrapper (span), Run (button), Submit (button).
-    expect(root.children.length).toBe(3);
+    // chevron + AI Solution + Run + Submit = 4 children
+    expect(root.children.length).toBe(4);
     expect(
       (root.children[0] as HTMLElement).classList.contains(
         'leetcode-language-chevron-wrapper',
       ),
     ).toBe(true);
-    // Run + Submit click handlers + textContent are still wired correctly.
+    const aiBtn = root.querySelector<HTMLButtonElement>('button.leetcode-code-action-ai-solution');
     const runBtn = root.querySelector<HTMLButtonElement>('button.leetcode-code-action-run');
-    const submitBtn = root.querySelector<HTMLButtonElement>(
-      'button.leetcode-code-action-submit',
-    );
+    const submitBtn = root.querySelector<HTMLButtonElement>('button.leetcode-code-action-submit');
+    expect(aiBtn).not.toBeNull();
+    expect(aiBtn!.textContent).toBe('AI solution');
     expect(runBtn).not.toBeNull();
     expect(runBtn!.textContent).toBe('Run');
     expect(submitBtn).not.toBeNull();

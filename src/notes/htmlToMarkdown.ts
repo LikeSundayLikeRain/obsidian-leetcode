@@ -42,6 +42,7 @@
 // output per D-21.
 
 import TurndownService from 'turndown';
+import { tables } from 'turndown-plugin-gfm';
 
 /**
  * GAP-2c-3: Unicode superscript mapping. Covers digits, arithmetic operators,
@@ -117,6 +118,12 @@ function getService(): TurndownService {
     emDelimiter: '_',
     strongDelimiter: '**',
   });
+
+  // GFM tables — LC problem statements occasionally include <table> blocks
+  // (e.g. LC #12 Roman numerals). Default Turndown strips them; the `tables`
+  // plugin emits proper `| col | col |` Markdown that Obsidian's reading-mode
+  // renders as a real table.
+  service.use(tables);
 
   // Pass through LC's kbd/var inline HTML verbatim. `<sub>` / `<sup>` moved to
   // the lc-sub / lc-sup custom rules below (GAP-2c-3).

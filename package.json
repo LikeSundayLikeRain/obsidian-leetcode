@@ -1,13 +1,16 @@
 {
   "name": "obsidian-leetcode",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Browse, solve, and note LeetCode problems inside your vault.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "prelint": "npm run check:lc-isolation",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
+    "check:bundle-size": "node scripts/check-bundle-size.mjs",
+    "check:lc-isolation": "bash scripts/check-no-obsidianfetch-in-lc.sh && bash scripts/check-no-fetch-in-lc.sh",
     "grep:vault": "./scripts/grep-no-vault-modify.sh",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
@@ -15,10 +18,12 @@
   "author": "Mo Xu",
   "license": "MIT",
   "devDependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/language": "^6.12.3",
     "@eslint/js": "9.30.1",
     "@types/node": "^22.0.0",
-    "esbuild": "0.25.5",
-    "eslint-plugin-obsidianmd": "0.2.9",
+    "esbuild": "^0.28.0",
+    "eslint-plugin-obsidianmd": "^0.3.0",
     "globals": "14.0.0",
     "happy-dom": "^20.9.0",
     "jiti": "2.6.1",
@@ -28,8 +33,22 @@
     "vitest": "4.1.5"
   },
   "dependencies": {
+    "@ai-sdk/amazon-bedrock": "4.0.107",
+    "@ai-sdk/anthropic": "3.0.78",
+    "@ai-sdk/openai": "3.0.64",
+    "@ai-sdk/openai-compatible": "2.0.47",
+    "@codemirror/lang-cpp": "^6.0.3",
+    "@codemirror/lang-java": "^6.0.2",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-python": "^6.2.1",
     "@leetnotion/leetcode-api": "3.0.0",
+    "ai": "6.0.183",
+    "child_process": "^1.0.2",
+    "fs": "^0.0.1-security",
     "obsidian": "latest",
-    "turndown": "7.2.4"
+    "path": "^0.12.7",
+    "turndown": "7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
+    "zod": "^4.1.8"
   }
 }

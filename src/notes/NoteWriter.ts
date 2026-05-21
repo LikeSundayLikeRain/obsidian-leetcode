@@ -331,6 +331,7 @@ export class NoteWriter {
       problemMarkdown: htmlToMarkdown(newEntry.contentHtml),
       langSlug: defaultLang || undefined,
       starterCode,
+      title: newEntry.title,
     });
     const createdRaw = await this.app.vault.create(filePath, body);
     const file = narrowToTFile(createdRaw);
@@ -345,7 +346,7 @@ export class NoteWriter {
     // Metadata-cache-race guard (RESEARCH.md Open Q2): yield a tick so Obsidian
     // indexes the newly-created file before processFrontMatter reads it, then
     // retry once after 50ms if the first call throws (slower Obsidian startup).
-    await new Promise<void>((resolve) => activeWindow.setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     try {
       await applyFrontmatter(
         this.app,
@@ -358,7 +359,7 @@ export class NoteWriter {
       );
     } catch (err) {
       logger.debug('notes.openProblem: applyFrontmatter first attempt threw — retrying after 50ms', err);
-      await new Promise<void>((resolve) => activeWindow.setTimeout(resolve, 50));
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
       await applyFrontmatter(
         this.app,
         file,
@@ -494,9 +495,27 @@ export class NoteWriter {
     // Rewrite the plugin-owned `## Problem` region; everything else is
     // preserved by rewriteProblemSection (pure string transform — D-08).
     const freshMarkdown = htmlToMarkdown(entry.contentHtml);
+    const title = detail.title ?? cached?.title ?? '';
     await this.app.vault.process(
       existingFile,
-      (current) => rewriteProblemSection(current, freshMarkdown),
+      (current) => {
+        let updated = rewriteProblemSection(current, freshMarkdown);
+        // Phase 12 (D-11): insert H1 title if missing on existing notes
+        if (title && !updated.match(/^# .+/m)) {
+          const h1 = `# ${title}\n`;
+          // Insert after frontmatter: find second --- delimiter (closing)
+          const firstDelim = updated.indexOf('---');
+          const secondDelim = firstDelim >= 0 ? updated.indexOf('---', firstDelim + 3) : -1;
+          if (secondDelim >= 0) {
+            const afterFm = updated.indexOf('\n', secondDelim);
+            const insertAt = afterFm >= 0 ? afterFm + 1 : secondDelim + 3;
+            updated = updated.slice(0, insertAt) + h1 + updated.slice(insertAt);
+          } else {
+            updated = h1 + updated;
+          }
+        }
+        return updated;
+      },
     );
 
     // Union-merge frontmatter. D-04 status non-downgrade + D-10 user-key
@@ -523,8 +542,18 @@ function pickStarterCode(entry: DetailCacheEntry, langSlug: string): string {
   return hit?.code ?? '';
 }
 
-/** Map LC's detail shape into the on-disk cache entry. */
-function toDetailCacheEntry(raw: NoteWriterDetail): DetailCacheEntry {
+/** Map LC's detail shape into the on-disk cache entry.
+ *
+ * Phase 06 Plan 03 — `export` keyword added so the new `ProblemPreviewView`
+ * cache-miss path (src/preview/ProblemPreviewView.ts) can call this helper to
+ * persist a freshly-fetched detail into SettingsStore. RESEARCH §A2: the
+ * underlying `LeetCodeClient.getProblemDetail` does NOT auto-persist into
+ * SettingsStore — the preview view itself must call `setProblemDetail(slug,
+ * toDetailCacheEntry(fetched))` after the fetch resolves. The body shape stays
+ * IDENTICAL to v1.0 (existing internal callers in this module — openProblem,
+ * backgroundRefresh, forceRefresh — keep working with the same in-module
+ * import resolution; only the keyword is added). */
+export function toDetailCacheEntry(raw: NoteWriterDetail): DetailCacheEntry {
   return {
     fetchedAt: Date.now(),
     id: Number(raw.questionFrontendId) || 0,

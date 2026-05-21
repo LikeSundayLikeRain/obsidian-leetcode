@@ -60,12 +60,26 @@ export const CASE_HEADING_PREFIX = '### Case ' as const;
  *  additions on every Accepted submission (D-13). Inserted immediately after
  *  `## Notes` when absent (D-14). */
 export const TECHNIQUES_HEADING_LINE = '## Techniques' as const;
+// Phase 09 heading extension (AIREV-01, D-19).
+/** Plugin-owned H2 where the AI-generated review content lives. Heading locked
+ *  (like ## Techniques / ## Notes); body editable by the AI writer. */
+export const AI_REVIEW_HEADING_LINE = '## AI Review' as const;
+// Phase 11 heading extension (AIKG-05, D-15).
+/** Plugin-owned H2 where AI-suggested cross-cluster structural variants live.
+ *  Heading locked (AIKG-07, D-15); body editable by the AI writer. Inserted
+ *  after ## Techniques and before ## AI Review in the canonical section order. */
+export const RELATED_VARIANTS_HEADING_LINE = '## Related Variants' as const;
+// Phase 10 heading extension (CONTEST-07, D-17/D-21).
+/** Plugin-owned H2 where AI-generated contest analysis lives on summary notes.
+ *  NOT added to LOCKED_HEADINGS — it applies only to summary notes, not problem
+ *  notes with section lock (per 10-PATTERNS.md). */
+export const AI_ANALYSIS_HEADING_LINE = '## AI Analysis' as const;
 
 /**
- * Phase 05.5 D-01 / D-03 — the four heading lines locked by `sectionLockExtension`.
+ * Phase 05.5 D-01 / D-03 — the five heading lines locked by `sectionLockExtension`.
  * Order matches the canonical anchor order from Phase 4 D-14 (## Problem → ## Code →
- * ## Techniques → ## Notes). `## Custom Tests` is intentionally NOT in this
- * array (Phase 5 D-08 ignores it on read/write; Phase 05.5 D-03 leaves it editable).
+ * ## Techniques → ## Notes → ## AI Review). `## Custom Tests` is intentionally NOT
+ * in this array (Phase 5 D-08 ignores it on read/write; Phase 05.5 D-03 leaves it editable).
  *
  * SSoT invariant (Phase 2 D-03): heading literals come from this module — no
  * other module hardcodes these strings. The lock extension imports this tuple
@@ -76,6 +90,8 @@ export const LOCKED_HEADINGS = [
   CODE_HEADING_LINE,
   TECHNIQUES_HEADING_LINE,
   NOTES_HEADING_LINE,
+  RELATED_VARIANTS_HEADING_LINE,
+  AI_REVIEW_HEADING_LINE,
 ] as const;
 
 /**
@@ -172,11 +188,16 @@ export function buildNoteBody(input: {
   problemMarkdown: string;
   langSlug?: string;
   starterCode?: string;
+  /** Phase 12 Plan 03 (D-11) — optional H1 title prepended before ## Problem.
+   *  When provided, output starts with `# {Title}\n\n## Problem`. When omitted,
+   *  output starts with `## Problem` (backward-compat for existing callers). */
+  title?: string;
 }): string {
   const langSlug = input.langSlug ?? 'python3';
   const starter = input.starterCode ?? '';
   const codeBlock = codeBlockFor(langSlug, starter);
-  return `## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
+  const h1 = input.title ? `# ${input.title}\n` : '';
+  return `${h1}## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
 }
 
 /**

@@ -73,12 +73,17 @@ function buildSinglePreRoot(): HTMLElement {
 interface FakePluginOverrides {
   runFromActive?: ReturnType<typeof vi.fn>;
   submitFromActive?: ReturnType<typeof vi.fn>;
+  // Phase 08 Plan 04 (AIDBG-01) — fence-row factory now requires a 3rd
+  aiDebugFromActive?: ReturnType<typeof vi.fn>;
+  aiSolutionFromActive?: ReturnType<typeof vi.fn>;
 }
 
 function withHostMethods(plugin: ReturnType<typeof createFakePlugin>, overrides: FakePluginOverrides = {}) {
   const host = plugin as unknown as Record<string, unknown>;
   host.runFromActive = overrides.runFromActive ?? vi.fn();
   host.submitFromActive = overrides.submitFromActive ?? vi.fn();
+  host.aiDebugFromActive = overrides.aiDebugFromActive ?? vi.fn();
+  host.aiSolutionFromActive = overrides.aiSolutionFromActive ?? vi.fn();
   return plugin as ReturnType<typeof createFakePlugin> & FakePluginOverrides;
 }
 
@@ -114,7 +119,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     expect(root.querySelectorAll('.leetcode-code-actions').length).toBe(0);
   });
 
-  it('appends Run + Submit when section is under ## Code', async () => {
+  it('appends AI Solution + Run + Submit when section is under ## Code', async () => {
     const mod = (await import('../../src/main/codeActionsPostProcessor')) as unknown as {
       registerCodeBlockActionProcessor: (plugin: unknown) => void;
     };
@@ -139,9 +144,10 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     const actionsDiv = root.querySelector('.leetcode-code-actions');
     expect(actionsDiv).not.toBeNull();
     const buttons = Array.from(actionsDiv!.querySelectorAll('button'));
-    expect(buttons.length).toBe(2);
-    expect(buttons[0]!.textContent).toBe('Run');
-    expect(buttons[1]!.textContent).toBe('Submit');
+    expect(buttons.length).toBe(3);
+    expect(buttons[0]!.textContent).toBe('AI solution');
+    expect(buttons[1]!.textContent).toBe('Run');
+    expect(buttons[2]!.textContent).toBe('Submit');
   });
 
   it('does NOT append when section is under ## Problem (example code blocks)', async () => {
@@ -222,7 +228,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     });
     await processor(root, ctx);
 
-    const [runBtn, submitBtn] = Array.from(
+    const [, runBtn, submitBtn] = Array.from(
       root.querySelectorAll('.leetcode-code-actions button'),
     );
 

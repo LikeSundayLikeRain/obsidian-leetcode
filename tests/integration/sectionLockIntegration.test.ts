@@ -27,7 +27,6 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
-import { resolve } from 'path';
 import {
   createFakePlugin,
   createFakeMetadataCache,
@@ -372,7 +371,7 @@ describe('copy-to-code uses vault.process (architectural — bypasses lock by de
     // that PR MUST set `userEvent: 'leetcode.copy-to-code'` (or similar
     // `'leetcode.*'` annotation) to bypass the lock — failing this
     // assertion is the early warning that the question must be re-examined.
-    const sourcePath = resolve(__dirname, '../../src/graph/copyToCode.ts');
+    const sourcePath = `${process.cwd()}/src/graph/copyToCode.ts`;
     const content = readFileSync(sourcePath, 'utf8');
 
     // Positive assertions — the two SSoT vault-layer write APIs.

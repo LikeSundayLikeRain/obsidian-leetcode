@@ -2,7 +2,7 @@
 // Right-sidebar ItemView for browsing LeetCode problems (D-06).
 // All DOM via createEl / createDiv — never via raw HTML injection (Shared Pattern 3).
 // All strings LOCKED by UI-SPEC.md § Copywriting Contract.
-import { ItemView, WorkspaceLeaf, Notice, setIcon } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, setIcon, Menu } from 'obsidian';
 import type LeetCodePlugin from '../main';
 import type { IndexedProblem } from './types';
 import type { CompoundFilter, FilterRule } from '../settings/SettingsStore';
@@ -11,6 +11,12 @@ import { getActiveThrottle } from '../api/requestUrlFetcher';
 import { RateLimitError } from '../shared/errors';
 import { showSessionExpiredNotice } from '../solve/SessionExpiredNotice';
 import { FilterModal } from './FilterModal';
+import { ContestListService } from '../contest/ContestListService';
+import { ContestPreviewModal } from '../contest/ContestPreview';
+import type { CachedContest, ContestProblemState } from '../contest/types';
+import { getRemainingMs } from '../contest/types';
+import { AbortContestModal } from '../contest/AbortContestModal';
+import { toDetailCacheEntry } from '../notes/NoteWriter';
 // WR-02: route all timers through the popout-aware helpers used by Throttle
 // so that timers on a view hosted in an Obsidian popout bind to the popout's
 // event loop, not the main window's.
@@ -21,6 +27,21 @@ import {
 } from '../shared/timers';
 
 export const BROWSER_VIEW_TYPE = 'leetcode-browser';
+
+/** Phase 06 PREVIEW-02 — pure helper that maps a mouse-event-shaped object
+ *  to a click intent. Shift-key held → 'open' (CONTEXT.md decision A:
+ *  shift-click ALWAYS bypasses preview, regardless of the click-behavior
+ *  setting); otherwise 'preview' (the row hand-off lets `routeProblemClick`
+ *  on the plugin decide whether to honor the user's setting flip).
+ *
+ *  Exported so unit tests can pin the shift-key contract directly without
+ *  standing up the full ItemView (analog: `computeFilterBadgeCount` below;
+ *  see `tests/preview/click-behavior.test.ts`). The defensive `?? false`
+ *  fallback handles synthetic events from polyfills that don't carry the
+ *  property — treat absence as no-shift. */
+export function decideClickIntent(e: { shiftKey?: boolean }): 'preview' | 'open' {
+  return (e.shiftKey ?? false) ? 'open' : 'preview';
+}
 
 /** Phase 5.2 D-04 — compute the user-visible filter-badge count from a
  *  compound filter. A rule counts toward the badge only when it is both:
@@ -75,9 +96,29 @@ export class ProblemBrowserView extends ItemView {
   private throttleFooterEl: HTMLElement | null = null;
   private throttleFooterTimer: TimerHandle | null = null;
 
+  // Phase 10 — Contests mode (D-01)
+  private mode: 'problems' | 'contests' = 'problems';
+  private contestListService: ContestListService;
+  private contestCache: CachedContest[] = [];
+  private contestSearchTerm = '';
+  private contestSearchDebounce: TimerHandle | null = null;
+  private contestRowsContainer: HTMLElement | null = null;
+  /** Pagination state for contest list — how many are currently rendered. */
+  private contestRenderedCount = 0;
+  private static readonly CONTEST_PAGE_SIZE = 50;
+  private static readonly CONTEST_SEARCH_DEBOUNCE_MS = 200;
+
+  // Phase 10 Plan 05 — Active contest timer header state
+  private timerDisplayEl: HTMLElement | null = null;
+  private timerPausedEl: HTMLElement | null = null;
+  private badgeEls: HTMLElement[] = [];
+  private progressFillEl: HTMLElement | null = null;
+  private contestCallbacksWired = false;
+
   constructor(leaf: WorkspaceLeaf, private readonly plugin: LeetCodePlugin) {
     super(leaf);
     this.navigation = false;   // D-06: static dock view
+    this.contestListService = new ContestListService(this.plugin.client, this.plugin.settings);
   }
 
   getViewType(): string { return BROWSER_VIEW_TYPE; }
@@ -115,19 +156,36 @@ export class ProblemBrowserView extends ItemView {
       await this.plugin.settings.setFilter(this.filter);
     }
 
+    // Phase 10 D-01: Auto-switch to contests mode when an active session exists (Pitfall 7).
+    const activeSession = this.plugin.settings.getContestSession();
+    if (activeSession !== null) {
+      this.mode = 'contests';
+    }
+
+    // Phase 10: render mode toggle above all content
+    this.renderModeToggle(root);
+
+    // Content container — refreshAndRender empties this, not root, so the toggle persists.
+    const content = root.createDiv({ cls: 'lc-browser-content' });
+
+    if (this.mode === 'contests') {
+      await this.renderContestsMode(content);
+      return;
+    }
+
     if (!this.plugin.auth.isLoggedIn()) {
-      this.renderLoggedOutState(root, {
+      this.renderLoggedOutState(content, {
         heading: 'Log in to browse problems',
         body: 'Sign in to LeetCode to load the problem list.',
       });
       return;
     }
 
-    this.renderEmptyState(root, {
+    this.renderEmptyState(content, {
       heading: 'Loading problems…',
       body: 'Fetching the problem list. This happens once.',
     });
-    await this.refreshAndRender(root);
+    await this.refreshAndRender(content);
   }
 
   /**
@@ -157,6 +215,10 @@ export class ProblemBrowserView extends ItemView {
       clearWindowTimeout(this.searchDebounce);
       this.searchDebounce = null;
     }
+    if (this.contestSearchDebounce !== null) {
+      clearWindowTimeout(this.contestSearchDebounce);
+      this.contestSearchDebounce = null;
+    }
     // Tear down throttle subscription + pending timer (D-13 cleanup).
     this.clearThrottleFooterTimer();
     if (this.throttleUnsub) {
@@ -164,6 +226,7 @@ export class ProblemBrowserView extends ItemView {
       this.throttleUnsub = null;
     }
     this.throttleFooterEl = null;
+    this.contestRowsContainer = null;
   }
 
   private async refreshAndRender(root: HTMLElement): Promise<void> {
@@ -503,7 +566,7 @@ export class ProblemBrowserView extends ItemView {
         if (this.throttleFooterTimer === null && !this.throttleFooterEl) {
           this.throttleFooterTimer = setWindowTimeout(() => {
             this.throttleFooterEl = root.createDiv({ cls: 'lc-footer' });
-            this.throttleFooterEl.setText('⋯ Fetching from LeetCode…');
+            this.throttleFooterEl.setText('⋯ fetching from LeetCode…');
             this.throttleFooterTimer = null;
           }, THROTTLE_FOOTER_DELAY_MS);
         }
@@ -602,10 +665,629 @@ export class ProblemBrowserView extends ItemView {
       text: diffLabel,
     });
 
-    row.addEventListener('click', () => {
-      // GAP-2a: forward the row's IndexedProblem.status so the on-first-write
-      // lc-status reflects the user's real LC submission status.
-      void this.plugin.openProblem(p.slug, p.status);
+    row.addEventListener('click', (e) => {
+      // Phase 06 PREVIEW-02 — delegate to the plugin's single row-activation
+      // entry point. Shift-click always opens (intent='open' bypasses the
+      // user's click-behavior setting per CONTEXT.md decision A); plain
+      // left-click defers the preview-vs-open decision to the router, which
+      // reads `getPreviewClickBehavior()`. The row still forwards
+      // IndexedProblem.status (GAP-2a) so on-first-write lc-status reflects
+      // the user's real LC submission status when the router lands on the
+      // open path.
+      const intent = decideClickIntent(e);
+      void this.plugin.routeProblemClick(p.slug, p.status, intent);
     });
+
+    // Phase 06 Plan 03 PREVIEW-01 — right-click context menu. Two items:
+    // `Preview problem` and `Open problem` (the v1.0 create-or-open path).
+    // Both use `force: true` so the user's `Click behavior` setting cannot
+    // suppress the explicit menu choice (CONTEXT.md decision A: right-click
+    // intent is explicit, not the default click affordance).
+    // `e.preventDefault()` suppresses the browser's default context menu.
+    row.addEventListener('contextmenu', (e: MouseEvent) => {
+      e.preventDefault();
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item
+          .setTitle('Preview problem')
+          .setIcon('eye')
+          .onClick(() => {
+            void this.plugin.routeProblemClick(p.slug, p.status, 'preview', { force: true });
+          }),
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle('Open problem')
+          .setIcon('file-text')
+          .onClick(() => {
+            void this.plugin.routeProblemClick(p.slug, p.status, 'open', { force: true });
+          }),
+      );
+      menu.showAtMouseEvent(e);
+    });
+  }
+
+  // ─── Phase 10: Contest mode methods ─────────────────────────────────────────
+
+  /**
+   * Render the Problems/Contests mode toggle at the top of the view.
+   * ARIA: container role="tablist", buttons role="tab" + aria-selected (D-01).
+   */
+  private renderModeToggle(root: HTMLElement): void {
+    const toggle = root.createDiv({ cls: 'lc-mode-toggle', attr: { role: 'tablist' } });
+
+    const problemsBtn = toggle.createEl('button', {
+      text: 'Problems',
+      cls: `lc-mode-toggle__btn${this.mode === 'problems' ? ' is-active' : ''}`,
+      attr: { role: 'tab', 'aria-selected': String(this.mode === 'problems') },
+    });
+
+    const contestsBtn = toggle.createEl('button', {
+      text: 'Contests',
+      cls: `lc-mode-toggle__btn${this.mode === 'contests' ? ' is-active' : ''}`,
+      attr: { role: 'tab', 'aria-selected': String(this.mode === 'contests') },
+    });
+
+    problemsBtn.addEventListener('click', () => {
+      if (this.mode === 'problems') return;
+      this.mode = 'problems';
+      void this.onOpen();
+    });
+
+    contestsBtn.addEventListener('click', () => {
+      if (this.mode === 'contests') return;
+      this.mode = 'contests';
+      void this.onOpen();
+    });
+  }
+
+  /**
+   * Render contests mode: auth gate, search input, shuffle button, contest rows.
+   * Mirrors the problems mode shell pattern with contest-specific rendering.
+   */
+  private async renderContestsMode(root: HTMLElement): Promise<void> {
+    // Auth gate (same pattern as existing auth check in onOpen)
+    if (!this.plugin.auth.isLoggedIn()) {
+      this.renderLoggedOutState(root, {
+        heading: 'Log in to browse contests',
+        body: 'Sign in to LeetCode to load the contest list.',
+      });
+      return;
+    }
+
+    // Phase 10 Plan 05 — if a contest session is active, render the active
+    // contest UI (timer header + problem cards) instead of the contest list.
+    if (this.plugin.contestSessionManager.isActive()) {
+      this.renderActiveContest(root);
+      return;
+    }
+
+    // Top bar: search + shuffle
+    const topbar = root.createDiv({ cls: 'lc-topbar' });
+
+    // Search input
+    const searchWrap = topbar.createDiv({ cls: 'lc-search' });
+    const searchIcon = searchWrap.createSpan({ cls: 'lc-search__icon' });
+    setIcon(searchIcon, 'search');
+    const input = searchWrap.createEl('input', {
+      attr: {
+        type: 'search',
+        placeholder: 'Search contests…',
+        'aria-label': 'Search contests by title',
+      },
+    });
+    input.value = this.contestSearchTerm;
+    input.addEventListener('input', () => {
+      if (this.contestSearchDebounce !== null) clearWindowTimeout(this.contestSearchDebounce);
+      this.contestSearchDebounce = setWindowTimeout(() => {
+        this.contestSearchTerm = input.value;
+        this.renderContestRows();
+      }, ProblemBrowserView.CONTEST_SEARCH_DEBOUNCE_MS);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        input.value = '';
+        this.contestSearchTerm = '';
+        this.renderContestRows();
+      }
+    });
+
+    // Shuffle (Surprise me) button — D-03
+    const shuffleBtn = topbar.createDiv({
+      cls: 'lc-iconbtn lc-iconbtn--shuffle',
+      attr: { 'aria-label': 'Random contest', role: 'button', tabindex: '0' },
+    });
+    const shuffleIcon = shuffleBtn.createSpan({ cls: 'lc-iconbtn__icon' });
+    setIcon(shuffleIcon, 'shuffle');
+    shuffleBtn.addEventListener('click', () => { void this.handleSurpriseMe(); });
+
+    // Rows container for contest list
+    this.contestRowsContainer = root.createDiv({ cls: 'lc-rows', attr: { role: 'listbox' } });
+
+    // Loading state
+    this.renderEmptyState(this.contestRowsContainer, {
+      heading: 'Loading contests…',
+      body: 'Fetching the contest list from LeetCode.',
+    });
+
+    // Fetch contest list
+    try {
+      this.contestCache = await this.contestListService.refresh();
+      this.contestRenderedCount = 0;
+      this.renderContestRows();
+    } catch {
+      if (this.contestRowsContainer) {
+        this.contestRowsContainer.empty();
+        this.renderEmptyState(this.contestRowsContainer, {
+          heading: 'No contests found',
+          body: 'Try a different search term or check your connection.',
+          buttonText: 'Retry',
+          onAction: () => { void this.renderContestsMode(root); },
+        });
+      }
+    }
+
+    // Scroll pagination — load more contest rows when scrolling near bottom.
+    root.addEventListener('scroll', () => {
+      if (!this.contestRowsContainer) return;
+      const scrollBottom = root.scrollTop + root.clientHeight;
+      const threshold = root.scrollHeight - 100;
+      if (scrollBottom >= threshold) {
+        this.appendContestRows();
+      }
+    });
+  }
+
+  /**
+   * Render the contest rows from the filtered cache. Resets and renders
+   * the first page (50 items).
+   */
+  private renderContestRows(): void {
+    if (!this.contestRowsContainer) return;
+    this.contestRowsContainer.empty();
+    this.contestRenderedCount = 0;
+
+    const filtered = this.contestListService.search(this.contestCache, this.contestSearchTerm);
+    if (filtered.length === 0) {
+      this.renderEmptyState(this.contestRowsContainer, {
+        heading: 'No contests found',
+        body: 'Try a different search term or check your connection.',
+      });
+      return;
+    }
+
+    const page = filtered.slice(0, ProblemBrowserView.CONTEST_PAGE_SIZE);
+    for (const c of page) this.renderContestRow(this.contestRowsContainer, c);
+    this.contestRenderedCount = page.length;
+  }
+
+  /**
+   * Append the next page of contest rows for scroll pagination.
+   */
+  private appendContestRows(): void {
+    if (!this.contestRowsContainer) return;
+    const filtered = this.contestListService.search(this.contestCache, this.contestSearchTerm);
+    if (this.contestRenderedCount >= filtered.length) return;
+
+    const nextPage = filtered.slice(
+      this.contestRenderedCount,
+      this.contestRenderedCount + ProblemBrowserView.CONTEST_PAGE_SIZE,
+    );
+    for (const c of nextPage) this.renderContestRow(this.contestRowsContainer, c);
+    this.contestRenderedCount += nextPage.length;
+  }
+
+  /**
+   * Render a single contest row. Click opens ContestPreview modal.
+   * Row format: title (flex:1) + meta (date + '4 problems').
+   */
+  private renderContestRow(container: HTMLElement, contest: CachedContest): void {
+    const row = container.createDiv({
+      cls: 'lc-contest-row',
+      attr: { role: 'option' },
+    });
+
+    row.createDiv({
+      cls: 'lc-contest-row__title',
+      text: contest.title,
+    });
+
+    // Date format: locale-aware short date + ' · 4 problems'
+    const date = new Date(contest.startTime * 1000);
+    const dateStr = date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    row.createDiv({
+      cls: 'lc-contest-row__meta',
+      text: `${dateStr} · 4 problems`,
+    });
+
+    row.addEventListener('click', () => {
+      this.openContestPreview(contest);
+    });
+  }
+
+  /**
+   * D-03: "Surprise me" picks a random valid contest and opens the preview.
+   */
+  private async handleSurpriseMe(): Promise<void> {
+    const contest = await this.contestListService.surpriseMe();
+    if (!contest) {
+      new Notice("Couldn't find a contest with valid problems. Try picking one manually.", 6000);
+      return;
+    }
+    this.openContestPreview(contest);
+  }
+
+  /**
+   * Open the ContestPreview modal for a given contest. The modal's onStart
+   * callback delegates to startContest which fetches problems and creates a session.
+   */
+  private openContestPreview(contest: CachedContest): void {
+    new ContestPreviewModal(
+      this.app,
+      contest,
+      this.plugin.client,
+      async (questions) => { await this.startContest(contest, questions); },
+    ).open();
+  }
+
+  /**
+   * D-10: Fetch all 4 problem details in parallel, create a ContestSession,
+   * and notify the user. Called by ContestPreview's onStart callback.
+   */
+  async startContest(
+    contest: CachedContest,
+    questions: Array<{ credit: number; title: string; title_slug: string; difficulty: number }>,
+  ): Promise<void> {
+    // Fetch all problem details in parallel
+    const results = await Promise.allSettled(
+      questions.map((q) => this.plugin.client.getProblemDetail(q.title_slug)),
+    );
+
+    // Check if any fetch failed
+    const failed = results.some((r) => r.status === 'rejected' || (r.status === 'fulfilled' && r.value === null));
+    if (failed) {
+      new Notice("Couldn't fetch contest problems. Check your connection.", 4000);
+      return;
+    }
+
+    // Cache problem details so ContestSolveView can render content
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) {
+        const entry = toDetailCacheEntry(r.value);
+        await this.plugin.settings.setProblemDetail(r.value.titleSlug, entry);
+      }
+    }
+
+    // Resolve default language + starter code per problem from cached details
+    const defaultLang = this.plugin.settings.getDefaultLanguage() || 'python3';
+
+    // Create contest session via ContestSessionManager
+    this.plugin.contestSessionManager.start({
+      contestSlug: contest.slug,
+      contestTitle: contest.title,
+      contestType: contest.type,
+      duration: contest.duration,
+      problems: questions.map((q) => {
+        const detail = this.plugin.settings.getProblemDetail(q.title_slug);
+        const snippet = detail?.codeSnippets?.find(s => s.langSlug === defaultLang);
+        return {
+          slug: q.title_slug,
+          title: q.title,
+          credit: q.credit,
+          difficulty: q.difficulty,
+          code: snippet?.code ?? '',
+          language: defaultLang,
+        };
+      }),
+    });
+
+    const minutes = Math.round(contest.duration / 60);
+    new Notice(`Contest started: ${contest.title}. ${String(minutes)} min on the clock.`, 4000);
+
+    // Re-render in contests mode to show active contest state
+    this.mode = 'contests';
+    void this.onOpen();
+  }
+
+  // ─── Phase 10 Plan 05: Active contest UI ─────────────────────────────────────
+
+  /**
+   * Render the active contest dashboard: sticky timer header with countdown,
+   * verdict badges, progress bar, action buttons, and navigable problem cards.
+   */
+  private renderActiveContest(root: HTMLElement): void {
+    const session = this.plugin.contestSessionManager.getSession();
+    if (!session) return;
+
+    // Wire session manager callbacks once (persists across re-renders).
+    this.wireContestCallbacks();
+
+    const remaining = getRemainingMs(session);
+
+    // ─── Sticky timer header ───────────────────────────────────────────
+    const timerHeader = root.createDiv({ cls: 'leetcode-contest__timer' });
+
+    // Timer row: icon + display + badges
+    const timerRow = timerHeader.createDiv({ cls: 'leetcode-contest__timer-row' });
+
+    const timerIcon = timerRow.createSpan({ cls: 'leetcode-contest__timer-icon' });
+    setIcon(timerIcon, 'timer');
+
+    // Timer display with MM:SS
+    this.timerDisplayEl = timerRow.createDiv({
+      cls: 'leetcode-contest__timer-display',
+      attr: { 'aria-live': 'polite' },
+    });
+    this.updateTimerDisplay(remaining);
+
+    // Verdict badges
+    const badgesContainer = timerRow.createDiv({ cls: 'leetcode-contest__badges' });
+    this.badgeEls = [];
+    for (let i = 0; i < session.problems.length; i++) {
+      const problem = session.problems[i]!;
+      const badge = badgesContainer.createDiv({
+        cls: 'leetcode-contest__badge',
+        attr: { 'aria-label': `${problem.title}: ${problem.verdict}` },
+      });
+      this.renderBadgeIcon(badge, problem.verdict);
+      // Click badge → open problem in ContestSolveView
+      badge.addEventListener('click', () => {
+        void this.plugin.openContestProblem(i);
+      });
+      this.badgeEls.push(badge);
+    }
+
+    // Timer label
+    this.timerPausedEl = timerHeader.createDiv({ cls: 'leetcode-contest__timer-label' });
+    if (session.isPaused) {
+      this.timerPausedEl.setText('Paused');
+      this.timerPausedEl.addClass('leetcode-contest__timer-paused');
+    } else {
+      this.timerPausedEl.setText('Remaining');
+    }
+
+    // Progress bar
+    const progressContainer = timerHeader.createDiv({ cls: 'leetcode-contest__progress' });
+    this.progressFillEl = progressContainer.createDiv({ cls: 'leetcode-contest__progress-fill' });
+    this.updateContestProgressBar(session);
+
+    // Action buttons
+    const actions = timerHeader.createDiv({ cls: 'leetcode-contest__actions' });
+
+    const pauseResumeBtn = actions.createEl('button', {
+      text: session.isPaused ? 'Resume' : 'Pause',
+      cls: 'leetcode-contest__btn',
+    });
+    pauseResumeBtn.addEventListener('click', () => {
+      if (this.plugin.contestSessionManager.getSession()?.isPaused) {
+        this.plugin.contestSessionManager.resume();
+      } else {
+        this.plugin.contestSessionManager.pause();
+      }
+      // Re-render to update button label and timer state
+      void this.onOpen();
+    });
+
+    const finishBtn = actions.createEl('button', {
+      text: 'Finish',
+      cls: 'leetcode-contest__btn',
+    });
+    finishBtn.addEventListener('click', () => {
+      void this.handleFinishContest();
+    });
+
+    const abortBtn = actions.createEl('button', {
+      text: 'Abort',
+      cls: 'leetcode-contest__btn leetcode-contest__btn-abort',
+    });
+    abortBtn.addEventListener('click', () => {
+      const currentSession = this.plugin.contestSessionManager.getSession();
+      if (!currentSession) return;
+      const solvedCount = currentSession.problems.filter((p) => p.verdict === 'accepted').length;
+      const currentRemaining = getRemainingMs(currentSession);
+      new AbortContestModal(
+        this.app,
+        solvedCount,
+        currentSession.problems.length,
+        currentRemaining,
+        () => { void this.handleAbortContest(); },
+      ).open();
+    });
+
+    // ─── Problem cards ─────────────────────────────────────────────────
+    const cardsContainer = root.createDiv({ cls: 'leetcode-contest__cards' });
+    for (let i = 0; i < session.problems.length; i++) {
+      const problem = session.problems[i]!;
+      this.renderProblemCard(cardsContainer, problem, i);
+    }
+  }
+
+  /**
+   * Render a single problem card in the active contest view.
+   * Click opens ContestSolveView for that problem.
+   */
+  private renderProblemCard(container: HTMLElement, problem: ContestProblemState, idx: number): void {
+    const isAc = problem.verdict === 'accepted';
+    const row = container.createDiv({
+      cls: `lc-row${isAc ? ' lc-row--solved' : ''}`,
+      attr: { role: 'option' },
+    });
+    row.setAttribute('aria-label',
+      `${String(idx + 1)}. ${problem.title}, ${this.diffLabel(problem.difficulty)}, ${problem.verdict}`);
+
+    // Title block
+    const titleBlock = row.createDiv({ cls: 'lc-row__titleblock' });
+    titleBlock.createSpan({ cls: 'lc-row__id', text: `${String(idx + 1)}. ` });
+    titleBlock.createSpan({ cls: 'lc-row__title', text: problem.title });
+
+    // Meta: difficulty + verdict chip
+    const meta = row.createDiv({ cls: 'lc-row__meta' });
+    const diffClass = this.diffLabel(problem.difficulty).toLowerCase();
+    meta.createSpan({
+      cls: `lc-row__diff lc-diff--${diffClass}`,
+      text: this.diffLabel(problem.difficulty),
+    });
+    meta.createSpan({
+      cls: `leetcode-contest__verdict-chip leetcode-contest__verdict-chip--${problem.verdict}`,
+      text: this.verdictLabel(problem.verdict),
+    });
+
+    row.addEventListener('click', () => {
+      void this.plugin.openContestProblem(idx);
+    });
+  }
+
+  /** Map numeric difficulty (1-3) to display label. */
+  private diffLabel(difficulty: number): string {
+    if (difficulty === 1) return 'Easy';
+    if (difficulty === 2) return 'Medium';
+    return 'Hard';
+  }
+
+  /** Map verdict enum to user-facing chip label. */
+  private verdictLabel(verdict: ContestProblemState['verdict']): string {
+    if (verdict === 'accepted') return 'Accepted';
+    if (verdict === 'attempted') return 'Attempted';
+    return 'Unsolved';
+  }
+
+  /**
+   * Render the correct icon in a verdict badge based on the problem's verdict.
+   */
+  private renderBadgeIcon(badge: HTMLElement, verdict: ContestProblemState['verdict']): void {
+    badge.empty();
+    badge.removeClass('leetcode-contest__badge--ac');
+    badge.removeClass('leetcode-contest__badge--failed');
+    badge.removeClass('leetcode-contest__badge--unsolved');
+
+    if (verdict === 'accepted') {
+      setIcon(badge, 'check-circle');
+      badge.addClass('leetcode-contest__badge--ac');
+    } else if (verdict === 'attempted') {
+      setIcon(badge, 'x-circle');
+      badge.addClass('leetcode-contest__badge--failed');
+    } else {
+      setIcon(badge, 'circle');
+      badge.addClass('leetcode-contest__badge--unsolved');
+    }
+  }
+
+  /**
+   * Update the timer display element text and color class.
+   */
+  private updateTimerDisplay(remainingMs: number): void {
+    if (!this.timerDisplayEl) return;
+    const minutes = Math.floor(remainingMs / 60000);
+    const seconds = Math.floor((remainingMs % 60000) / 1000);
+    this.timerDisplayEl.setText(
+      `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`,
+    );
+
+    // Color shifts: normal > 10min, warning 5-10min, critical < 5min
+    this.timerDisplayEl.removeClass('is-warning');
+    this.timerDisplayEl.removeClass('is-critical');
+    if (remainingMs < 5 * 60 * 1000) {
+      this.timerDisplayEl.addClass('is-critical');
+    } else if (remainingMs < 10 * 60 * 1000) {
+      this.timerDisplayEl.addClass('is-warning');
+    }
+  }
+
+  /**
+   * Update the progress bar fill width based on elapsed time proportion.
+   */
+  private updateContestProgressBar(session: { duration: number; startedAt: number; pausedDuration: number; isPaused: boolean; pausedAt: number | null }): void {
+    if (!this.progressFillEl) return;
+    const now = session.isPaused ? (session.pausedAt ?? Date.now()) : Date.now();
+    const elapsed = now - session.startedAt - session.pausedDuration;
+    const totalMs = session.duration * 1000;
+    const pct = Math.min(100, Math.max(0, (elapsed / totalMs) * 100));
+    this.progressFillEl.setCssStyles({ width: `${String(Math.round(pct))}%` });
+  }
+
+  /**
+   * Wire ContestSessionManager callbacks into the ProblemBrowserView for
+   * live updates: tick, expired, verdictChange.
+   * Only wires once — subsequent renderActiveContest calls skip.
+   */
+  private wireContestCallbacks(): void {
+    const manager = this.plugin.contestSessionManager;
+    if ((manager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired) return;
+    (manager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired = true;
+    this.contestCallbacksWired = true;
+    // Patch the callbacks that were set at manager construction to include
+    // our live-update behavior. The manager's callbacks object is set once
+    // at construction. We need to hook into the same reference.
+    // The approach: save original callbacks, override with wrappers that
+    // call both the original and our UI updates.
+    const originalCallbacks = (manager as unknown as { callbacks: {
+      onTick: (remainingMs: number) => void;
+      onExpired: () => void;
+      onVerdictChange: (idx: number, verdict: ContestProblemState['verdict']) => void;
+    } }).callbacks;
+
+    const origTick = originalCallbacks.onTick;
+    const origExpired = originalCallbacks.onExpired;
+    const origVerdict = originalCallbacks.onVerdictChange;
+
+    originalCallbacks.onTick = (remainingMs: number) => {
+      origTick(remainingMs);
+      this.updateTimerDisplay(remainingMs);
+      // Also update progress bar
+      const session = manager.getSession();
+      if (session) this.updateContestProgressBar(session);
+    };
+
+    originalCallbacks.onExpired = () => {
+      // origExpired() fires handleContestEnd(false) via main.ts which owns
+      // the full lifecycle (sync → finish → finalize → cleanup). We only
+      // need to reset the PBV UI state after it completes.
+      origExpired();
+      this.contestCallbacksWired = false;
+      (manager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired = false;
+      this.mode = 'contests';
+      void this.onOpen();
+    };
+
+    originalCallbacks.onVerdictChange = (idx: number, verdict: ContestProblemState['verdict']) => {
+      origVerdict(idx, verdict);
+      // Update the badge at this index
+      const badge = this.badgeEls[idx];
+      if (badge) {
+        const session = manager.getSession();
+        const problem = session?.problems[idx];
+        this.renderBadgeIcon(badge, verdict);
+        if (problem) {
+          badge.setAttribute('aria-label', `${problem.title}: ${verdict}`);
+        }
+      }
+    };
+  }
+
+  private async handleFinishContest(): Promise<void> {
+    // D-09: Do NOT call finish() here — handleContestEnd owns the full
+    // lifecycle (sync code → finish → finalize → Notice → cleanup).
+    // Calling finish() first would clear the session before handleContestEnd
+    // can read it, causing the finalization to silently bail out.
+    const session = this.plugin.contestSessionManager.getSession();
+    if (!session) return;
+
+    this.contestCallbacksWired = false;
+    (this.plugin.contestSessionManager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired = false;
+    await (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(false);
+    this.mode = 'contests';
+    await this.onOpen();
+  }
+
+  private async handleAbortContest(): Promise<void> {
+    // D-09: Same fix as handleFinishContest — let handleContestEnd own abort.
+    const session = this.plugin.contestSessionManager.getSession();
+    if (!session) return;
+
+    this.contestCallbacksWired = false;
+    (this.plugin.contestSessionManager as unknown as { _pbvCallbacksWired?: boolean })._pbvCallbacksWired = false;
+    await (this.plugin as unknown as { handleContestEnd(aborted: boolean): Promise<void> }).handleContestEnd(true);
+    this.mode = 'contests';
+    await this.onOpen();
   }
 }

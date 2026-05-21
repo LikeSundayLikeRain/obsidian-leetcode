@@ -3,6 +3,8 @@ import type { Plugin } from 'obsidian';
 export interface CodeBlockButtonRowHost {
   runFromActive(): void | Promise<void>;
   submitFromActive(): void | Promise<void>;
+  aiDebugFromActive(): void | Promise<void>;
+  aiSolutionFromActive(): void | Promise<void>;
 }
 
 /**
@@ -41,6 +43,17 @@ export function buildCodeBlockButtonRow(
   if (opts.prefix) {
     row.appendChild(opts.prefix());
   }
+
+  // AI solution button — positioned LEFT of Run/Submit, neo gradient style
+  const aiSolBtn = doc.createElement('button');
+  aiSolBtn.className = 'leetcode-code-action-ai-solution';
+  aiSolBtn.textContent = 'AI solution';
+  aiSolBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void plugin.aiSolutionFromActive();
+  });
+  row.appendChild(aiSolBtn);
 
   const runBtn = doc.createElement('button');
   runBtn.className = 'leetcode-code-action-run';
