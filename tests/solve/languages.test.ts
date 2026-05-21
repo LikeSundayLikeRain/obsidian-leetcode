@@ -75,6 +75,15 @@ describe('resolveLangSlug (SOLVE-08, D-02/D-03/D-05)', () => {
     expect(resolveLangSlug('assembly', 'java')).toBe('java');
   });
 
+  it('resolves "python" fence tag to python3 (D-04 round-trip)', () => {
+    expect(resolveLangSlug('python', FALLBACK)).toBe('python3');
+    expect(resolveLangSlug('Python', FALLBACK)).toBe('python3');
+  });
+
+  it('preserves python2 alias for explicit Python 2 usage', () => {
+    expect(resolveLangSlug('python2', FALLBACK)).toBe('python');
+  });
+
   it('is pure — same input returns same output', () => {
     expect(resolveLangSlug('py', FALLBACK)).toBe(resolveLangSlug('py', FALLBACK));
   });
