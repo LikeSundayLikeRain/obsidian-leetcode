@@ -10,14 +10,14 @@ Make editing code inside the `## Code` solution fence feel like a proper code ed
 
 ### Indentation & Tab
 
-- [ ] **INDENT-01**: User can press Tab inside the code fence body to indent the current line
-- [ ] **INDENT-02**: User can press Shift-Tab inside the code fence body to dedent the current line
+- [x] **INDENT-01**: User can press Tab inside the code fence body to indent the current line
+- [x] **INDENT-02**: User can press Shift-Tab inside the code fence body to dedent the current line
 - [ ] **INDENT-03**: User can select multiple lines in the fence body and Tab/Shift-Tab to indent/dedent all selected lines as a single undo step
 - [ ] **INDENT-04**: Indent unit respects the active language (e.g., 4 spaces for Java/Python/C++, 2 for JS/TS)
 
 ### Smart Enter
 
-- [ ] **ENTER-01**: User pressing Enter inside the fence body preserves the current line's indent level on the new line
+- [x] **ENTER-01**: User pressing Enter inside the fence body preserves the current line's indent level on the new line
 - [ ] **ENTER-02**: User pressing Enter after an opening brace/paren `{` `(` indents the new line one level deeper
 - [ ] **ENTER-03**: User pressing Enter after Python colon `:` (def, if, for, while, class, etc.) indents the new line one level deeper
 - [ ] **ENTER-04**: User pressing Enter between matched braces `{|}` splits into three lines: current, indented blank, dedented closing brace
@@ -68,11 +68,11 @@ Make editing code inside the `## Code` solution fence feel like a proper code ed
 
 | REQ-ID     | Phase                                         | Status  |
 |------------|-----------------------------------------------|---------|
-| INDENT-01  | Phase 15: Focus, Undo & Cursor                | Pending |
-| INDENT-02  | Phase 15: Focus, Undo & Cursor                | Pending |
+| INDENT-01  | Phase 15: Focus, Undo & Cursor                | Complete |
+| INDENT-02  | Phase 15: Focus, Undo & Cursor                | Complete |
 | INDENT-03  | Phase 15: Focus, Undo & Cursor                | Pending |
 | INDENT-04  | Phase 16: Language Packs & Switching           | Pending |
-| ENTER-01   | Phase 14: Bidirectional Sync                   | Pending |
+| ENTER-01   | Phase 14: Bidirectional Sync                   | Complete |
 | ENTER-02   | Phase 16: Language Packs & Switching           | Pending |
 | ENTER-03   | Phase 16: Language Packs & Switching           | Pending |
 | ENTER-04   | Phase 16: Language Packs & Switching           | Pending |

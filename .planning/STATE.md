@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Code Editor Experience
-status: executing
-stopped_at: Phase 14 context gathered
-last_updated: "2026-05-21T21:05:05.523Z"
+status: ready_to_plan
+stopped_at: Phase 14 complete (3/3) — ready to discuss Phase 15
+last_updated: 2026-05-21T21:39:37.158Z
 last_activity: 2026-05-21 -- Phase 14 execution started
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 6
   percent: 20
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21 — v1.2 milestone started)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** Phase 14 — bidirectional-sync
+**Current focus:** Phase 15 — focus, undo & cursor
 
 ## Current Position
 
-Phase: 14 (bidirectional-sync) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 14
-Last activity: 2026-05-21 -- Phase 14 execution started
+Phase: 15
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-21
 
 Progress: [██████████] 100%
 
@@ -37,7 +37,7 @@ Progress: [██████████] 100%
 **Cumulative (v1.0 + v1.1):**
 
 - Total phases completed: 19
-- Total plans completed: 105
+- Total plans completed: 108
 - v1.0: 10 phases, 61 plans (shipped 2026-05-14)
 - v1.1: 9 phases, 41 plans (shipped 2026-05-20)
 

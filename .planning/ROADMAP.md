@@ -185,7 +185,7 @@ Plans:
 | 11. AI Knowledge Graph                      | v1.1      | 3/3            | Complete    | 2026-05-19 |
 | 12. Polish + Plugin-Store Re-submission     | v1.1      | 5/5            | Complete    | 2026-05-19 |
 | 13. Nested Editor Foundation                | v1.2      | 3/3 | Complete    | 2026-05-21 |
-| 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete   | 2026-05-21 |
+| 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 0/TBD          | Not started | -          |
 | 16. Language Packs & Switching              | v1.2      | 0/TBD          | Not started | -          |
 | 17. Polish & Edge Cases                     | v1.2      | 0/TBD          | Not started | -          |
