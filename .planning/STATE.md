@@ -5,7 +5,7 @@ milestone_name: Code Editor Experience
 status: planning
 stopped_at: null
 last_updated: "2026-05-21"
-last_activity: 2026-05-21 -- Roadmap created, Phase 13 ready to plan
+last_activity: 2026-05-21 -- Roadmap rewritten for nested EditorView approach (Path B)
 progress:
   total_phases: 5
   completed_phases: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21 — v1.2 milestone started)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** v1.2 Code Editor Experience — Phase 13: Fence Zone Foundation
+**Current focus:** v1.2 Code Editor Experience — Phase 13: Nested Editor Foundation
 
 ## Current Position
 
-Phase: 13 of 17 (Fence Zone Foundation)
+Phase: 13 of 17 (Nested Editor Foundation)
 Plan: — (not yet planned)
 Status: Ready to plan
-Last activity: 2026-05-21 — Roadmap created for v1.2 (5 phases: 13–17)
+Last activity: 2026-05-21 — Roadmap rewritten for nested EditorView (Path B) after architecture research
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -50,10 +50,13 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Phase 05.5: `'leetcode.*'` userEvent annotation is the bypass convention for plugin-internal CM6 dispatches — any future dispatch into a locked range MUST set `userEvent: 'leetcode.<verb>'`
-- Phase 05.5: `vault.process` / `processFrontMatter` writes bypass CM6 section-lock by design (happen below CM6)
-- v1.2 start: New editor behavior modules (`fenceZoneDetector`, `codeIndentRules`, `codeBracketRules`) must be pure TypeScript with zero Obsidian/CM6 imports so they are fully unit-testable
-- v1.2 start: Global CM6 extensions (`indentWithTab`, `closeBrackets`) are out of scope — they would break markdown editing vault-wide; all behavior scoped to fence body only
+- Phase 05.3 (empirical failure): Compartment-swap of `@codemirror/lang-*` packs does NOT work inside markdown fences — Obsidian's `lang-markdown` nested-parser owns the fence sub-tree and ignores outer Compartments
+- v1.2 architecture: **Nested EditorView (Path B)** chosen over heuristic keymaps (Path A) for best UX quality
+- v1.2 decoration: Use `Decoration.widget({ block: true })` + CSS-hidden fence lines (NOT `Decoration.replace`) — avoids Live Preview "unfold" storms
+- v1.2 lifecycle: Child EditorView registry on plugin instance (`Map<key, EditorView>`) decouples child lifecycle from widget destruction/recreation
+- v1.2 sync: CM6 split-view pattern with sync annotations to prevent echo loops; always re-derive offsets via `findCodeFence()` before dispatching
+- v1.2 section lock: No modifications needed — child→parent sync dispatches have no `input.*` userEvent, Gate 0 passes them through
+- v1.2 bundle: Accept ~1.5 MB ceiling (language packs add ~300 KB over current 1.155 MB)
 
 ### Pending Todos
 
@@ -61,7 +64,8 @@ None yet.
 
 ### Blockers/Concerns
 
-None yet.
+- Bundle size: language packs raise ceiling from 1.2 MB to ~1.5 MB — user accepted this tradeoff for better UX
+- Phase 13 spike needed: empirically verify `Decoration.widget` + CSS-hidden approach works in both Source Mode and Live Preview
 
 ## Deferred Items
 
@@ -82,5 +86,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-21
-Stopped at: Roadmap written — 5 phases (13–17) defined, all 16 requirements mapped
+Stopped at: Roadmap rewritten for Path B (nested EditorView) — 5 phases (13–17) defined, all 16 requirements mapped
 Resume file: None

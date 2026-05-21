@@ -66,21 +66,21 @@ Make editing code inside the `## Code` solution fence feel like a proper code ed
 
 ## Traceability
 
-| REQ-ID     | Phase                                       | Status  |
-|------------|---------------------------------------------|---------|
-| INDENT-01  | Phase 14: Tab / Shift-Tab Indentation       | Pending |
-| INDENT-02  | Phase 14: Tab / Shift-Tab Indentation       | Pending |
-| INDENT-03  | Phase 14: Tab / Shift-Tab Indentation       | Pending |
-| INDENT-04  | Phase 14: Tab / Shift-Tab Indentation       | Pending |
-| ENTER-01   | Phase 15: Smart Enter                       | Pending |
-| ENTER-02   | Phase 15: Smart Enter                       | Pending |
-| ENTER-03   | Phase 15: Smart Enter                       | Pending |
-| ENTER-04   | Phase 15: Smart Enter                       | Pending |
-| BRACKET-01 | Phase 16: Bracket & Pair Handling           | Pending |
-| BRACKET-02 | Phase 16: Bracket & Pair Handling           | Pending |
-| BRACKET-03 | Phase 16: Bracket & Pair Handling           | Pending |
-| BRACKET-04 | Phase 16: Bracket & Pair Handling           | Pending |
-| BRACKET-05 | Phase 16: Bracket & Pair Handling           | Pending |
-| LANG-01    | Phase 17: Language Switching, Comment & Highlight | Pending |
-| COMMENT-01 | Phase 17: Language Switching, Comment & Highlight | Pending |
-| HIGHLIGHT-01 | Phase 17: Language Switching, Comment & Highlight | Pending |
+| REQ-ID     | Phase                                         | Status  |
+|------------|-----------------------------------------------|---------|
+| INDENT-01  | Phase 15: Focus, Undo & Cursor                | Pending |
+| INDENT-02  | Phase 15: Focus, Undo & Cursor                | Pending |
+| INDENT-03  | Phase 15: Focus, Undo & Cursor                | Pending |
+| INDENT-04  | Phase 16: Language Packs & Switching           | Pending |
+| ENTER-01   | Phase 14: Bidirectional Sync                   | Pending |
+| ENTER-02   | Phase 16: Language Packs & Switching           | Pending |
+| ENTER-03   | Phase 16: Language Packs & Switching           | Pending |
+| ENTER-04   | Phase 16: Language Packs & Switching           | Pending |
+| BRACKET-01 | Phase 16: Language Packs & Switching           | Pending |
+| BRACKET-02 | Phase 16: Language Packs & Switching           | Pending |
+| BRACKET-03 | Phase 16: Language Packs & Switching           | Pending |
+| BRACKET-04 | Phase 16: Language Packs & Switching           | Pending |
+| BRACKET-05 | Phase 16: Language Packs & Switching           | Pending |
+| LANG-01    | Phase 16: Language Packs & Switching           | Pending |
+| COMMENT-01 | Phase 16: Language Packs & Switching           | Pending |
+| HIGHLIGHT-01 | Phase 16: Language Packs & Switching         | Pending |

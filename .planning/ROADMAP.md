@@ -45,75 +45,77 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
 
 ### 🚧 v1.2 Code Editor Experience (In Progress)
 
-**Milestone Goal:** Make editing code inside the solution fence feel like a proper code editor — language-aware indentation, smart bracket handling, and Tab/Enter behavior that matches what developers expect from a real editor.
+**Milestone Goal:** Make editing code inside the solution fence feel like a proper code editor (comparable to LeetCode web's Monaco) by embedding a nested CM6 EditorView with full LanguageSupport in the `## Code` fence region.
 
-- [ ] **Phase 13: Fence Zone Foundation** — Pure logic layer: fence zone detector, indent rules, bracket rules; zero CM6 side effects; full unit-test coverage
-- [ ] **Phase 14: Tab / Shift-Tab Indentation** — Tab indents and Shift-Tab dedents current/selected lines inside the fence; language-aware indent unit; validates full guard→dispatch→section-lock-bypass pipeline
-- [ ] **Phase 15: Smart Enter** — Enter preserves indent, auto-indents after `{`/`(`/`:`, splits matched brace pairs; depends on Phase 14 indent infrastructure
-- [ ] **Phase 16: Bracket & Pair Handling** — Auto-close code pairs, suppress markdown pairs, overtype on closing bracket, pair-delete on Backspace, template-literal triple-backtick in JS/TS
-- [ ] **Phase 17: Language Switching, Comment Toggle & Bracket Highlight** — Compartment reconfigure on language switch, Cmd-/Ctrl-/ line comment, bracket match highlight
+**Architecture:** Nested EditorView (Path B) — a standalone child CM6 editor with language packs replaces the visible fence body, syncing changes back to the parent markdown document. This provides syntax-tree-based indent, bracket handling, highlighting, and comment toggling natively.
+
+- [ ] **Phase 13: Nested Editor Foundation** — Widget + CSS-hide approach, child EditorView registry, lifecycle management, single-language proof-of-concept rendering
+- [ ] **Phase 14: Bidirectional Sync** — Child↔parent sync protocol (CM6 split-view pattern), offset derivation, vault.process conflict handling, section lock coexistence
+- [ ] **Phase 15: Focus, Undo & Cursor** — Focus model (child/parent/Obsidian), cursor transitions, undo stack isolation, Tab/keyboard routing, scroll integration
+- [ ] **Phase 16: Language Packs & Switching** — All 8 LC languages with full LanguageSupport, Compartment-based language switching via chevron, indent/bracket/comment/highlight all active
+- [ ] **Phase 17: Polish & Edge Cases** — Paste/clipboard, IME/CJK, Find/Replace, event propagation, plugin review prep, bundle size validation
 
 ## Phase Details
 
-### Phase 13: Fence Zone Foundation
-**Goal**: Pure logic infrastructure exists — fence zone detection, per-language indent rules, and bracket rule tables — all tested in isolation with zero CM6 side effects
-**Depends on**: Phase 12 (existing section-lock + `'leetcode.*'` userEvent bypass convention)
-**Requirements**: (foundation phase — enables INDENT-01–04, ENTER-01–04, BRACKET-01–05, LANG-01, COMMENT-01, HIGHLIGHT-01)
+### Phase 13: Nested Editor Foundation
+**Goal**: A child CM6 EditorView renders inside the `## Code` fence region with syntax highlighting for one language (Python), mounted via Decoration.widget + CSS-hidden fence lines, with lifecycle managed by a centralized registry
+**Depends on**: Phase 12 (existing section-lock + code-actions widget pattern)
+**Requirements**: (foundation phase — enables all 16 requirements)
 **Success Criteria** (what must be TRUE):
-  1. Given a CM6 EditorState, `fenceZoneDetector` correctly identifies whether a cursor position is inside the `## Code` fence body (not the fence opener, closing fence, or heading — which are locked)
-  2. `codeIndentRules` returns the correct indent unit (4 spaces for Java/Python/C++, 2 for JS/TS) for every LeetCode-supported language
-  3. `codeBracketRules` correctly classifies each character as a code pair opener, code pair closer, markdown-only pair, or neutral character for every supported language
-  4. All three modules have 100% unit-test coverage with no Obsidian or CM6 imports — they are pure TypeScript functions
+  1. On an `lc-slug` note with a Python fence, the fence body renders inside a child CM6 EditorView with Python syntax highlighting (Lezer-based, not Prism/markdown)
+  2. The child editor is mounted via `Decoration.widget({ block: true })` with parent fence body lines hidden via CSS line decorations; NOT via `Decoration.replace`
+  3. Opening a note, switching to another note, and switching back preserves the child editor state (cursor, scroll) via the plugin-level EditorView registry
+  4. Closing a note and reopening it creates a fresh child editor (no stale registry entries); plugin unload destroys all child editors cleanly (zero memory leaks)
+  5. The existing section lock, code-actions button row, and language chevron continue to function without regression
 **Plans**: TBD
 
-### Phase 14: Tab / Shift-Tab Indentation
-**Goal**: Users can press Tab and Shift-Tab inside the code fence body to indent and dedent lines, with indent size matching the active language, and multi-line selections handled as a single undo step
+### Phase 14: Bidirectional Sync
+**Goal**: Edits in the child editor flow into the parent document at the correct fence offset, and external changes to the parent fence content (vault.process, copyToCode) propagate into the child — with no echo loops or corruption
 **Depends on**: Phase 13
-**Requirements**: INDENT-01, INDENT-02, INDENT-03, INDENT-04
+**Requirements**: INDENT-01, INDENT-02, ENTER-01 (basic editing must work end-to-end for these to be testable)
 **Success Criteria** (what must be TRUE):
-  1. Pressing Tab with cursor inside the fence body indents the current line by the language-appropriate unit (4 spaces for Java; 2 spaces for JS/TS); pressing Tab outside the fence body triggers Obsidian's default Tab behavior unchanged
-  2. Pressing Shift-Tab inside the fence body removes one indent unit from the current line; lines with less indentation than one unit are dedented to column 0
-  3. Selecting three lines inside the fence body and pressing Tab indents all three lines simultaneously; the entire operation is a single undo step (one Ctrl-Z restores all three lines)
-  4. Switching the fence language from Java to TypeScript and pressing Tab indents by 2 spaces, not 4; no note re-open required
+  1. Typing in the child editor updates the parent document's fence body in real-time; saving the file (Ctrl-S) persists the code written in the child
+  2. Using "Copy to Code" from a past submission (vault.process write) updates the child editor's content without corruption or duplication
+  3. Editing `## Notes` in the parent document (above/below the fence) does NOT corrupt the child editor or produce offset drift
+  4. No echo loop: child→parent sync does NOT trigger parent→child sync back (sync annotation prevents it)
+  5. The section lock's changeFilter passes all child-to-parent sync transactions cleanly (verified: no `input.*` userEvent on sync dispatches)
 **Plans**: TBD
-**UI hint**: yes
 
-### Phase 15: Smart Enter
-**Goal**: Users get automatic indentation on every Enter keypress inside the fence body — indent preserved from the current line, deepened after openers, and brace pairs split into three lines correctly
+### Phase 15: Focus, Undo & Cursor
+**Goal**: Seamless user experience — clicking into the child editor, pressing Tab, using Cmd-Z, clicking back to markdown, and using Run/Submit all work correctly without focus confusion
 **Depends on**: Phase 14
-**Requirements**: ENTER-01, ENTER-02, ENTER-03, ENTER-04
+**Requirements**: INDENT-01, INDENT-02, INDENT-03, INDENT-04 (Tab/Shift-Tab works via child's indentWithTab)
 **Success Criteria** (what must be TRUE):
-  1. Pressing Enter on an indented line inside the fence (e.g., 8 spaces of indent) produces a new line with the same 8 spaces of indent; no indent is added or removed
-  2. Pressing Enter at the end of a line that closes with `{` produces a new line indented one level deeper than the opening line
-  3. Pressing Enter at the end of a Python `def foo():` or `if x:` line produces a new line indented one level deeper; this applies to all Python block-opening keywords (def, if, elif, else, for, while, with, class, try, except, finally)
-  4. Pressing Enter when the cursor is between a matched `{` and `}` on the same line splits into three lines: the opener line, a new blank indented line (cursor lands here), and the closing `}` dedented to the opener's indent level
+  1. Clicking into the child editor gives it focus; clicking into `## Notes` returns focus to the parent; Run/Submit buttons work in both states
+  2. Tab inside the child editor indents code (NOT focus-navigation); Shift-Tab dedents; multi-line selection indent works as single undo
+  3. Cmd-Z in the child undoes the last child edit; the parent document reflects the undo correctly via sync
+  4. The child editor auto-grows with content (no inner scrollbar); the parent note scrolls as a unified document
+  5. Escape in the child editor returns focus to the parent (accessibility escape hatch)
 **Plans**: TBD
-**UI hint**: yes
 
-### Phase 16: Bracket & Pair Handling
-**Goal**: Typing brackets and pairs inside the code fence behaves like a code editor — code pairs auto-close, markdown pairs are suppressed, closing brackets overtype, Backspace removes both halves of an auto-inserted pair, and JS/TS template literals work
-**Depends on**: Phase 13
-**Requirements**: BRACKET-01, BRACKET-02, BRACKET-03, BRACKET-04, BRACKET-05
+### Phase 16: Language Packs & Switching
+**Goal**: All 8 LeetCode languages have full LanguageSupport (indent, brackets, comments, highlight) and switching language via the chevron instantly reconfigures the child editor
+**Depends on**: Phase 15
+**Requirements**: INDENT-04, ENTER-02, ENTER-03, ENTER-04, BRACKET-01, BRACKET-02, BRACKET-03, BRACKET-04, BRACKET-05, LANG-01, COMMENT-01, HIGHLIGHT-01
 **Success Criteria** (what must be TRUE):
-  1. Typing `{` inside a Java fence inserts `{}` with cursor between them; same for `[`, `(`, `"`, and `'`; typing these characters outside the fence produces Obsidian's default behavior
-  2. Typing `*` inside the fence body inserts a single `*` and does not trigger Obsidian's markdown auto-pair (`**`); same for `_` and a single backtick
-  3. Typing `)` when the cursor is immediately before an auto-inserted `)` moves the cursor past it without inserting a second `)` (overtype behavior); the note contains only one `)`, not two
-  4. Pressing Backspace when the cursor is between an auto-inserted pair (e.g., between `{` and `}`) deletes both characters in a single Backspace keypress
-  5. In a JavaScript or TypeScript fence, typing three consecutive backticks produces a template literal (backtick pair) with cursor inside; in other languages, three backticks are inserted literally
+  1. All 8 LC languages (Python, Java, C++, C, JavaScript, TypeScript, Go, Rust) have correct indent rules: Enter after `{` indents in Java/C++/JS/TS; Enter after `:` indents in Python; `}` on Enter dedents
+  2. Bracket auto-close works for `{`, `[`, `(`, `"`, `'` in all languages; overtype on closing bracket; pair-delete on Backspace; markdown `*`/`_` pairs are NOT inserted (child is in code mode, not markdown)
+  3. Switching language via the chevron dropdown reconfigures the child editor's LanguageSupport via Compartment.reconfigure() — no note re-open needed; indent rules and comment syntax update immediately
+  4. Cmd-/ (Mac) / Ctrl-/ (Win/Linux) toggles line comment with correct syntax (`//` for Java/JS/C++/TS, `#` for Python, `//` for Go/Rust)
+  5. Bracket match highlighting is visible when cursor is adjacent to any bracket
 **Plans**: TBD
-**UI hint**: yes
 
-### Phase 17: Language Switching, Comment Toggle & Bracket Highlight
-**Goal**: Language switching instantly updates all editor behaviors, Cmd-/Ctrl-/ toggles line comments using the correct syntax, and bracket match highlighting is visible when the cursor is adjacent to any bracket
-**Depends on**: Phase 14, Phase 16
-**Requirements**: LANG-01, COMMENT-01, HIGHLIGHT-01
+### Phase 17: Polish & Edge Cases
+**Goal**: All edge cases handled — paste, IME input, event propagation, Source/Live Preview parity, bundle size validated, plugin review readiness
+**Depends on**: Phase 16
+**Requirements**: (polish for all 16 requirements — ensures robustness)
 **Success Criteria** (what must be TRUE):
-  1. Switching the fence language from Python to Java via the chevron dropdown immediately changes Tab indent to 4 spaces, Enter-after-colon auto-indent to inactive, and comment toggle syntax to `//` — all without closing or re-opening the note
-  2. Pressing Cmd-/ (macOS) or Ctrl-/ (Windows/Linux) on a Java line inside the fence prefixes it with `//`; pressing again removes it; pressing on a Python line uses `#` instead
-  3. Pressing Cmd-/ or Ctrl-/ on a block of selected lines inside the fence toggles all selected lines together using the active language's comment syntax
-  4. When the cursor is immediately before or after a `{`, `}`, `(`, `)`, `[`, or `]` inside the fence body, both that bracket and its matching bracket are visually highlighted; moving the cursor away removes the highlight
+  1. Pasting code into the child editor produces raw code (not markdown-formatted text); Obsidian's paste interceptors do not interfere
+  2. Chinese/Japanese IME input in the child editor produces correct characters without duplication or composition interruption
+  3. The child editor renders and functions correctly in both Source Mode and Live Preview (Cmd-E toggle preserves editing state)
+  4. Bundle size is documented and justified (language packs raise ceiling to ~1.5 MB); no unused code shipped
+  5. All lifecycle cleanup verified: no memory leaks after 20 note open/close cycles; plugin unload destroys all child editors
 **Plans**: TBD
-**UI hint**: yes
 
 ## Progress
 
@@ -138,8 +140,8 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
 | 10. Contest (virtual + analysis)            | v1.1      | 7/7            | Complete    | 2026-05-18 |
 | 11. AI Knowledge Graph                      | v1.1      | 3/3            | Complete    | 2026-05-19 |
 | 12. Polish + Plugin-Store Re-submission     | v1.1      | 5/5            | Complete    | 2026-05-19 |
-| 13. Fence Zone Foundation                   | v1.2      | 0/TBD          | Not started | -          |
-| 14. Tab / Shift-Tab Indentation             | v1.2      | 0/TBD          | Not started | -          |
-| 15. Smart Enter                             | v1.2      | 0/TBD          | Not started | -          |
-| 16. Bracket & Pair Handling                 | v1.2      | 0/TBD          | Not started | -          |
-| 17. Language Switching, Comment & Highlight | v1.2      | 0/TBD          | Not started | -          |
+| 13. Nested Editor Foundation                | v1.2      | 0/TBD          | Not started | -          |
+| 14. Bidirectional Sync                      | v1.2      | 0/TBD          | Not started | -          |
+| 15. Focus, Undo & Cursor                    | v1.2      | 0/TBD          | Not started | -          |
+| 16. Language Packs & Switching              | v1.2      | 0/TBD          | Not started | -          |
+| 17. Polish & Edge Cases                     | v1.2      | 0/TBD          | Not started | -          |
