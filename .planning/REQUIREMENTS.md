@@ -66,21 +66,21 @@ Make editing code inside the `## Code` solution fence feel like a proper code ed
 
 ## Traceability
 
-| REQ-ID | Phase | Status |
-|--------|-------|--------|
-| INDENT-01 | — | Pending |
-| INDENT-02 | — | Pending |
-| INDENT-03 | — | Pending |
-| INDENT-04 | — | Pending |
-| ENTER-01 | — | Pending |
-| ENTER-02 | — | Pending |
-| ENTER-03 | — | Pending |
-| ENTER-04 | — | Pending |
-| BRACKET-01 | — | Pending |
-| BRACKET-02 | — | Pending |
-| BRACKET-03 | — | Pending |
-| BRACKET-04 | — | Pending |
-| BRACKET-05 | — | Pending |
-| LANG-01 | — | Pending |
-| COMMENT-01 | — | Pending |
-| HIGHLIGHT-01 | — | Pending |
+| REQ-ID     | Phase                                       | Status  |
+|------------|---------------------------------------------|---------|
+| INDENT-01  | Phase 14: Tab / Shift-Tab Indentation       | Pending |
+| INDENT-02  | Phase 14: Tab / Shift-Tab Indentation       | Pending |
+| INDENT-03  | Phase 14: Tab / Shift-Tab Indentation       | Pending |
+| INDENT-04  | Phase 14: Tab / Shift-Tab Indentation       | Pending |
+| ENTER-01   | Phase 15: Smart Enter                       | Pending |
+| ENTER-02   | Phase 15: Smart Enter                       | Pending |
+| ENTER-03   | Phase 15: Smart Enter                       | Pending |
+| ENTER-04   | Phase 15: Smart Enter                       | Pending |
+| BRACKET-01 | Phase 16: Bracket & Pair Handling           | Pending |
+| BRACKET-02 | Phase 16: Bracket & Pair Handling           | Pending |
+| BRACKET-03 | Phase 16: Bracket & Pair Handling           | Pending |
+| BRACKET-04 | Phase 16: Bracket & Pair Handling           | Pending |
+| BRACKET-05 | Phase 16: Bracket & Pair Handling           | Pending |
+| LANG-01    | Phase 17: Language Switching, Comment & Highlight | Pending |
+| COMMENT-01 | Phase 17: Language Switching, Comment & Highlight | Pending |
+| HIGHLIGHT-01 | Phase 17: Language Switching, Comment & Highlight | Pending |
