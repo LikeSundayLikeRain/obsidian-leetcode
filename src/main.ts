@@ -115,6 +115,9 @@ import { buildCodeActionsEditorExtension } from './main/codeActionsEditorExtensi
 // Phase 05.5 (POLISH) — section locking for lc-slug notes. Hard read-only
 // enforcement on plugin-owned regions via CM6 EditorState.changeFilter.
 import { buildSectionLockExtension } from './main/sectionLockExtension';
+// Phase 13 — nested child EditorView for ## Code fence (Plans 01-03).
+import { ChildEditorRegistry } from './main/childEditorRegistry';
+import { buildNestedEditorExtension } from './main/nestedEditorExtension';
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
 // Phase 4 Plan 05 — knowledge-graph wiring.
@@ -242,6 +245,9 @@ export default class LeetCodePlugin extends Plugin {
   // contest mode and the `start-random-contest` palette command.
   contestListService!: ContestListService;
   contestScratch!: ContestScratchManager;
+
+  // Phase 13 — LRU cache for nested child EditorViews (cap=5, per D-12).
+  childEditorRegistry!: ChildEditorRegistry;
 
   // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
   // AIProvider; values are the in-flight probe Promise. Cleared in the
@@ -779,6 +785,9 @@ export default class LeetCodePlugin extends Plugin {
     // executeCommandById (Pitfall 14); idempotent per Pitfall 3.
     registerCodeBlockActionProcessor(this);
 
+    // Phase 13 — child editor registry (must exist before extensions fire).
+    this.childEditorRegistry = new ChildEditorRegistry(5);
+
     // Step 6f — Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) edit-mode Run/Submit buttons.
     // Registers a CM6 StateField<DecorationSet> that paints an inline widget below
     // the `## Code` fence in Live Preview + Source Mode. Gated on `lc-slug`
@@ -786,6 +795,13 @@ export default class LeetCodePlugin extends Plugin {
     // Click handlers call plugin.runFromActive() / submitFromActive() directly
     // (D-05 — avoids editorCheckCallback gate regression from 05-05 live smoke).
     this.registerEditorExtension(buildCodeActionsEditorExtension(this));
+
+    // Step 6f-nested — Phase 13: nested child EditorView for ## Code fence.
+    // Mounts a block widget containing a child CM6 EditorView with Python
+    // syntax highlighting; hides raw fence lines via CSS Decoration.line.
+    // Registered BETWEEN code-actions and section-lock so the cursor-redirect
+    // transactionFilter processes before section-lock's cursor snap (Pitfall 3).
+    this.registerEditorExtension(buildNestedEditorExtension(this));
 
     // Step 6f-bis — Phase 05.5 (POLISH) section locking for lc-slug notes.
     // Hard read-only enforcement via CM6 EditorState.changeFilter; gated on
@@ -913,6 +929,9 @@ export default class LeetCodePlugin extends Plugin {
     // No subscriptions/timers to detach (Map-only), but dispose() resets the
     // in-memory Map so plugin reload starts with a clean slate.
     this.lastVerdictStore?.dispose();
+
+    // Phase 13 — destroy all child EditorViews (D-12 cleanup).
+    this.childEditorRegistry?.destroyAll();
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
