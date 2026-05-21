@@ -67,7 +67,11 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
   3. Opening a note, switching to another note, and switching back preserves the child editor state (cursor, scroll) via the plugin-level EditorView registry
   4. Closing a note and reopening it creates a fresh child editor (no stale registry entries); plugin unload destroys all child editors cleanly (zero memory leaks)
   5. The existing section lock, code-actions button row, and language chevron continue to function without regression
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
+- [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
+- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ### Phase 14: Bidirectional Sync
 **Goal**: Edits in the child editor flow into the parent document at the correct fence offset, and external changes to the parent fence content (vault.process, copyToCode) propagate into the child — with no echo loops or corruption
@@ -79,7 +83,11 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
   3. Editing `## Notes` in the parent document (above/below the fence) does NOT corrupt the child editor or produce offset drift
   4. No echo loop: child→parent sync does NOT trigger parent→child sync back (sync annotation prevents it)
   5. The section lock's changeFilter passes all child-to-parent sync transactions cleanly (verified: no `input.*` userEvent on sync dispatches)
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
+- [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
+- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ### Phase 15: Focus, Undo & Cursor
 **Goal**: Seamless user experience — clicking into the child editor, pressing Tab, using Cmd-Z, clicking back to markdown, and using Run/Submit all work correctly without focus confusion
@@ -91,7 +99,11 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
   3. Cmd-Z in the child undoes the last child edit; the parent document reflects the undo correctly via sync
   4. The child editor auto-grows with content (no inner scrollbar); the parent note scrolls as a unified document
   5. Escape in the child editor returns focus to the parent (accessibility escape hatch)
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
+- [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
+- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ### Phase 16: Language Packs & Switching
 **Goal**: All 8 LeetCode languages have full LanguageSupport (indent, brackets, comments, highlight) and switching language via the chevron instantly reconfigures the child editor
@@ -103,7 +115,11 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
   3. Switching language via the chevron dropdown reconfigures the child editor's LanguageSupport via Compartment.reconfigure() — no note re-open needed; indent rules and comment syntax update immediately
   4. Cmd-/ (Mac) / Ctrl-/ (Win/Linux) toggles line comment with correct syntax (`//` for Java/JS/C++/TS, `#` for Python, `//` for Go/Rust)
   5. Bracket match highlighting is visible when cursor is adjacent to any bracket
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
+- [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
+- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ### Phase 17: Polish & Edge Cases
 **Goal**: All edge cases handled — paste, IME input, event propagation, Source/Live Preview parity, bundle size validated, plugin review readiness
@@ -115,7 +131,11 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
   3. The child editor renders and functions correctly in both Source Mode and Live Preview (Cmd-E toggle preserves editing state)
   4. Bundle size is documented and justified (language packs raise ceiling to ~1.5 MB); no unused code shipped
   5. All lifecycle cleanup verified: no memory leaks after 20 note open/close cycles; plugin unload destroys all child editors
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
+- [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
+- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ## Progress
 
@@ -140,7 +160,7 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
 | 10. Contest (virtual + analysis)            | v1.1      | 7/7            | Complete    | 2026-05-18 |
 | 11. AI Knowledge Graph                      | v1.1      | 3/3            | Complete    | 2026-05-19 |
 | 12. Polish + Plugin-Store Re-submission     | v1.1      | 5/5            | Complete    | 2026-05-19 |
-| 13. Nested Editor Foundation                | v1.2      | 0/TBD          | Not started | -          |
+| 13. Nested Editor Foundation                | v1.2      | 0/3            | Not started | -          |
 | 14. Bidirectional Sync                      | v1.2      | 0/TBD          | Not started | -          |
 | 15. Focus, Undo & Cursor                    | v1.2      | 0/TBD          | Not started | -          |
 | 16. Language Packs & Switching              | v1.2      | 0/TBD          | Not started | -          |
