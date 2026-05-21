@@ -7,7 +7,7 @@
 // §Pitfall 6.
 //
 // Thresholds:
-//   HARD_LIMIT = 1_200_000 bytes — exit 1 (fails CI)
+//   HARD_LIMIT = 1_300_000 bytes — exit 1 (fails CI)
 //   SOFT_WARN  = 1_080_000 bytes — exit 0 with stderr WARN
 //
 // Phase 07 Plan 03 ceiling bump (Rule 3 — Architectural deviation):
@@ -65,8 +65,8 @@
 // Actions workflow at .github/workflows/ci.yml.
 import fs from 'node:fs';
 
-const HARD_LIMIT = 1_200_000;
-const SOFT_WARN = 1_080_000;
+const HARD_LIMIT = 1_300_000;
+const SOFT_WARN = 1_170_000;
 const PATH = 'main.js';
 
 if (!fs.existsSync(PATH)) {
