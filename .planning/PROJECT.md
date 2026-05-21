@@ -2,7 +2,7 @@
 
 ## What This Is
 
-An Obsidian community plugin that fetches LeetCode problems, lets users write and submit solutions without leaving Obsidian, and turns every solved problem into a linked note in their vault. Inspired by vscode-leetcode, but leans into what Obsidian does well: tags, backlinks, and the knowledge graph — so a solving session compounds into a personal, searchable reference library of techniques and patterns.
+An Obsidian community plugin that fetches LeetCode problems, lets users write and submit solutions without leaving Obsidian, and turns every solved problem into a linked note in their vault. Now with AI-powered coaching (debug suggestions, solution reviews, pattern classification), virtual contest mode, and a non-destructive problem preview surface. Inspired by vscode-leetcode, but leans into what Obsidian does well: tags, backlinks, and the knowledge graph — so a solving session compounds into a personal, searchable reference library of techniques and patterns.
 
 ## Core Value
 
@@ -10,126 +10,96 @@ Every LeetCode problem you solve becomes a first-class note in your Obsidian vau
 
 ## Current State
 
-**v1.0 MVP shipped 2026-05-14.** 10 phases, 61 plans, 76 tasks, ~163 KB production bundle, 652 tests passing.
+**v1.1 shipped 2026-05-20.** 19 phases (across 2 milestones), 102 plans, 1,450 tests passing, 1.155 MB production bundle.
 
-The plugin is functionally complete and ship-ready. Plan 07 (GitHub release / community-plugins.json PR) is documented as a deferred manual step in `.planning/milestones/v1.0-phases/05-polish-ship/05-07-SUMMARY.md` — version bump + tag + release artifacts are ready to execute whenever the user is.
-
-## Current Milestone: v1.1 Contest, AI Coach, and Preview
-
-**Goal:** Turn the v1.0 "solve and capture" plugin into a practice + coaching + AI-curated knowledge graph — adding contest training (including random virtual), AI debug & review, AI-maintained problem edges (including forward-looking edges to unsolved problems), and a non-destructive problem preview surface.
-
-**Target features:**
-
-- **Preview mode** — Clicking a problem opens a read-mode preview tab (problem statement only) with a "Start Problem" / "Open Problem" button. No accidental note creation.
-- **Contest (virtual + analysis + random)** — Pick a past LC contest or "Surprise me"; virtual timer; 4 problems as notes; verdict tracking; post-contest summary note with solved/missed, per-problem time, score, technique tags.
-- **AI debug** — User-triggered "AI: Debug" button while solving. Sends current code + problem + last run/submit failure to LLM; streams suggestions inline.
-- **AI ACed-solution review** — On Accepted, AI produces a 3-dimension review: Approach (Current vs Suggested + Key Idea + Consider), Efficiency (Current O / Suggested O + suggestions), Code Style (Readability / Structure + suggestions).
-- **AI knowledge-graph maintenance** — AI-named pattern-cluster hub notes (supersede v1.0 lc-tag-based Techniques links); difficulty-progression edges (Easy → Medium → Hard on same pattern); `## Related Variants` for cross-cluster structural twins only; look-ahead edges to problems not yet solved when the AI judges them load-bearing for the pattern.
-- **AI provider support** — Multi-provider via BYO API key + custom base URL (Anthropic, OpenAI, OpenRouter, Bedrock, Ollama). Settings: provider, base URL, model, key. No telemetry, no proxy, key stored locally only.
-
-**Key context:**
-
-- Phase numbering continues from v1.0 (next phase = **06**).
-- Pattern-cluster wikilinks REPLACE the v1.0 lc-tag-based Techniques links — migration path for already-solved notes TBD in discuss-phase.
-- Look-ahead edges may materialize as dangling wikilinks or stub notes — TBD in discuss-phase.
-- AI calls go via `requestUrl` (inherits v1.0 Electron CORS-bypass convention).
-- Plugin-store rules still apply: no telemetry, no innerHTML, key + AI usage disclosed in README.
-- Contest scope = past contests only (no live, no leaderboard).
-- Desktop-only and leetcode.com-only inherited from v1.0.
+The plugin ships preview mode, 5-provider AI support (Anthropic, OpenAI, OpenRouter, Ollama, Bedrock), AI debug/review, virtual contest mode, and AI-maintained 22-pattern knowledge graph. Version 1.1.0 in manifest.
 
 ## Requirements
 
 ### Validated
 
-<!-- Shipped and confirmed valuable. -->
-
-- ✓ Browse and search LeetCode problems from inside Obsidian — v1.0 (Phase 01–02)
-- ✓ Authenticate with leetcode.com via embedded login window (preferred) with cookie-paste fallback — v1.0 (Phase 01)
-- ✓ Open a problem as a note in the vault (one note per problem, markdown) — v1.0 (Phase 02)
-- ✓ Write solution code in the note editor in any LeetCode-supported language — v1.0 (Phase 02 + 05.3 chevron-driven language switch)
-- ✓ Run code against LeetCode's sample/custom test cases (remote) — v1.0 (Phase 03 + 05.4 multi-case Run modal)
-- ✓ Submit code to LeetCode's judge and display verdict — v1.0 (Phase 03 + 05.4 verdict polish)
-- ✓ Auto-import LeetCode's problem tags (difficulty, topics) as Obsidian tags — v1.0 (Phase 02 + 04)
-- ✓ Support user-added personal tags (e.g. `#revisit`, `#tricky`, `#interview-asked`) — v1.0 (Phase 02 union-merge frontmatter)
-- ✓ On accepted submission: solution code already lives in `## Code` (no append needed — D-01 GRAPH-01 revised) — v1.0 (Phase 04)
-- ✓ On accepted submission: update note frontmatter with language + status (solved date / runtime / memory dropped — no production reader, staleness risk; runtime/memory render fresh from GraphQL) — v1.0 (Phase 04 + UAT trim 05.5)
-- ✓ On accepted submission: create/update backlinks to technique notes (e.g. `[[Two Pointers]]`) — v1.0 (Phase 04)
-- ✓ Cached problems are readable offline — v1.0 (Phase 02)
-- ✓ Settings UI: login, default language, vault folder for problems — v1.0 (Phase 01 + 05)
-- ✓ Graceful error handling: LC downtime, expired session, rate limits — v1.0 (Phase 03 + 05.4)
-- ✓ README with install, usage, screenshots — ready for community plugin submission — v1.0 (Phase 05)
-- ✓ Plugin-owned regions structurally locked to prevent accidental edits — v1.0 (Phase 05.5; emerged during dogfood)
+- ✓ Browse and search LeetCode problems from inside Obsidian — v1.0
+- ✓ Authenticate with leetcode.com via embedded login window (preferred) with cookie-paste fallback — v1.0
+- ✓ Open a problem as a note in the vault (one note per problem, markdown) — v1.0
+- ✓ Write solution code in the note editor in any LeetCode-supported language — v1.0
+- ✓ Run code against LeetCode's sample/custom test cases (remote) — v1.0
+- ✓ Submit code to LeetCode's judge and display verdict — v1.0
+- ✓ Auto-import LeetCode's problem tags (difficulty, topics) as Obsidian tags — v1.0
+- ✓ Support user-added personal tags (e.g. `#revisit`, `#tricky`, `#interview-asked`) — v1.0
+- ✓ On accepted submission: update note frontmatter + create/update backlinks — v1.0
+- ✓ Cached problems are readable offline — v1.0
+- ✓ Settings UI: login, default language, vault folder for problems — v1.0
+- ✓ Graceful error handling: LC downtime, expired session, rate limits — v1.0
+- ✓ Plugin-owned regions structurally locked to prevent accidental edits — v1.0
+- ✓ Preview mode (read-mode tab + Start/Open Problem button) — v1.1
+- ✓ Contest virtual mode (past + random + post-contest analysis) — v1.1
+- ✓ AI debug (user-triggered streaming modal) — v1.1
+- ✓ AI ACed-solution review (3 dimensions: Approach, Efficiency, Code Style) — v1.1
+- ✓ AI knowledge-graph maintenance (22-pattern clusters supersede lc-tag Techniques) — v1.1
+- ✓ AI difficulty-progression + cross-cluster Related Variants + look-ahead edges — v1.1
+- ✓ Multi-provider AI support (BYO key + custom base URL + Bedrock) — v1.1
 
 ### Active
 
-<!-- v1.1 milestone — see Current Milestone section above for full scope. -->
-
-- Preview mode (read-mode tab + Start/Open Problem button) — v1.1
-- Contest virtual mode (past + random + post-contest analysis) — v1.1
-- AI debug (user-triggered) — v1.1
-- AI ACed-solution review (3 dimensions: Approach, Efficiency, Code Style) — v1.1
-- AI knowledge-graph maintenance (pattern clusters supersede lc-tag Techniques) — v1.1
-- AI difficulty-progression + cross-cluster Related Variants + look-ahead edges — v1.1
-- Multi-provider AI support (BYO key + custom base URL) — v1.1
+(None — awaiting next milestone scoping)
 
 ### Out of Scope
 
-<!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
-
-- **Obsidian mobile support** — Embedded login and some LC integration paths need Electron APIs that don't exist on mobile; defer to a later milestone.
-- **leetcode.cn (Chinese LeetCode)** — Different API surface, URLs, and auth. Adds significant scope; v2 milestone.
-- **Spaced repetition / review scheduling** — Deferred to v2. Graph + tags alone are enough to surface problems to revisit for v1.
-<!-- AI-powered tagging moved to Active for v1.1 -->
-- **Live contest participation** — v1.1 ships virtual-only (past contests). Live contests need real-time leaderboards, simultaneous global submission throttling, and contest-day rankings; out of scope for v1.1.
-- **AI key proxy / hosted AI service** — v1.1 is BYO key only. Operating a proxy creates telemetry surface, hosting cost, and plugin-store risk; users own their AI cost and provider choice.
-- **Local code execution** — LeetCode's Run Code endpoint handles remote execution for all supported languages; no need for local runtimes.
-- **IDE-style features** (IntelliSense, linting, debugger) — Obsidian isn't an IDE; for deep editing, users can still use their IDE of choice. This plugin is for solve-and-capture.
+- **Obsidian mobile support** — Embedded login and AI streaming need Electron APIs that don't exist on mobile.
+- **leetcode.cn (Chinese LeetCode)** — Different API surface, URLs, and auth. v2 milestone.
+- **Spaced repetition / review scheduling** — Graph + cluster hubs + #revisit auto-tag cover the review surface.
+- **Live contest participation** — Needs real-time leaderboards and contest-day submission throttling. v1.1 is virtual-only.
+- **AI key proxy / hosted AI service** — BYO key only. No telemetry surface, no hosting cost.
+- **Local code execution** — LeetCode's Run Code endpoint handles remote execution.
+- **IDE-style features** (IntelliSense, linting, debugger) — Obsidian isn't an IDE.
+- **Auto-debug on every WA** — Cost surprise + anti-feature; debug must remain user-triggered.
+- **Auto-apply AI suggested code** — Trust boundary; AI suggestions stay in `## AI Review`.
+- **Auto-rewrite v1.0 `## Techniques` on plugin update** — Lazy-on-AC migration is mandatory default.
+- **Free-form AI cluster names** — Frozen 22-pattern taxonomy prevents graph fragmentation.
+- **Telemetry / usage analytics** — Non-negotiable for plugin-store.
 
 ## Context
 
-- **Reference implementation:** vscode-leetcode is the feature benchmark — submit/run/tag functionality is well-established there. Our differentiation is Obsidian-native integration (notes, tags, graph, offline) rather than reinventing LC interaction.
-- **Authentication reality:** vscode-leetcode uses a custom `leetcode.com/authorize-login/vscode/?path=...` endpoint that was a bespoke LC integration redirecting to `vscode://`. That endpoint won't redirect to Obsidian. We'll replicate the UX with an embedded Electron BrowserWindow that captures the session cookie after normal login.
-- **Desktop-only architecture:** v1 targets Electron-based desktop Obsidian (macOS, Windows, Linux). This unlocks BrowserWindow, filesystem access for offline cache, and simpler HTTP handling.
-- **Graph-first design:** Obsidian's killer feature is linked notes. Problem notes should be graph citizens from day one — backlinks to technique notes, tag clouds, and vault-wide search "just working."
-- **User is primary user:** This is being built by the author for their own daily LC practice first, then polished for community release. Dogfood guides UX.
-- **Primary languages:** Java and Python for the author's own use, but submission must work for all LC-supported languages since remote submission is cheap to support across languages.
+- **v1.1 shipped as a full practice + coaching platform.** Preview → solve → submit → AI review → pattern classification → knowledge graph — all without leaving Obsidian.
+- **Tech stack:** TypeScript, esbuild, Obsidian API, CM6, Vercel AI SDK 6.x, `@leetnotion/leetcode-api`, turndown, vitest.
+- **Bundle:** 1.155 MB (ceiling 1.2 MB). AI SDK is the primary contributor; CJS-no-splitting makes dynamic import ineffective.
+- **AI architecture:** `AIClient` facade → provider adapters → `obsidianFetch(mode)` transport. Native `window.fetch()` for streaming (confined to `src/ai/`), `requestUrl` for everything else.
+- **User is primary user:** Built by the author for daily LC practice; dogfood guides UX.
+- **Primary languages:** Java and Python, but all LC languages supported.
 
 ## Constraints
 
-- **Platform**: Desktop Obsidian only for v1 (macOS, Windows, Linux) — mobile deferred.
-- **Target site**: leetcode.com only for v1 — leetcode.cn deferred.
-- **Tech stack**: Obsidian plugin (TypeScript) — follows the official plugin API and community guidelines for store submission.
-- **Dependencies**: Prefer a well-maintained existing LeetCode API library (e.g. `leetcode-query` or similar) over hand-rolling GraphQL calls. Selection during research phase.
-- **Compatibility**: Must pass the Obsidian community plugin review criteria (no suspicious network calls, CSP-safe, honors user vault, no telemetry by default).
+- **Platform**: Desktop Obsidian only (macOS, Windows, Linux) — mobile deferred.
+- **Target site**: leetcode.com only — leetcode.cn deferred.
+- **Tech stack**: Obsidian plugin (TypeScript) — follows official plugin API and community guidelines.
+- **Compatibility**: Must pass Obsidian community plugin review criteria.
 - **Offline**: Previously-fetched problem content must be readable without internet.
-- **Security**: Session cookie lives in local plugin data only — never logged, never transmitted anywhere except LC.
+- **Security**: Session cookie + AI keys in local plugin data only — never logged, never transmitted anywhere except their intended targets.
+- **AI transport**: `leetcode.com` calls always via `requestUrl`; AI calls via native `window.fetch()` (streaming) or `requestUrl` (non-streaming). Never cross the boundary.
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Desktop-only in v1 | Unlocks embedded login window, simpler architecture, mobile is not the primary LC solving surface anyway | ✓ Good — `isDesktopOnly: true` in manifest; no mobile bug reports during dogfood |
-| leetcode.com only in v1 | Different API/auth surface than leetcode.cn; scope control for first ship | ✓ Good — clean ship; .cn can come in v2 |
-| One note per problem (not problem + separate code file) | Graph-native, simpler, solution lives with notes and tags | ✓ Good — single-file model is the sweet spot; `## Problem` / `## Code` / `## Techniques` / `## Notes` template proven in dogfood |
-| All LC languages supported for submission (not just Java/Python) | Remote submission is a language-agnostic API call; rejecting languages locks out users | ✓ Good — chevron switch (05.3) makes it discoverable |
-| No spaced repetition in v1 | Defer to v2; graph/tags already answer "what should I revisit?" adequately | ✓ Good — graph is a sufficient v1 review surface |
-| Embedded login preferred, cookie-paste fallback | Smooth UX when possible, works-everywhere fallback when not | ✓ Good — embedded BrowserWindow path is the default, fallback rarely needed |
-| Auto-update note on accepted submission (solution, metadata, backlinks) | Captures the win immediately; turns solving into knowledge automatically | ✓ Good — `KnowledgeGraphWriter.onAccepted` is the linchpin of the graph value-prop |
-| **vault.process not cm.dispatch for plugin writes** (CF-06) | Vault-layer writes are retry-safe and bypass CM6's transactionFilter; cm.dispatch interferes with section-lock | ✓ Good — section-lock (05.5) shipped on top of this without breaking copyToCode |
-| **`'leetcode.*'` userEvent annotation** as the convention for plugin-internal CM6 dispatches | Single bypass channel for the section-lock; documented in CLAUDE.md | ✓ Good — chevron switch + lock filter co-exist cleanly |
-| **Drop `lc-solved-date` / `lc-runtime-ms` / `lc-memory-mb` from frontmatter** | No production reader; staleness risk on re-AC. Display reads fresh from GraphQL | ✓ Good — narrower frontmatter surface |
-| **Section locking via `EditorState.changeFilter`** (05.5) | User edits to plugin-owned regions get clobbered on next plugin write; lock prevents the divergence at the keystroke level | ✓ Good — emerged during dogfood; cleaner than divergence detection |
+| Desktop-only | Unlocks embedded login, Electron APIs for AI streaming | ✓ Good |
+| leetcode.com only | Scope control; .cn is different API surface | ✓ Good |
+| One note per problem | Graph-native; solution lives with notes and tags | ✓ Good |
+| All LC languages supported | Remote submission is language-agnostic | ✓ Good |
+| Embedded login preferred, cookie-paste fallback | Smooth UX when possible | ✓ Good |
+| `vault.process` not `cm.dispatch` for plugin writes | Retry-safe, bypasses section-lock cleanly | ✓ Good |
+| `'leetcode.*'` userEvent bypass convention | Single channel for plugin CM6 dispatches | ✓ Good |
+| Section locking via `EditorState.changeFilter` | Prevents user edits to plugin-owned regions | ✓ Good |
+| Bundle ceiling 500 KB → 1 MB (v1.1) | AI SDK lands as single unit; CJS-no-splitting | ✓ Necessary |
+| Native `window.fetch()` primary streaming tier (v1.1) | `electron.net.fetch` probe fails on contextIsolation:true | ✓ Good |
+| Bedrock as native 5th provider (v1.1) | `@ai-sdk/amazon-bedrock` + in-plugin credential chain | ✓ Good |
+| 22-pattern taxonomy frozen at v1.1 | Prevents cluster-name drift fragmentation | ✓ Good |
+| Look-ahead edges feature-flagged (v1.1) | Novel UX; can disable in field | ✓ Good |
+| Lazy-on-AC Techniques migration (v1.1) | Never batch-rewrite on plugin load | ✓ Good |
+| All AI vault writes via `app.vault.process` (v1.1) | Consistent with v1.0 vault-write discipline | ✓ Good |
 
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
-
-**After each phase transition** (via `/gsd-transition`):
-1. Requirements invalidated? → Move to Out of Scope with reason
-2. Requirements validated? → Move to Validated with phase reference
-3. New requirements emerged? → Add to Active
-4. Decisions to log? → Add to Key Decisions
-5. "What This Is" still accurate? → Update if drifted
 
 **After each milestone** (via `/gsd-complete-milestone`):
 1. Full review of all sections
@@ -138,4 +108,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-14 — v1.1 milestone (Contest, AI Coach, Preview) opened*
+*Last updated: 2026-05-21 after v1.1 milestone*
