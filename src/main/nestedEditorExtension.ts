@@ -75,7 +75,7 @@ export class NestedEditorWidget extends WidgetType {
     return other.filePath === this.filePath;
   }
 
-  toDOM(_view: EditorView): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const container = document.createElement('div');
     container.className = 'lc-nested-editor';
 
@@ -90,6 +90,8 @@ export class NestedEditorWidget extends WidgetType {
       // Force geometry recalculation after reparenting (CM6 caches layout metrics)
       if (typeof childView.requestMeasure === 'function') childView.requestMeasure();
     }
+    // Wire child→parent sync if not already wired (idempotent)
+    wireSyncIfNeeded(view, childView, this.filePath, this.registry);
     return container;
   }
 
@@ -209,6 +211,11 @@ export function buildNestedEditorExtension(plugin: PluginHost): Extension {
       const userEvent = tr.annotation(Transaction.userEvent);
       if (userEvent && userEvent.startsWith('leetcode.')) {
         return old.map(tr.changes);
+      }
+      // Detect external fence-body changes (vault.process, AI review, etc.)
+      // and propagate to child editor (side-effect only — no early return)
+      if (tr.docChanged) {
+        detectAndPropagateExternalChange(tr, plugin, registry);
       }
       // Rebuild on doc change OR reconfigure (file switch triggers reconfigure without docChanged)
       if (tr.docChanged || tr.reconfigured) {
