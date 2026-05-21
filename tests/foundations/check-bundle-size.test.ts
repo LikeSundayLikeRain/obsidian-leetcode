@@ -64,14 +64,14 @@ describe('scripts/check-bundle-size.mjs (FOUND-02)', () => {
   });
 
   it('exits 0 with WARN when 1_170_000 < size <= 1_300_000 (soft warn band)', () => {
-    const r = runWithFixture(1_140_000);
+    const r = runWithFixture(1_200_000);
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/WARN/);
     expect(r.stderr).toMatch(/heading toward the gate/);
   });
 
   it('exits 1 with FAIL when main.js > 1_300_000 bytes (hard limit)', () => {
-    const r = runWithFixture(1_300_000);
+    const r = runWithFixture(1_400_000);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/FAIL/);
     expect(r.stderr).toMatch(/exceeds 1300000 bytes/);
@@ -99,8 +99,8 @@ describe('package.json — check:bundle-size script registration (FOUND-02)', ()
 describe('scripts/check-bundle-size.mjs — threshold constants (FOUND-02 + Phase 08 Plan 02 bump)', () => {
   it('uses HARD_LIMIT=1_300_000 and SOFT_WARN=1_170_000 (1.3 MB ceiling for live streamText consumer)', () => {
     const src = readFileSync(SCRIPT_PATH, 'utf-8');
-    expect(src).toMatch(/HARD_LIMIT\s*=\s*1_?200_?000/);
-    expect(src).toMatch(/SOFT_WARN\s*=\s*1_?080_?000/);
+    expect(src).toMatch(/HARD_LIMIT\s*=\s*1_?300_?000/);
+    expect(src).toMatch(/SOFT_WARN\s*=\s*1_?170_?000/);
   });
 });
 
