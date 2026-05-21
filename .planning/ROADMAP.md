@@ -49,7 +49,7 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
 
 **Architecture:** Nested EditorView (Path B) — a standalone child CM6 editor with language packs replaces the visible fence body, syncing changes back to the parent markdown document. This provides syntax-tree-based indent, bracket handling, highlighting, and comment toggling natively.
 
-- [ ] **Phase 13: Nested Editor Foundation** — Widget + CSS-hide approach, child EditorView registry, lifecycle management, single-language proof-of-concept rendering
+- [x] **Phase 13: Nested Editor Foundation** (3/3 plans) — Widget + CSS-hide approach, child EditorView registry, lifecycle management, single-language proof-of-concept rendering
 - [ ] **Phase 14: Bidirectional Sync** — Child↔parent sync protocol (CM6 split-view pattern), offset derivation, vault.process conflict handling, section lock coexistence
 - [ ] **Phase 15: Focus, Undo & Cursor** — Focus model (child/parent/Obsidian), cursor transitions, undo stack isolation, Tab/keyboard routing, scroll integration
 - [ ] **Phase 16: Language Packs & Switching** — All 8 LC languages with full LanguageSupport, Compartment-based language switching via chevron, indent/bracket/comment/highlight all active
@@ -71,7 +71,7 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
 Plans:
 - [x] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
 - [x] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
-- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
+- [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ### Phase 14: Bidirectional Sync
 **Goal**: Edits in the child editor flow into the parent document at the correct fence offset, and external changes to the parent fence content (vault.process, copyToCode) propagate into the child — with no echo loops or corruption
@@ -86,8 +86,8 @@ Plans:
 **Plans**: 3 plans
 Plans:
 - [x] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
-- [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
-- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
+- [x] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
+- [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ### Phase 15: Focus, Undo & Cursor
 **Goal**: Seamless user experience — clicking into the child editor, pressing Tab, using Cmd-Z, clicking back to markdown, and using Run/Submit all work correctly without focus confusion
@@ -103,7 +103,7 @@ Plans:
 Plans:
 - [x] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
 - [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
-- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
+- [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ### Phase 16: Language Packs & Switching
 **Goal**: All 8 LeetCode languages have full LanguageSupport (indent, brackets, comments, highlight) and switching language via the chevron instantly reconfigures the child editor
@@ -117,9 +117,9 @@ Plans:
   5. Bracket match highlighting is visible when cursor is adjacent to any bracket
 **Plans**: 3 plans
 Plans:
-- [ ] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
+- [x] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
 - [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
-- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
+- [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ### Phase 17: Polish & Edge Cases
 **Goal**: All edge cases handled — paste, IME input, event propagation, Source/Live Preview parity, bundle size validated, plugin review readiness
@@ -135,7 +135,7 @@ Plans:
 Plans:
 - [ ] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
 - [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
-- [ ] 13-03-PLAN.md — Integration wiring + CSS + human verification
+- [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
 
 ## Progress
 

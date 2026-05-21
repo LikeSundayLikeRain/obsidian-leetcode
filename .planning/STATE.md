@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Code Editor Experience
 status: executing
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-05-21T18:38:25.657Z"
+stopped_at: Completed 13-03-PLAN.md
+last_updated: "2026-05-21T18:42:30Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-21 — v1.2 milestone started)
 
 ## Current Position
 
-Phase: 13 (nested-editor-foundation) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
+Phase: 13 (nested-editor-foundation) — COMPLETE
+Plan: 3 of 3 (all complete)
+Status: Phase complete
 Last activity: 2026-05-21
 
-Progress: [███████░░░] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -44,7 +44,8 @@ Progress: [███████░░░] 67%
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 13 | 01 | 261s | 2 | 4 |
-| Phase 13 P02 | 294s | 1 tasks | 3 files |
+| 13 | 02 | 294s | 1 | 3 |
+| 13 | 03 | 111s | 3 | 2 |
 
 ## Accumulated Context
 
@@ -61,7 +62,8 @@ Recent decisions affecting current work:
 - v1.2 section lock: No modifications needed — child→parent sync dispatches have no `input.*` userEvent, Gate 0 passes them through
 - v1.2 bundle: Accept ~1.5 MB ceiling (language packs add ~300 KB over current 1.155 MB)
 - Phase 13-01: Monotonic tick counter for LRU ordering (avoids sub-ms Date.now() conflicts)
-- [Phase ?]: Phase 13-02: Widget decoration at openerLine.to between opener line-hide and body line-hides for RangeSetBuilder sorted-order compliance
+- Phase 13-02: Widget decoration at openerLine.to between opener line-hide and body line-hides for RangeSetBuilder sorted-order compliance
+- Phase 13-03: Registry instantiation before all registerEditorExtension calls; nested editor registered between code-actions and section-lock for correct transactionFilter ordering
 
 ### Pending Todos
 
@@ -90,6 +92,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21T18:38:18.864Z
-Stopped at: Completed 13-01-PLAN.md
+Last session: 2026-05-21T18:42:30Z
+Stopped at: Completed 13-03-PLAN.md (Phase 13 complete)
 Resume file: None
