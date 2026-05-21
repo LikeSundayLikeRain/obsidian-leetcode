@@ -53,8 +53,18 @@ export const syncAnnotation = Annotation.define<boolean>();
 // Module-level state for tracking wired sync paths
 // ────────────────────────────────────────────────────────────────────────
 
-/** Tracks file paths with active sync wiring (idempotency guard). */
-const wiredPaths = new Set<string>();
+/**
+ * Tracks file paths with active sync wiring (idempotency guard).
+ * Exposed via class wrapper so plugin onunload can clear it without
+ * relying on module-scope persistence across Obsidian plugin reload cycles (CR-01).
+ */
+export class SyncWiringState {
+  private static paths = new Set<string>();
+  static has(p: string) { return this.paths.has(p); }
+  static add(p: string) { this.paths.add(p); }
+  static delete(p: string) { this.paths.delete(p); }
+  static clear() { this.paths.clear(); }
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // Child→Parent Sync Extension (D-01, D-02, D-09, D-10)
@@ -87,10 +97,19 @@ export function createChildSyncExtension(
       // Attempt fence repair before giving up
       const repaired = repairFenceStructure(parentView);
       if (!repaired) return; // degraded — cannot sync
-      // Retry after repair
+      // CR-04 fix: after repair, dispatch full-replace of child content to parent
+      // rather than mapping incremental changes (repair shifted offsets)
       const fenceRetry = findCodeFence(parentView.state);
       if (!fenceRetry) return;
-      propagateChildChanges(update, parentView, fenceRetry);
+      const bodyStart = parentView.state.doc.line(fenceRetry.openerLine).to + 1;
+      const bodyEnd = parentView.state.doc.line(fenceRetry.closerLine).from;
+      if (bodyStart > bodyEnd) return;
+      try {
+        parentView.dispatch({
+          changes: { from: bodyStart, to: bodyEnd, insert: update.view.state.doc.toString() },
+          annotations: Transaction.userEvent.of('leetcode.child-sync'),
+        });
+      } catch { /* editor teardown */ }
       return;
     }
 
@@ -115,12 +134,14 @@ function propagateChildChanges(
     return;
   }
 
-  // Remap child changes to parent offsets
+  // Remap child changes to parent offsets (WR-01: clamp to fence body bounds)
   const parentChanges: Array<{ from: number; to: number; insert: string | import('@codemirror/state').Text }> = [];
   update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+    const mappedFrom = Math.min(Math.max(fromA + bodyStart, bodyStart), bodyEnd);
+    const mappedTo = Math.min(Math.max(toA + bodyStart, bodyStart), bodyEnd);
     parentChanges.push({
-      from: fromA + bodyStart,
-      to: toA + bodyStart,
+      from: mappedFrom,
+      to: mappedTo,
       insert: inserted,
     });
   });
@@ -230,7 +251,7 @@ export function wireSyncIfNeeded(
   filePath: string,
   registry: ChildEditorRegistry,
 ): void {
-  if (wiredPaths.has(filePath)) return;
+  if (SyncWiringState.has(filePath)) return;
 
   const syncExt = createChildSyncExtension(parentView, filePath, registry);
 
@@ -243,7 +264,7 @@ export function wireSyncIfNeeded(
     return;
   }
 
-  wiredPaths.add(filePath);
+  SyncWiringState.add(filePath);
 }
 
 /**
@@ -254,10 +275,10 @@ export function wireSyncIfNeeded(
  */
 export function unwireSync(filePath: string): void {
   if (filePath === '__all__') {
-    wiredPaths.clear();
+    SyncWiringState.clear();
     return;
   }
-  wiredPaths.delete(filePath);
+  SyncWiringState.delete(filePath);
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -335,12 +356,7 @@ export function repairFenceStructure(parentView: EditorView): boolean {
       const insertPos = doc.line(sectionEndLine).to;
       changes.push({ from: insertPos, insert: '\n```' });
     } else {
-      // Both missing — opener was just inserted, add closer after a blank body line
-      const insertPos = doc.line(codeHeadingLine).to + 1;
-      // Changes are relative to original doc, opener insert was above
-      changes.push({ from: insertPos, insert: '```\n\n```\n' });
-      // Clear the previous single-opener insert and do a combined one
-      changes.length = 0;
+      // Both missing — insert opener + empty body + closer as a single change
       changes.push({ from: doc.line(codeHeadingLine).to + 1, insert: '```\n\n```\n' });
     }
   }

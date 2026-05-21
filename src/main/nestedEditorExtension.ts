@@ -36,6 +36,7 @@ import { editorInfoField, type Plugin } from 'obsidian';
 import { findCodeFence } from './codeActionsEditorExtension';
 import { ChildEditorRegistry } from './childEditorRegistry';
 import { createChildEditor } from './childEditorFactory';
+import { wireSyncIfNeeded, detectAndPropagateExternalChange } from './childEditorSync';
 
 /**
  * Structural type for the plugin host required by this extension.
@@ -220,6 +221,20 @@ export function buildNestedEditorExtension(plugin: PluginHost): Extension {
     },
   });
 
+  // CR-03 fix: detect external fence-body changes via updateListener (side-effect-safe)
+  // instead of inside StateField.update() which must be pure.
+  const externalChangeListener = EditorView.updateListener.of((update) => {
+    if (!update.docChanged) return;
+    const ev = update.transactions[0]?.annotation(Transaction.userEvent);
+    if (ev && ev.startsWith('leetcode.')) return;
+    for (const tr of update.transactions) {
+      if (tr.docChanged) {
+        detectAndPropagateExternalChange(tr, plugin, registry);
+        break;
+      }
+    }
+  });
+
   const transactionFilter = EditorState.transactionFilter.of((tr) => {
     if (!tr.selection) return tr;
 
@@ -264,5 +279,5 @@ export function buildNestedEditorExtension(plugin: PluginHost): Extension {
     return tr;
   });
 
-  return [field, transactionFilter];
+  return [field, transactionFilter, externalChangeListener];
 }

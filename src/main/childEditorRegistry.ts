@@ -4,6 +4,7 @@
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import type { EditorView } from '@codemirror/view';
+import { unwireSync } from './childEditorSync';
 
 interface RegistryEntry {
   view: EditorView;
@@ -62,6 +63,7 @@ export class ChildEditorRegistry {
   delete(key: string): void {
     const entry = this.cache.get(key);
     if (!entry) return;
+    unwireSync(key);
     entry.view.destroy();
     this.cache.delete(key);
   }
@@ -75,6 +77,7 @@ export class ChildEditorRegistry {
       entry.view.destroy();
     }
     this.cache.clear();
+    unwireSync('__all__');
   }
 
   /** Check if a key exists in the cache. */
@@ -103,6 +106,7 @@ export class ChildEditorRegistry {
 
     if (oldestKey !== undefined) {
       const entry = this.cache.get(oldestKey)!;
+      unwireSync(oldestKey);
       entry.view.destroy();
       this.cache.delete(oldestKey);
     }
