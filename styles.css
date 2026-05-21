@@ -1879,3 +1879,39 @@
   background: color-mix(in srgb, var(--background-secondary) 70%, var(--interactive-accent) 30%);
   border-color: var(--interactive-accent);
 }
+
+/* Phase 13 — Nested editor: hide fence lines (opener, body, closer).
+ * Content stays in document model; visually replaced by child EditorView widget. */
+.cm-editor .lc-fence-hidden {
+  height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  line-height: 0 !important;
+}
+
+/* Phase 13 — Nested editor container styling. Darker background matching
+ * Obsidian code block rendering (D-05). Uses only CSS variables — no
+ * hardcoded colors. */
+.cm-editor .lc-nested-editor {
+  background: var(--code-background, var(--background-secondary));
+  border-radius: 4px;
+  padding: 8px 0;
+}
+.cm-editor .lc-nested-editor .cm-editor {
+  background: transparent;
+}
+.cm-editor .lc-nested-editor .cm-content {
+  font-family: var(--font-monospace);
+  font-size: 14px;
+}
+.cm-editor .lc-nested-editor .cm-gutters {
+  background: transparent;
+  border-right: none;
+}
+.cm-editor .lc-nested-editor .cm-activeLine {
+  background: var(--background-modifier-hover);
+}
