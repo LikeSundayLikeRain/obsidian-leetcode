@@ -145,6 +145,7 @@ if (g.document) {
   // source modules that call the bare global form (e.g. `createDiv(...)`)
   // — which is how Obsidian injects them on window in production — work in
   // happy-dom tests without runtime errors.
+  // eslint-disable-next-line obsidianmd/no-global-this
   const gThis = globalThis as Record<string, unknown>;
   if (typeof gThis['createDiv'] !== 'function') {
     gThis['createDiv'] = function (options?: CreateElOptions): HTMLElement {

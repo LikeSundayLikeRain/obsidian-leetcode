@@ -63,7 +63,7 @@ export function parseKgResponse(text: string): KgClassification {
   return { ...FALLBACK };
 }
 
-function tryParse(text: string): unknown | null {
+function tryParse(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {

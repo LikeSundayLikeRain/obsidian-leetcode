@@ -96,7 +96,7 @@ export class ContestSolveView extends ItemView {
     this.highlightEl = null;
     this.renderToken += 1;
     if (this.saveTimer != null) {
-      clearTimeout(this.saveTimer as unknown as number);
+      window.clearTimeout(this.saveTimer as unknown as number);
       this.saveTimer = null;
     }
   }
@@ -265,7 +265,7 @@ export class ContestSolveView extends ItemView {
 
   private scheduleSave(): void {
     if (this.saveTimer != null) {
-      clearTimeout(this.saveTimer as unknown as number);
+      window.clearTimeout(this.saveTimer as unknown as number);
       this.saveTimer = null;
     }
     this.saveTimer = setWindowTimeout(() => {
@@ -358,7 +358,7 @@ export class ContestSolveView extends ItemView {
       // Record verdict if not AC
       if (info.kind !== 'ac' && info.kind !== 'unknown' && info.kind !== 'unknown-lc') {
         if (problem.verdict === 'unsolved') {
-          this.plugin.contestSessionManager.recordVerdict(this.problemIdx!, 'attempted');
+          this.plugin.contestSessionManager.recordVerdict(this.problemIdx, 'attempted');
         }
       }
     } catch (err) {

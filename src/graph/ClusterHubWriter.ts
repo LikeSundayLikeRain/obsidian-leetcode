@@ -96,6 +96,7 @@ export class ClusterHubWriter {
     }
 
     try {
+      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
       await this.app.vault.process(file as TFile, (current: string) => {
         return appendToHub(current, entry);
       });
@@ -150,6 +151,7 @@ export class ClusterHubWriter {
         if (file) {
           // Overwrite via vault.process
           try {
+            // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
             await this.app.vault.process(file as TFile, () => {
               return buildHubNoteBody(patternName, entries);
             });

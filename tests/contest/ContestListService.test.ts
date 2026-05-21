@@ -1,5 +1,7 @@
 // tests/contest/ContestListService.test.ts
 // Phase 10 Plan 01 Task 2 — unit tests for ContestListService.
+/* eslint-disable @typescript-eslint/unbound-method */
+/* eslint-disable @typescript-eslint/no-misused-promises */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ContestListService, CONTEST_INDEX_TTL_MS, inferContestType } from '../../src/contest/ContestListService';
 import type { CachedContest, ContestIndex } from '../../src/contest/types';

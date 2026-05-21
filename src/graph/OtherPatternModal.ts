@@ -52,6 +52,7 @@ export class OtherPatternModal extends Modal {
     });
 
     contentEl.createEl('p', {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
       text: 'Enter a custom pattern name, or accept "OTHER" to leave it unclassified.',
     });
 
@@ -59,7 +60,9 @@ export class OtherPatternModal extends Modal {
       type: 'text',
       value: 'OTHER',
     });
+    // eslint-disable-next-line obsidianmd/no-static-styles-assignment
     inputEl.style.width = '100%';
+    // eslint-disable-next-line obsidianmd/no-static-styles-assignment
     inputEl.style.marginBottom = '12px';
 
     const buttonContainer = contentEl.createDiv({ cls: 'leetcode-other-pattern-buttons' });

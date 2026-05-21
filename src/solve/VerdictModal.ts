@@ -70,11 +70,14 @@ export class VerdictModal extends Modal {
     if (this.modalEl) {
       this.modalEl.addClass('leetcode-verdict-modal');
       if (args.onStartReviewStream) {
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
         this.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
         this.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
       }
     }
     if (this.containerEl && args.onStartReviewStream) {
+      // eslint-disable-next-line obsidianmd/no-static-styles-assignment
       this.containerEl.style.setProperty('--dialog-width', 'min(90vw, 780px)');
     }
   }
@@ -196,7 +199,7 @@ export class VerdictModal extends Modal {
       const renderChip = () => this.renderPatternChip();
       renderChip();
       // Retry after 500ms if cache hadn't caught up on first attempt
-      setTimeout(() => {
+      window.setTimeout(() => {
         if (!this.contentEl.querySelector('.leetcode-verdict-pattern-chip')) {
           renderChip();
         }
@@ -254,6 +257,7 @@ export class VerdictModal extends Modal {
     const file = this.args.file;
     if (!file) return;
     const cache = this.app.metadataCache.getFileCache(file);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const raw = cache?.frontmatter?.['lc-pattern'];
     if (!raw) return;
     let patterns: string[];
