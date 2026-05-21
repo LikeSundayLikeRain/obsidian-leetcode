@@ -343,22 +343,17 @@ export function repairFenceStructure(parentView: EditorView): boolean {
   // Step 4: Determine what's missing and repair
   const changes: Array<{ from: number; insert: string }> = [];
 
-  if (openerLine === -1) {
-    // Missing opener — insert at start of code section body (line after heading)
+  if (openerLine === -1 && closerLine === -1) {
+    // Both missing — insert opener + empty body + closer as a single change
+    changes.push({ from: doc.line(codeHeadingLine).to + 1, insert: '```\n\n```\n' });
+  } else if (openerLine === -1) {
+    // Missing opener only — insert at start of code section body
     const insertPos = doc.line(codeHeadingLine).to + 1;
     changes.push({ from: insertPos, insert: '```\n' });
-  }
-
-  if (closerLine === -1) {
-    // Missing closer — insert at end of code section
-    if (openerLine !== -1) {
-      // Opener exists, closer missing — insert before section end
-      const insertPos = doc.line(sectionEndLine).to;
-      changes.push({ from: insertPos, insert: '\n```' });
-    } else {
-      // Both missing — insert opener + empty body + closer as a single change
-      changes.push({ from: doc.line(codeHeadingLine).to + 1, insert: '```\n\n```\n' });
-    }
+  } else if (closerLine === -1) {
+    // Missing closer only — insert before section end
+    const insertPos = doc.line(sectionEndLine).to;
+    changes.push({ from: insertPos, insert: '\n```' });
   }
 
   if (changes.length === 0) return false;
