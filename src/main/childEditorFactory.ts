@@ -10,7 +10,7 @@ import {
   highlightActiveLine,
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
-import { EditorState } from '@codemirror/state';
+import { EditorState, type Extension } from '@codemirror/state';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   syntaxHighlighting,
@@ -27,9 +27,14 @@ import { python } from '@codemirror/lang-python';
  *
  * @param content - Initial document content for the editor
  * @param parent - HTMLElement to mount the editor into
+ * @param syncExtensions - Optional array of sync-related extensions (e.g., updateListener for child->parent sync)
  * @returns The created EditorView instance
  */
-export function createChildEditor(content: string, parent: HTMLElement): EditorView {
+export function createChildEditor(
+  content: string,
+  parent: HTMLElement,
+  syncExtensions?: Extension[],
+): EditorView {
   const state = EditorState.create({
     doc: content,
     extensions: [
@@ -56,6 +61,7 @@ export function createChildEditor(content: string, parent: HTMLElement): EditorV
           borderRight: 'none',
         },
       }),
+      ...(syncExtensions ?? []),
     ],
   });
 
