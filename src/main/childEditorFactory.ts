@@ -49,7 +49,7 @@ export function createChildEditor(content: string, parent: HTMLElement): EditorV
         },
         '.cm-content': {
           fontFamily: 'var(--font-monospace)',
-          fontSize: '14px',
+          fontSize: 'var(--font-text-size)',
         },
         '.cm-gutters': {
           background: 'transparent',

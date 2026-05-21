@@ -19,6 +19,7 @@
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   StateField,
+  Transaction,
   RangeSetBuilder,
   EditorSelection,
   EditorState,
@@ -85,6 +86,8 @@ export class NestedEditorWidget extends WidgetType {
     } else {
       // Re-attach existing child DOM to new container
       container.appendChild(childView.dom);
+      // Force geometry recalculation after reparenting (CM6 caches layout metrics)
+      if (typeof childView.requestMeasure === 'function') childView.requestMeasure();
     }
     return container;
   }
@@ -92,8 +95,10 @@ export class NestedEditorWidget extends WidgetType {
   destroy(dom: HTMLElement): void {
     // DETACH only — do NOT destroy the child EditorView (D-13)
     // The child lives in the registry until LRU eviction or plugin unload
-    const childDom = dom.querySelector('.cm-editor');
-    if (childDom) dom.removeChild(childDom);
+    const childView = this.registry.get(this.filePath);
+    if (childView && childView.dom.parentElement === dom) {
+      dom.removeChild(childView.dom);
+    }
   }
 
   get estimatedHeight(): number {
@@ -199,7 +204,13 @@ export function buildNestedEditorExtension(plugin: PluginHost): Extension {
       return buildNestedDecorations(state, plugin, registry);
     },
     update(old, tr) {
-      if (tr.docChanged) {
+      // Skip rebuild for plugin-internal dispatches (WR-03 fix)
+      const userEvent = tr.annotation(Transaction.userEvent);
+      if (userEvent && userEvent.startsWith('leetcode.')) {
+        return old.map(tr.changes);
+      }
+      // Rebuild on doc change OR reconfigure (file switch triggers reconfigure without docChanged)
+      if (tr.docChanged || tr.reconfigured) {
         return buildNestedDecorations(tr.state, plugin, registry);
       }
       return old.map(tr.changes);
