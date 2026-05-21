@@ -140,6 +140,7 @@ export function streamOpenAICompatible(
   return streamText({
     model: createOpenAICompatibleModel(cfg, fetcher, name),
     prompt,
+    maxOutputTokens: 8192,
     abortSignal: signal,
   });
 }
@@ -157,6 +158,7 @@ export async function invokeOpenAICompatibleBuffered(
   const result = await generateText({
     model: createOpenAICompatibleModel(cfg, fetcher, name),
     prompt,
+    maxOutputTokens: 8192,
     abortSignal: signal,
   });
   return {

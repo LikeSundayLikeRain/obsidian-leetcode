@@ -18,28 +18,55 @@
  * with no user confirmation (D-02).
  */
 export const SEED_PATTERNS: readonly string[] = [
+  // Core data structures
   'Arrays & Hashing',
   'Two Pointers',
   'Sliding Window',
   'Stack',
-  'Binary Search',
+  'Monotonic Stack',
   'Linked List',
   'Trees',
   'Tries',
   'Heap / Priority Queue',
-  'Backtracking',
   'Graphs',
   'Advanced Graphs',
+  // Search & sort
+  'Binary Search',
+  'Sorting',
+  // Dynamic programming
   '1-D Dynamic Programming',
   '2-D Dynamic Programming',
+  'Digit DP',
+  'Bitmask DP',
+  // Greedy & intervals
   'Greedy',
   'Intervals',
+  'Sweep Line',
+  // String algorithms
+  'String Matching',
+  'Rolling Hash',
+  // Math & number theory
   'Math & Geometry',
+  'Number Theory',
+  'Combinatorics',
   'Bit Manipulation',
+  // Prefix/range techniques
   'Prefix Sum',
-  'Monotonic Stack',
+  'Segment Tree',
+  'Binary Indexed Tree',
+  // Graph algorithms
   'Topological Sort',
   'Union-Find',
+  'Shortest Path',
+  'Minimum Spanning Tree',
+  // Backtracking & recursion
+  'Backtracking',
+  'Divide & Conquer',
+  // Advanced
+  'Matrix Exponentiation',
+  'Meet In The Middle',
+  'Game Theory',
+  'Simulation',
 ] as const;
 
 /**

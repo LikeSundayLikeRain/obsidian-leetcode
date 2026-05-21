@@ -191,8 +191,16 @@ export class VerdictModal extends Modal {
     // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC. Reads lc-pattern
     // from metadataCache; renders a clickable chip that navigates to the hub
     // note. Placed AFTER the Accepted body and BEFORE the review stream.
+    // Delay slightly to let metadataCache index the frontmatter write from KG.
     if (this.isAccepted(res) && this.args.file) {
-      this.renderPatternChip();
+      const renderChip = () => this.renderPatternChip();
+      renderChip();
+      // Retry after 500ms if cache hadn't caught up on first attempt
+      setTimeout(() => {
+        if (!this.contentEl.querySelector('.leetcode-verdict-pattern-chip')) {
+          renderChip();
+        }
+      }, 500);
     }
 
     // Phase 09 (AIREV-01) — start the review stream on AC when the host
@@ -246,30 +254,43 @@ export class VerdictModal extends Modal {
     const file = this.args.file;
     if (!file) return;
     const cache = this.app.metadataCache.getFileCache(file);
-    const pattern = cache?.frontmatter?.['lc-pattern'] as string | undefined;
-    if (!pattern) return;
+    const raw = cache?.frontmatter?.['lc-pattern'];
+    if (!raw) return;
+    let patterns: string[];
+    if (Array.isArray(raw)) {
+      patterns = raw.filter((p): p is string => typeof p === 'string' && p.length > 0);
+    } else if (typeof raw === 'string' && raw.length > 0) {
+      patterns = [raw];
+    } else {
+      return;
+    }
+    if (patterns.length === 0) return;
 
-    const chip = appendEl(this.contentEl, 'div', 'leetcode-verdict-pattern-chip');
-    chip.textContent = pattern;
-    chip.setAttribute('data-lc-role', 'pattern-chip');
-    chip.setAttribute('tabindex', '0');
-    chip.setAttribute('role', 'link');
-    chip.setAttribute('aria-label', 'Open ' + pattern + ' hub note');
+    const container = appendEl(this.contentEl, 'div', 'leetcode-verdict-pattern-chips');
+    for (const pattern of patterns) {
+      if (!pattern) continue;
+      const chip = appendEl(container, 'span', 'leetcode-verdict-pattern-chip');
+      chip.textContent = pattern;
+      chip.setAttribute('data-lc-role', 'pattern-chip');
+      chip.setAttribute('tabindex', '0');
+      chip.setAttribute('role', 'link');
+      chip.setAttribute('aria-label', 'Open ' + pattern + ' hub note');
 
-    const hubPath = this.args.getPatternHubPath
-      ? this.args.getPatternHubPath(pattern)
-      : 'LeetCode/Patterns/' + pattern + '.md';
-    const navigate = (): void => {
-      this.close();
-      void this.app.workspace.openLinkText(hubPath, '', false);
-    };
-    chip.addEventListener('click', navigate);
-    chip.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        navigate();
-      }
-    });
+      const hubPath = this.args.getPatternHubPath
+        ? this.args.getPatternHubPath(pattern)
+        : 'LeetCode/Patterns/' + pattern + '.md';
+      const navigate = (): void => {
+        this.close();
+        void this.app.workspace.openLinkText(hubPath, '', false);
+      };
+      chip.addEventListener('click', navigate);
+      chip.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          navigate();
+        }
+      });
+    }
   }
 
   /** Phase 09 (AIREV-01) — create the review area, start the host-provided

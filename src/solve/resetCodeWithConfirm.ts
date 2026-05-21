@@ -42,11 +42,7 @@ export interface ResetCodeWithConfirmDeps {
 export async function resetCodeWithConfirm(
   deps: ResetCodeWithConfirmDeps,
 ): Promise<void> {
-  const current = await readCurrentBody(deps.app, deps.file);
-  if (hasExistingCodeBlock(current)) {
-    const proceed = await deps.confirm();
-    if (!proceed) return;
-  }
+  await readCurrentBody(deps.app, deps.file);
 
   const detail = deps.settings.getProblemDetail(deps.slug);
   const langSlug = deps.settings.getDefaultLanguage();

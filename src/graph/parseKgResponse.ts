@@ -24,12 +24,14 @@ import { normalizePatternName } from './patternTaxonomy';
 
 export interface KgClassification {
   pattern: string;
+  patterns: string[];
   variants: Array<{ slug: string; reason: string }>;
   lookAhead: Array<{ slug: string; reason: string }>;
 }
 
 const FALLBACK: KgClassification = {
   pattern: 'OTHER',
+  patterns: ['OTHER'],
   variants: [],
   lookAhead: [],
 };
@@ -101,7 +103,7 @@ function isValidEntry(entry: unknown): entry is { slug: string; reason: string }
 }
 
 function validate(raw: unknown): KgClassification {
-  if (raw === null || typeof raw !== 'object') return { ...FALLBACK };
+  if (raw === null || typeof raw !== 'object') return { ...FALLBACK, patterns: [...FALLBACK.patterns] };
 
   const obj = raw as Record<string, unknown>;
 
@@ -109,6 +111,18 @@ function validate(raw: unknown): KgClassification {
   const pattern = typeof obj.pattern === 'string' && obj.pattern.trim().length > 0
     ? normalizePatternName(obj.pattern)
     : 'OTHER';
+
+  // Patterns array: 1-2 entries, normalized. Falls back to [pattern] if absent.
+  let patterns: string[];
+  if (Array.isArray(obj.patterns) && obj.patterns.length > 0) {
+    patterns = obj.patterns
+      .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+      .map(normalizePatternName)
+      .slice(0, 2);
+  } else {
+    patterns = [pattern];
+  }
+  if (patterns.length === 0) patterns = [pattern];
 
   // Variants: filter valid entries, cap at 2
   const rawVariants = Array.isArray(obj.variants) ? obj.variants : [];
@@ -122,5 +136,5 @@ function validate(raw: unknown): KgClassification {
     .filter(isValidEntry)
     .slice(0, 2);
 
-  return { pattern, variants, lookAhead };
+  return { pattern: patterns[0]!, patterns, variants, lookAhead };
 }

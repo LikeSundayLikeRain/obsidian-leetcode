@@ -50,7 +50,7 @@ import { estimateCostUsd } from './pricing';
  * each MarkdownRenderer.render call — enough to mostly close half-fences
  * before paint while remaining visually responsive.
  */
-const RENDER_DEBOUNCE_MS = 100;
+const RENDER_DEBOUNCE_MS = 50;
 
 /**
  * Locked counter cadence (08-UI-SPEC §"Typography" + §"Behavior Contract").
@@ -381,11 +381,12 @@ export class AIStreamModal extends Modal {
       clearWindowTimeout(this.renderTimer);
       this.renderTimer = null;
     }
-    // Empty + re-render is the simplest correct strategy (Pattern 4 from
-    // 08-RESEARCH). The 100ms debounce keeps the call rate bounded.
+    // Double-buffer: render into a temp container, then swap children in one
+    // DOM operation. Avoids the visible flash of empty → re-render.
+    const temp = createDiv({ cls: 'leetcode-ai-stream-body markdown-rendered' });
+    await MarkdownRenderer.render(this.app, this.buffer, temp, '', this.component);
     this.bodyEl.empty();
-    // 5th arg is `this.component` (a Component instance owned by this modal).
-    await MarkdownRenderer.render(this.app, this.buffer, this.bodyEl, '', this.component);
+    while (temp.firstChild) this.bodyEl.appendChild(temp.firstChild);
   }
 
   // ── mm:ss counter ──────────────────────────────────────────────────────

@@ -188,19 +188,12 @@ export class KnowledgeGraphWriter {
       return;
     }
 
-    // Pitfall 10 — no topicTags in cache → no name source for wikilinks.
-    // Skip body + stubs; step 1 already handled the tags contribution using
-    // topicSlugs so the graph isn't empty.
-    if (topicTags.length === 0) {
-      logger.debug('graph.onAccepted: detail.topicTags empty/missing, skipping body + stubs');
-      return;
-    }
-
     // Step 2 — ## Techniques body write (GRAPH-03, D-09, D-13). Pure transform
     // inside a vault.process callback so it's retry-safe (CF-06).
     // Phase 11: Skip when patternClusterEngine is present — the AI path
     // (Step 2.5) handles Techniques via mergeTechniquesSectionAI instead.
-    if (!this.patternClusterEngine) {
+    // Also skip when topicTags is empty (Pitfall 10 — no name source for wikilinks).
+    if (!this.patternClusterEngine && topicTags.length > 0) {
       try {
         await this.app.vault.process(ctx.file, (current) =>
           mergeTechniquesSection(current, topicTags),

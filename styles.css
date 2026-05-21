@@ -970,7 +970,24 @@
 .cm-editor .leetcode-locked-heading-line .cm-formatting-header-2 {
   display: none;
 }
-.leetcode-code-actions .leetcode-code-action-run {
+.leetcode-code-actions .leetcode-code-action-ai-solution {
+  padding: 2px 14px;
+  min-height: 30px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+  transition: opacity 150ms ease, box-shadow 150ms ease;
+}
+.leetcode-code-actions .leetcode-code-action-ai-solution:hover {
+  opacity: 0.9;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.45);
+}
+.leetcode-code-actions .leetcode-code-action-ai-solution {
   margin-left: auto;
 }
 /* Phase 5.4 D-12a — inline Run/Submit ported to the .lc-fm__picker neutral
@@ -1837,6 +1854,13 @@
 }
 
 /* ── Phase 12 Plan 03 (D-03/D-04) — Pattern chip in verdict modal on AC ──── */
+.leetcode-verdict .leetcode-verdict-pattern-chips {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 8px auto 0;
+  flex-wrap: wrap;
+}
 .leetcode-verdict .leetcode-verdict-pattern-chip {
   display: inline-flex;
   align-items: center;
@@ -1850,8 +1874,6 @@
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
   border: 1px solid var(--background-modifier-border);
-  margin: 8px auto 0;
-  text-align: center;
 }
 .leetcode-verdict .leetcode-verdict-pattern-chip:hover {
   background: color-mix(in srgb, var(--background-secondary) 70%, var(--interactive-accent) 30%);

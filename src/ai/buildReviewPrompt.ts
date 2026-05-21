@@ -38,7 +38,7 @@ export interface BuildReviewPromptArgs {
  */
 export function buildReviewPrompt(args: BuildReviewPromptArgs): string {
   return [
-    'You are reviewing an Accepted LeetCode solution. Provide constructive feedback in three sections.',
+    'You are a competitive programming coach reviewing an Accepted LeetCode solution. Focus on algorithmic insight, not code style.',
     '',
     '## Problem',
     args.problemMd.trim(),
@@ -58,10 +58,21 @@ export function buildReviewPrompt(args: BuildReviewPromptArgs): string {
     '### Code Style',
     '```',
     '',
-    'For ### Approach: Evaluate the algorithm choice. If a fundamentally different algorithm exists with better complexity, include a code fence showing the alternative. Do NOT include code for minor style tweaks.',
-    'For ### Efficiency: Analyze time and space complexity. Compare to the optimal known complexity for this problem.',
-    'For ### Code Style: Evaluate readability, naming conventions, edge-case handling, and idiomatic usage for the language.',
+    'For ### Approach: Is this the best algorithm for this problem? If a fundamentally better approach exists (better time complexity class), explain the insight and show it in a code fence. If the approach is already optimal, say so briefly and explain WHY it works (the key insight).',
     '',
-    'Be concise. Do not restate the problem. Do not congratulate.',
+    'For ### Efficiency: State time and space complexity. Compare to the theoretical optimum. If the solution is optimal, just confirm it concisely. If sub-optimal, explain what complexity is achievable and how.',
+    '',
+    'For ### Code Style: Focus ONLY on things that matter for competitive programming:',
+    '- Actual bugs that WILL fail on valid inputs (not hypothetical "might" scenarios)',
+    '- Cleaner implementations: if the same logic can be expressed in fewer lines or with a more elegant idiom in this language, show it in a short code snippet. Examples: replacing manual loops with built-in functions, using destructuring, simplifying conditionals, removing redundant variables.',
+    '- Real off-by-one or overflow risks with concrete failing inputs',
+    '',
+    'DO NOT:',
+    '- Raise a concern then immediately dismiss it ("X could... actually no, it can\'t"). If it\'s not a real issue, don\'t mention it.',
+    '- Comment on naming, access modifiers, collection sizing, or enterprise patterns',
+    '- Suggest micro-optimizations that don\'t change the complexity class',
+    '- Qualify correct code with "Good." or "Fine as is." — just omit it entirely',
+    '',
+    'Be concise and direct. If a section has nothing meaningful to say, write just "Optimal." or "No issues." — do not fill space with non-issues. Do not restate the problem. Do not congratulate.',
   ].join('\n');
 }

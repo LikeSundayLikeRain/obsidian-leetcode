@@ -62,6 +62,7 @@ export function streamOpenAI(
   return streamText({
     model: createOpenAIModel(cfg, fetcher),
     prompt,
+    maxOutputTokens: 8192,
     abortSignal: signal,
   });
 }
@@ -78,6 +79,7 @@ export async function invokeOpenAIBuffered(
   const result = await generateText({
     model: createOpenAIModel(cfg, fetcher),
     prompt,
+    maxOutputTokens: 8192,
     abortSignal: signal,
   });
   return {

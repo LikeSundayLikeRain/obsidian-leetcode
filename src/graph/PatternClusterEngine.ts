@@ -148,19 +148,24 @@ export class PatternClusterEngine {
 
     // Persistence check (AIKG-01): if lc-pattern already set, skip classification
     const existingCache = this.app.metadataCache.getFileCache(file);
-    const existingPattern = existingCache?.frontmatter?.['lc-pattern'] as string | undefined;
-    if (existingPattern && existingPattern.length > 0) {
+    const existingRaw = existingCache?.frontmatter?.['lc-pattern'];
+    const existingPatterns: string[] = Array.isArray(existingRaw)
+      ? existingRaw.filter((p): p is string => typeof p === 'string' && p.length > 0)
+      : typeof existingRaw === 'string' && existingRaw.length > 0 ? [existingRaw] : [];
+    if (existingPatterns.length > 0) {
       logger.debug('PatternClusterEngine.onAccepted: lc-pattern already set, skipping classification', {
-        pattern: existingPattern,
+        pattern: existingPatterns,
       });
-      // Ensure Techniques section reflects the persisted pattern (idempotent)
+      // Ensure Techniques section reflects the persisted patterns (idempotent)
       try {
-        await this.app.vault.process(file, (body) => mergeTechniquesSectionAI(body, existingPattern));
+        await this.app.vault.process(file, (body) => mergeTechniquesSectionAI(body, existingPatterns));
       } catch (err) {
         logger.debug('PatternClusterEngine.onAccepted: techniques rewrite on re-AC failed', err);
       }
       // Still update hub (re-add after reconcile may have cleared it)
-      await this.updateHub(file, existingPattern);
+      for (const p of existingPatterns) {
+        await this.updateHub(file, p);
+      }
       return;
     }
 
@@ -208,30 +213,32 @@ export class PatternClusterEngine {
     // OTHER handling (AIKG-01): prompt user once
     // Note: parseKgResponse normalizes 'OTHER' to 'Other' via normalizePatternName.
     // Compare case-insensitively to catch both forms.
-    let patternName = parsed.pattern;
-    if (patternName.toUpperCase() === 'OTHER') {
+    const patternNames = parsed.patterns.filter(p => p.toUpperCase() !== 'OTHER');
+    if (patternNames.length === 0) {
       try {
         const basename = (file as unknown as { basename: string }).basename;
-        patternName = await this.showOtherModal(basename);
+        const userChoice = await this.showOtherModal(basename);
+        patternNames.push(userChoice);
       } catch (err) {
         logger.debug('PatternClusterEngine.onAccepted: OTHER modal failed', err);
-        patternName = 'OTHER';
+        patternNames.push('OTHER');
       }
     }
+    const patternName = patternNames[0]!;
 
-    // Write lc-pattern frontmatter
+    // Write lc-pattern frontmatter (array for searchability)
     try {
       await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-        fm['lc-pattern'] = patternName;
+        fm['lc-pattern'] = patternNames;
       });
     } catch (err) {
       logger.debug('PatternClusterEngine.onAccepted: frontmatter write failed', err);
     }
 
-    // Write Techniques section via vault.process
+    // Write Techniques section via vault.process (all patterns)
     try {
       await this.app.vault.process(file, (body: string) => {
-        return mergeTechniquesSectionAI(body, patternName);
+        return mergeTechniquesSectionAI(body, patternNames);
       });
     } catch (err) {
       logger.debug('PatternClusterEngine.onAccepted: techniques write failed', err);
@@ -283,8 +290,10 @@ export class PatternClusterEngine {
       }
     }
 
-    // Hub note update
-    await this.updateHub(file, patternName);
+    // Hub note update (register under all classified patterns)
+    for (const p of patternNames) {
+      await this.updateHub(file, p);
+    }
   }
 
   /**

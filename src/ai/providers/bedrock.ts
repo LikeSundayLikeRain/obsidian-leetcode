@@ -123,6 +123,7 @@ export function streamBedrock(
   return streamText({
     model: createBedrockModel(cfg, fetcher),
     prompt,
+    maxOutputTokens: 8192,
     abortSignal: signal,
   });
 }

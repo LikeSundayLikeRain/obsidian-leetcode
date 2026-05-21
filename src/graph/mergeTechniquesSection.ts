@@ -259,16 +259,17 @@ function appendNewTechniquesSection(
  * @param patternName — the AI-classified pattern name (already normalized)
  * @returns new body with ## Techniques containing only the AI cluster wikilink + free items
  */
-export function mergeTechniquesSectionAI(body: string, patternName: string): string {
+export function mergeTechniquesSectionAI(body: string, patternName: string | string[]): string {
+  const names = Array.isArray(patternName) ? patternName : [patternName];
   const lines = body.split('\n');
   const start = findSectionStart(lines);
 
-  // No existing section -> insert a fresh block with just the AI cluster link.
+  // No existing section -> insert a fresh block with AI cluster links.
   if (start < 0) {
-    return appendNewTechniquesSection(body, [{ name: patternName, slug: '' }]);
+    return appendNewTechniquesSection(body, names.map(n => ({ name: n, slug: '' })));
   }
 
-  // Existing section -> parse items, discard ALL links, prepend single AI cluster link.
+  // Existing section -> parse items, discard ALL links, prepend AI cluster links.
   const end = findSectionEnd(lines, start);
   const items = parseItems(lines, start + 1, end);
 
@@ -277,9 +278,9 @@ export function mergeTechniquesSectionAI(body: string, patternName: string): str
     it.type === 'free',
   );
 
-  // Build merged list: AI cluster link first, then free items.
+  // Build merged list: AI cluster links first, then free items.
   const merged: Item[] = [
-    { type: 'link', target: patternName, bullet: '-' },
+    ...names.map(n => ({ type: 'link' as const, target: n, bullet: '-' as const })),
     ...freeItems,
   ];
 

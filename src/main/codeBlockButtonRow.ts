@@ -3,14 +3,8 @@ import type { Plugin } from 'obsidian';
 export interface CodeBlockButtonRowHost {
   runFromActive(): void | Promise<void>;
   submitFromActive(): void | Promise<void>;
-  /**
-   * Phase 08 Plan 04 — AIDBG-01 host method. Resolves the active note's
-   * `lc-slug` frontmatter then delegates to `LeetCodePlugin.openAIDebug(slug)`
-   * (the SOLE entrypoint for the AI Debug surface). Mirrors `runFromActive` /
-   * `submitFromActive` posture: void / Promise<void>, no args, all guards
-   * inside the host.
-   */
   aiDebugFromActive(): void | Promise<void>;
+  aiSolutionFromActive(): void | Promise<void>;
 }
 
 /**
@@ -50,6 +44,17 @@ export function buildCodeBlockButtonRow(
     row.appendChild(opts.prefix());
   }
 
+  // AI Solution button — positioned LEFT of Run/Submit, neo gradient style
+  const aiSolBtn = doc.createElement('button');
+  aiSolBtn.className = 'leetcode-code-action-ai-solution';
+  aiSolBtn.textContent = 'AI Solution';
+  aiSolBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void plugin.aiSolutionFromActive();
+  });
+  row.appendChild(aiSolBtn);
+
   const runBtn = doc.createElement('button');
   runBtn.className = 'leetcode-code-action-run';
   runBtn.textContent = 'Run';
@@ -69,28 +74,6 @@ export function buildCodeBlockButtonRow(
     void plugin.submitFromActive();
   });
   row.appendChild(submitBtn);
-
-  // Phase 08 Plan 04 (AIDBG-01) — 3rd "AI: Debug" button. DOM order is
-  // load-bearing per 08-UI-SPEC §"Surface 1": [prefix?][Run][Submit][AI:
-  // Debug] — AI button is ALWAYS the LAST child regardless of whether the
-  // chevron prefix is present. Click handler mirrors Run/Submit verbatim
-  // (preventDefault + stopPropagation + void plugin.method()) so the click
-  // does not leak to the underlying CM6 doc and inadvertently move the
-  // caret. The class `leetcode-code-action-ai-debug` joins the existing
-  // comma-grouped button-token rule at styles.css (Plan 08-03 added the CSS
-  // selector; Plan 08-04 only emits the className on the new button).
-  // Both Edit Mode (CM6 widget) AND Reading Mode (post-processor) inherit
-  // this 3rd button automatically because both surfaces consume the same
-  // factory.
-  const aiBtn = doc.createElement('button');
-  aiBtn.className = 'leetcode-code-action-ai-debug';
-  aiBtn.textContent = 'AI: Debug';
-  aiBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    void plugin.aiDebugFromActive();
-  });
-  row.appendChild(aiBtn);
 
   return row;
 }

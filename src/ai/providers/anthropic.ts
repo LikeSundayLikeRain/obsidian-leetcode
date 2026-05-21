@@ -69,6 +69,7 @@ export function streamAnthropic(
   return streamText({
     model: createAnthropicModel(cfg, fetcher),
     prompt,
+    maxOutputTokens: 8192,
     abortSignal: signal,
   });
 }
@@ -88,6 +89,7 @@ export async function invokeAnthropicBuffered(
   const result = await generateText({
     model: createAnthropicModel(cfg, fetcher),
     prompt,
+    maxOutputTokens: 8192,
     abortSignal: signal,
   });
   return {

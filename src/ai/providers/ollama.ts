@@ -70,6 +70,7 @@ export function streamOllama(
   return streamText({
     model: createOllamaModel(cfg, fetcher),
     prompt,
+    maxOutputTokens: 8192,
     abortSignal: signal,
   });
 }
@@ -86,6 +87,7 @@ export async function invokeOllamaBuffered(
   const result = await generateText({
     model: createOllamaModel(cfg, fetcher),
     prompt,
+    maxOutputTokens: 8192,
     abortSignal: signal,
   });
   return {

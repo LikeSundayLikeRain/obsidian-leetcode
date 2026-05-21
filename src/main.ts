@@ -1066,6 +1066,25 @@ export default class LeetCodePlugin extends Plugin {
       new Notice(`Time’s up! Contest ended. Summary written to ${summaryPath}.`, 4000);
     }
 
+    // Run knowledge graph on AC'd problems (pattern classification + variants)
+    const folder = this.settings.getProblemsFolder().replace(/[\\/]+$/, '');
+    for (const problem of session.problems) {
+      if (problem.verdict !== 'accepted') continue;
+      const detail = this.settings.getProblemDetail(problem.slug);
+      if (!detail) continue;
+      const notePath = `${folder}/${detail.id}-${problem.slug}.md`;
+      const noteFile = this.app.vault.getAbstractFileByPath(notePath) as TFile | null;
+      if (!noteFile) continue;
+      try {
+        await this.knowledgeGraph.onAccepted(
+          { file: noteFile, slug: problem.slug, title: detail.title },
+          { status_code: 10, status_msg: 'Accepted' } as Parameters<typeof this.knowledgeGraph.onAccepted>[1],
+        );
+      } catch (err) {
+        logger.debug('contest.onAccepted: non-fatal', err);
+      }
+    }
+
     // Close any open ContestSolveView leaves and scratch file tabs.
     const leaves = this.app.workspace.getLeavesOfType(CONTEST_SOLVE_VIEW_TYPE);
     for (const leaf of leaves) { leaf.detach(); }
@@ -1974,6 +1993,77 @@ export default class LeetCodePlugin extends Plugin {
     await this.openAIDebug(slug);
   }
 
+  async aiSolutionFromActive(): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const fm = this.app.metadataCache.getFileCache(view.file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const slug = fm?.['lc-slug'];
+    if (!isValidSlug(slug)) {
+      new Notice('Active note has no `lc-slug` frontmatter.', 4000);
+      return;
+    }
+    await this.openAISolution(slug);
+  }
+
+  private async openAISolution(slug: string): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.file) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    const fm = this.app.metadataCache.getFileCache(view.file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+
+    let problemHtml = '';
+    const cached = this.settings.getProblemDetail(slug);
+    if (cached?.contentHtml) {
+      problemHtml = cached.contentHtml;
+    } else {
+      try {
+        const fetched = await this.client.getProblemDetail(slug);
+        if (!fetched) {
+          new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+          return;
+        }
+        problemHtml = fetched.content ?? '';
+      } catch {
+        new Notice('Problem details unavailable. Refresh the note and try again.', 6000);
+        return;
+      }
+    }
+    const problemMd = htmlToMarkdown(problemHtml);
+    const language = (fm?.['lc-language'] as string) ?? this.settings.getDefaultLanguage() ?? 'python3';
+
+    const prompt = `You are a LeetCode expert. Given the problem below, provide:\n\n1. **Approach** — Explain the optimal algorithm and data structures to use. Include time and space complexity.\n2. **Solution** — Write a clean, well-commented solution in ${language}.\n\n## Problem\n\n${problemMd}\n\nRespond with the approach explanation first, then the complete solution code in a fenced code block.`;
+
+    const provider = this.settings.getActiveAIProvider();
+    if (provider === null) {
+      new Notice('No AI provider configured. Open settings → AI.', 4000);
+      return;
+    }
+    const providerCfg = this.settings.getProviderConfig(provider);
+
+    const modal = new AIStreamModal(this.app, {
+      provider,
+      prompt,
+      aiClient: this.aiClient,
+      model: providerCfg.model,
+      title: `AI Solution — ${prettyName(provider)}`,
+      disclosureCopy: withDebugBullet(DISCLOSURE_BASE_COPY),
+    });
+    if (modal.modalEl) {
+      modal.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
+      modal.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
+    }
+    modal.open();
+  }
+
   /** Submit the active note via SubmissionOrchestrator (Plan 05). Opens a
    *  VerdictModal, drives it through pending → terminal / abort / timeout. */
   async submitFromActive(): Promise<void> {
@@ -2069,15 +2159,22 @@ export default class LeetCodePlugin extends Plugin {
         // no-op for all known codes so renderVerdict proceeds normally.
         const terminalTyped = terminal as SubmitCheckResponse;
         assertKnownVerdictOrThrow(terminalTyped);
-        modal.renderVerdict(terminalTyped, ctx.title);
-        // Phase 4 Plan 05 (D-08, D-23) — on-AC knowledge-graph write. Fires
-        // only when classifyStatus confirms Accepted; KnowledgeGraphWriter's
-        // own gate double-checks (defense-in-depth). Silent on failure per
-        // CF-19 — VerdictModal already shows "Accepted"; a graph-write toast
-        // would be noise. Also invalidate the submission history cache so a
-        // picker opened after AC sees the latest submission.
         const verdictKind = classifyStatus(terminalTyped.status_code, terminalTyped.status_msg).kind;
         const activeContest = this.contestSessionManager.getSession();
+        // Run knowledge graph BEFORE renderVerdict so lc-pattern is available for chip
+        if (!activeContest && verdictKind === 'ac') {
+          try {
+            await this.knowledgeGraph.onAccepted(
+              { file: ctx.file, slug: ctx.slug, title: ctx.title },
+              terminalTyped,
+            );
+          } catch (err) {
+            logger.debug('graph.onAccepted: non-fatal (invisible-by-design)', err);
+          }
+          this.submissionHistory.invalidate(ctx.slug);
+        }
+        modal.renderVerdict(terminalTyped, ctx.title);
+        // Contest verdict recording (badge update)
         if (activeContest) {
           const idx = activeContest.problems.findIndex(p => p.slug === ctx.slug);
           if (idx >= 0) {
@@ -2089,16 +2186,6 @@ export default class LeetCodePlugin extends Plugin {
               }
             }
           }
-        } else if (verdictKind === 'ac') {
-          try {
-            await this.knowledgeGraph.onAccepted(
-              { file: ctx.file, slug: ctx.slug, title: ctx.title },
-              terminalTyped,
-            );
-          } catch (err) {
-            logger.debug('graph.onAccepted: non-fatal (invisible-by-design)', err);
-          }
-          this.submissionHistory.invalidate(ctx.slug);
         }
       } else {
         // Gate failure (Notice already fired) or orchestrator resolved
@@ -2376,9 +2463,6 @@ export default class LeetCodePlugin extends Plugin {
       // same conditional union {wa,tle,mle,re,ce} applies and the same
       // single openAIDebug entrypoint is invoked.
       onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
-      // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC.
-      file: ctx.file,
-      getPatternHubPath: (p) => `${this.settings.getProblemsFolder()}/Patterns/${normalizePatternName(p)}.md`,
     });
     modal.open();
 
