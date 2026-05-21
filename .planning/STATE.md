@@ -10,8 +10,8 @@ progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 6
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21 — v1.2 milestone started)
 ## Current Position
 
 Phase: 13 (nested-editor-foundation) — EXECUTING
-Plan: 1 of 3
+Plan: 2 of 3
 Status: Executing Phase 13
-Last activity: 2026-05-21 -- Phase 13 execution started
+Last activity: 2026-05-21 -- Completed 13-01 (ChildEditorRegistry + Factory)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [▓░░░░░░░░░] 6%
 
 ## Performance Metrics
 
@@ -41,7 +41,9 @@ Progress: [░░░░░░░░░░] 0%
 - v1.0: 10 phases, 61 plans (shipped 2026-05-14)
 - v1.1: 9 phases, 41 plans (shipped 2026-05-20)
 
-*v1.2 metrics will populate after first plan completion*
+| Phase | Plan | Duration | Tasks | Files |
+|-------|------|----------|-------|-------|
+| 13 | 01 | 261s | 2 | 4 |
 
 ## Accumulated Context
 
@@ -57,6 +59,7 @@ Recent decisions affecting current work:
 - v1.2 sync: CM6 split-view pattern with sync annotations to prevent echo loops; always re-derive offsets via `findCodeFence()` before dispatching
 - v1.2 section lock: No modifications needed — child→parent sync dispatches have no `input.*` userEvent, Gate 0 passes them through
 - v1.2 bundle: Accept ~1.5 MB ceiling (language packs add ~300 KB over current 1.155 MB)
+- Phase 13-01: Monotonic tick counter for LRU ordering (avoids sub-ms Date.now() conflicts)
 
 ### Pending Todos
 
@@ -85,6 +88,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21T17:54:30.326Z
-Stopped at: Phase 13 context gathered
-Resume file: .planning/phases/13-nested-editor-foundation/13-CONTEXT.md
+Last session: 2026-05-21T18:28:19Z
+Stopped at: Completed 13-01-PLAN.md
+Resume file: .planning/phases/13-nested-editor-foundation/13-02-PLAN.md
