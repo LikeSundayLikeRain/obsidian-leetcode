@@ -1,623 +1,673 @@
-# Pitfalls Research — v1.1 (Contest, AI Coach, Preview)
+# Pitfalls Research — v1.2 (Code Editor Experience in Fenced Blocks)
 
-**Domain:** Adding LLM, virtual contest, and read-mode preview surfaces to a shipped Obsidian plugin
-**Researched:** 2026-05-14
-**Confidence:** HIGH (Obsidian Developer Docs + Developer Policies via Context7 + obsidian-api d.ts + eslint-plugin-obsidianmd 0.3.0 README + community plugin source review of Copilot for Obsidian + Smart Connections + LeetCode-Query)
+**Domain:** Adding code-editing features (auto-indentation, bracket closing, Tab indent/dedent) to a zone within a CM6 markdown document in an Obsidian plugin
+**Researched:** 2026-05-21
+**Confidence:** HIGH (CM6 official docs via Context7, Obsidian Developer Docs, existing codebase analysis of `sectionLockExtension.ts` and `codeActionsEditorExtension.ts`)
 
 ---
 
-> **Scope note.** This document covers v1.1 milestone pitfalls only. The v1.0-era pitfalls (CORS via `requestUrl`, session expiry, CSRF, frontmatter mangling, BrowserWindow security, etc.) are already mitigated in production code and live in
-> `.planning/milestones/v1.0-research/PITFALLS.md` (archived). Don't re-litigate them — but when a v1.1 feature *touches* a v1.0 convention (e.g., section lock, `'leetcode.*'` userEvent, `vault.process`), it shows up here as a regression risk.
+> **Scope note.** This document covers v1.2 milestone pitfalls only — specifically the interaction between code-editing features and the existing section lock, Obsidian's markdown mode, and CM6's extension system. v1.0/v1.1 pitfalls (CORS, streaming, AI provider, contest timer, etc.) are archived in milestone-specific research. When a v1.2 feature touches an existing convention (section lock, `'leetcode.*'` userEvent, `findCodeFence`), it surfaces here as a regression risk.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Bundling an LLM SDK That Pulls Node-Only Transports
+### Pitfall 1: Tab Key Conflict — Obsidian's Markdown List Indent vs Code Indent
 
 **What goes wrong:**
-You `npm install @anthropic-ai/sdk` or `openai` and import the official client. The SDK transitively pulls `axios`, `node-fetch`, `https`, `agent-base`, `form-data`, etc. Some pieces (`https.Agent`, custom keepalive agents, `tls.connect`) are Node-only and either (a) blow up the esbuild output to 1–2 MB, (b) crash at runtime when imported in Obsidian's renderer with `Cannot read property 'Agent' of undefined`, or (c) fall back to `fetch()` which is then blocked by Electron CORS — exactly the problem v1.0 already solved with `requestUrl`. Confirmed pattern from Copilot for Obsidian: it does not use the official OpenAI/Anthropic SDKs as their wire layer; it sits on LangChain abstractions and routes through its own request layer.
+You register `indentWithTab` (from `@codemirror/commands`) globally via `registerEditorExtension`. Now Tab inside fenced code correctly indents — but Tab at any bullet point in `## Notes`, any markdown list in the user's other vault notes, and any list in `## Problem` also fires `indentMore` instead of Obsidian's native markdown list indent behavior. Obsidian uses Tab to increase list nesting level (a different operation than inserting indentation characters). The plugin has broken every markdown note in the vault.
 
 **Why it happens:**
-Official LLM SDKs target Node servers and the browser, not Electron renderers with web-security on. The Anthropic SDK ships an HTTPS agent with custom keepalive; the OpenAI SDK ships axios; both fail "softly" — they appear to work in dev (your dev vault may have CSP relaxed, or you may be running with `Tools → Developer Tools` open) and fail on real users.
+CM6 keymaps registered via `registerEditorExtension` are **global to the editor instance** — they apply to the entire document, not just to a region. There is no built-in CM6 mechanism to scope a keymap to a document range. The `keymap` facet resolves by precedence order: the first handler that returns `true` wins. If `indentWithTab` returns `true` unconditionally, Obsidian's own Tab handler never fires.
 
-**How to avoid:**
-- **Do not** install `@anthropic-ai/sdk`, `openai`, or `aws-sdk` as production deps. Treat the AI provider layer as a *thin transport over `requestUrl`*.
-- Build a single internal `AIProvider` interface (~80 LOC, 5 implementations) that constructs the request body, sets headers, calls `requestUrl`, and parses the response. Each provider is one switch case in a factory.
-- For Bedrock, see Pitfall 4 below — SigV4 signing is enough work to *defer Bedrock to v1.2*.
-- Pin the bundle-size budget at < 500 KB in CI (current is ~163 KB; AI + contest + preview should fit in a 300 KB headroom).
+**Consequences:**
+- Every markdown list in the vault loses native Tab indent behavior
+- Obsidian's outline/fold commands that rely on Tab may break
+- Users who have Tab for accessibility (focus trap escape) lose that path
+- Plugin review may flag this as "overriding core editor behavior"
 
-**Warning signs:**
-- `node_modules/@anthropic-ai/sdk` or `node_modules/openai` showing up after `npm install`
-- esbuild bundle jumps > 100 KB after AI integration lands
-- Runtime error `Cannot find module 'https'` or `agent-base` in the dev console
+**Prevention:**
+- **Never register `indentWithTab` directly.** Instead, write a custom Tab keymap handler that:
+  1. Checks if the cursor is inside the code fence (using `findCodeFence(view.state)`)
+  2. If YES: call `indentMore(view)` / `indentLess(view)` and return `true`
+  3. If NO: return `false` (fall through to Obsidian's native handler)
+- Use `Prec.high(keymap.of([...]))` to ensure the fence-scoped Tab handler runs BEFORE Obsidian's default Tab handler, but still returns `false` when outside the fence so Obsidian handles it.
+- The command signature is `(view: EditorView) => boolean` — returning `false` means "I didn't handle this, try the next handler."
 
-**Phase to address:** Phase 06 (AI provider layer). Pick the abstraction *before* writing the first AI call.
+**Detection (warning signs):**
+- Tab in `## Notes` section inserts spaces instead of nesting a list
+- Tab in a non-LC note inserts raw indentation instead of markdown list indent
+- User reports "Tab stopped working normally in all my notes"
+
+**Phase to address:** Phase 01 (Tab/Shift-Tab handling) — the very first implementation must be zone-scoped. Never start with global `indentWithTab` and "fix it later."
 
 ---
 
-### Pitfall 2: `requestUrl` Cannot Stream — But Users Expect ChatGPT-Style Token Drip
+### Pitfall 2: closeBrackets Conflict — Markdown Auto-Pairs vs Code Auto-Pairs
 
 **What goes wrong:**
-You wire up AI Debug. The user clicks "AI: Debug." Twenty seconds of silence pass. Then the entire reply pastes in at once. The user thinks the plugin hung and clicks again, double-charging their API key. This is **not a bug** — it is `requestUrl`'s contract. Verified against Obsidian Developer Docs (Context7, fetched 2026-05-14): `RequestUrlParam` accepts `url`, `method`, `headers`, `body`, `contentType`, `throw` — no streaming, no chunked callback, no `onProgress`. The response promise resolves only when the body is fully buffered. There is no `ReadableStream`, no SSE consumer, no incremental delivery primitive.
+Obsidian's markdown mode (likely via its own `closeBrackets` configuration or `languageData`) auto-closes markdown-specific pairs: `*` → `**`, `_` → `__`, `` ` `` → ` `` ` `. You add `closeBrackets()` from `@codemirror/autocomplete` for code-style bracket closing (`{` → `{}`, `(` → `()`, `[` → `[]`). Now:
+- Inside fences: typing `*` produces `**` (wrong — `*` is multiplication in code, not emphasis)
+- Inside fences: typing `` ` `` produces ` `` ` ` (wrong — backtick in code is not markdown inline code)
+- Outside fences: duplicate bracket behavior from having two `closeBrackets` extensions active
 
 **Why it happens:**
-Streaming requires a transport that fires events as bytes arrive. `requestUrl` is implemented in the Obsidian main process and resolves in one shot for CORS-safety reasons. Native `fetch()` does support `ReadableStream`/SSE — but using `fetch()` re-introduces the v1.0-era CORS problem for cross-origin AI endpoints (Anthropic, OpenAI, OpenRouter all return CORS errors from the renderer). Smart Connections' core README emphasizes "minimal/no dependencies" precisely because handling this layer well is hard; it offloads the wire layer to a separate Pro plugin.
+CM6's `closeBrackets` reads its pair configuration from `languageData` at the cursor position. In a markdown document, the top-level language is markdown, and its `languageData` includes markdown-specific `closeBrackets` configuration (pairs like `*`, `_`, `` ` ``). CM6 uses `EditorState.languageDataAt(name, pos)` to resolve language data at a position — but this depends on the **syntax tree** correctly identifying the cursor as being inside a code block's inner language. If Obsidian's markdown parser doesn't nest a sub-language inside fenced blocks (or nests only for highlighting, not for `languageData`), the position still resolves to markdown's `closeBrackets` config.
 
-**How to avoid (pick one of three, in this order of preference):**
-1. **Non-streaming with strong "thinking" UX** (recommended for v1.1). Show a typing indicator + abort button + elapsed-time counter. After 30 s show "Still thinking…" with reassurance. Most LLM responses for code review are < 8 s; the UX cost of no streaming is small if the indicator is honest. **This is what Copilot for Obsidian falls back to when `requestUrl` is configured**.
-2. **Native `fetch()` with `ReadableStream` for streaming endpoints only**. Works for Ollama (localhost — no CORS) and OpenRouter (which sets permissive CORS). **Does NOT work for Anthropic or OpenAI direct** — both reject browser-origin requests. Document the asymmetry in the settings help text.
-3. **Polling-based pseudo-stream**. Some providers (Anthropic with `stream: true` over HTTPS) deliver chunked data. Even `requestUrl` will buffer the full body — but if you set a longer connect timeout and abort on the user's "Cancel" button, the UX cost is acceptable. **Do not** invent a poll loop on a partial stream — providers don't support resume.
+**Consequences:**
+- Typing `*` inside a Java/Python code fence auto-closes as `**` (markdown emphasis)
+- Typing backtick inside code fence creates inline code markers
+- Users cannot type `*` for pointer dereference (C/C++), multiplication, or spread operator without fighting the auto-close
 
-**Warning signs:**
-- A "streaming" code path that calls `requestUrl({ stream: true })` (no such option exists)
-- User reports "the plugin froze" after clicking AI Debug
-- Test against `https://api.anthropic.com` from native `fetch()` returns CORS error (proof you must use `requestUrl`)
+**Prevention:**
+- **Do NOT add a global `closeBrackets()` extension.** Instead, write a custom `inputHandler` (via `EditorView.inputHandler.of(...)`) that intercepts bracket characters ONLY when the cursor is inside the code fence:
+  1. On input of `{`, `(`, `[`, `"`, `'`: check if cursor is in fence → if yes, insert the closing pair manually via `view.dispatch`; return `true` (handled)
+  2. On input of `*`, `_`, `` ` ``: check if cursor is in fence → if yes, return `false` WITHOUT auto-closing (let the character insert as-is, suppressing markdown's auto-close by consuming the event first)
+  3. Outside fence: return `false` (let Obsidian handle normally)
+- Alternative approach: use a `transactionFilter` that detects when `closeBrackets`-originated insertions happen inside the fence and rewrites them. But this is fragile — better to intercept at the input level.
+- The cleanest architecture: a custom `closeBrackets`-like extension that only activates within `[fenceOpenerLine+1, fenceCloserLine-1]` range.
+- **Critical:** Obsidian may already have its own `closeBrackets` registered. You cannot remove it. You can only pre-empt it with higher precedence for positions inside the fence.
 
-**Phase to address:** Phase 06 (AI provider transport) — make non-streaming the default, document the asymmetry. Phase 07 (AI Debug UX) — invest in the "thinking" indicator.
+**Detection (warning signs):**
+- Typing `*` in a Python code fence produces `**` cursor placement (markdown emphasis behavior)
+- Typing `{` outside the fence produces `{}` (code behavior leaking into markdown)
+- Backspace after auto-close deletes only one bracket (pair-delete not working)
+
+**Phase to address:** Phase 02 (bracket handling) — must research Obsidian's existing `closeBrackets` behavior before implementing. Test what Obsidian does by default in a vanilla fenced code block.
 
 ---
 
-### Pitfall 3: API Keys in `data.json` Without Disclosure = Plugin-Store Rejection
+### Pitfall 3: indentOnInput Fires Globally — Dedent on `}` Rewrites Markdown
 
 **What goes wrong:**
-You store the OpenAI / Anthropic key as `aiKey: "sk-ant-..."` in `data.json` (which is the only practical option — Obsidian has no secure-keystore API for plugins). The store reviewer reads your README, sees no mention of "API key stored locally in plugin data," compares against Obsidian's developer policy ("Clearly explain which remote services are used and why they're needed") and Submission Requirements, and rejects the v1.1 release.
+You register `indentOnInput()` from `@codemirror/language` to get auto-dedent when the user types `}` at the start of a line (matching Java/C++ indent style). `indentOnInput` checks the language's indent rules and re-indents the current line when a trigger character is typed. In a markdown document without a nested language providing indent rules, `indentOnInput` either:
+- Does nothing (no indent rules for markdown nodes) — wasted overhead
+- Applies unexpected indentation to markdown content if any indent rule accidentally matches
+- Crashes or errors when trying to walk a syntax tree that doesn't have the expected node types
 
-Even if it passes review, the *user-facing* problem is real: `data.json` is plaintext on disk in the user's vault under `.obsidian/plugins/obsidian-leetcode/data.json`. Anything that backs up the vault folder (Obsidian Sync, iCloud, Git, Dropbox) now has the user's API key in it. A user who shares their vault for collaboration leaks the key.
+Worse: even if you only want it inside fences, `indentOnInput` has no positional scoping. It is a global extension that fires on every keystroke matching its trigger pattern.
 
 **Why it happens:**
-Obsidian deliberately does not provide a system keychain API (Plugin guidelines: see Plugin → Plugin data); plugins are sandbox-equivalent. Plaintext is the only option. Developers assume this is acceptable (it is, with disclosure) but forget the disclosure, or write a vague "uses your API key" without naming the destination services.
+`indentOnInput` works by consulting `getIndentation` from the language's syntax tree. In Obsidian's markdown mode, the syntax tree for content inside a fenced code block may be:
+1. A nested language tree (if Obsidian configures `parseMixed` for the fence language) — in which case `indentOnInput` might work BUT relies on that nested language having `indentNodeProp` configured
+2. Opaque "FencedCode" content (no nested parse tree) — in which case `getIndentation` returns null and `indentOnInput` is a no-op but still runs on every keystroke
 
-**How to avoid:**
-- Add a **dedicated README section** titled "AI provider configuration & data flow." It must list, by name, every endpoint the plugin can hit — `api.anthropic.com/v1/messages`, `api.openai.com/v1/chat/completions`, `openrouter.ai/api/v1/chat/completions`, `bedrock-runtime.{region}.amazonaws.com`, `localhost:11434/api/chat` (Ollama), and any custom base URL the user configures.
-- State explicitly: "Your API key is stored in `.obsidian/plugins/obsidian-leetcode/data.json` in plaintext. Do not commit this file to a public repo. Sync services (Obsidian Sync, iCloud, Dropbox) will replicate it."
-- In the **AI settings tab**, render a small inline note next to the API-key field with the same warning. Use `Setting.setDesc()` — never `innerHTML`.
-- Mask the key field with `Setting.addText(t => t.inputEl.type = "password")`.
-- **Never `console.log` the key.** Add an ESLint custom rule (or grep) for `console.log(.*Key)` to catch slips in CI.
-- Add a "Clear AI key" command in command palette so users have an explicit revocation path.
+The problem is that `indentOnInput` has no way to know it should only operate inside the fence. It checks the language at the cursor position via the syntax tree — if the tree is wrong (or markdown-level), it may fire inappropriate reindentation.
 
-**Warning signs:**
-- README v1.1 diff has no new "AI" section
-- Settings page shows `text` input (not `password`) for the key
-- Any logger in `src/ai/*` that interpolates the key into a string
+**Consequences:**
+- Typing `}` at the start of a markdown line may unexpectedly remove indentation
+- Performance overhead from running tree queries on every keystroke document-wide
+- If Obsidian's nested language parse is incomplete or absent, indentation does nothing useful inside the fence either
 
-**Phase to address:** Phase 06 (AI settings tab) — disclosure, masking, clear command. README update is a hard prerequisite for the eventual v1.1 release PR.
+**Prevention:**
+- **Do NOT use `indentOnInput()` globally.** Instead, implement a custom `inputHandler` or keymap that:
+  1. Detects when a trigger character (`}`, `)`, `]`) is typed
+  2. Checks if the cursor is inside the code fence
+  3. If yes: compute the desired indentation using a simple rule engine (match opening brace on the same nesting level; dedent one level) and dispatch the reindentation
+  4. If no: return `false` (let normal markdown behavior proceed)
+- For the indentation engine: **do not depend on Obsidian's syntax tree.** Obsidian may or may not provide a nested language tree inside fences. Instead, implement a simple brace-counting indentation algorithm:
+  - On Enter after `{`: indent one level
+  - On `}` at line start: dedent one level
+  - Track nesting by counting `{`/`}` from fence opener to cursor
+- This approach is language-generic and works for Java, Python (`:`-based), TypeScript, Go, etc. without needing a per-language parser.
+
+**Detection (warning signs):**
+- Typing `}` in markdown body (outside fence) causes unexpected line reindentation
+- `console.warn` or error from `getIndentation` because no language data found at position
+- Performance profile shows syntax-tree walks on every keystroke in long documents
+
+**Phase to address:** Phase 03 (auto-indentation on Enter/brace) — implement custom indentation engine rather than relying on `indentOnInput`.
 
 ---
 
-### Pitfall 4: Bedrock SigV4 Is a Trap — Either Cut It Or Spend a Phase On It
+### Pitfall 4: Extension Precedence — Plugin Keybindings Lose to Obsidian's Built-in Keymaps
 
 **What goes wrong:**
-"Multi-provider via BYO key + base URL" sounds uniform across Anthropic, OpenAI, OpenRouter, and Ollama — they're all `Bearer <key>` or no-auth. Bedrock breaks the model. AWS Bedrock requires SigV4 request signing: HMAC-SHA256 of a canonical request including timestamp, headers, body hash, region, service, and your AWS access key + secret. Doing it correctly requires either:
-- The `aws-sdk` (~600 KB minified, plus transitive node-only deps — see Pitfall 1)
-- The much smaller `@aws-sdk/signature-v4` (~30 KB) but it pulls `@smithy/*` deps that depend on Node `crypto`, `buffer`, `stream`
-- Hand-rolling SigV4 (~150 LOC of crypto, easy to get subtly wrong; signing is opaque to debug)
-
-Bedrock also requires region-specific endpoints, IAM role assumption (if the user uses STS), and inferenceProfile vs modelId routing. None of this fits the "set base URL + key" mental model the rest of the providers share.
+You register a Tab keymap via `registerEditorExtension(keymap.of([{key: "Tab", run: myTabHandler}]))`. Obsidian itself has already registered its own Tab handler (for markdown list indent, outline fold, etc.) at some precedence level. Your extension is flattened into the extension array AFTER Obsidian's built-in extensions. Result: Obsidian's Tab handler fires first, returns `true`, and your handler never runs.
 
 **Why it happens:**
-Bedrock is in the "5 providers" list because it sounds like a checkbox feature. In practice it is a separate ecosystem.
+CM6 keymap resolution is **precedence-first, then document-order within the same precedence bucket**. Extensions registered via `registerEditorExtension` land at `Prec.default` level unless explicitly wrapped. Obsidian's own keymaps may be at `Prec.default` or `Prec.high`. If they're at the same level, the ordering depends on when `registerEditorExtension` inserts into the extension array relative to Obsidian's core extensions — which is undocumented and may vary across Obsidian versions.
 
-**How to avoid:**
-- **Drop Bedrock from v1.1.** Ship Anthropic + OpenAI + OpenRouter + Ollama. That's 4 providers covering ~95% of users (per OpenRouter's own usage stats; Anthropic + OpenAI dominate). OpenRouter itself can route to Bedrock-hosted models for users who insist.
-- If a user must hit Bedrock, document that they should use **Bedrock Access Gateway** or **LiteLLM** — both expose an OpenAI-compatible REST endpoint that re-signs SigV4 server-side. The plugin then talks to that gateway as if it were OpenAI.
-- If Bedrock is non-negotiable, dedicate a separate phase, accept the bundle-size hit, and isolate it behind a dynamic import so users who don't enable Bedrock never load the SigV4 code.
+The CM6 precedence levels are, from highest to lowest:
+- `Prec.highest` — overrides everything
+- `Prec.high` — above default
+- `Prec.default` — standard level (where `registerEditorExtension` lands)
+- `Prec.low` — below default
+- `Prec.lowest` — fallback level
+- `Prec.fallback` — only if nothing else handles it
 
-**Warning signs:**
-- Roadmap has "Bedrock" listed as a 1-day task
-- Anyone proposes `aws-sdk` as a dependency
-- You're reading SigV4 spec at midnight to figure out why a 403 says nothing useful
+**Consequences:**
+- Tab/Shift-Tab inside fences does nothing (Obsidian's handler already consumed it)
+- Enter-after-brace does nothing (Obsidian's Enter handler already fired)
+- The behavior appears "intermittent" if Obsidian only sometimes returns `true` from its handler
 
-**Phase to address:** Phase 06 (provider abstraction) — explicitly scope to 4 providers + custom OpenAI-compatible base URL. Document the LiteLLM/Bedrock Gateway escape hatch in README.
+**Prevention:**
+- **Wrap all v1.2 keymaps in `Prec.high(...)`** so they evaluate BEFORE Obsidian's default-precedence handlers:
+  ```typescript
+  this.registerEditorExtension(
+    Prec.high(keymap.of([
+      { key: "Tab", run: fenceScopedTab },
+      { key: "Shift-Tab", run: fenceScopedShiftTab },
+      { key: "Enter", run: fenceScopedEnter },
+    ]))
+  );
+  ```
+- **Do NOT use `Prec.highest`** — that would override even Obsidian's accessibility handlers and vim-mode plugins. `Prec.high` is the correct level for "specialized handler that may decline."
+- **Every handler MUST return `false` when outside the fence** so that handlers below in precedence (Obsidian's native ones) still work for non-fence content.
+- **Test by disabling the plugin** and verifying Obsidian's native Tab/Enter behavior is preserved — then re-enable and verify it still works outside the fence.
+
+**Detection (warning signs):**
+- Tab inside fence does nothing (Obsidian consumed it)
+- Tab outside fence is broken (your handler consumed it but didn't act)
+- Behavior changes between Obsidian versions (Obsidian moved its keymap precedence)
+
+**Phase to address:** Phase 01 (very first keymap registration) — `Prec.high` wrapping must be the default pattern from day one.
 
 ---
 
-### Pitfall 5: Multi-Provider Over-Engineering — The Adapter Trap
+### Pitfall 5: Section Lock changeFilter Drops Tab-Induced Changes in Locked Regions
 
 **What goes wrong:**
-You start with a clean `AIProvider` interface, then add abstractions: `Tokenizer`, `RateLimiter`, `RetryPolicy`, `MessageFormatter`, `ToolUseAdapter`, `StopSequenceMapper`. Each provider gets a 200-line class. After two weeks the AI module is 2,000 LOC for 4 providers, the abstractions leak (Anthropic uses `system` field, OpenAI uses `system` role, neither uses the other's), and changes to one provider ripple through five files. This is the exact failure mode that drove LangChain to its current size.
+The existing section lock (`sectionLockExtension.ts`) has a `changeFilter` that drops changes touching locked ranges. The fence opener line and closing fence line are locked (lines 165-189 of `sectionLockExtension.ts`). Your Tab handler dispatches an `indentMore`-style change. If the user's cursor is on the FIRST line of the fence body (line immediately after the opener) and the indentation change's `from` position touches the locked range boundary, the changeFilter drops the change silently.
 
-**Why it happens:**
-"Multi-provider" is treated as a deep architecture problem. It is not — it is four providers that all accept JSON, return JSON, and have *cosmetic* shape differences. Abstracting that is over-engineering.
-
-**How to avoid:**
-- **Smallest abstraction that works for 4 providers**: a single async function `chat(provider, model, key, messages, options): Promise<AIResponse>`, plus per-provider request/response transformers (~30 LOC each). No classes, no DI. Total ~250 LOC.
-- Provider-specific quirks (Anthropic's `system` is a top-level field, OpenAI's is a role-`system` message) live in the per-provider transformer — *not* in a shared `MessageFormatter`.
-- Token counting? Don't count. Pass through whatever messages the user sent. If the call fails with "context too long," surface the provider error verbatim and let the user shorten input.
-- Rate limiting? Don't implement client-side. Each AI call is user-triggered (debug button, AC review). The user is naturally rate-limited.
-- Retry? Once on transient (5xx, 429) with 2 s delay; never on 4xx (it's wrong-input).
-- *Use existing patterns from v1.0*: a `LeetCodeApiClient` thin wrapper exists in `src/api/`. Mirror that style — one function per intent, no class hierarchy.
-
-**Warning signs:**
-- AI module exceeds 500 LOC before the first model is wired
-- A `BaseProvider` abstract class
-- A `ProviderRegistry` or factory-of-factories
-- More than two layers of indirection between `chat()` and `requestUrl()`
-
-**Phase to address:** Phase 06 (AI provider layer). Set a 400-LOC budget for the entire AI provider directory before any abstraction work.
-
----
-
-### Pitfall 6: Cost Surprise — 3 LLM Calls Per Accepted Submission
-
-**What goes wrong:**
-The "AI ACed Review" feature fires three LLM calls per Accepted: Approach, Efficiency, Code Style. A power user grinds 10 problems a session, 3 sessions a week → 90 calls/week. With Claude Sonnet pricing (~$3/M input, $15/M output) and ~3K input + ~1K output tokens per call, that's roughly $1.80–$2.50/week, $100/year. Users notice on their first month's bill, blame the plugin, leave a 1-star review.
-
-**Why it happens:**
-"AI on every Accepted" feels like the feature. The cost is invisible until the bill arrives. Plugins like Copilot for Obsidian solve this by letting users pay Brevilabs for a subscription tier that bundles cost predictability — that option is **not available** to a BYO-key plugin.
-
-**How to avoid:**
-- Make AI ACed Review **opt-in per-Accepted, not automatic.** Add an inline button under the verdict: `AI Review` (one click, runs the 3-call pipeline). Default-off in settings.
-- Settings option: "Auto-run AI review on Accept" (boolean, default false).
-- Settings option: "Combine review dimensions into one LLM call" (boolean, default true) — one call producing all 3 dimensions reduces cost ~3x at the price of slightly longer prompts.
-- After every AI call, log a per-call line item to a local `AIUsageStats` (in `data.json`, capped at 100 entries, displayed in the settings tab as "Estimated this month: ~$X based on your model"). Use the provider-reported `usage.input_tokens` / `usage.output_tokens` — never invent numbers.
-- README must list "Cost expectations" — link Anthropic and OpenAI pricing pages, give a per-AC estimate.
-- Add a hard cap setting: "Max AI calls per day" (default 50). When hit, disable buttons until midnight; show a banner. This protects users who accidentally configure a tight loop.
-
-**Warning signs:**
-- AI review code path that has no opt-in toggle
-- No `usage` logging anywhere in `src/ai/`
-- README has no "Cost" section
-
-**Phase to address:** Phase 08 (AI ACed Review) — opt-in by default, usage tracking, README cost section.
-
----
-
-### Pitfall 7: Privacy — Sending User Code (Including Comments) to a Third Party
-
-**What goes wrong:**
-The "AI Debug" and "AI ACed Review" features send the user's entire `## Code` block to a third-party LLM. The user's code may contain:
-- Personal comments ("// TODO: ask Sarah about this approach")
-- Their employer's internal IP if they're solving LC problems with work-related code
-- Hardcoded credentials they pasted while debugging
-- Their personal style/identity (which is then used by the LLM provider for training, depending on provider settings)
-
-A privacy-conscious user does not realize the plugin sends every character of their solution to Anthropic / OpenAI. Plugin reviewers may flag this as inadequate disclosure.
-
-**Why it happens:**
-"AI Debug" is named after the action, not the data flow. The user thinks "the plugin debugs my code" — they don't think "the plugin uploads my code to Anthropic, who can train on it depending on their ToS."
-
-**How to avoid:**
-- The first time the user clicks AI Debug or enables AI ACed Review, show a one-time **modal** disclosing: "This will send your code, the problem statement, and any error message to {Provider Name} ({base URL}). Your API key is used. The provider's data retention policy applies. [Provider Privacy Policy link]"
-- Modal has two buttons: "Send" and "Cancel and disable AI features."
-- After acknowledgement, store `ai.disclosure-acknowledged: <timestamp>` in `data.json` and don't show again for that provider. Re-show if the user changes provider in settings.
-- README **must** dedicate a "What gets sent to your AI provider" subsection. List: code from `## Code`, problem title + statement (already public from leetcode.com), error message from the last failed run/submit. Explicit list of what does **not** get sent: frontmatter beyond `lc-id`, other vault notes, session cookie.
-- Provide a "Sanitize before sending" toggle that strips `// TODO`, `// FIXME`, and lines containing `password|secret|key|token` (case-insensitive). Default off (most users would find it confusing); document clearly in settings.
-
-**Warning signs:**
-- No modal anywhere in the AI Debug code path
-- README has no "Data sent to AI provider" subsection
-- Logger emits the prompt to console (now the user's whole code is in their dev tools log)
-
-**Phase to address:** Phase 07 (AI Debug) and Phase 08 (AI ACed Review). The disclosure modal is required for both — implement it once in Phase 07 and reuse.
-
----
-
-### Pitfall 8: Hallucinated Slugs in Look-Ahead Wikilinks
-
-**What goes wrong:**
-The "AI knowledge graph" feature asks the LLM to suggest forward edges to problems the user hasn't solved yet. The LLM returns:
-
-```markdown
-## Related Variants
-- [[0567-Permutation in String]]
-- [[0904-fruit-into-baskets]]
-- [[1234-sliding-window-extreme]]   ← does not exist on leetcode.com
+Specifically, the lock extension's boundary fix (line 419-430) extends each lock's `from` backward by 1:
+```typescript
+expanded.push(Math.max(0, (ranges[i] as number) - 1));
 ```
 
-The third link is hallucinated. When the user clicks it, Obsidian creates an empty stub note with that filename — polluting the vault. Worse, the AI sometimes returns *renamed* slugs (LC has occasionally renamed problems), so even the format-checking pattern `\d{4}-[a-z-]+` fails to flag it.
+This means position `openerTo` (start of first editable line) minus 1 is INSIDE the lock. If `indentMore` calculates a change that starts at `openerTo - 1` (which it might, depending on how CM6's indent commands work with the `\n` at the end of the opener line), the change is suppressed.
 
 **Why it happens:**
-LLMs are excellent at producing plausible-looking LC slugs and IDs — they were trained on LC content. They are not connected to the live LC problem database. There is no syntactic signal of hallucination.
+The `-1` boundary expansion was added to prevent users from inserting text at the exact start of `## Problem` (UAT 2026-05-13). But it also means the newline at the end of the opener line is part of the suppressed range. Indent commands that operate on "the line containing the cursor" typically compute the change range as `lineStart..lineStart + existingIndent` — if `lineStart` happens to be exactly at the lock boundary, the change's `from` is `openerTo` which is the **exclusive** end of the lock (allowed), but if there's any off-by-one in how the indent command computes its range, the filter drops it.
 
-**How to avoid:**
-- **Validate every AI-proposed slug against the local problem index before writing.** v1.0 already maintains a slug → id index in `data.json` (problems list cache). Add a `validateSlug(slug: string): {valid: boolean, canonicalSlug?: string, id?: string}` helper. Drop unknown slugs silently; log them at debug level.
-- The AI prompt should **provide a list of candidate slugs** rather than ask the LLM to recall from training data. Pass the top ~50 problems from the same topic-tag cluster; ask the LLM to pick from that list. This converts the recall problem into a ranking problem (LLMs are much better at ranking).
-- For problems the user *has not solved yet*, look-ahead edges write `[[id-slug|Display Title]]` with the canonical id-slug, **even though the note doesn't exist yet**. The user clicking the wikilink triggers the existing v1.0 "open problem as note" flow, which fetches the problem and creates the note properly. Never write a stub note pre-emptively.
-- After cluster generation, walk the resulting wikilinks once with `validateSlug`; drop anything that fails; log a warning to the dev console with the full LLM output for debugging.
+Additionally: the changeFilter checks `isUserInput` (lines 375-380) and only fires for `input.*`, `delete.*`, `undo`, `redo` userEvents. The `indentMore` command dispatches with userEvent `'input.indent'` — which IS matched by `ev.startsWith('input.')`. So the lock WILL evaluate indent transactions.
 
-**Warning signs:**
-- Look-ahead wikilink writer has no validation step
-- LLM prompt asks "suggest related problems" without providing a candidate set
-- Empty stub notes appearing in the vault after a Knowledge Graph run
+**Consequences:**
+- Tab on the first line of the code fence body silently does nothing
+- User perceives the fence as "partially locked" and files a bug
+- Shift-Tab that would remove all indentation from the first line, potentially leaving `from === openerTo`, gets dropped
 
-**Phase to address:** Phase 09 (AI knowledge graph) — slug validation must be implemented in the *first* PR of that phase, not added later.
+**Prevention:**
+- **Tag all v1.2 code-fence dispatches with `userEvent: 'leetcode.code-indent'`** (or similar `'leetcode.*'`-prefixed annotation). The section lock's Gate 1 (line 389) checks for `leetcode.*` prefix and returns `true` (bypass), but Gate 0 (line 376) checks `isUserInput` first and only continues for `input.*`/`delete.*`/`undo`/`redo`. Since `'leetcode.code-indent'` does NOT start with `input.` or `delete.`, Gate 0 returns `true` (no suppression) — the lock is bypassed.
+- **Wait — verify this.** Gate 0 returns `true` (pass through) when `isUserInput` is `false`. A `'leetcode.code-indent'` userEvent: `isUserInput` = `ev.startsWith('input.') || ev.startsWith('delete.') || ev === 'undo' || ev === 'redo'`. `'leetcode.code-indent'.startsWith('input.')` = false. So `isUserInput = false`, Gate 0 returns `true`. Correct — the lock is bypassed.
+- **However**, this means your Tab dispatch does NOT go through the lock at all. This is safe because your handler already verified the cursor is inside the fence body before dispatching. You have effectively pre-authorized the edit.
+- **Do NOT use `indentMore` directly** (it dispatches with `userEvent: 'input.indent'`). Instead, compute the indentation change manually and dispatch with `userEvent: 'leetcode.code-indent'`. This ensures the section lock never interferes.
+- **Alternative**: modify the section lock to whitelist `'input.indent'` when the change is entirely within the fence body. But this is riskier — modifying security infrastructure for a feature is backwards.
+
+**Detection (warning signs):**
+- Tab on line 1 of fence body does nothing while Tab on line 2+ works fine
+- Shift-Tab removes indentation on all lines except the first
+- Adding `console.log` inside the changeFilter shows the indent transaction being dropped
+
+**Phase to address:** Phase 01 (Tab handler implementation) — use `'leetcode.code-indent'` / `'leetcode.code-dedent'` userEvent annotations from day one. Document this in the code convention.
 
 ---
 
-### Pitfall 9: Pattern-Cluster Naming Drift — "Sliding Window" vs "Two Pointers Window"
+### Pitfall 6: Per-Keystroke `findCodeFence()` Line Scan — Performance at Scale
 
 **What goes wrong:**
-You ask the LLM to name the cluster for "Longest Substring Without Repeating Characters." Today it answers "Sliding Window." Tomorrow, with a different temperature seed or a slightly different problem-set context, it answers "Two Pointers Window," "Variable-Length Sliding Window," or "Hash + Window." Each unique name produces a *separate* cluster hub note, fragmenting the user's knowledge graph: `[[Sliding Window]]`, `[[Two Pointers Window]]`, `[[Variable Sliding Window]]` all exist with one or two backlinks each, instead of a single coherent cluster of 30 problems.
+Every keymap handler (Tab, Enter, bracket) calls `findCodeFence(view.state)` to check if the cursor is inside the fence. `findCodeFence` does a linear scan of the document from line 1 to find `## Code`, then scans forward for the fence opener, then forward again for the closer. For a typical LC problem note (~100-200 lines), this is ~200 string comparisons per keystroke. Seems fast — but:
+- The changeFilter in `sectionLockExtension.ts` ALSO calls `computeLockedRanges(tr.startState)` which calls `findCodeFence(state)` internally (line 161)
+- The decorations extension in `codeActionsEditorExtension.ts` ALSO calls `findCodeFence(state)` on rebuild (line 256)
+- Total: up to 3 calls to `findCodeFence` per transaction (changeFilter + transactionFilter + your new keymap handler)
+
+At 200 lines, 3 full scans per keystroke: ~600 string operations. Still likely < 1ms on modern hardware. But:
+- Users with extremely long `## Problem` sections (LC hards with long descriptions: 80-100 lines of HTML-converted markdown)
+- Users who paste large test cases into `## Custom Tests`
+- Notes with AI Review sections can reach 300-400 lines
+
+At 400 lines x 3 scans = 1200 string ops per keystroke — still probably fine, but it's the wrong direction.
 
 **Why it happens:**
-LLMs do not maintain a deterministic vocabulary across calls. Asking for a "name" is open-ended. The user has no taxonomy enforcement.
+`findCodeFence` was designed as a pure utility for occasional use (decoration rebuild on `docChanged`, lock computation on edit attempts). Adding it to a per-keystroke keymap handler triples its call frequency.
 
-**How to avoid:**
-- Maintain a **canonical cluster vocabulary** in plugin data (`data.json` → `aiClusterTaxonomy: string[]`). Bootstrapped from a curated list of ~40 well-known patterns (Sliding Window, Two Pointers, BFS/DFS, Topological Sort, Trie, Union-Find, Segment Tree, Bit Manipulation, Backtracking, Greedy, Dynamic Programming on Subsequences, Dynamic Programming on Intervals, Monotonic Stack, Heap (Priority Queue), Binary Search on Answer, Graph Shortest Path, etc. — see [Algorithm Patterns Cheat Sheet](https://hackernoon.com/14-patterns-to-ace-any-coding-interview-question)).
-- AI prompt structure: "Pick **exactly one** name from this list. If none fit, answer `OTHER` and propose a name. Existing names: [list]." This converts free-form naming into constrained classification.
-- When the LLM answers `OTHER`, the plugin prompts the user once: "AI proposed a new pattern category: 'X'. Add to your taxonomy? [Yes / Use 'Y' instead / Skip]." User decisions persist back to the taxonomy.
-- After taxonomy bootstrap, use embedding similarity to dedupe near-duplicates: when adding a new entry, check cosine sim against existing entries (offline embedding model is overkill — string similarity > 0.85 suffices). Surface dedupes to the user before committing.
-- **Migration of v1.0 ## Techniques sections.** Existing v1.0 notes have `[[Two Pointers]]`-style links generated from `lc-tag` slugs. Phase 09 needs an explicit migration plan: keep `## Techniques` as a frozen historical section, write the new AI clusters to a separate `## Patterns` section, OR provide a one-time "merge legacy techniques into AI clusters" command. **Do not silently rewrite `## Techniques` on existing notes** — the section lock + user trust both forbid silent rewrites of v1.0 content.
+**Consequences:**
+- Theoretical: on very long notes (500+ lines), typing becomes perceptibly laggy
+- Practical for v1.2: probably fine for typical LC notes, but sets a bad precedent
+- The real risk is compounding: if future phases add MORE per-keystroke checks, the linear scan becomes the bottleneck
 
-**Warning signs:**
-- AI prompt phrased as "what pattern is this?" (open-ended)
-- Vault graph shows multiple cluster hubs with overlapping membership (1–2 backlinks each)
-- No `aiClusterTaxonomy` in plugin data schema
+**Prevention:**
+- **For v1.2: the line scan is acceptable.** A 200-line note scanned 3x per keystroke is ~0.1ms on modern hardware. Do not prematurely optimize.
+- **BUT: cache the result in a StateField if profiling shows any issue.** The pattern:
+  ```typescript
+  const codeFenceField = StateField.define<{openerLine: number; closerLine: number} | null>({
+    create(state) { return findCodeFence(state); },
+    update(old, tr) { return tr.docChanged ? findCodeFence(tr.state) : old; }
+  });
+  ```
+  This recomputes only on `docChanged` (when the fence might have moved) and is O(1) to read on every keystroke.
+- **Decision rule:** implement v1.2 Phase 01 with direct `findCodeFence` calls. After Phase 01 lands, run a performance profile on a 500-line note with rapid typing. If any keystroke exceeds 2ms total extension time, add the StateField cache. If not, leave it.
+- **Do NOT pre-build the StateField cache before measuring.** It adds complexity (another field to register, another thing that can go stale, another piece of state for tests to mock). The section lock already calls `computeLockedRanges` (which calls `findCodeFence`) per transaction and no performance issues have been reported.
 
-**Phase to address:** Phase 09 (AI knowledge graph). Taxonomy + dedup must precede any cluster-write code. Migration command is a separate plan within the same phase.
+**Detection (warning signs):**
+- Performance profiler shows > 2ms in `findCodeFence` per keystroke
+- Users report lag in the code fence on long notes
+- The StateField cache is added but `docChanged` logic has a bug and returns stale data
+
+**Phase to address:** Phase 01 (initial implementation uses direct calls) — revisit at Phase 03 (after all keystroke handlers are in place) with profiling.
 
 ---
 
-### Pitfall 10: Migrating v1.0 `## Techniques` Without Section-Lock Awareness
+### Pitfall 7: Undo/Redo Coherence — Custom Dispatches Must Preserve History
 
 **What goes wrong:**
-The migration code reads existing v1.0 notes and rewrites the `## Techniques` section to point at AI clusters instead of `lc-tag` techniques. It uses `vault.modify()` (or worse, `editor.dispatch()`) — and either (a) overwrites user edits in the body that occurred during the migration window, or (b) gets silently dropped by the section-lock changeFilter (CLAUDE.md "section lock" convention). Either way: data loss or a no-op that the migration logs as success.
+Your Tab handler computes an indentation change and dispatches it via `view.dispatch({changes, userEvent: 'leetcode.code-indent'})`. The change is applied — but when the user presses Cmd+Z, nothing happens. The indent was not recorded in undo history.
+
+Or the inverse: every single Tab press creates a separate undo entry. The user indents 5 lines one by one, then Cmd+Z — only the last line's indent is undone. They must press Cmd+Z five times. This feels wrong compared to IDE behavior where "indent selection" is one undo step.
 
 **Why it happens:**
-The v1.0 section lock (Plan 05.5) was designed to prevent stray edits. It treats `## Techniques` as a plugin-owned heading. New developers (or future-you) writing the migration may not realize the lock exists, write to the active editor with `cm.dispatch()`, and silently lose the edit. Or they correctly use `vault.process()` but forget that vault writes don't go through the lock — and when the user has the file open and is editing, the file content read inside `process()` may not match the on-screen content.
+CM6's `history()` extension records transactions into the undo stack based on the `addToHistory` annotation. By default, all transactions with document changes ARE added to history. However:
+1. If you accidentally set `addToHistory: false` on your dispatch spec, the change is invisible to undo.
+2. If you dispatch 5 separate transactions (one per line) for a multi-line indent, each becomes a separate undo entry. `indentMore` from `@codemirror/commands` correctly handles multi-cursor/multi-line indent as ONE transaction — but if you hand-roll the indent and dispatch per-line, you get 5 entries.
+3. The `'leetcode.*'` userEvent prefix has no special interaction with history — it only bypasses the section lock. History records normally.
 
-**How to avoid:**
-- **All migration writes go through `vault.process()`** (per v1.0 convention CF-06). Never `cm.dispatch()`, never `vault.modify()`.
-- If a `cm.dispatch()` *is* required (e.g., to refresh the user's view after migration), it must set `userEvent: 'leetcode.migrate-techniques'` per the `'leetcode.*'` userEvent convention.
-- **Don't migrate the active note** while the user has it open with unsaved changes. Detect via `app.workspace.getActiveFile() === file` and the editor having pending updates (CM6 `view.state.doc.toString() !== await vault.read(file)`); skip and log "active with unsaved changes — re-run migration after save."
-- Migration is a **command-palette action**, not automatic on plugin update. Show a confirmation modal: "Migrate N notes from v1.0 lc-tag Techniques to v1.1 AI clusters? This will rewrite the `## Techniques` section in each note. A backup will be written to `LeetCode/.migration-backup-{timestamp}.json`."
-- Write the backup *before* any vault.process write. Backup format: `{path, originalSection}[]`.
-- Migration runs in batches of 10 with 100 ms delay between batches to avoid blocking the UI. Show a progress notice via `Notice` (not a custom progress bar — keep it native).
-- If the migration is interrupted or the plugin crashes mid-batch, the next plugin load detects an in-progress migration via a flag in `data.json` and prompts the user to resume or roll back.
+**Consequences:**
+- User presses Cmd+Z after Tab-indent: nothing happens → "the plugin broke undo"
+- User presses Cmd+Z after indenting 5 lines: must undo 5 times → annoying
+- If the section lock somehow transforms the transaction (rewriting it via transactionFilter), the history may record the REWRITTEN transaction, not the original intent
 
-**Warning signs:**
-- Migration code calls `editor.replaceRange()` or `editor.dispatch()`
-- No backup writer before the first vault.process call
-- No batching (`for...of` over the full vault file list)
-- No "active with unsaved changes" guard
+**Prevention:**
+- **Never set `addToHistory: false`** on indent/dedent/bracket dispatches. Let history record naturally.
+- **Always dispatch multi-line indent as a single transaction** with a combined `ChangeSet`. Build all line-indentation changes into one `changes` array and dispatch once:
+  ```typescript
+  const changes = selectedLines.map(line => ({
+    from: line.from,
+    to: line.from, // insert at start
+    insert: indentUnit
+  }));
+  view.dispatch({ changes, userEvent: 'leetcode.code-indent' });
+  ```
+  CM6 accepts an array of non-overlapping changes in one dispatch — they become one undo entry.
+- **For auto-close brackets**: the inserted closing bracket should be in the SAME transaction as the opening bracket. Dispatch: `{changes: [{from: pos, insert: "{"}], {from: pos+1, insert: "}"}]` — one dispatch, one undo entry that removes both.
+- **Test undo explicitly**: after implementing each handler, verify that Cmd+Z undoes the entire operation in one step.
 
-**Phase to address:** Phase 09 (AI knowledge graph) — dedicated migration plan within the phase. The backup writer is a hard prerequisite for the migration command.
+**Detection (warning signs):**
+- Cmd+Z after Tab does nothing
+- Cmd+Z after indenting a selection undoes one line at a time
+- Auto-closed bracket: Cmd+Z removes only the closing bracket, leaving orphaned opening bracket
+
+**Phase to address:** Phase 01 (Tab/Shift-Tab) — establish the "single-transaction, no addToHistory override" convention. Phase 02 (brackets) — same convention for pair insertion.
 
 ---
 
-### Pitfall 11: Contest Timer That Drifts on Sleep / Reload
+### Pitfall 8: Live Preview vs Source Mode — Decoration Offsets Differ
 
 **What goes wrong:**
-Virtual contest timer uses `setInterval(tick, 1000)`. Two minutes into a 90-minute contest the user closes their laptop. Forty minutes later they reopen. The timer thinks 2 minutes elapsed (interval was suspended during sleep). Or the user accidentally reloads the plugin (Cmd+R, or a config tweak) — `setInterval` is gone, the timer state is gone, the contest is gone.
+Live Preview mode renders some markdown syntax as formatted output (e.g., bold text shows as bold, not as `**bold**`). This means character positions in the editor may not match the raw document positions. Your Tab handler uses `findCodeFence(state)` which returns line numbers based on the raw document. But in Live Preview, the cursor position reported by `view.state.selection.main.head` is in the **rendered** coordinate space — or is it?
+
+Actually: CM6 positions are always raw-document positions, even in Live Preview. Obsidian's Live Preview uses decorations to HIDE syntax characters, but the underlying document and position model remain unchanged. So this is NOT a real pitfall — but it's a common source of confusion.
+
+The REAL pitfall in Live Preview: **widgets and replacements shift visual lines.** The existing `CodeActionsWidget` (block widget below the fence closer) occupies visual space. If your Tab handler uses `view.lineBlockAt(pos)` to determine visual indentation, the widget presence may shift line-block geometry. But if you use `state.doc.lineAt(pos)` (document-level, not view-level), you're safe.
 
 **Why it happens:**
-- `setInterval` is wall-clock-based, not monotonic. Browsers/Electron pause timers when the system sleeps.
-- Plugin reload tears down all in-memory state including `setInterval` handles.
-- Naive timer code calls `tick++` instead of computing `elapsed = Date.now() - startTimestamp`.
+Confusion between CM6's two line APIs:
+- `state.doc.lineAt(pos)` — document line (raw text, unaffected by decorations)
+- `view.lineBlockAt(pos)` — visual line block (affected by widgets, folding, wrapping)
 
-**How to avoid:**
-- **Persist contest state to `data.json` on start** with: `{contestId, startedAt: Date.now(), durationMs, problems: [{slug, status, attemptsLog: [{at, verdict}]}]}`.
-- **On every tick (or every 5 s, batched), update `data.json` with the latest state.** Use `this.app.fileManager` for atomic writes (`saveData()` is atomic).
-- **Compute remaining time as `durationMs - (Date.now() - startedAt)`**, not by decrementing a counter. This is wall-clock-correct across sleep.
-- **On plugin load, check for an active contest** (`startedAt + durationMs > Date.now()`). If found, prompt: "Resume contest in progress? {N minutes remaining}." User can resume or abandon.
-- **Use `this.registerInterval(window.setInterval(...))`** so the interval is cleaned up on plugin unload. Never bare `setInterval`. (Already enforced by `eslint-plugin-obsidianmd/prefer-window-timers`.)
-- During contest, register an `onbeforeunload` handler that prompts: "Contest in progress — are you sure you want to close Obsidian?" Use `window.onbeforeunload` (not `app.workspace.on('quit', ...)` — workspace quit fires too late).
+**Consequences:**
+- If you accidentally use `view.lineBlockAt` for indentation calculations, results differ between Live Preview and Source Mode
+- If you rely on "line count" between opener and cursor for nesting depth, block widgets (like the Run/Submit row) don't affect document line count but DO affect visual rendering — potential off-by-one in visual feedback, not in logic
 
-**Warning signs:**
-- Any `tickCount++` or decremented-counter pattern
-- No `startedAt` or equivalent timestamp in contest data schema
-- Bare `setInterval(...)` in `src/contest/`
+**Prevention:**
+- **Always use `state.doc.lineAt(pos)` and `state.doc.line(n)` for all indentation/fence logic.** Never use `view.lineBlockAt` or `view.visualLineAt` for position math.
+- **`findCodeFence` already uses `state.doc.line(i)` exclusively** — it is mode-agnostic. Keep all new code on the same pattern.
+- **The editorLivePreviewField check in codeActionsEditorExtension.ts is for decoration rebuild (showing/hiding the widget), NOT for position math.** v1.2 code should NOT check `editorLivePreviewField` for indentation behavior — behavior should be identical in both modes.
+- **Test in both modes**: enable Live Preview, type in the fence, verify indentation works. Switch to Source Mode (Cmd+E), verify same behavior. The underlying logic should be byte-for-byte identical.
 
-**Phase to address:** Phase 10 (Contest virtual mode) — persistence schema + monotonic clock are foundational; build them in the first plan.
+**Detection (warning signs):**
+- Indentation works in Source Mode but misaligns in Live Preview
+- Code uses `view.lineBlockAt` or `view.visualLineAt` anywhere in the indent/bracket logic
+- A check for `editorLivePreviewField` gates indentation behavior differently per mode
+
+**Phase to address:** Phase 01 — establish the "document-position only" convention in the first implementation. No mode-specific branching for behavior.
 
 ---
 
-### Pitfall 12: Past-Contest API Surface Is Not Documented and Slugs Drift
+### Pitfall 9: Obsidian Plugin Review — Overriding Core CM6 Behavior
 
 **What goes wrong:**
-You build "Surprise me" by picking a random number 1–375 and constructing `weekly-contest-{n}` or `biweekly-contest-{n}`. Some of those slugs (a) don't exist (gaps in numbering), (b) point to contests with deprecated problems (LC has occasionally removed problems from its public list — they 404 on the problem GraphQL query but the contest's question list still references them), or (c) have authentication-gated content (premium-only contests). Users hit "Surprise me," get a contest, and one of its 4 problems errors out mid-contest.
+The plugin-store reviewer sees that your plugin registers `Prec.high(keymap.of([...]))` for Tab, Enter, and bracket keys. They flag: "This plugin overrides core editor keybindings at high precedence. Does it correctly fall through when not applicable? Could it break other plugins?" The reviewer tests with vim-mode enabled — your Tab handler fires BEFORE vim's Tab command.
 
-LeetCode's contest API is partially undocumented; `LeetCode-Query` exposes a "user contest records" endpoint but **not** "list past contests" or "fetch contest problems by slug" (verified 2026-05-14). The plugin must hand-roll those queries against the GraphQL endpoint.
+Alternatively: the reviewer runs `eslint-plugin-obsidianmd@0.3.0` and one of its rules flags "no default hotkeys" — but that rule is about the command palette, not editor keymaps. Still, the reviewer's suspicion may delay approval.
 
 **Why it happens:**
-LC contest GraphQL queries are reverse-engineered from the LC frontend (browser DevTools → Network). They are subject to schema drift (Pitfall 14 in v1.0 file). LC has also rebranded some contests and removed old ones.
+Plugin review is partly automated and partly human judgment. Reviewers look for:
+- Network calls not disclosed in README (not applicable here)
+- `innerHTML` usage (not applicable)
+- Global keybinding overrides (APPLICABLE)
+- Performance-heavy extensions that run on every keystroke (APPLICABLE)
 
-**How to avoid:**
-- **Never construct contest slugs by random integer.** Maintain a known-good `contestCatalog` in `data.json` populated from a single GraphQL query on plugin load (`pastContests` or equivalent — verify the exact query name from LC's website Network tab; expect `topTwoContests`, `pastContests`, or `contestList`).
-- The catalog stores `{slug, title, startTime, problemSlugs: string[]}`. Refresh weekly or on user request.
-- "Surprise me" picks a random entry from the catalog **and verifies all 4 problem slugs are still fetchable** via a parallel `Promise.allSettled` of problem-detail queries. If any 404, pick a different contest. Cap retries at 3; surface "Couldn't find a fully-available contest. Try again later" if all retries fail.
-- For premium-only contests: detect via the contest GraphQL response (presence of `isPremium` or `paidOnly` fields) and skip; show a nicer error than 403 from the problem fetch.
-- Contest selection respects user difficulty preference: filter catalog to contests with at least one problem matching the user's difficulty band.
-- Cache the catalog on disk in plugin data (similar pattern to v1.0 problem-list cache from Pitfall 8 of v1.0 file).
+There is no explicit rule against high-precedence keymaps, but reviewers use discretion. A plugin that breaks vim-mode or other popular plugins will get complaints.
 
-**Warning signs:**
-- `Math.random() * 375` in contest selection code
-- No `contestCatalog` in data schema
-- Contest start without a pre-fetch of all 4 problems
-- A user reports "contest started but problem 3 failed to load"
+**Consequences:**
+- Plugin submission delayed by reviewer questions
+- Conflicts with vim-mode (obsidian-vimrc-support) — vim uses Tab for its own purposes in normal mode
+- Conflicts with other CM6 plugins that also override Tab (rare, but possible)
 
-**Phase to address:** Phase 10 (Contest virtual mode) — catalog + verification before any "Surprise me" UI.
+**Prevention:**
+- **The handler MUST return `false` when outside the fence.** This is the contract: "I only handle Tab when the cursor is inside a code fence in an LC note. Otherwise I don't interfere." Document this clearly in the code and in the README.
+- **Gate on `lc-slug` frontmatter.** The handler should FIRST check if the current file is an LC note (same pattern as the section lock: check `editorInfoField` → file → frontmatter → `lc-slug`). If not an LC note, return `false` immediately. This means the handler is a no-op in 99% of files in the vault.
+- **Gate on fence position.** Even in an LC note, if the cursor is outside the fence, return `false`.
+- **Two-gate fast path:**
+  ```typescript
+  function fenceScopedTab(view: EditorView): boolean {
+    // Gate 1: is this an LC note?
+    const file = view.state.field(editorInfoField)?.file;
+    if (!file) return false;
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+    if (!fm?.['lc-slug']) return false;
+    // Gate 2: is cursor inside the fence body?
+    const fence = findCodeFence(view.state);
+    if (!fence) return false;
+    const cursor = view.state.selection.main.head;
+    const fenceBodyStart = view.state.doc.line(fence.openerLine).to + 1;
+    const fenceBodyEnd = view.state.doc.line(fence.closerLine).from;
+    if (cursor < fenceBodyStart || cursor >= fenceBodyEnd) return false;
+    // Cursor is in fence — handle Tab
+    // ...
+    return true;
+  }
+  ```
+- **Vim-mode compatibility**: vim-mode plugins typically register their keymaps at `Prec.highest`. If the user has vim-mode enabled, vim's Tab handler will fire first in normal/visual mode. In insert mode, vim usually passes through to the standard keymaps. Your handler at `Prec.high` fires AFTER `Prec.highest` (vim) but BEFORE `Prec.default` (Obsidian markdown). This is the correct layering.
+- **README note**: "This plugin adds code-aware Tab, Enter, and bracket behavior inside the `## Code` fence on LeetCode problem notes. It does not affect other notes or other sections of the note."
+
+**Detection (warning signs):**
+- Plugin reviewer asks "does this break vim-mode?"
+- A vim-mode user reports Tab no longer works in insert mode inside fences
+- The handler returns `true` in any code path where the cursor is outside the fence
+
+**Phase to address:** Phase 01 — two-gate pattern established from the start. README updated to disclose the scoped keybinding behavior.
 
 ---
 
-### Pitfall 13: Submission Rate Limit During Contest
+### Pitfall 10: Enter-After-Brace Creates Undo Entry That Section Lock Then Drops
 
 **What goes wrong:**
-v1.0's hand-rolled run/submit code uses a 20-req-per-10-s rate limiter (per the existing `mutex` / rate-limit pattern in v1.0 PITFALLS file Pitfall 8 + the LeetCode-Query convention). During a contest, a user runs and submits across 4 problems rapidly: ~3 runs + 1 submit per problem × 4 problems × maybe 2 attempts each = 32 requests in a few minutes. The rate limiter throttles, the user sees `Notice: Rate limited, retrying...` mid-contest, the timer is running, panic ensues.
+User types `{` then presses Enter. Your Enter handler dispatches: insert `\n` + indentation + closing `}` on the next line. The transaction has `userEvent: 'leetcode.code-enter'`. The section lock's Gate 0 sees this is NOT `input.*` / `delete.*` / `undo` / `redo` — so it passes through (returns `true`). Good.
 
-LC enforces its own server-side rate limiting on submissions (separately from queries). During real contests LC explicitly warns users not to spam submissions; the run/submit/check chain has its own backoff. The plugin's client limiter and LC's server limiter compound: both fire simultaneously and the user is doubly throttled.
+But what if the user types `{` at the END of the last line of the fence body (the line immediately before the closing ` ``` `)? Your Enter handler inserts a new line + `}`, pushing the closing fence down by 2 lines. The closing fence IS locked by the section lock. If your dispatch includes changes that span into the closing fence's position... but wait — you're inserting BEFORE the closer, not modifying it. The closer just shifts down in the document. Insertions before a locked range don't modify the locked range — they shift it. CM6's `changeFilter` only drops changes that OVERLAP locked ranges, not changes that shift them.
+
+**The real problem**: after your Enter handler dispatches with `'leetcode.code-enter'`, Obsidian's OWN Enter handler may ALSO try to fire (if your handler didn't return `true`). Or: if the transaction goes through the transactionFilter (selection snap), the snap logic might move the cursor to an unexpected position after the Enter-insert.
 
 **Why it happens:**
-The 20/10 rate limiter was set conservatively for v1.0 problem browsing, not for active solving. v1.0's "Run / Submit" UX assumed a single problem at a time. Contest mode breaks that assumption.
+The transactionFilter in `sectionLockExtension.ts` (lines 453-519) fires on every transaction with a selection change. After your Enter-dispatch creates a new line and places the cursor on it, the transactionFilter evaluates whether the new cursor position is inside a locked range. Since `computeLockedRanges` is recomputed on `tr.state` (the POST-transaction state, line 464), the fence positions have SHIFTED (closer moved down). The transactionFilter correctly sees the new cursor is in the fence body (not locked). But if there's a bug in `computeLockedRanges` with the shifted positions...
 
-**How to avoid:**
-- **Increase the rate limiter ceiling for run/submit endpoints during contest mode** — e.g., 60 requests per 10 s (still conservative; LC's actual server limit is higher). Set this *only when contest mode is active* via a contest-aware mutex configuration.
-- **Surface 429 / rate-limit errors clearly during contest**: distinct toast color, link to a "what does this mean" help, optionally "your submission is queued, retrying in N s." Never lose the submission silently.
-- **Pre-flight: detect LC submission cooldown.** Some LC errors return `{"detail": "Please wait ... seconds before submitting again"}`. Parse this and show the cooldown to the user — don't retry against the cooldown window, you'll just compound it.
-- Document in README: "Contest mode shares LC's submission rate limit. Rapid-fire submissions across 4 problems may briefly cooldown."
+Actually, the transactionFilter reads `flatRanges = computeLockedRanges(tr.state)` — post-transaction state. The fence closer has moved. `findCodeFence` re-scans the post-transaction document correctly. So this should be fine.
 
-**Warning signs:**
-- Rate limiter is global and not aware of contest mode
-- 429s during contest are shown as a generic "Network error"
-- No backoff parsing on LC's "wait N seconds" message
+**The ACTUAL risk**: if your Enter handler dispatches AND Obsidian's native Enter handler ALSO dispatches (because you returned `false` from one but `true` from another in a chained keymap), you get a double-newline. Or: your Enter creates a transaction, the transactionFilter rewrites it (adding a selection snap), and the rewritten transaction no longer has your intended changes.
 
-**Phase to address:** Phase 10 (Contest virtual mode) — rate-limiter mode-awareness; Phase 11 (contest summary / polish) — UX for rate-limit messages.
+**Consequences:**
+- Double-newline on Enter (both your handler and Obsidian's fired)
+- Cursor lands in an unexpected position after Enter-insert
+- Auto-indent after `{` puts the cursor at the wrong column
+
+**Prevention:**
+- **Return `true` from the Enter handler unconditionally when inside the fence.** This prevents any downstream Enter handler from firing. Your handler is fully responsible for the newline + indent behavior inside the fence.
+- **Dispatch the complete transaction in one shot**: newline + indentation + optional closing brace + cursor positioning. Use `{changes: [...], selection: EditorSelection.cursor(newCursorPos), userEvent: 'leetcode.code-enter'}`.
+- **Do NOT rely on CM6's `insertNewlineAndIndent` command** — it uses the language's indent rules which may not work inside the fence (see Pitfall 3). Roll your own newline + indent logic.
+- **Test the fence-boundary edge case explicitly**: cursor on the last line of fence body, type `{`, press Enter. Verify the closer shifts down cleanly, cursor is indented, and undo restores to pre-state.
+
+**Detection (warning signs):**
+- Double-newline on Enter inside the fence
+- Cursor jumps to the start of the closer line after Enter
+- Undo after Enter removes only the newline but leaves the auto-inserted `}`
+
+**Phase to address:** Phase 03 (Enter/auto-indent) — edge cases at fence boundary are part of the test matrix.
 
 ---
 
-### Pitfall 14: Preview Mode That Silently Creates Notes
+### Pitfall 11: Mobile Future-Proofing — CM6 Access May Not Exist
 
 **What goes wrong:**
-The "Preview Mode" feature is supposed to show a problem **without** creating a vault note. The user clicks a problem in the browser; expected: read-mode preview tab. Actual: the plugin uses `app.workspace.openLinkText()` (which opens-or-creates a file) or `app.vault.create()` (which definitely creates) for the preview surface. Now the vault has a `0001-two-sum.md` file the user never asked for.
-
-A worse variant: the preview **does** use a custom `ItemView`, but on the way the code calls `app.workspace.getLeaf(true)` and somewhere later, on the "Start Problem" button, calls `vault.create()` and silently *also* opens the existing preview tab — leaving two tabs (one preview, one note) for the same problem.
+v1.2 is desktop-only (PROJECT.md: "Platform: Desktop Obsidian only"). But a future milestone may target mobile. On Obsidian Mobile:
+- The editor IS CodeMirror 6 (confirmed in Obsidian docs)
+- But `view.editor.cm` (the undocumented internal path to `EditorView`) may not exist or may differ
+- `registerEditorExtension` should still work (it's a documented Plugin API method)
+- However: mobile has no physical Tab key. Touch keyboards don't emit "Tab" keycodes.
 
 **Why it happens:**
-Obsidian has no first-class concept of "ephemeral file-less tab" beyond `ItemView`. Custom `ItemView` is the right tool but has edge cases (no native pinning, no Obsidian-Sync, no link resolution for back-references). Developers reach for `openLinkText()` because it's one line and "feels" right.
+Mobile keyboards don't have Tab. The "indent" action on mobile would need a toolbar button or gesture, not a keymap. If all your indent logic lives inside a `key: "Tab"` handler with no alternative entry point, mobile support requires a full rewrite of the trigger mechanism.
 
-**How to avoid:**
-- **Preview is an `ItemView` registered with a custom view type** (e.g., `lc-problem-preview`) — same pattern v1.0 uses for the right-sidebar problem browser. No `TFile` is created; the view holds the problem in memory and renders read-mode markdown.
-- **Render the problem markdown via `MarkdownRenderer.render(this.app, markdown, container, sourcePath, this)`** (the `prefer-active-doc` and `no-plugin-as-component` rules from `eslint-plugin-obsidianmd@0.3.0` are relevant — pass a proper `Component`, not the plugin instance, to avoid memory leaks).
-- **"Start Problem" button calls the existing v1.0 "open as note" flow**, which creates the note via `vault.create()` if missing. After creation, close the preview tab and switch to the note tab. Use `this.leaf.detach()` after a 100 ms delay to avoid focus-flicker.
-- **No accidental file creation paths.** Audit every `vault.create()` and `openLinkText()` call after Phase 11 lands; the preview module should have zero of either.
-- **Muscle-memory regression**: existing users currently click a problem in the right-sidebar browser and get a note. Preview changes this to a preview-first flow. Mitigation: settings toggle "Click problem to: (a) Preview first (default new behavior), (b) Open as note (v1.0 behavior)." Default to (a) on fresh installs, default to (b) on upgrade — preserve existing user behavior unless they opt in. Use a one-time onboarding modal on first plugin load after the v1.1 update.
+**Consequences for future mobile milestone:**
+- All Tab/Shift-Tab logic inaccessible on mobile (no Tab key)
+- Enter-after-brace may work IF the keymap fires on Enter (mobile keyboards DO have Enter)
+- Bracket auto-close via `inputHandler` should work (mobile keyboards generate input events)
+- The StateField cache (if built) works everywhere — it's pure state
 
-**Warning signs:**
-- Preview code path that calls `vault.create()` or `openLinkText()`
-- No view-type registration in `onload()` for the preview view
-- Settings has no "click behavior" toggle
-- After Preview lands, a fresh user click creates a stub note in the vault
+**Prevention (design now, implement later):**
+- **Separate the LOGIC from the TRIGGER.** Structure the code as:
+  - `indentFenceSelection(view: EditorView): boolean` — the logic (compute changes, dispatch)
+  - Tab keymap handler → calls `indentFenceSelection`
+  - Future mobile toolbar button → also calls `indentFenceSelection`
+- **Do NOT inline logic inside the keymap handler closure.** Extract it as a named exported function (testable, reusable, mobile-ready).
+- **For bracket auto-close, using `inputHandler` is already mobile-safe** — it fires on any text input regardless of physical keyboard.
+- **The `'leetcode.*'` userEvent convention is keyboard-agnostic** — it's an annotation on the transaction, not tied to how the transaction was triggered.
 
-**Phase to address:** Phase 11 (Preview Mode) — `ItemView`-based architecture is the *first* design decision. Migration / muscle-memory toggle is a separate plan within the phase.
+**Detection (warning signs):**
+- All indent logic is inside an anonymous closure in `keymap.of([{key: "Tab", run: (view) => { /* everything here */ }}])`
+- No exported function that performs the indent operation independently of the key trigger
+- A future mobile PR requires rewriting 200 lines of logic because it's trapped inside a keymap handler
+
+**Phase to address:** Phase 01 (Tab handler) — extract logic into named functions from day one. This is free (just function extraction) and pays off if mobile is ever scoped in.
 
 ---
 
-### Pitfall 15: New eslint-plugin-obsidianmd Rules in 0.3.0 (project is on 0.1.9)
+## Moderate Pitfalls
+
+### Pitfall 12: Multi-Cursor Indent — Only Main Cursor Is Inside Fence
 
 **What goes wrong:**
-v1.0 ships with `eslint-plugin-obsidianmd@0.1.9`. As of 2026-05-12, the published version is **0.3.0** (verified via npm registry). Between 0.1.9 and 0.3.0, **new rules were added that v1.0 code does not yet violate but v1.1 features will likely trigger**:
-
-- `commands/no-command-in-command-id` — v1.1 adds "Run AI Debug command" / "Start Contest command" — the literal command IDs must not include "command"
-- `commands/no-command-in-command-name` — same, for human-facing names
-- `commands/no-default-hotkeys` — already enforced; reaffirm for new commands
-- `commands/no-plugin-id-in-command-id` — `obsidian-leetcode:contest-start` violates; use `contest-start`
-- `editor-drop-paste` — the contest UI may add drop/paste handlers in problem note views; needs `evt.defaultPrevented` check
-- `no-forbidden-elements` — `<iframe>`, `<object>`, etc. — relevant if AI streaming UX uses any embed
-- `no-global-this` — `globalThis` for "is Node available" probes is common; switch to `window` / `activeWindow`
-- `no-plugin-as-component` — the `MarkdownRenderer.render(app, md, el, path, plugin)` antipattern. **The Preview view will call `MarkdownRenderer.render()`** — must pass a proper `Component` (the view itself, since `ItemView extends Component`), NOT `this` (the plugin)
-- `no-unsupported-api` — checks the manifest's `minAppVersion`; bumping to a newer Obsidian feature set requires a `minAppVersion` bump
-- `prefer-instanceof` — `e instanceof KeyboardEvent` should be `(e as any).instanceOf(KeyboardEvent)` for popout-window safety. Contest timer key handlers will trigger this
-- `prefer-window-timers` — already enforced in v1.0; reaffirm for contest `setInterval` / `setTimeout`
-- `regex-lookbehind` — iOS Safari restriction. Plugin is desktop-only so lookbehinds are *technically* OK, but the rule errors anyway. Already a gotcha; AI prompt parsing may use lookbehinds inadvertently
-- `vault/iterate` — auto-fixable; flags `vault.getMarkdownFiles().find(f => f.path === '...')` patterns. The migration code (Pitfall 10) is a likely violator
-- `validate-license`, `validate-manifest` — version bump for v1.1 must keep these passing
+User has multiple cursors (Obsidian supports this via Alt-click). One cursor is inside the fence, another is in `## Notes`. Tab fires. Your handler checks `view.state.selection.main.head` — it's inside the fence. You dispatch `indentMore`-style changes for ALL cursor positions. The cursor in `## Notes` gets indented too (wrong — it's markdown, should do list indent). Or worse: the change for the `## Notes` cursor overlaps a locked range and the section lock drops the entire transaction (all changes, including the valid fence one).
 
 **Why it happens:**
-Major rule additions in 0.2.x and 0.3.0 are not announced on the eslint-plugin-obsidianmd README's changelog (none ships). The plugin store *will* run the latest version against your PR.
+CM6 selections can have multiple ranges. `selection.main` is just the primary one. Commands like `indentMore` operate on ALL ranges. If your handler only checks the main range's position but dispatches changes for all ranges, non-fence cursors get wrong behavior.
 
-**How to avoid:**
-- **Bump `eslint-plugin-obsidianmd` to `^0.3.0`** in the v1.1 milestone's first scaffolding plan. Run `npm run lint` and fix everything before any v1.1 feature code is written.
-- Add a CI step that fails the build on any `eslint-plugin-obsidianmd` violation (the project already does this; reaffirm).
-- For each new feature area, check the rule list above and confirm:
-  - AI commands: clean IDs (Pitfall: `aiDebugCommand` → `ai-debug`)
-  - Contest UI: no forbidden elements; no default hotkeys; `prefer-window-timers` honored
-  - Preview view: `MarkdownRenderer.render(app, md, el, path, this)` where `this` is the **view**, not the plugin (`no-plugin-as-component`)
+**Prevention:**
+- **Check ALL selection ranges**, not just `main`. For each range:
+  - If it's inside the fence body → include it in the indent changes
+  - If it's outside the fence → skip it (don't include in changes)
+- **If NO ranges are inside the fence, return `false`** (let Obsidian handle Tab for all cursors).
+- **If SOME ranges are inside and some outside**: this is an edge case. Recommended: only indent the in-fence ranges, leave the others unchanged. Dispatch changes only for in-fence ranges. The out-of-fence cursors simply don't move.
+- Alternatively (simpler): if ANY range is outside the fence, return `false` entirely. This means Tab only works when ALL cursors are inside the fence. Less flexible but simpler and avoids partial-dispatch complexity.
 
-**Warning signs:**
-- `package.json` still pins `eslint-plugin-obsidianmd@0.1.9` after v1.1 milestone opens
-- New AI/contest commands have IDs with "command" or the plugin slug in them
-- `lint` task absent from CI
-
-**Phase to address:** Phase 06 first plan — bump eslint-plugin-obsidianmd, run lint, fix all new violations before any feature code.
+**Phase to address:** Phase 01 (Tab handler) — decide the multi-cursor policy upfront (recommend: "all cursors must be in fence for Tab to fire").
 
 ---
 
-### Pitfall 16: README Network Disclosure Drift
+### Pitfall 13: Bracket Pair Deletion (Backspace) Not Handled
 
 **What goes wrong:**
-v1.0 README states: "This plugin communicates with leetcode.com to fetch problems and submit solutions." After v1.1, the plugin can also hit `api.anthropic.com`, `api.openai.com`, `openrouter.ai`, `localhost:11434`, and any user-configured custom base URL — but the README still says only "leetcode.com." A plugin-store reviewer checking the v1.1 release PR sees AI features in the changelog, scans the README, finds no AI disclosure, and rejects (citing Developer Policy: "Clearly explain which remote services are used and why they're needed").
+You implement auto-close brackets: typing `{` inserts `{}` with cursor between them. Great. User presses Backspace between `{` and `}`. Expected: both characters deleted (pair-delete). Actual: only `{` is deleted, leaving orphaned `}`. This is because `closeBrackets` from `@codemirror/autocomplete` comes with its own Backspace handler (`closeBracketsKeymap` includes a Backspace binding) — but since you're not using the standard `closeBrackets()` extension (Pitfall 2 says you shouldn't), you don't get pair-delete for free.
 
 **Why it happens:**
-The README is updated late in the release cycle, often after code is done. Network disclosure is treated as boilerplate, not a hard requirement.
+Pair-delete is a separate concern from pair-insert. The standard `closeBrackets` extension tracks what it inserted and removes pairs on Backspace. If you roll your own bracket insertion, you must also roll your own pair-aware Backspace.
 
-**How to avoid:**
-- The Phase 06 first plan includes a README update PR alongside the AI provider scaffolding, **not deferred to release prep**.
-- The README "Network use" section explicitly enumerates:
-  - `leetcode.com` and `leetcode.com/graphql/` (existing; problem fetch + submit)
-  - `api.anthropic.com/v1/messages` (when Anthropic is configured)
-  - `api.openai.com/v1/chat/completions` (when OpenAI is configured)
-  - `openrouter.ai/api/v1/chat/completions` (when OpenRouter is configured)
-  - `<user-configured base URL>` (when "OpenAI-compatible" provider is configured — disclose that any URL works and the plugin sends prompts to it)
-  - `localhost:11434` or other Ollama URL (when Ollama is configured — local network)
-- Each entry has a one-sentence justification (why the request is made, what data is sent, when).
-- A "What is NOT sent" subsection: telemetry, analytics, vault file paths, file contents outside `## Code` and `## Problem`.
+**Prevention:**
+- Implement a custom Backspace handler (scoped to fence, same two-gate pattern):
+  1. Check cursor is inside fence
+  2. Check character before cursor and character after cursor form a known pair (`{}`, `()`, `[]`, `""`, `''`)
+  3. If yes: delete both characters in one dispatch; return `true`
+  4. If no: return `false` (normal Backspace)
+- Register this Backspace handler at `Prec.high` alongside Tab/Enter
+- **Don't forget: the section lock will NOT interfere** because your Backspace dispatch uses `'leetcode.code-backspace'` userEvent (bypasses Gate 0)
 
-**Warning signs:**
-- v1.1 release PR opens with no README diff
-- README mentions "AI" but doesn't list endpoints
-- Telemetry / "what is not sent" section is missing
-
-**Phase to address:** Phase 06 (AI provider scaffolding) — README update is part of the plan. Phase 11 (Preview / final polish) — final README audit before release PR.
+**Phase to address:** Phase 02 (bracket handling) — pair-delete is inseparable from pair-insert. Ship both together.
 
 ---
 
-### Pitfall 17: Frontmatter Bloat From Contest / AI Metadata
+### Pitfall 14: `findCodeFence` Returns Stale Data During Composition (IME Input)
 
 **What goes wrong:**
-The v1.0 `lc-solved-date`, `lc-runtime-ms`, `lc-memory-mb` were dropped due to staleness risk (no production reader; values go stale on re-AC; documented in PROJECT.md Key Decisions). v1.1 is tempted to add: `lc-contest-id`, `lc-contest-date`, `lc-ai-cluster`, `lc-ai-review-runId`, `lc-ai-review-cost`, `lc-ai-last-reviewed`, `lc-ai-difficulty-progression`, etc. Each is "useful" in some narrow sense; together they bloat every problem note's frontmatter to 20+ keys, half of which are stale within days.
+A user typing with an Input Method Editor (IME — common for Chinese/Japanese/Korean users, but also for emoji/accent input on macOS) starts a composition inside the fence. During composition, CM6 fires transactions with `isComposing: true`. Your keymap handler may or may not fire during composition (CM6 keymaps typically do NOT fire during IME composition — `keydown` events during composition are suppressed by the browser). But your `inputHandler` (for bracket auto-close) DOES fire during composition — and it calls `findCodeFence` which scans the document including the not-yet-committed composition text.
 
-**Why it happens:**
-"Frontmatter is free; just add the field" is a developer mental shortcut. It is not free: it adds visual noise, becomes load-bearing code (any reader of that field becomes a constraint on writers), and v1.0 already learned this lesson with the dropped fields.
+If the composition text contains characters that look like a fence marker (unlikely but possible: triple backtick as part of an IME sequence), `findCodeFence`'s regex could match and return wrong line numbers. Extremely unlikely for code editing, but theoretically possible.
 
-**How to avoid:**
-- **Default rule: don't add a frontmatter field unless there is a *production reader* of that field.** If the only purpose is "logging" or "potentially useful," store it elsewhere (cluster taxonomy in `data.json`, AI review history in a sidecar `.ai-review-{slug}.json`, contest membership in a contest summary note as wikilinks).
-- Per v1.1 feature, the frontmatter additions should be **at most**:
-  - **Contest**: nothing, OR `lc-contest: weekly-contest-378` if the user opens problem notes from contest mode and the Bases view filters by contest. Verify with a use case before adding.
-  - **AI clusters**: nothing — the `[[Sliding Window]]` wikilink in `## Patterns` *is* the metadata. The cluster hub note's title is the canonical cluster name.
-  - **AI review**: nothing in frontmatter. The review *is* the body content under a `## AI Review` section.
-  - **Look-ahead edges**: nothing — they're wikilinks under `## Related Variants`.
-  - **AI provider used**: nothing — log to `data.json` AIUsageStats only.
-- Use `FileManager.processFrontMatter()` exclusively (already a v1.0 convention; reaffirm).
-- If a field is added and later removed, write a one-shot migration command that strips it from existing notes. Never leave dead fields.
+**The more practical IME issue:** after IME commit, the transaction's `userEvent` is `'input.type.compose'`. The section lock's Gate 0 checks `ev.startsWith('input.')` → true → proceeds to evaluate the lock. This is correct behavior (IME input should respect locks). But if the IME commits a `}` character that triggers your `indentOnInput`-style reindentation, the reindentation dispatch races with the IME commit transaction.
 
-**Warning signs:**
-- A new frontmatter key is added and the only reader is "the migration that wrote it"
-- Frontmatter for a v1.1-era note has more than ~10 keys
-- A field with a date that auto-updates on every plugin run
+**Prevention:**
+- **Do not trigger auto-indent on IME-committed characters.** Check `tr.isUserEvent('input.type.compose')` — if true, skip reindentation triggers. Let the character land first; reindent on the next non-composition keystroke if needed.
+- **For bracket auto-close during IME**: don't auto-close. IME input is inherently multi-character; inserting a closing bracket mid-composition breaks the IME flow. Only auto-close on direct (non-IME) input.
+- **`findCodeFence` is safe** — it scans committed document content only. CM6's document is not updated with uncommitted composition text (composition lives in a DOM overlay until commit). So `findCodeFence` always sees the pre-composition state during composition, and the post-commit state after. This is correct.
 
-**Phase to address:** Every v1.1 phase that touches notes (06, 08, 09, 10, 11). Make "frontmatter additions need justification" a checklist item on every phase's plan.
+**Phase to address:** Phase 02 (bracket auto-close) and Phase 03 (auto-indent triggers) — add composition guards to input handlers.
 
 ---
 
-### Pitfall 18: Bundle Size Crossing 500 KB During v1.1
+### Pitfall 15: Language-Specific Indent Rules Differ — Java `{` vs Python `:`
 
 **What goes wrong:**
-v1.0 ships at ~163 KB. AI providers + contest UI + Preview view easily add 100–200 KB if implemented naively (LangChain alone is ~250 KB). Crossing 500 KB triggers slower plugin-store review (reviewers manually inspect the bundle for obfuscation), longer plugin load times (large `main.js` blocks Obsidian startup), and a worse user impression on slow machines.
+You implement "indent after `{`" for Java/C++/TypeScript. A user switches the fence language to Python (via the language chevron, Phase 5.3). They type `def foo():` and press Enter. Expected: indent next line. Actual: no indent (your rule only checks for `{`).
+
+Similarly: Java users expect dedent on `}`, Python users expect dedent on `return`/`pass`/`break` at the end of a block — or no dedent at all (Python indent is purely additive; you dedent by typing at a shallower level, not by a trigger character).
 
 **Why it happens:**
-Compound effect of: Pitfall 1 (Node-only AI SDKs), Pitfall 5 (over-abstracted provider layer), Pitfall 4 (Bedrock SigV4), and adding UI frameworks (React, Svelte, Lit) for the contest summary or AI review modals.
+Different languages have fundamentally different indentation rules:
+- **Brace languages** (Java, C++, TS, Go, Rust): indent after `{`, dedent on `}`
+- **Python**: indent after `:`, no explicit dedent trigger (user manually dedents)
+- **Ruby**: indent after `do`/`def`/`if`/`class`, dedent after `end`
+- **Lisp**: indent based on form nesting (irrelevant for LC but theoretically possible)
 
-**How to avoid:**
-- **No UI frameworks.** v1.0 uses only Obsidian's `createEl` / `Setting` / `MarkdownRenderer`. v1.1 must too. The contest summary, AI review modal, and Preview view are all `ItemView` + DOM helpers.
-- **Bundle size budget enforced in CI**: `du -b main.js` <= 500_000 as a hard fail; warn at 400 KB.
-- **Use `esbuild --analyze`** after each major v1.1 plan lands; review what increased.
-- **Tree-shake provider-specific code**: dynamic `import('./providers/anthropic')` so only the providers a user has configured are pulled in (esbuild splits them only if asked; `splitting: true` in esbuild config).
-- **No new AI provider SDKs** (Pitfall 1).
-- **No `aws-sdk`** (Pitfall 4 — drop Bedrock).
-- **No `langchain`, `vercel/ai`, `openai`, `@anthropic-ai/sdk`** as production deps. All are 100+ KB and pull in node-only code.
+A single indent rule engine cannot cover all languages without becoming a mini-parser.
 
-**Warning signs:**
-- `npm run build` reports `main.js > 500 KB`
-- `node_modules/langchain` exists
-- `package.json` has any of the above as a non-dev dep
+**Prevention:**
+- **Start with brace-language rules only.** The majority of LC users write Java, C++, Python, or TypeScript. Three of those four are brace languages. Python is the outlier.
+- **For Python**: indent after lines ending in `:` (function def, if/else/for/while/class/with). Do NOT auto-dedent. Python's dedent is user-driven.
+- **Minimal per-language config:**
+  ```typescript
+  const INDENT_TRIGGERS: Record<string, {after: RegExp, dedent?: RegExp}> = {
+    java:       { after: /[{(]\s*$/, dedent: /^\s*[})]/  },
+    cpp:        { after: /[{(]\s*$/, dedent: /^\s*[})]/  },
+    typescript: { after: /[{(]\s*$/, dedent: /^\s*[})]/  },
+    python:     { after: /:\s*(#.*)?$/ },  // no dedent trigger
+    go:         { after: /[{(]\s*$/, dedent: /^\s*[})]/  },
+    rust:       { after: /[{(]\s*$/, dedent: /^\s*[})]/  },
+    // ... fallback to brace rules for unknown languages
+  };
+  ```
+- **Read the current language from frontmatter `lc-language`** (same source as the language chevron). Map LC language slugs to indent rule keys.
+- **Default/fallback: brace rules.** Unknown languages get `{`/`}` indent/dedent. This is wrong for Python but Python is explicitly handled.
 
-**Phase to address:** Phase 06 first plan (CI bundle-size gate). Re-verify at the end of every phase.
+**Detection (warning signs):**
+- Python users report "Enter after `def foo():` doesn't indent"
+- Java users report "Enter after `{` doesn't indent" (rule engine not recognizing the trigger)
+- No language-awareness in the indent logic — same rules for all languages
 
----
-
-## Technical Debt Patterns
-
-Shortcuts specific to v1.1 — note that v1.0's debt patterns (no `requestUrl`, no `processFrontMatter`, etc.) are *already* paid down and shouldn't be re-introduced.
-
-| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| Use the official Anthropic / OpenAI SDK | Fast first AI call | Bundle bloat, Node-only deps, future ESLint blockers | Never |
-| Implement streaming with native `fetch()` for all providers | Token-drip UX | Anthropic / OpenAI direct calls fail with CORS | Only for providers with permissive CORS (OpenRouter, Ollama) |
-| Add Bedrock in v1.1 with `aws-sdk` | "5 providers" feature complete | 600 KB bundle hit, hand-rolled SigV4 maintenance | Never in v1.1; defer to v1.2 with a dedicated phase |
-| Auto-run AI review on every Accept | Feature feels magical | User cost surprise, 1-star reviews | Never default-on; user must opt-in |
-| Skip the LLM input/output disclosure modal | Faster onboarding | Plugin-store rejection, privacy violation | Never |
-| Use `vault.modify()` for migration | Simpler API | Section-lock conflict, TOCTOU race | Never — `vault.process()` is mandatory |
-| Construct contest slug as `weekly-contest-${random}` | One-line "Surprise me" | Hits deprecated contests, broken problems | Never — use catalog + verification |
-| Decrement a counter for contest timer | Trivial code | Drifts on sleep, lost on reload | Never — use `Date.now()` baseline |
-| Open preview via `openLinkText()` | One-line "preview" | Creates accidental notes | Never — custom `ItemView` |
-| Add `lc-ai-cluster` frontmatter on every note | "Searchable" | Frontmatter bloat, staleness | Only with a justified production reader |
-| Pin `eslint-plugin-obsidianmd@0.1.9` for v1.1 | No new lint surprises | Plugin store will run latest; rejection at PR time | Never — bump to `^0.3.0` first thing |
-| Skip README "Network use" update for AI endpoints | Less doc churn | Plugin-store rejection | Never |
+**Phase to address:** Phase 03 (Enter/auto-indent) — language-aware rules from the start. The per-language config map is small (~20 lines) and saves significant user confusion.
 
 ---
 
-## Integration Gotchas
+## Minor Pitfalls
 
-| Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| Anthropic API | Use `@anthropic-ai/sdk` directly | Use `requestUrl` + custom request builder (~30 LOC) |
-| OpenAI API | Use `openai` SDK directly | Same — `requestUrl` + custom request builder |
-| AWS Bedrock | Use `aws-sdk` for SigV4 | Defer Bedrock to v1.2; route via OpenRouter or LiteLLM gateway in v1.1 |
-| OpenRouter | Use OpenAI SDK with `baseURL` override | Use a clean OpenRouter request builder; OpenRouter's response shape is OpenAI-compatible but the headers differ (`HTTP-Referer`, `X-Title`) |
-| Ollama (local) | Trust user's URL without HTTP scheme | Default to `http://localhost:11434/api/chat`; validate URL begins with `http://` or `https://`; warn if HTTPS missing for non-localhost |
-| LeetCode contest GraphQL | Trust an undocumented schema | Cache contest catalog; verify problem slugs before contest start; expect schema drift (Pitfall 14 in v1.0) |
-| LeetCode contest "interpret_solution" | Same rate limiter as v1.0 | Mode-aware rate limiter; raise ceiling during contest |
-| Obsidian `MarkdownRenderer.render` | Pass plugin instance as the `Component` | Pass the `ItemView` itself (it extends `Component`) — flagged by `no-plugin-as-component` rule (eslint-plugin-obsidianmd 0.3.0) |
-| Obsidian `setInterval` for contest timer | Bare global `setInterval` | `this.registerInterval(window.setInterval(...))` — `prefer-window-timers` rule |
-| Obsidian wikilink to non-existent note | Write `[[hallucinated-slug]]` and let Obsidian create stubs | Validate slug against local catalog before writing |
-| Section-lock-affected migration | `cm.dispatch()` in migration code | `vault.process()` exclusively; or `cm.dispatch` with `userEvent: 'leetcode.migrate-techniques'` |
+### Pitfall 16: Tab Inserts Spaces But User Expects Tabs
+
+**What goes wrong:**
+Your Tab handler inserts 4 spaces (or 2 spaces). The user's preferred indentation for their language is actual `\t` characters. Or: the user has Obsidian's "Use tabs" setting enabled but your handler ignores it and always inserts spaces.
+
+**Prevention:**
+- Read the indent unit from `view.state.facet(indentUnit)` (CM6 provides this). If Obsidian or the user has configured tab size, this facet reflects it.
+- Alternatively: add a v1.2-specific setting "Indent unit in code fence" with options: "2 spaces", "4 spaces", "Tab character". Default: "4 spaces" (matches LeetCode web editor default).
+- Use `view.state.facet(indentUnit)` as the default; let the plugin setting override if the user configures it.
+
+**Phase to address:** Phase 01 — respect indent unit from the start.
 
 ---
 
-## Performance Traps
+### Pitfall 17: Selection-Based Indent Doesn't Preserve Selection
 
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| Bundle > 500 KB | Slow plugin load, store review delay | CI bundle-size gate; no UI frameworks; no LLM SDKs | At v1.1 GA if not budgeted |
-| 3 LLM calls per AC (no batching) | High user cost | Combine review dimensions into one call (default); opt-in auto-run | At ~10 ACs/week per power user |
-| Contest timer tick at 100 ms | UI repaint storm | Tick at 1 s for display; compute remaining as `Date.now() - startedAt` | At any scale — just don't |
-| Preview view re-renders on every editor change | Slow scroll, fan noise | `MarkdownRenderer.render` once on view open; cache the rendered DOM | After 30+ minutes of scrolling problem statements |
-| Contest catalog re-fetch on every contest start | Slow "Surprise me" | Cache catalog with 7-day TTL; refresh on user request | At every contest start without caching |
-| AI cluster recompute over the entire vault | 3+ minute hang on Run | Incremental: only the AC'd note + its 2-hop neighbors | At ~500 problem notes |
-| Migration of `## Techniques` runs on plugin load | Obsidian startup hang | Migration is a manual command, batched 10-at-a-time with delay | At any scale — never automate on load |
+**What goes wrong:**
+User selects 5 lines in the fence, presses Tab. Expected: all 5 lines indent, selection stays on the same 5 lines (just shifted right). Actual: selection collapses to a cursor after the dispatch.
 
----
+**Prevention:**
+- When dispatching a multi-line indent, compute the new selection that covers the same lines but shifted by the indent amount:
+  ```typescript
+  const newSelection = EditorSelection.range(
+    oldSelection.from + indentSize, // first line shifted
+    oldSelection.to + (indentSize * numLines) // last line shifted
+  );
+  ```
+- Include `selection: newSelection` in the dispatch spec.
+- For Shift-Tab (dedent): selection shifts left (but clamp at column 0 — don't go negative).
 
-## Security Mistakes
-
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| Logging the AI API key in any code path | Credential exposure in dev console / log file | Audit `console.log`, `console.debug`, `Notice` for any reference to the key value; never include the key in error messages |
-| Sending the LeetCode session cookie to AI provider | Cross-service credential mixing; LC ToS violation | Strict separation: AI calls only see code + problem text + error; never headers from LC requests |
-| AI API key checked into the dev vault's `data.json` and committed to a public dotfile / vault repo | API key leak | README warning + masked input; `.gitignore` recommendation in setup docs |
-| Trusting user-configured custom base URL without validation | User typos a URL like `https://evil.com/api/openai`; plugin sends prompts there | Validate URL is `http://localhost*` for "Ollama" mode; validate URL has `https://` for cloud providers; show a "you are sending data to {host}" inline warning under the URL field |
-| AI response interpreted as code and `eval`'d for "auto-fix" | Remote code execution | Never `eval` AI output; never `new Function()`; AI output is text inserted under `## AI Debug Suggestion` |
-| AI response containing wikilinks to user-system paths (`[[../../../etc/passwd]]`) | Path traversal via Obsidian's link resolver | Validate slug format `^\d{4}-[a-z0-9-]+$` before writing |
-| LLM-generated commands as command palette entries | LLM-injected command surface | Never derive command IDs / names / handlers from AI output |
+**Phase to address:** Phase 01 — selection preservation is part of the Tab/Shift-Tab spec.
 
 ---
 
-## UX Pitfalls
+### Pitfall 18: Plugin Unload Doesn't Clean Up Extension State
 
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-----------------|
-| AI Debug shows nothing for 20 s | User thinks plugin hung; clicks again, double-charges | "Thinking..." indicator + abort button + elapsed-time counter |
-| AI ACed Review fires on every Accept by default | Cost surprise | Default off; one-click opt-in; "Auto-run" setting with cost warning |
-| Contest "Surprise me" picks a contest with broken problems | Mid-contest panic | Pre-flight verify all 4 problem slugs before starting timer |
-| Contest timer uses `setInterval` decrement | Drift on sleep, loss on reload | `Date.now()` baseline + persistence to `data.json` |
-| Preview opens but doesn't say "this is a preview" | User confused why "Run" button is missing | Banner at top of preview: "Preview Mode — click Start Problem to begin solving" |
-| Preview replaces v1.0 click-to-create-note muscle memory silently | Users on upgrade lose existing flow | Click-behavior toggle; new users get preview default, existing users keep v1.0 default |
-| AI cluster names jitter every run | Graph fragmentation | Canonical taxonomy; deduplication on cluster create |
-| Look-ahead wikilink to hallucinated slug | Empty stub note in vault | Validate slug against local catalog before writing |
-| User configures Ollama URL without `http://` prefix | Cryptic connection error | URL validator with helpful default and warning |
-| User runs out of LLM credit mid-contest | Multi-feature failure cascade | Don't tie contest to AI; AI review post-contest is a separate optional action |
+**What goes wrong:**
+The plugin is disabled/unloaded. Extensions registered via `registerEditorExtension` are automatically cleaned up by Obsidian — the extension is removed from the editor state on next reconfiguration. But if you added DOM event listeners, global state, or module-level caches that reference the EditorView, those leak.
+
+**Prevention:**
+- `registerEditorExtension` handles cleanup automatically — no manual work needed for CM6 extensions.
+- If using a module-level `Map<TFile, FenceCache>` or similar, clear it in `onunload()`.
+- StateFields are automatically removed — no leak.
+- The existing pattern from v1.0 (section lock, code actions extension) confirms that `registerEditorExtension` is sufficient for cleanup.
+
+**Phase to address:** All phases — follow existing cleanup patterns from v1.0/v1.1.
+
+---
+
+## Phase-Specific Warnings
+
+| Phase Topic | Likely Pitfall | Mitigation |
+|-------------|---------------|------------|
+| Phase 01: Tab/Shift-Tab | Pitfall 1 (global Tab conflict), Pitfall 4 (precedence), Pitfall 5 (section lock drop) | Zone-scoped handler with `Prec.high`, `'leetcode.*'` userEvent, two-gate fast path |
+| Phase 02: Bracket Handling | Pitfall 2 (markdown auto-pairs conflict), Pitfall 13 (pair-delete missing) | Custom inputHandler, not global `closeBrackets()`; ship pair-delete with pair-insert |
+| Phase 03: Enter/Auto-Indent | Pitfall 3 (`indentOnInput` global), Pitfall 10 (double-newline), Pitfall 15 (language-specific rules) | Custom Enter handler returning `true` inside fence; per-language trigger config |
+| All Phases: History | Pitfall 7 (undo coherence) | Single-transaction dispatches, never `addToHistory: false` |
+| All Phases: Performance | Pitfall 6 (`findCodeFence` per-keystroke) | Direct calls acceptable; cache via StateField only if profiling warrants |
+| All Phases: Multi-cursor | Pitfall 12 (only main cursor in fence) | Check all ranges; require all-in-fence or fall through |
+| All Phases: Review | Pitfall 9 (reviewer concerns) | Two-gate pattern, README disclosure, `false`-return outside fence |
+| Future: Mobile | Pitfall 11 (no Tab key) | Extract logic into named functions, separate trigger from action |
+
+---
+
+## Integration With Existing Section Lock — Detailed Analysis
+
+The section lock (`sectionLockExtension.ts`) is the highest-risk interaction point for v1.2. Here is the complete interaction matrix:
+
+| v1.2 Action | userEvent Annotation | Section Lock Gate 0 (`isUserInput`) | Gate 1 (`leetcode.*`) | Outcome |
+|-------------|---------------------|--------------------------------------|------------------------|---------|
+| Tab indent dispatch | `'leetcode.code-indent'` | `false` (not `input.*`/`delete.*`) | N/A (Gate 0 returns `true`) | **PASSES** — lock bypassed |
+| Shift-Tab dedent dispatch | `'leetcode.code-dedent'` | `false` | N/A | **PASSES** |
+| Enter + auto-indent dispatch | `'leetcode.code-enter'` | `false` | N/A | **PASSES** |
+| Bracket auto-close dispatch | `'leetcode.code-bracket'` | `false` | N/A | **PASSES** |
+| Pair-delete Backspace dispatch | `'leetcode.code-backspace'` | `false` | N/A | **PASSES** |
+| User types `{` normally (no auto-close) | `'input.type'` | `true` → evaluate lock | N/A | **Evaluated** — passes if cursor in editable zone |
+| User presses Backspace normally | `'delete.backward'` | `true` → evaluate lock | N/A | **Evaluated** — may be dropped if in locked range |
+| Undo of a `'leetcode.*'` dispatch | `'undo'` | `true` → evaluate lock | N/A | **WARNING** — see below |
+
+**Critical edge case: Undo of a `'leetcode.*'` dispatch.** When the user undoes a `'leetcode.code-indent'` transaction, CM6's history replays the inverse change with userEvent `'undo'`. The section lock's Gate 0 sees `ev === 'undo'` → `isUserInput = true` → proceeds to evaluate the lock. The undo's inverse change touches the fence body (which is editable) → lock passes it through. **This is correct.** But if the undo somehow touches the fence opener or closer (e.g., an Enter-after-brace that shifted the closer — undoing it shifts the closer back up), the lock will evaluate whether the change overlaps a locked range. Since the closer IS locked, the undo might be dropped.
+
+**Resolution:** The undo SHIFTS the closer (insertion undo = deletion before the closer), it doesn't MODIFY the closer's content. CM6's changeFilter drops changes that OVERLAP locked ranges (i.e., `change.from < lockTo && change.to > lockFrom`). A deletion that ends at `closerLine.from - 1` (removing the newline before the closer) does NOT overlap the closer's locked range (which starts at `closer.from`). So the undo passes through. **But test this edge case explicitly.**
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **AI Debug:** Provider is wired, but no "thinking" indicator → user perceives hang
-- [ ] **AI Debug:** Streaming works locally with Ollama, but you didn't test with `requestUrl` + Anthropic — Anthropic will fail with CORS via native fetch
-- [ ] **AI ACed Review:** Auto-runs on every AC because the opt-in toggle was added but defaults to `true`
-- [ ] **AI Provider settings:** Key field is plaintext `text` input, not `password`
-- [ ] **AI Provider settings:** README missing "Network use" subsection update for AI endpoints
-- [ ] **AI Provider settings:** No "Clear AI key" command in palette
-- [ ] **AI Privacy:** No first-run disclosure modal before the first AI call
-- [ ] **AI Privacy:** README missing "What gets sent to your AI provider" subsection
-- [ ] **AI Cost:** No usage logging; user has no way to see their estimated cost
-- [ ] **AI Knowledge Graph:** Look-ahead wikilink validator missing — hallucinated slugs become stub notes
-- [ ] **AI Knowledge Graph:** No canonical cluster taxonomy → cluster name jitter
-- [ ] **AI Knowledge Graph:** Migration command exists but no backup writer before vault writes
-- [ ] **AI Knowledge Graph:** Migration uses `vault.modify()` or `cm.dispatch()` — silently dropped or overwrites user edits
-- [ ] **Contest:** Timer is `setInterval` decrement, drifts on sleep
-- [ ] **Contest:** State not persisted to `data.json` — plugin reload kills the contest
-- [ ] **Contest:** "Surprise me" picks contests without verifying problem slugs are still fetchable
-- [ ] **Contest:** Rate limiter not contest-aware; throttles legitimate run/submit during contest
-- [ ] **Contest:** No `onbeforeunload` warning when user tries to close Obsidian during contest
-- [ ] **Preview:** `vault.create()` called somewhere in the preview path — accidental notes
-- [ ] **Preview:** Preview opens but `MarkdownRenderer.render` passes plugin instance as Component (memory leak; new ESLint rule)
-- [ ] **Preview:** No click-behavior toggle for upgraders — they lose v1.0 muscle memory
-- [ ] **Plugin store:** `eslint-plugin-obsidianmd` still pinned to `0.1.9` — newly-added 0.3.0 rules will fail on submission
-- [ ] **Plugin store:** Bundle size > 500 KB
-- [ ] **Plugin store:** New commands have IDs like `obsidian-leetcode:contest-start` (plugin ID prefix banned by `no-plugin-id-in-command-id`)
-- [ ] **Plugin store:** New commands have IDs / names with the word "command" (banned by `no-command-in-command-id` / `no-command-in-command-name`)
-- [ ] **Plugin store:** README network section unchanged — only mentions leetcode.com
+- [ ] **Tab handler:** Returns `true` inside fence but returns `false` outside → verified in non-LC notes
+- [ ] **Tab handler:** Works when cursor is on the FIRST line of fence body (section lock boundary)
+- [ ] **Tab handler:** Multi-line selection indent is one undo entry, not N entries
+- [ ] **Tab handler:** Selection is preserved after indent (not collapsed to cursor)
+- [ ] **Tab handler:** Works with vim-mode enabled (insert mode Tab → code indent)
+- [ ] **Shift-Tab handler:** Does not dedent past column 0
+- [ ] **Bracket auto-close:** Typing `*` inside fence does NOT produce `**` (markdown emphasis suppressed)
+- [ ] **Bracket auto-close:** Typing `{` outside fence still gets Obsidian's normal behavior
+- [ ] **Bracket pair-delete:** Backspace between `{}` removes both characters
+- [ ] **Enter handler:** Enter after `{` inside fence produces indented new line + closing `}` on next line
+- [ ] **Enter handler:** Enter outside fence (in `## Notes`) still produces normal markdown newline
+- [ ] **Enter handler:** Enter on the LAST line of fence body (before closer) works correctly
+- [ ] **Auto-indent:** Python `:` triggers indent; `{` does not trigger indent in Python mode
+- [ ] **Auto-indent:** Java `{` triggers indent; `:` does not trigger indent in Java mode
+- [ ] **Undo:** Cmd+Z after Tab undoes the entire indent in one step
+- [ ] **Undo:** Cmd+Z after Enter+auto-indent removes the newline + indent + closing brace in one step
+- [ ] **Undo:** Cmd+Z after auto-close bracket removes both opening and closing characters
+- [ ] **Live Preview:** All behaviors work identically in Live Preview and Source Mode
+- [ ] **Section lock:** No regression — `## Problem` still fully locked, fence opener/closer still locked
+- [ ] **Non-LC notes:** All handlers return `false` → zero behavioral change in normal markdown
+- [ ] **Performance:** Rapid typing in 400-line note shows no perceptible lag
+- [ ] **Plugin review:** README updated with "Scoped code-editing keybindings" disclosure
+- [ ] **Indent unit:** Respects configured indent size (2/4 spaces or tab character)
 
 ---
 
@@ -625,59 +675,37 @@ Shortcuts specific to v1.1 — note that v1.0's debt patterns (no `requestUrl`, 
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| AI SDK bundled and shipped | HIGH | Hotfix release: rip out SDK, replace with `requestUrl` builder; users update manually |
-| API key plaintext disclosed by reviewer post-ship | MEDIUM | README diff + masked input + Clear-AI-key command; ship in patch release |
-| Hallucinated wikilinks already created stub notes in user vault | MEDIUM | Provide a "Clean orphaned LC stub notes" command that scans for empty notes with LC slug pattern and offers deletion |
-| Cluster name fragmentation in user vault | MEDIUM | Provide a "Merge cluster X into Y" command in palette; user-driven cleanup |
-| `## Techniques` migration corrupted notes | HIGH | If backup writer was implemented (Pitfall 10), restore from backup. If not, no automated recovery — user must restore from Obsidian Sync history or Time Machine |
-| Contest state lost on plugin reload | LOW (if persistence implemented) | Prompt to resume on next plugin load |
-| Contest started with broken problem | LOW | Surface error, end contest gracefully, don't write a half-summary note |
-| Bundle > 500 KB shipped | MEDIUM | esbuild splitting; dynamic provider imports; remove dev-only deps that leaked into prod |
-| README network disclosure missing | LOW | README PR; reviewer accepts within hours |
-| AI cost surprise (user complaint) | LOW | Add daily cap + usage display in patch release; tweet acknowledgment |
-
----
-
-## Pitfall-to-Phase Mapping
-
-| Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| 1: Node-only AI SDK in bundle | Phase 06 (AI provider scaffolding) | `package.json` audit: zero of `openai`, `@anthropic-ai/sdk`, `aws-sdk`, `langchain` as prod deps; bundle size < 250 KB after Phase 06 |
-| 2: `requestUrl` no streaming | Phase 06 (transport) + Phase 07 (UX) | "Thinking" indicator visible in AI Debug; manual test against Anthropic via `requestUrl` returns full response in one shot |
-| 3: API key disclosure | Phase 06 (AI settings tab) | README has "AI provider configuration & data flow" section listing every endpoint; key field is `password`-masked |
-| 4: Bedrock SigV4 trap | Phase 06 (provider scoping) | Roadmap explicitly excludes Bedrock; README documents LiteLLM gateway as the v1.1 path |
-| 5: Multi-provider over-engineering | Phase 06 (AI provider layer) | Total `src/ai/providers/` LOC < 400; no abstract base class; no DI |
-| 6: Cost surprise from auto-run AI review | Phase 08 (AI ACed Review) | Auto-run setting defaults to `false`; usage stats visible in settings |
-| 7: Privacy / sending user code | Phase 07 (AI Debug) | First-call modal; README "What gets sent" subsection |
-| 8: Hallucinated slugs in look-ahead links | Phase 09 (AI knowledge graph) | `validateSlug` invoked on every cluster write; integration test: AI returns fake slug → wikilink dropped, not written |
-| 9: Cluster name drift | Phase 09 (AI knowledge graph) | `aiClusterTaxonomy` exists in plugin data; AI prompt is a constrained pick-from-list, not free-form |
-| 10: Migration breaks v1.0 section lock | Phase 09 (AI knowledge graph migration) | Migration uses `vault.process()` exclusively; backup written before any vault write; manual command (not auto on load) |
-| 11: Contest timer drift / lost on reload | Phase 10 (Contest virtual mode) | Timer computes `Date.now() - startedAt`; state in `data.json`; resume prompt on plugin load |
-| 12: Past-contest catalog drift | Phase 10 (Contest virtual mode) | `contestCatalog` fetched + verified before contest start; "Surprise me" runs `Promise.allSettled` slug check |
-| 13: Submission rate limit during contest | Phase 10 (Contest virtual mode) + Phase 11 (polish) | Rate limiter is mode-aware; manual test: 30 submissions in 60 s during contest doesn't 429 client-side |
-| 14: Preview creates notes silently | Phase 11 (Preview Mode) | grep `vault.create\|openLinkText` in `src/preview/` returns zero; first-click test on fresh install does not create a `.md` file |
-| 15: New eslint-plugin-obsidianmd 0.3.0 rules | Phase 06 (first plan) | `package.json` pins `^0.3.0`; `npm run lint` clean before any feature code |
-| 16: README network disclosure drift | Phase 06 + Phase 11 (release prep) | README PR alongside Phase 06 + final audit at Phase 11 |
-| 17: Frontmatter bloat | Every v1.1 phase touching notes (06–11) | Code review: every new frontmatter key has a documented production reader |
-| 18: Bundle > 500 KB | Phase 06 (CI gate) + every phase end | `du -b main.js` < 500_000 in CI; `esbuild --analyze` reviewed at each phase boundary |
+| Global Tab override broke all markdown lists | LOW | Wrap handler in fence-check; deploy hotfix. Users' notes are undamaged (undo works). |
+| Markdown auto-close pairs leak into code | LOW | Add fence-position check to inputHandler; deploy patch. |
+| Section lock drops indent changes on first line | LOW | Switch to `'leetcode.*'` userEvent annotation; deploy patch. |
+| Undo broken for indent operations | MEDIUM | Ensure single-transaction dispatch; may require re-testing all paths. No data loss — user can manually fix. |
+| Performance regression on long notes | LOW | Add StateField cache for `findCodeFence`; deploy patch. |
+| Plugin review rejection for keybinding override | MEDIUM | Add README disclosure + demonstrate `false`-return in PR diff; resubmit. |
+| vim-mode conflict | MEDIUM | Lower precedence to `Prec.default` with conditional `Prec.high` only in insert mode; requires vim-mode detection (check for `cm-vim-mode` class on editor DOM). |
 
 ---
 
 ## Sources
 
-- Obsidian Developer Docs (Context7 `/obsidianmd/obsidian-developer-docs`, fetched 2026-05-14):
-  - `requestUrl()` API surface — confirms no streaming primitive, single-shot response (HIGH)
-  - `RequestUrlParam` parameter list (HIGH)
-  - `RequestUrlResponse` / `RequestUrlResponsePromise` interfaces (HIGH)
-- Obsidian Developer Policies (fetched 2026-05-14): network disclosure required, no client-side telemetry, server-side telemetry requires privacy policy link (HIGH)
-- Obsidian Plugin Guidelines: `processFrontMatter` for atomic frontmatter; `innerHTML` forbidden; recommended DOM helpers (HIGH)
-- `eslint-plugin-obsidianmd@0.3.0` README (npm registry tarball, fetched 2026-05-14): full rule list including new rules `commands/no-command-in-command-id`, `commands/no-command-in-command-name`, `no-plugin-as-component`, `no-forbidden-elements`, `prefer-instanceof`, `vault/iterate` (HIGH)
-- `logancyang/obsidian-copilot` (fetched 2026-05-14): multi-provider via OpenRouter / OpenAI / Anthropic / Gemini / Cohere; "Set Keys" UX; no SDK dependence in transport layer (MEDIUM — README only)
-- `brianpetro/obsidian-smart-connections` (fetched 2026-05-14): "minimal/no dependencies" principle; LLM provider routing moved to separate Smart Chat plugin; reinforces "thin transport" approach (MEDIUM)
-- `JacobLinCool/LeetCode-Query` README (fetched 2026-05-14): contest support limited to "User Contest Records"; no documented "list past contests" or "fetch contest problems by slug" — confirms hand-rolled GraphQL needed (HIGH)
-- v1.0 PROJECT.md + CLAUDE.md + MILESTONES.md: section-lock convention, `'leetcode.*'` userEvent, `vault.process` rule, frontmatter-purposeful policy, ~163 KB current bundle (HIGH — primary source)
-- npm registry: `eslint-plugin-obsidianmd@0.3.0` published 2 days before research date; v1.0 pins `0.1.9`; gap is real (HIGH)
+- CM6 Official Documentation (Context7 `/codemirror/website`, fetched 2026-05-21):
+  - Keymap precedence: `Prec.highest` > `Prec.high` > `Prec.default` > `Prec.low` > `Prec.lowest` (HIGH confidence)
+  - Command contract: `(view: EditorView) => boolean` — `true` = handled, `false` = pass to next handler (HIGH)
+  - `closeBrackets` reads from `languageData` at cursor position (HIGH)
+  - `indentOnInput` uses syntax tree's `indentNodeProp` — requires nested language tree to work (HIGH)
+  - `changeFilter` drops changes overlapping `[from, to]` ranges — insertions at boundary are exclusive (HIGH)
+  - `history()` records all transactions with document changes unless `addToHistory: false` (HIGH)
+  - `indentUnit` facet controls indent size (HIGH)
+- Obsidian Developer Docs (fetched 2026-05-21):
+  - `registerEditorExtension` is the standard way to add CM6 extensions from plugins (HIGH)
+  - `view.editor.cm as EditorView` is the undocumented but stable internal path (MEDIUM — undocumented)
+  - Extensions are cleaned up automatically on plugin unload (HIGH)
+- Existing codebase analysis:
+  - `sectionLockExtension.ts`: Gate 0 fires only for `input.*`/`delete.*`/`undo`/`redo` userEvents; `'leetcode.*'` bypasses via Gate 1 (but is unreachable because Gate 0 exits first) (HIGH — primary source)
+  - `findCodeFence`: linear scan, returns `{openerLine, closerLine}` or null (HIGH)
+  - `codeActionsEditorExtension.ts`: existing `languageRefreshEffect` + `buildDecorations` pattern shows how to dispatch effects and rebuild decorations (HIGH)
+  - `computeLockedRanges`: boundary expansion `-1` on lock from (HIGH)
+- CM6 Mixed Language Parsing docs: `parseMixed` enables nested language trees inside fenced blocks — but Obsidian's implementation is opaque; cannot rely on nested tree for indent rules (MEDIUM)
 
 ---
-*Pitfalls research for: Obsidian LeetCode v1.1 milestone (Contest, AI Coach, Preview)*
-*Researched: 2026-05-14*
+*Pitfalls research for: Obsidian LeetCode v1.2 milestone (Code Editor Experience in Fenced Blocks)*
+*Researched: 2026-05-21*
