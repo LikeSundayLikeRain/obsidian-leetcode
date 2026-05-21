@@ -61,6 +61,10 @@ export interface SubmissionOrchestratorDeps {
    *  orchestrator fires the locked no-active-note Notice (see Gate 1 below)
    *  and aborts without touching the network. */
   slug: string | null;
+  /** Canonical LC language slug from frontmatter `lc-language`. When present,
+   *  takes priority over fence-tag resolution. `null` → fall back to
+   *  resolveLangSlug(extracted.lang, settings.getDefaultLanguage()). */
+  lcLanguage?: string | null;
   /** Lazily read the active note body. Called at submit() invocation time —
    *  NOT at orchestrator construction — so the code sent to LC is the
    *  current content at invocation per SOLVE-09. */
@@ -233,7 +237,7 @@ export class SubmissionOrchestrator {
       return;
     }
 
-    const langSlug = resolveLangSlug(
+    const langSlug = this.deps.lcLanguage ?? resolveLangSlug(
       extracted.lang,
       this.deps.settings.getDefaultLanguage(),
     );
