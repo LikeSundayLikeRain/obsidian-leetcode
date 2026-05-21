@@ -97,8 +97,8 @@ describe('childEditorSync', () => {
   describe('syncAnnotation', () => {
     it('is defined as an Annotation', () => {
       expect(syncAnnotation).toBeDefined();
-      // Annotations have a .type property referencing themselves
-      expect(syncAnnotation.type).toBe(syncAnnotation);
+      // CM6 Annotations are AnnotationType instances with an `of` method
+      expect(typeof syncAnnotation.of).toBe('function');
     });
   });
 
@@ -149,7 +149,7 @@ describe('childEditorSync', () => {
       expect(result).toBe(true);
       expect(parentView.dispatch).toHaveBeenCalled();
       // Verify repair dispatch uses 'leetcode.fence-repair' userEvent
-      const call = (parentView.dispatch as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (parentView.dispatch as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.annotations).toBeDefined();
     });
 
@@ -226,14 +226,29 @@ describe('childEditorSync', () => {
   describe('detectAndPropagateExternalChange', () => {
     it('does nothing when no child exists in registry for the file', () => {
       const registry = makeMockRegistry();
-      // Build a minimal fake transaction
-      const state = makeStateForLockTests({ body: CANONICAL_NOTE });
+      // Build a minimal fake transaction — state.field(editorInfoField) returns { file }
+      const state = makeStateForLockTests({
+        body: CANONICAL_NOTE,
+        filePath: 'LeetCode/0001-two-sum.md',
+      });
+
+      // Compute fence body offsets to simulate a change that overlaps
+      // In CANONICAL_NOTE, the fence opener is "```python3" (line 12)
+      // and closer is "```" (line 16). We need to find the bodyStart in the string.
+      const lines = CANONICAL_NOTE.split('\n');
+      // openerLine=12 -> "```python3", offset of opener line end + 1
+      const openerEnd = lines.slice(0, 12).join('\n').length; // end of line 12
+      const bodyStart = openerEnd + 1; // char after opener newline
+      // Simulate a change that overlaps with fence body
       const fakeTr = {
         state,
         annotation: vi.fn(() => undefined),
         docChanged: true,
         changes: {
-          iterChangedRanges: vi.fn(),
+          iterChangedRanges: vi.fn((cb: Function) => {
+            // Simulate a change inside the fence body area (new doc positions)
+            cb(bodyStart, bodyStart + 5, bodyStart, bodyStart + 8);
+          }),
         },
       };
       const plugin = {
@@ -244,15 +259,14 @@ describe('childEditorSync', () => {
         },
       };
 
-      // No child in registry — should exit early
+      // No child in registry for file path — should call registry.get but not dispatch
       detectAndPropagateExternalChange(
         fakeTr as any,
         plugin as any,
         registry,
       );
-      // iterChangedRanges may or may not be called depending on implementation,
-      // but no dispatch should happen to any child
-      expect(registry.get).toHaveBeenCalled();
+      // The function reaches registry.get(file.path) since the change overlaps
+      expect(registry.get).toHaveBeenCalledWith('LeetCode/0001-two-sum.md');
     });
   });
 });
