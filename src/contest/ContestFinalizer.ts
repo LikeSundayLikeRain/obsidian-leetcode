@@ -25,7 +25,7 @@
 //   - processFrontMatter for all frontmatter mutations
 //   - vault.create for new files
 
-import type { App, TFile } from 'obsidian';
+import { TFile, type App } from 'obsidian';
 import { codeBlockFor, CODE_HEADING_LINE, buildNoteBody, buildFrontmatterInput, applyFrontmatter } from '../notes/NoteTemplate';
 import { htmlToMarkdown } from '../notes/htmlToMarkdown';
 import type { ContestSession, ContestProblemState } from './types';
@@ -52,9 +52,7 @@ export interface ContestFinalizerDetail {
 }
 
 /** Structural port for NoteWriter (only openOrCreateProblemNote needed). */
-export interface ContestFinalizerNoteWriter {
-  // Not used directly — we create notes ourselves for contest subfolder placement
-}
+export type ContestFinalizerNoteWriter = object;
 
 /** Arguments for the finalization function. */
 export interface FinalizeContestArgs {
@@ -280,7 +278,8 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
     const notePath = `${folder}/${detail.id}-${problem.slug}.md`;
 
     // Check for existing file at normal problems folder path
-    let existingFile = app.vault.getAbstractFileByPath(notePath) as TFile | null;
+    const abstractFile = app.vault.getAbstractFileByPath(notePath);
+    let existingFile = abstractFile instanceof TFile ? abstractFile : null;
 
     if (existingFile) {
       // D-13 merge strategy
@@ -309,9 +308,10 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
       });
       let file: TFile;
       try {
-        file = await app.vault.create(notePath, body) as TFile;
+        file = await app.vault.create(notePath, body);
       } catch {
-        const raced = app.vault.getAbstractFileByPath(notePath) as TFile | null;
+        const racedAbstract = app.vault.getAbstractFileByPath(notePath);
+        const raced = racedAbstract instanceof TFile ? racedAbstract : null;
         if (raced) {
           await app.vault.process(raced, () => body);
           file = raced;
@@ -362,10 +362,11 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
     if (d) problemIds.set(p.slug, d.id);
   }
   const summaryBody = buildSummaryBody({ session, aborted, totalElapsedMs, problemIds });
-  const existingSummary = app.vault.getAbstractFileByPath(summaryPath) as TFile | null;
+  const existingSummaryAbstract = app.vault.getAbstractFileByPath(summaryPath);
+  const existingSummary = existingSummaryAbstract instanceof TFile ? existingSummaryAbstract : null;
   const summaryFile = existingSummary
     ? (await app.vault.process(existingSummary, () => summaryBody), existingSummary)
-    : await app.vault.create(summaryPath, summaryBody) as TFile;
+    : await app.vault.create(summaryPath, summaryBody);
 
   // Apply summary frontmatter (D-14)
   const scored = session.problems

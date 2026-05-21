@@ -1003,16 +1003,17 @@ export default class LeetCodePlugin extends Plugin {
 
     // Only create scratch file if it doesn't exist yet — preserve user edits
     const scratchPath = this.contestScratch.getScratchPath(problem.slug);
-    let file = this.app.vault.getAbstractFileByPath(scratchPath) as TFile | null;
+    const scratchAbstract = this.app.vault.getAbstractFileByPath(scratchPath);
+    let file = scratchAbstract instanceof TFile ? scratchAbstract : null;
     if (!file) {
       file = await this.contestScratch.createOrUpdate(problem, contentHtml);
     }
 
     // D-07: Tab idempotency — reuse existing leaf if already open for this scratch file
     const existingLeaf = this.app.workspace.getLeavesOfType('markdown')
-      .find(l => (l.view as { file?: { path: string } }).file?.path === file!.path);
+      .find(l => (l.view as { file?: { path: string } }).file?.path === file.path);
     if (existingLeaf) {
-      this.app.workspace.revealLeaf(existingLeaf);
+      void this.app.workspace.revealLeaf(existingLeaf);
       return;
     }
 
@@ -1073,7 +1074,8 @@ export default class LeetCodePlugin extends Plugin {
       const detail = this.settings.getProblemDetail(problem.slug);
       if (!detail) continue;
       const notePath = `${folder}/${detail.id}-${problem.slug}.md`;
-      const noteFile = this.app.vault.getAbstractFileByPath(notePath) as TFile | null;
+      const noteAbstract = this.app.vault.getAbstractFileByPath(notePath);
+      const noteFile = noteAbstract instanceof TFile ? noteAbstract : null;
       if (!noteFile) continue;
       try {
         await this.knowledgeGraph.onAccepted(
@@ -1805,6 +1807,7 @@ export default class LeetCodePlugin extends Plugin {
 
       if (handle.kind === 'stream') {
         const textStream = (
+          // eslint-disable-next-line no-undef -- AsyncIterable is a TS lib type
           handle.result as unknown as { textStream: AsyncIterable<string> }
         ).textStream;
         for await (const chunk of textStream) {
@@ -2058,7 +2061,9 @@ export default class LeetCodePlugin extends Plugin {
       disclosureCopy: withDebugBullet(DISCLOSURE_BASE_COPY),
     });
     if (modal.modalEl) {
+      // eslint-disable-next-line obsidianmd/no-static-styles-assignment -- dynamic viewport-relative width; cannot use a static CSS class
       modal.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
+      // eslint-disable-next-line obsidianmd/no-static-styles-assignment -- dynamic viewport-relative max-width; cannot use a static CSS class
       modal.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
     }
     modal.open();

@@ -44,10 +44,10 @@ export function buildCodeBlockButtonRow(
     row.appendChild(opts.prefix());
   }
 
-  // AI Solution button — positioned LEFT of Run/Submit, neo gradient style
+  // AI solution button — positioned LEFT of Run/Submit, neo gradient style
   const aiSolBtn = doc.createElement('button');
   aiSolBtn.className = 'leetcode-code-action-ai-solution';
-  aiSolBtn.textContent = 'AI Solution';
+  aiSolBtn.textContent = 'AI solution';
   aiSolBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();

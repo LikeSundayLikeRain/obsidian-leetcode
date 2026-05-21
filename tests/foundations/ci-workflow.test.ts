@@ -23,10 +23,10 @@ describe('.github/workflows/ci.yml — CI workflow contract (FOUND-02)', () => {
     expect(existsSync(WORKFLOW)).toBe(true);
   });
 
-  it('runs on ubuntu-latest with node 20 + npm cache', () => {
+  it('runs on ubuntu-latest with node 22 + npm cache', () => {
     const yaml = readFileSync(WORKFLOW, 'utf-8');
     expect(yaml).toMatch(/runs-on:\s*ubuntu-latest/);
-    expect(yaml).toMatch(/node-version:\s*20/);
+    expect(yaml).toMatch(/node-version:\s*22/);
     expect(yaml).toMatch(/cache:\s*npm/);
   });
 

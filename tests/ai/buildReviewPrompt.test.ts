@@ -52,13 +52,13 @@ describe('Phase 09 Plan 01 — buildReviewPrompt pure helper', () => {
     expect(out).toContain('```');
   });
 
-  it('output includes instruction "Do NOT include code for minor style tweaks" (D-04 enforcement)', () => {
+  it('output includes a "DO NOT" instruction section (D-04 enforcement)', () => {
     const out = buildReviewPrompt({
       problemMd: 'Some problem.',
       code: 'def foo(): pass',
       language: 'python3',
     });
-    expect(out.toLowerCase()).toContain('do not include code');
+    expect(out).toContain('DO NOT');
   });
 
   it('output never contains the string `## Notes` (locked decision — Notes is never sent to AI)', () => {

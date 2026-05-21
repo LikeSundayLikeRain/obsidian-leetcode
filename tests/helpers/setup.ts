@@ -141,6 +141,32 @@ if (g.document) {
     doc,
     true,
   );
+  // Expose createDiv / createEl / createSpan as globalThis functions so
+  // source modules that call the bare global form (e.g. `createDiv(...)`)
+  // — which is how Obsidian injects them on window in production — work in
+  // happy-dom tests without runtime errors.
+  const gThis = globalThis as Record<string, unknown>;
+  if (typeof gThis['createDiv'] !== 'function') {
+    gThis['createDiv'] = function (options?: CreateElOptions): HTMLElement {
+      const el = doc.createElement('div');
+      applyOptions(el, options);
+      return el;
+    };
+  }
+  if (typeof gThis['createEl'] !== 'function') {
+    gThis['createEl'] = function (tag: string, options?: CreateElOptions): HTMLElement {
+      const el = doc.createElement(tag);
+      applyOptions(el, options);
+      return el;
+    };
+  }
+  if (typeof gThis['createSpan'] !== 'function') {
+    gThis['createSpan'] = function (options?: CreateElOptions): HTMLElement {
+      const el = doc.createElement('span');
+      applyOptions(el, options);
+      return el;
+    };
+  }
   // Document also exposes `createFragment`. The native `createDocumentFragment`
   // is what happy-dom ships; alias it onto `createFragment` so source modules
   // calling `activeDocument.createFragment()` resolve.

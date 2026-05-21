@@ -9,6 +9,12 @@ import {
   type ContestFinalizerSettings,
 } from '../../src/contest/ContestFinalizer';
 import type { ContestSession } from '../../src/contest/types';
+import { TFile } from '../helpers/obsidian-stub';
+
+vi.mock('obsidian', async () => {
+  const actual = await import('../helpers/obsidian-stub');
+  return actual;
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock factories
@@ -91,6 +97,13 @@ interface MockFile {
   extension: string;
 }
 
+function makeTFile(path: string): MockFile {
+  const f = Object.create(TFile.prototype) as MockFile;
+  f.path = path;
+  f.extension = 'md';
+  return f;
+}
+
 function createMockApp() {
   const files: Map<string, string> = new Map();
   const frontmatters: Map<string, Record<string, unknown>> = new Map();
@@ -99,13 +112,13 @@ function createMockApp() {
     vault: {
       getAbstractFileByPath: vi.fn((path: string): MockFile | null => {
         if (files.has(path)) {
-          return { path, extension: 'md' };
+          return makeTFile(path);
         }
         return null;
       }),
       create: vi.fn(async (path: string, content: string): Promise<MockFile> => {
         files.set(path, content);
-        return { path, extension: 'md' };
+        return makeTFile(path);
       }),
       createFolder: vi.fn(async (_path: string): Promise<void> => {
         // no-op

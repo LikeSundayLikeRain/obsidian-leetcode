@@ -61,7 +61,7 @@ export class ContestPreviewModal extends Modal {
     // Start Contest button (primary CTA — accent background per UI-SPEC)
     const footer = contentEl.createDiv({ cls: 'lc-contest-preview__footer' });
     const startBtn = footer.createEl('button', {
-      text: 'Start Contest',
+      text: 'Start contest',
       cls: 'lc-contest-preview__start',
     });
     startBtn.addClass('mod-cta');
@@ -100,22 +100,24 @@ export class ContestPreviewModal extends Modal {
       });
     }
 
-    // Start Contest click handler
-    startBtn.addEventListener('click', async () => {
-      if (questions.length === 0) {
-        new Notice("Couldn't fetch contest problems. Check your connection.", 4000);
-        return;
-      }
-      startBtn.disabled = true;
-      startBtn.setText('Starting…');
-      try {
-        await this.onStart(questions);
-        this.close();
-      } catch {
-        new Notice("Couldn't fetch contest problems. Check your connection.", 4000);
-        startBtn.disabled = false;
-        startBtn.setText('Start Contest');
-      }
+    // Start contest click handler
+    startBtn.addEventListener('click', () => {
+      void (async () => {
+        if (questions.length === 0) {
+          new Notice("Couldn't fetch contest problems. Check your connection.", 4000);
+          return;
+        }
+        startBtn.disabled = true;
+        startBtn.setText('Starting…');
+        try {
+          await this.onStart(questions);
+          this.close();
+        } catch {
+          new Notice("Couldn't fetch contest problems. Check your connection.", 4000);
+          startBtn.disabled = false;
+          startBtn.setText('Start contest');
+        }
+      })();
     });
   }
 

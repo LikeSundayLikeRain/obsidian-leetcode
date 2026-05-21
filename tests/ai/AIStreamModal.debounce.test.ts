@@ -19,7 +19,7 @@ import { setupModalMocks, clearRenderCalls } from './helpers/aiStreamModal-mocks
 
 setupModalMocks();
 
-describe('Phase 08 Plan 03 — AIStreamModal 100ms debounce ring buffer', () => {
+describe('Phase 08 Plan 03 — AIStreamModal 50ms debounce ring buffer', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
     clearRenderCalls();
@@ -30,7 +30,7 @@ describe('Phase 08 Plan 03 — AIStreamModal 100ms debounce ring buffer', () => 
     vi.useRealTimers();
   });
 
-  it('5 chunks within 100ms produce exactly 1 flushRender call', async () => {
+  it('5 chunks within 50ms produce exactly 1 flushRender call', async () => {
     const { AIStreamModal } = await import('../../src/ai/AIStreamModal');
     const { makeStreamHandle, makeAIClient, getRenderCallCount } = await import(
       './helpers/aiStreamModal-mocks'
@@ -67,8 +67,8 @@ describe('Phase 08 Plan 03 — AIStreamModal 100ms debounce ring buffer', () => 
     push('d');
     await vi.advanceTimersByTimeAsync(10);
     push('e');
-    // Total elapsed inside the 100ms window: 40ms — well under the
-    // RENDER_DEBOUNCE_MS = 100 threshold.
+    // Total elapsed inside the 50ms window: 40ms — well under the
+    // RENDER_DEBOUNCE_MS = 50 threshold.
 
     // Now advance to the debounce boundary.
     await vi.advanceTimersByTimeAsync(70);
@@ -84,7 +84,7 @@ describe('Phase 08 Plan 03 — AIStreamModal 100ms debounce ring buffer', () => 
     await onOpenP;
   });
 
-  it('chunks 100ms apart produce 2 flushRender calls', async () => {
+  it('chunks 60ms apart produce 2 flushRender calls', async () => {
     const { AIStreamModal } = await import('../../src/ai/AIStreamModal');
     const { makeStreamHandle, makeAIClient, getRenderCallCount } = await import(
       './helpers/aiStreamModal-mocks'

@@ -240,7 +240,7 @@ describe('buildDecorations — widget emits .leetcode-code-actions', () => {
     const runBtn = root.querySelector<HTMLButtonElement>('button.leetcode-code-action-run');
     const submitBtn = root.querySelector<HTMLButtonElement>('button.leetcode-code-action-submit');
     expect(aiBtn).not.toBeNull();
-    expect(aiBtn!.textContent).toBe('AI Solution');
+    expect(aiBtn!.textContent).toBe('AI solution');
     expect(runBtn).not.toBeNull();
     expect(runBtn!.textContent).toBe('Run');
     expect(submitBtn).not.toBeNull();

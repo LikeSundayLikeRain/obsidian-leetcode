@@ -38,7 +38,7 @@ export interface ContestSettingsPort {
  * All state mutations persist immediately to PluginData via the settings port.
  */
 export class ContestSessionManager {
-  private tickHandle: ReturnType<typeof setInterval> | null = null;
+  private tickHandle: number | null = null;
   private settings: ContestSettingsPort;
   private callbacks: ContestSessionCallbacks;
 
@@ -217,7 +217,7 @@ export class ContestSessionManager {
    */
   private startTick(): void {
     this.stopTick();
-    this.tickHandle = setInterval(() => {
+    this.tickHandle = window.setInterval(() => {
       const session = this.settings.getContestSession();
       if (!session) {
         this.stopTick();
@@ -238,7 +238,7 @@ export class ContestSessionManager {
    */
   private stopTick(): void {
     if (this.tickHandle !== null) {
-      clearInterval(this.tickHandle);
+      window.clearInterval(this.tickHandle);
       this.tickHandle = null;
     }
   }

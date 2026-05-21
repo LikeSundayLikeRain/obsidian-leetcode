@@ -139,7 +139,7 @@ describe('PatternClusterEngine', () => {
     await engine.onAccepted(makeMockFile() as never, 'two-sum', '<p>desc</p>', 'code', 'python3');
     expect(m.spies.processFrontMatter).toHaveBeenCalled();
     const fm = m.getFrontmatter('LeetCode/two-sum.md');
-    expect(fm?.['lc-pattern']).toBe('Two Pointers');
+    expect(fm?.['lc-pattern']).toEqual(['Two Pointers']);
   });
 
   it('calls mergeTechniquesSectionAI via vault.process', async () => {
@@ -329,7 +329,7 @@ describe('PatternClusterEngine', () => {
     expect(mockModalFactory).toHaveBeenCalled();
     // The chosen pattern should be written to frontmatter
     const fm = m.getFrontmatter('LeetCode/two-sum.md');
-    expect(fm?.['lc-pattern']).toBe('Segment Tree');
+    expect(fm?.['lc-pattern']).toEqual(['Segment Tree']);
     // Hub should use the user-chosen pattern
     expect(hubWriter.ensureHub).toHaveBeenCalledWith(
       'Segment Tree',

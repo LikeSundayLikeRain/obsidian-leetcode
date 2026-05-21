@@ -50,9 +50,9 @@ export interface ClassifyResult {
  */
 export interface PatternClusterEngineSettings {
   getAutoAIKnowledgeGraph(): boolean;
-  getActiveAIProvider(): unknown | null;
+  getActiveAIProvider(): unknown;
   getFeatureFlags(): { lookAheadEdges: boolean };
-  getProblemDetail(slug: string): unknown | null;
+  getProblemDetail(slug: string): unknown;
   getProblemIndex(): { problems: Array<{ slug: string; id: number; title: string }> } | null;
   addCostLedger(usd: number): Promise<void>;
   getProblemsFolder(): string;
@@ -148,7 +148,7 @@ export class PatternClusterEngine {
 
     // Persistence check (AIKG-01): if lc-pattern already set, skip classification
     const existingCache = this.app.metadataCache.getFileCache(file);
-    const existingRaw = existingCache?.frontmatter?.['lc-pattern'];
+    const existingRaw: unknown = existingCache?.frontmatter?.['lc-pattern'] as unknown;
     const existingPatterns: string[] = Array.isArray(existingRaw)
       ? existingRaw.filter((p): p is string => typeof p === 'string' && p.length > 0)
       : typeof existingRaw === 'string' && existingRaw.length > 0 ? [existingRaw] : [];

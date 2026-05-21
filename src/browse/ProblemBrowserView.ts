@@ -1043,7 +1043,7 @@ export class ProblemBrowserView extends ItemView {
       this.timerPausedEl.setText('Paused');
       this.timerPausedEl.addClass('leetcode-contest__timer-paused');
     } else {
-      this.timerPausedEl.setText('remaining');
+      this.timerPausedEl.setText('Remaining');
     }
 
     // Progress bar

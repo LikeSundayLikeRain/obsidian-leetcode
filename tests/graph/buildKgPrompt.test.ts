@@ -3,7 +3,7 @@
 // Phase 11 Plan 01 Task 1 — buildKgPrompt pure-helper tests.
 //
 // Verifies (per 11-01-PLAN.md acceptance criteria):
-//   - Output contains all 22 seed pattern names from SEED_PATTERNS
+//   - Output contains all seed pattern names from SEED_PATTERNS (39 patterns)
 //   - Output contains `## Problem` section with the problemMd content trimmed
 //   - Output contains a fenced code block with the language tag and code content trimmed
 //   - Output contains JSON schema instructions (pattern, variants, lookAhead)
@@ -16,13 +16,13 @@ import { buildKgPrompt } from '../../src/graph/buildKgPrompt';
 import { SEED_PATTERNS } from '../../src/graph/patternTaxonomy';
 
 describe('Phase 11 Plan 01 — buildKgPrompt pure helper', () => {
-  it('output contains all 22 seed pattern names', () => {
+  it('output contains all seed pattern names', () => {
     const out = buildKgPrompt({
       problemMd: 'Two Sum problem statement.',
       code: 'def twoSum(nums, target):\n    return []',
       language: 'python3',
     });
-    expect(SEED_PATTERNS).toHaveLength(22);
+    expect(SEED_PATTERNS).toHaveLength(39);
     for (const pattern of SEED_PATTERNS) {
       expect(out).toContain(pattern);
     }

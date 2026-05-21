@@ -270,7 +270,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     }
 
     new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accept" / "Accepted" is the LC verdict name (proper noun in this domain).
       .setName('Auto AI review on Accept')
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accepted" is the LC verdict name (proper noun in this domain).
       .setDesc('When enabled, an AI review is generated automatically each time you get Accepted.')
       .addToggle((toggle) => toggle
         .setValue(this.plugin.settings.getAutoAIReviewOnAC())

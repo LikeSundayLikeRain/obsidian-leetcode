@@ -145,7 +145,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     expect(actionsDiv).not.toBeNull();
     const buttons = Array.from(actionsDiv!.querySelectorAll('button'));
     expect(buttons.length).toBe(3);
-    expect(buttons[0]!.textContent).toBe('AI Solution');
+    expect(buttons[0]!.textContent).toBe('AI solution');
     expect(buttons[1]!.textContent).toBe('Run');
     expect(buttons[2]!.textContent).toBe('Submit');
   });

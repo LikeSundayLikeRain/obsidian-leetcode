@@ -4,7 +4,7 @@
 // its native MarkdownView with full syntax highlighting.
 // On contest end, all scratch files are deleted.
 
-import type { App, TFile } from 'obsidian';
+import { TFile, type App } from 'obsidian';
 import type { ContestProblemState } from './types';
 import { htmlToMarkdown } from '../notes/htmlToMarkdown';
 
@@ -87,7 +87,8 @@ export class ContestScratchManager {
     const path = this.scratchPath(problem.slug);
     const contentMd = contentHtml ? htmlToMarkdown(contentHtml) : undefined;
     const content = buildScratchContent(problem, contentMd);
-    const existing = this.app.vault.getAbstractFileByPath(path) as TFile | null;
+    const existingAbstract = this.app.vault.getAbstractFileByPath(path);
+    const existing = existingAbstract instanceof TFile ? existingAbstract : null;
     if (existing) {
       await this.app.vault.process(existing, () => content);
       return existing;
@@ -95,7 +96,8 @@ export class ContestScratchManager {
     try {
       return await this.app.vault.create(path, content);
     } catch {
-      const file = this.app.vault.getAbstractFileByPath(path) as TFile;
+      const fileAbstract = this.app.vault.getAbstractFileByPath(path);
+      const file = fileAbstract instanceof TFile ? fileAbstract : null;
       if (file) {
         await this.app.vault.process(file, () => content);
         return file;
@@ -106,9 +108,10 @@ export class ContestScratchManager {
 
   async readCode(slug: string): Promise<string | null> {
     const path = this.scratchPath(slug);
-    const file = this.app.vault.getAbstractFileByPath(path);
+    const fileAbstract = this.app.vault.getAbstractFileByPath(path);
+    const file = fileAbstract instanceof TFile ? fileAbstract : null;
     if (!file) return null;
-    const content = await this.app.vault.read(file as TFile);
+    const content = await this.app.vault.read(file);
     return extractCodeFromScratch(content);
   }
 
@@ -136,6 +139,6 @@ export class ContestScratchManager {
   getFile(slug: string): TFile | null {
     const path = this.scratchPath(slug);
     const f = this.app.vault.getAbstractFileByPath(path);
-    return f ? (f as TFile) : null;
+    return f instanceof TFile ? f : null;
   }
 }
