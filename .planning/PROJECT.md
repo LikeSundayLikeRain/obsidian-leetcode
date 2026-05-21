@@ -41,7 +41,18 @@ The plugin ships preview mode, 5-provider AI support (Anthropic, OpenAI, OpenRou
 
 ### Active
 
-(None — awaiting next milestone scoping)
+(Defined in REQUIREMENTS.md for v1.2)
+
+## Current Milestone: v1.2 Code Editor Experience
+
+**Goal:** Make editing code inside the solution fence feel like a proper code editor — comparable to LeetCode web.
+
+**Target features:**
+- Language-aware auto-indentation (indent after `{`, `:`, `(`, etc.; dedent on `}`, etc.)
+- Code-aware bracket closing (suppress markdown pairs like `*` inside fences)
+- Tab/Shift-Tab → indent/dedent (not markdown list behavior) inside code fence
+- Enter after `{` or `(` → auto-indent next line + closing brace on new line
+- Resolve other markdown-vs-code behavioral conflicts in the fence region
 
 ### Out of Scope
 
@@ -108,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-21 after v1.1 milestone*
+*Last updated: 2026-05-21 — v1.2 milestone started*

@@ -1,34 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Contest, AI Coach, and Preview
-status: milestone_complete
-stopped_at: Milestone archived
+milestone: v1.2
+milestone_name: Code Editor Experience
+status: planning
+stopped_at: null
 last_updated: "2026-05-21"
-last_activity: 2026-05-21 -- v1.1 milestone archived
+last_activity: 2026-05-21 -- Milestone v1.2 started
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 41
-  completed_plans: 41
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-21 — v1.1 milestone complete)
+See: .planning/PROJECT.md (updated 2026-05-21 — v1.2 milestone started)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** Planning next milestone
+**Current focus:** Code Editor Experience — make the solution fence feel like a proper code editor
 
 ## Current Position
 
-Phase: —
+Phase: Not started (defining requirements)
 Plan: —
-Status: Between milestones
-Last activity: 2026-05-21 — v1.1 archived
+Status: Defining requirements
+Last activity: 2026-05-21 — Milestone v1.2 started
 
 ## Performance Metrics
 
@@ -57,4 +57,4 @@ Last activity: 2026-05-21 — v1.1 archived
 
 ## Operator Next Steps
 
-- Run `/gsd:new-milestone` to start the next milestone (questioning → research → requirements → roadmap).
+- Define v1.2 requirements and create roadmap.
