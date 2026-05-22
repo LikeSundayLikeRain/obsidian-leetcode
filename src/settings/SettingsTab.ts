@@ -199,6 +199,44 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       );
 
     // =============================
+    //   Code editor section (Phase 16 INDENT-04 D-06)
+    // =============================
+    // User-visible override for the code-editor indent unit. 'auto' defers to
+    // the per-language default (4 for Java/Python/C/C++/Rust, 2 for JS/TS,
+    // tab for Go); a numeric literal forces that many spaces for every
+    // language EXCEPT Go (gofmt non-negotiable; exception lives in the
+    // consumer at childEditorLanguage.ts:effectiveIndent).
+    //
+    // Four-option dropdown using addOption(value, label) chain (NOT
+    // addOptions Record literal) per the locked precedent for explicit-order
+    // dropdowns in this file (Preview section). Dropdown values are strings
+    // in Obsidian's API; coerce back to 'auto' | 2 | 4 | 8 in onChange.
+    new Setting(containerEl).setName('Code editor').setHeading();
+
+    new Setting(containerEl)
+      .setName('Indent size')
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Auto" is the verbatim option key value (a UI cross-reference); Java/Python/C++/JS/TS/Go are programming language names (proper nouns).
+      .setDesc('Number of spaces per indent level in the code editor. "Auto" uses the language default (4 for Java/Python/C++, 2 for JS/TS, tab for Go).')
+      .addDropdown((d) => d
+        .addOption('auto', 'Auto (language default)')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "2 spaces" is sentence-case English; the rule false-positives on number-prefixed phrases (demands '2 Spaces' which is wrong English).
+        .addOption('2', '2 spaces')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- See note above.
+        .addOption('4', '4 spaces')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- See note above.
+        .addOption('8', '8 spaces')
+        .setValue(String(this.plugin.settings.getIndentSizeOverride()))
+        .onChange(async (v) => {
+          const val: 'auto' | 2 | 4 | 8 =
+            v === '2' ? 2 :
+            v === '4' ? 4 :
+            v === '8' ? 8 :
+            'auto';
+          await this.plugin.settings.setIndentSizeOverride(val);
+        }),
+      );
+
+    // =============================
     //   Preview section (Phase 06 PREVIEW-02)
     // =============================
     // Click-behavior toggle for ProblemBrowserView rows. CONTEXT.md decision A:
