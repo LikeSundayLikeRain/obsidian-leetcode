@@ -117,9 +117,21 @@ Plans:
 **Plans**: 3 plans
 Plans:
 
-- [x] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
-- [x] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
-- [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
+**Wave 1**
+
+- [ ] 15-01-PLAN.md — indentWithTab keymap + undo isolation (addToHistory:false)
+
+**Wave 2** (blocked on Wave 1)
+
+- [ ] 15-02-PLAN.md — Button focus retention + auto-grow CSS + scroll-into-view
+
+**Wave 3** (blocked on Wave 2)
+
+- [ ] 15-03-PLAN.md — Integration wiring + human verification
+
+
+
+
 
 ### Phase 16: Language Packs & Switching
 
