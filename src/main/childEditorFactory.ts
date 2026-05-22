@@ -16,9 +16,10 @@ import {
   syntaxHighlighting,
   defaultHighlightStyle,
   bracketMatching,
+  indentUnit,
 } from '@codemirror/language';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
-import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
+import { history, indentWithTab, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import { python } from '@codemirror/lang-python';
 
 /**
@@ -44,7 +45,8 @@ export function createChildEditor(
       history(),
       drawSelection(),
       highlightActiveLine(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      indentUnit.of("    "),
+      keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
       EditorView.theme({
         '&': {

@@ -35,10 +35,12 @@ vi.mock('@codemirror/language', () => ({
   syntaxHighlighting: vi.fn().mockReturnValue('mock-syntax-highlighting'),
   defaultHighlightStyle: { style: 'default' },
   bracketMatching: vi.fn().mockReturnValue('mock-bracket-matching'),
+  indentUnit: { of: vi.fn().mockReturnValue('mock-indent-unit') },
 }));
 
 vi.mock('@codemirror/commands', () => ({
   history: vi.fn().mockReturnValue('mock-history-extension'),
+  indentWithTab: { key: 'Tab', run: vi.fn() },
   defaultKeymap: [{ key: 'mock-default' }],
   historyKeymap: [{ key: 'mock-history' }],
 }));
@@ -51,8 +53,8 @@ vi.mock('@codemirror/lang-python', () => ({
 import { createChildEditor } from '../../src/main/childEditorFactory';
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
-import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
+import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentUnit } from '@codemirror/language';
+import { history, indentWithTab, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import { python } from '@codemirror/lang-python';
 
 describe('createChildEditor', () => {
@@ -152,5 +154,22 @@ describe('createChildEditor', () => {
     const keymapArgs = (keymap.of as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(keymapArgs).toEqual(expect.arrayContaining(defaultKeymap as []));
     expect(keymapArgs).toEqual(expect.arrayContaining(historyKeymap as []));
+  });
+
+  it('includes indentWithTab as first entry in keymap (D-05 priority)', () => {
+    createChildEditor('code', parent);
+
+    expect(keymap.of).toHaveBeenCalled();
+    const keymapArgs = (keymap.of as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    // indentWithTab must be the FIRST entry for priority (before defaultKeymap spread)
+    expect(keymapArgs[0]).toBe(indentWithTab);
+  });
+
+  it('includes indentUnit.of with 4 spaces (INDENT-04)', () => {
+    createChildEditor('code', parent);
+
+    expect(indentUnit.of).toHaveBeenCalledWith('    ');
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(createArgs.extensions).toContain('mock-indent-unit');
   });
 });
