@@ -106,6 +106,50 @@ describe('buildCodeBlockButtonRow without opts.prefix (Reading-Mode)', () => {
   });
 });
 
+describe('button focus retention (D-02)', () => {
+  it('Run button mousedown preventDefault', () => {
+    const plugin = withHostMethods();
+    const row = buildCodeBlockButtonRow(document, plugin);
+
+    const runBtn = row.querySelector<HTMLButtonElement>('button.leetcode-code-action-run')!;
+    const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    let defaultPrevented = false;
+    const origPD = evt.preventDefault.bind(evt);
+    evt.preventDefault = () => { defaultPrevented = true; origPD(); };
+    runBtn.dispatchEvent(evt);
+
+    expect(defaultPrevented).toBe(true);
+  });
+
+  it('Submit button mousedown preventDefault', () => {
+    const plugin = withHostMethods();
+    const row = buildCodeBlockButtonRow(document, plugin);
+
+    const submitBtn = row.querySelector<HTMLButtonElement>('button.leetcode-code-action-submit')!;
+    const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    let defaultPrevented = false;
+    const origPD = evt.preventDefault.bind(evt);
+    evt.preventDefault = () => { defaultPrevented = true; origPD(); };
+    submitBtn.dispatchEvent(evt);
+
+    expect(defaultPrevented).toBe(true);
+  });
+
+  it('AI Solution button mousedown preventDefault', () => {
+    const plugin = withHostMethods();
+    const row = buildCodeBlockButtonRow(document, plugin);
+
+    const aiBtn = row.querySelector<HTMLButtonElement>('button.leetcode-code-action-ai-solution')!;
+    const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    let defaultPrevented = false;
+    const origPD = evt.preventDefault.bind(evt);
+    evt.preventDefault = () => { defaultPrevented = true; origPD(); };
+    aiBtn.dispatchEvent(evt);
+
+    expect(defaultPrevented).toBe(true);
+  });
+});
+
 describe('buildCodeBlockButtonRow with opts.prefix (Edit-Mode chevron)', () => {
   it('produces a row with 4 children: prefix, AI Solution, Run, Submit', () => {
     const plugin = withHostMethods();
