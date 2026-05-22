@@ -21,6 +21,7 @@ import {
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { history, indentWithTab, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import { python } from '@codemirror/lang-python';
+import { createScrollIntoViewExtension } from './childEditorSync';
 
 /**
  * Create a child EditorView with Python syntax highlighting and standard editing extensions.
@@ -63,6 +64,7 @@ export function createChildEditor(
           borderRight: 'none',
         },
       }),
+      createScrollIntoViewExtension(),
       ...(syncExtensions ?? []),
     ],
   });

@@ -49,6 +49,10 @@ vi.mock('@codemirror/lang-python', () => ({
   python: vi.fn().mockReturnValue('mock-python-extension'),
 }));
 
+vi.mock('../../src/main/childEditorSync', () => ({
+  createScrollIntoViewExtension: vi.fn().mockReturnValue('mock-scroll-into-view-extension'),
+}));
+
 // Import module under test and mocked modules AFTER vi.mock declarations
 import { createChildEditor } from '../../src/main/childEditorFactory';
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
@@ -56,6 +60,7 @@ import { EditorState } from '@codemirror/state';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentUnit } from '@codemirror/language';
 import { history, indentWithTab, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import { python } from '@codemirror/lang-python';
+import { createScrollIntoViewExtension } from '../../src/main/childEditorSync';
 
 describe('createChildEditor', () => {
   let parent: HTMLElement;
@@ -171,5 +176,13 @@ describe('createChildEditor', () => {
     expect(indentUnit.of).toHaveBeenCalledWith('    ');
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(createArgs.extensions).toContain('mock-indent-unit');
+  });
+
+  it('includes createScrollIntoViewExtension in extensions (D-14)', () => {
+    createChildEditor('code', parent);
+
+    expect(createScrollIntoViewExtension).toHaveBeenCalledOnce();
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(createArgs.extensions).toContain('mock-scroll-into-view-extension');
   });
 });
