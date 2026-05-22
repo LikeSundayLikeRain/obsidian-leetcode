@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Code Editor Experience
-status: ready to execute
-stopped_at: Phase 15 planned
-last_updated: "2026-05-22T02:00:00.000Z"
+status: executing
+stopped_at: Phase 15 context gathered
+last_updated: "2026-05-22T01:33:50.786Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 9
-  completed_plans: 6
+  completed_plans: 7
   percent: 40
 ---
 
@@ -30,7 +30,7 @@ Plan: 3 plans in 3 waves
 Status: Ready to execute
 Last activity: 2026-05-21
 
-Progress: [██████████] 100%
+Progress: [████████░░] 78%
 
 ## Performance Metrics
 
@@ -46,6 +46,7 @@ Progress: [██████████] 100%
 | 13 | 01 | 261s | 2 | 4 |
 | 13 | 02 | 294s | 1 | 3 |
 | 13 | 03 | 111s | 3 | 2 |
+| Phase 15 P01 | 136s | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,7 @@ Recent decisions affecting current work:
 - Phase 13-01: Monotonic tick counter for LRU ordering (avoids sub-ms Date.now() conflicts)
 - Phase 13-02: Widget decoration at openerLine.to between opener line-hide and body line-hides for RangeSetBuilder sorted-order compliance
 - Phase 13-03: Registry instantiation before all registerEditorExtension calls; nested editor registered between code-actions and section-lock for correct transactionFilter ordering
+- [Phase ?]: indentWithTab placed first in keymap for priority; 4-space default indent; addToHistory:false on all child-to-parent sync
 
 ### Pending Todos
 
@@ -92,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T01:11:36.219Z
+Last session: 2026-05-22T01:33:43.209Z
 Stopped at: Phase 15 context gathered
-Resume file: .planning/phases/15-focus-undo-cursor/15-CONTEXT.md
+Resume file: None
