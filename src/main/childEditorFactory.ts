@@ -28,15 +28,12 @@ import {
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { EditorState, type Extension } from '@codemirror/state';
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   syntaxHighlighting,
   defaultHighlightStyle,
   bracketMatching,
 } from '@codemirror/language';
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { history, indentWithTab, defaultKeymap, historyKeymap } from '@codemirror/commands';
-// eslint-disable-next-line import/no-extraneous-dependencies -- external in esbuild; runtime-provided by Obsidian
 import { closeBracketsKeymap } from '@codemirror/autocomplete';
 import { languageCompartment, buildLanguageExtensions } from './childEditorLanguage';
 import { createScrollIntoViewExtension } from './childEditorSync';

@@ -41,6 +41,11 @@ import { wireSyncIfNeeded, detectAndPropagateExternalChange } from './childEdito
 /**
  * Structural type for the plugin host required by this extension.
  * Minimal surface — only what buildNestedDecorations needs.
+ *
+ * Phase 16 — `settings.getIndentSizeOverride()` is read at decoration build
+ * time so the child editor factory in 16-03 receives the user's current
+ * indent override. The runtime LeetCodePlugin satisfies this via its
+ * SettingsStore field.
  */
 type PluginHost = Plugin & {
   childEditorRegistry: ChildEditorRegistry;
@@ -48,6 +53,9 @@ type PluginHost = Plugin & {
     metadataCache: {
       getFileCache(file: { path: string }): { frontmatter?: Record<string, unknown> } | null;
     };
+  };
+  settings: {
+    getIndentSizeOverride(): 'auto' | 2 | 4 | 8;
   };
 };
 
@@ -59,12 +67,22 @@ type PluginHost = Plugin & {
  *   - toDOM() attaches child from registry or creates new via factory
  *   - destroy() detaches child DOM but keeps EditorView alive in registry
  *   - ignoreEvent() returns false (child receives all pointer/keyboard events)
+ *
+ * Phase 16 — Constructor accepts `initialSlug` + `indentOverride` so toDOM()
+ * can pass them to `createChildEditor`. These two values are NOT part of the
+ * widget's identity (eq() still compares filePath only): language switches go
+ * through `languageCompartment.reconfigure(...)` in 16-04, not a widget
+ * rebuild — so a stale slug carried by an old widget instance never reaches a
+ * live editor. The slug/override only matters at INITIAL construction of a
+ * brand-new child editor (registry miss path).
  */
 export class NestedEditorWidget extends WidgetType {
   constructor(
     readonly filePath: string,
     readonly registry: ChildEditorRegistry,
     readonly fenceContent: string,
+    readonly initialSlug: string,
+    readonly indentOverride: 'auto' | 2 | 4 | 8,
   ) {
     super();
   }
@@ -72,6 +90,10 @@ export class NestedEditorWidget extends WidgetType {
   eq(other: NestedEditorWidget): boolean {
     // STABLE identity — only compare immutable file path (D-13)
     // Do NOT compare fenceContent (changes every edit, would cause rebuild)
+    // Phase 16: do NOT compare initialSlug/indentOverride either — language
+    // switches reconfigure the Compartment in-place; the widget keeps its
+    // identity so the existing EditorView (with the new Compartment payload)
+    // stays attached.
     return other.filePath === this.filePath;
   }
 
@@ -82,7 +104,15 @@ export class NestedEditorWidget extends WidgetType {
     // Get or create child EditorView from registry
     let childView = this.registry.get(this.filePath);
     if (!childView) {
-      childView = createChildEditor(this.fenceContent, container);
+      // Phase 16: pass initialSlug + indentOverride so the factory wires the
+      // correct LanguageSupport at the moment of creation (no more "always
+      // Python" debt from Phase 13).
+      childView = createChildEditor(
+        this.fenceContent,
+        container,
+        this.initialSlug,
+        this.indentOverride,
+      );
       this.registry.set(this.filePath, childView);
     } else {
       // Re-attach existing child DOM to new container
@@ -173,13 +203,24 @@ export function buildNestedDecorations(
   const hideLine = Decoration.line({ class: 'lc-fence-hidden' });
   const fenceContent = extractFenceBody(state, fence);
 
+  // Phase 16: derive initialSlug from lc-language frontmatter (canonical LC
+  // slug — set by the chevron; written by the plugin) with a defensive
+  // fallback to 'python3'. Read indentOverride from the SettingsStore so the
+  // factory wires the correct indent unit at creation time.
+  // `fm` was already narrowed indirectly by the slug guard above (slug came
+  // from fm and is a non-empty string), but TS does not propagate that
+  // narrowing — keep the optional chain for type safety.
+  const lcLang = fm?.['lc-language'];
+  const initialSlug = typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
+  const indentOverride = plugin.settings.getIndentSizeOverride();
+
   // 1. Opener line-hide
   builder.add(state.doc.line(fence.openerLine).from, state.doc.line(fence.openerLine).from, hideLine);
 
   // 2. Block widget anchored at opener line end (side: 1 = renders after)
   const anchor = state.doc.line(fence.openerLine).to;
   builder.add(anchor, anchor, Decoration.widget({
-    widget: new NestedEditorWidget(file.path, registry, fenceContent),
+    widget: new NestedEditorWidget(file.path, registry, fenceContent, initialSlug, indentOverride),
     block: true,
     side: 1,
   }));
