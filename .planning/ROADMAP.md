@@ -146,12 +146,22 @@ Plans:
   4. Cmd-/ (Mac) / Ctrl-/ (Win/Linux) toggles line comment with correct syntax (`//` for Java/JS/C++/TS, `#` for Python, `//` for Go/Rust)
   5. Bracket match highlighting is visible when cursor is adjacent to any bracket
 
-**Plans**: 3 plans
+**Plans**: 5 plans
 Plans:
 
-- [x] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
-- [x] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
-- [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
+**Wave 1**
+
+- [ ] 16-01-PLAN.md — Dependencies + buildLanguageExtensions builder + unit tests (per-language indent map; languageCompartment singleton)
+- [ ] 16-02-PLAN.md — Settings: indentSizeOverride field + 'Code editor' settings UI
+
+**Wave 2** (blocked on Wave 1)
+
+- [ ] 16-03-PLAN.md — Child editor wiring: replace hardcoded indentUnit/python with languageCompartment + closeBracketsKeymap
+- [ ] 16-04-PLAN.md — Chevron switch dispatch: Compartment.reconfigure on child via 'leetcode.lang-switch' (LANG-01)
+
+**Wave 3** (blocked on Wave 2)
+
+- [ ] 16-05-PLAN.md — Behavioral tests + REQUIREMENTS.md BRACKET-05 → Deferred + bundle measurement + manual UAT
 
 ### Phase 17: Polish & Edge Cases
 
@@ -199,5 +209,5 @@ Plans:
 | 13. Nested Editor Foundation                | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
-| 16. Language Packs & Switching              | v1.2      | 0/TBD          | Not started | -          |
+| 16. Language Packs & Switching              | v1.2      | 0/5            | Not started | -          |
 | 17. Polish & Edge Cases                     | v1.2      | 0/TBD          | Not started | -          |

@@ -45,13 +45,13 @@ Phase 16 delivers: full CM6 LanguageSupport for all 8 LeetCode languages (Python
   2. **New** — look up the child via `childEditorRegistry.get(file.path)`. If present, dispatch `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(newSlug)) }` onto the child.
   3. The dispatch carries `userEvent: 'leetcode.lang-switch'` (matches existing parent-side annotation) so the child-sync extension recognizes it as plugin-internal and does NOT propagate it back to the parent doc as a content edit.
 - **D-13:** No new shared StateEffect for child reconfigure. The single `Compartment.reconfigure(...)` effect is sufficient — symmetric with how the parent already handles it (different effect type but same conceptual pattern). Source of truth for "what language this child is currently using" is the chevron handler, not a separate observable.
-- **D-14:** External `lc-language` frontmatter edits (e.g., user manually edits the YAML, or a future feature writes it via vault.process without going through `switchFenceLanguage`) are an out-of-scope edge case for v1.2. The chevron is the intended entry point. If the gap becomes user-visible, a Phase 17 polish task can add a `metadataCache.on('changed')` listener that re-derives the child's language. Documented as deferred.
+- **D-14 [informational, deferred to Phase 17]:** External `lc-language` frontmatter edits (e.g., user manually edits the YAML, or a future feature writes it via vault.process without going through `switchFenceLanguage`) are an out-of-scope edge case for v1.2. The chevron is the intended entry point. If the gap becomes user-visible, a Phase 17 polish task can add a `metadataCache.on('changed')` listener that re-derives the child's language. Documented as deferred — not tracked by Phase 16 plans.
 
 ### Bracket Match Highlight (HIGHLIGHT-01)
 - **D-15:** Already satisfied by Phase 13 — `bracketMatching()` is in `childEditorFactory.ts:45`. Verify visual behavior in test/UAT; no new code.
 
 ### Theme-Aware Highlighting (carried from Phase 15 deferred)
-- **D-16:** **Deferred to Phase 17 polish.** v1.2 ships with `defaultHighlightStyle` (current behavior). Justification: scope control — language packs and switching are the milestone-critical work; Obsidian-CSS-variable HighlightStyle is independent and can land later without re-architecting. Documented in `<deferred>`.
+- **D-16 [informational, deferred to Phase 17]:** **Deferred to Phase 17 polish.** v1.2 ships with `defaultHighlightStyle` (current behavior). Justification: scope control — language packs and switching are the milestone-critical work; Obsidian-CSS-variable HighlightStyle is independent and can land later without re-architecting. Documented in `<deferred>` — not tracked by Phase 16 plans.
 
 ### Claude's Discretion
 - Implementation file layout — whether the language Compartment lives inside `childEditorFactory.ts` or moves to a new `src/main/childEditorLanguage.ts` for separation of concerns. Prefer a new file if the per-language extension builder grows past ~50 lines.

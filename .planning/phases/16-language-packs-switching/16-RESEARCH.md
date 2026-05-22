@@ -618,22 +618,25 @@ src/main.ts                   # switchFenceLanguage: add child reconfigure dispa
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`StreamLanguage.define(go)` comment token mapping**
    - What we know: CM5 go mode declares `lineComment: '//'`
    - What's unclear: Whether `StreamLanguage` automatically exposes this as `commentTokens` in CM6 languageData
    - Recommendation: Wave 1 — test `toggleLineComment` on Go code in a live EditorState; if no-op, add explicit `languageData.of({ commentTokens: { line: '//' } })` to the Go LanguageSupport extension
+   - **RESOLVED:** Handled conditionally by `16-05` Task 4 (Pitfall E remediation). If the COMMENT-01 Go behavioral test in `16-05` Task 1 fails, Task 4 wraps the Go LanguageSupport with the explicit `languageData.of({ commentTokens: { line: '//' } })` extension.
 
 2. **`closeBracketsKeymap` placement (inside vs outside Compartment)**
    - What we know: D-11 says `keymap.of(closeBracketsKeymap)` in Compartment; Claude's Discretion says top-level is simpler
    - What's unclear: Whether the keymap must be in the Compartment to get per-language pair data or if top-level works
    - Recommendation: Top-level (outside Compartment); `closeBrackets()` inside Compartment reads languageData; the keymap just triggers it — no language-awareness in the keymap bindings themselves
+   - **RESOLVED:** Top-level placement is selected per `CONTEXT.md` Claude's Discretion. `16-01` Task 2 keeps the builder Compartment-scoped to `[languageSupport, indentUnit, closeBrackets()]` only; `16-03` Task 1 wires `closeBracketsKeymap` at the top level of the child extensions array (before `defaultKeymap`) so Backspace pair-delete wins precedence.
 
 3. **ENTER-04 `{|}` split — does it require explicit `insertNewlineAndIndent` or is it covered by `closeBrackets()` + `defaultKeymap` Enter?**
    - What we know: `defaultKeymap` includes Enter → `insertNewlineAndIndent`; `closeBrackets()` may provide pair-split behavior
    - What's unclear: Whether the three-line split comes from `closeBrackets` or from language indent alone
    - Recommendation: Test in Wave 1 behavioral test; if not working, add `closeBracketsKeymap` Enter binding explicitly
+   - **RESOLVED:** Verified in two paths. Automated path: `16-05` Task 1 includes ENTER-02/03/04 cases in the behavioral matrix (acceptable to `it.skip` if happy-dom Lezer indent fires inconsistently — this is a test-infra limitation, not a feature gap). Manual path: `16-05` Task 5 UAT adds three explicit Enter-key checks (Java `{`+Enter, Python `:`+Enter, Java between `{|}`+Enter) so ENTER-02/03/04 always have at least one mandatory verification gate before phase close.
 
 ---
 
