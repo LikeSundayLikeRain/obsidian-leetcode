@@ -52,7 +52,7 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
 - [x] **Phase 13: Nested Editor Foundation** (3/3 plans) — Widget + CSS-hide approach, child EditorView registry, lifecycle management, single-language proof-of-concept rendering
 - [x] **Phase 14: Bidirectional Sync** — Child↔parent sync protocol (CM6 split-view pattern), offset derivation, vault.process conflict handling, section lock coexistence (completed 2026-05-21)
 - [x] **Phase 15: Focus, Undo & Cursor** (3/3 plans) — Focus model (child/parent/Obsidian), cursor transitions, undo stack isolation, Tab/keyboard routing, scroll integration (completed 2026-05-22)
-- [ ] **Phase 16: Language Packs & Switching** — All 8 LC languages with full LanguageSupport, Compartment-based language switching via chevron, indent/bracket/comment/highlight all active
+- [x] **Phase 16: Language Packs & Switching** — All 8 LC languages with full LanguageSupport, Compartment-based language switching via chevron, indent/bracket/comment/highlight all active (completed 2026-05-22)
 - [ ] **Phase 17: Polish & Edge Cases** — Paste/clipboard, IME/CJK, Find/Replace, event propagation, plugin review prep, bundle size validation
 
 ## Phase Details
@@ -161,7 +161,7 @@ Plans:
 
 **Wave 3** (blocked on Wave 2)
 
-- [ ] 16-05-PLAN.md — Behavioral tests + REQUIREMENTS.md BRACKET-05 → Deferred + bundle measurement + manual UAT
+- [x] 16-05-PLAN.md — Behavioral tests + REQUIREMENTS.md BRACKET-05 → Deferred + bundle measurement + manual UAT
 
 ### Phase 17: Polish & Edge Cases
 
@@ -209,5 +209,5 @@ Plans:
 | 13. Nested Editor Foundation                | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
-| 16. Language Packs & Switching              | v1.2      | 4/5 | In Progress|  |
+| 16. Language Packs & Switching              | v1.2      | 5/5 | Complete   | 2026-05-22 |
 | 17. Polish & Edge Cases                     | v1.2      | 0/TBD          | Not started | -          |
