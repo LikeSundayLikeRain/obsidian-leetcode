@@ -25,6 +25,8 @@ import {
   keymap,
   drawSelection,
   highlightActiveLine,
+  ViewPlugin,
+  type PluginValue,
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { EditorState, type Extension } from '@codemirror/state';
@@ -46,21 +48,51 @@ import { createScrollIntoViewExtension } from './childEditorSync';
 
 // Phase 16 / debug session `cmd-slash-not-reaching-child`:
 // Obsidian registers Mod-/ as the app-level `editor:toggle-comments` hotkey
-// via its Scope-based KeymapEventHandler on `document`. That handler runs
-// before CM6's keymap can fire AND it dispatches the command to
-// `app.workspace.activeEditor` (always the parent MarkdownView), which then
-// inserts `%% %%` at the parent's stale selection in `## Notes`. The child's
-// `keymap.of([{ key: 'Mod-/', run: toggleLineComment }])` binding inside the
-// language Compartment is correct but is never reached at runtime.
+// via its Scope-based KeymapEventHandler. The handler dispatches to
+// `app.workspace.activeEditor` (always the parent MarkdownView in our nested
+// editor world). Even when DOM focus is on the child's .cm-content, Obsidian
+// still routes the command to the parent, which inserts `%% %%` at the
+// parent's stale selection in `## Notes`.
 //
-// Fix: intercept Mod-/ at CM6's contentDOM keydown handler, stop propagation
-// so Obsidian's document-level Scope never sees it, and run toggleLineComment
-// on the child editor directly. EditorView.domEventHandlers gives us a
-// keydown handler scoped to the child's `.cm-content` only.
+// Fix: register a CAPTURE-phase keydown listener on `document` for the
+// child editor's lifetime. Capture phase fires before any bubble-phase
+// listener (CM6's domEventHandlers, Obsidian's hotkey listener if it's
+// bubble-phase). We gate by checking that `event.target` is inside this
+// view's contentDOM, then preventDefault + stopImmediatePropagation +
+// invoke toggleLineComment on the child directly. The ViewPlugin lifecycle
+// guarantees cleanup on view.destroy().
 function isMod(event: KeyboardEvent): boolean {
   // macOS uses metaKey for Cmd; Win/Linux use ctrlKey for Ctrl.
   return event.metaKey || event.ctrlKey;
 }
+
+const cmdSlashIntercept = ViewPlugin.define((view): PluginValue => {
+  const handler = (event: KeyboardEvent): void => {
+    if (event.key !== '/' || !isMod(event)) return;
+    // Only intercept if focus is in THIS child editor's contentDOM.
+    const target = event.target;
+    if (!(target instanceof Node) || !view.contentDOM.contains(target)) return;
+    // Stop Obsidian's hotkey + any other listeners from running.
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    // Run the language-aware comment toggle on the child directly.
+    const runComment = toggleLineComment as unknown as (v: EditorView) => boolean;
+    runComment(view);
+  };
+  // Capture phase = true ensures we run BEFORE any bubble-phase or
+  // capture-phase-after-us listeners. Obsidian's Scope handler attaches at
+  // document level; we beat it by running on the same target at capture phase
+  // and using stopImmediatePropagation. Use the document the editor is
+  // mounted in (supports popout windows / multi-window vaults).
+  const doc = view.dom.ownerDocument ?? document;
+  doc.addEventListener('keydown', handler, true);
+  return {
+    destroy(): void {
+      doc.removeEventListener('keydown', handler, true);
+    },
+  };
+});
 
 /**
  * Create a child EditorView with language-aware syntax highlighting and
@@ -102,33 +134,12 @@ export function createChildEditor(
       //    closeBrackets, and the Cmd-/ comment binding. Reconfigured by the
       //    chevron in 16-04 via `languageCompartment.reconfigure(...)`.
       languageCompartment.of(buildLanguageExtensions(initialSlug, indentOverride)),
-      // 2a. Mod-/ DOM intercept — runs at CM6's contentDOM keydown handler
-      //     BEFORE bubbling to Obsidian's document-level Scope hotkey. Without
-      //     this, Obsidian's `editor:toggle-comments` command runs on the
-      //     parent MarkdownView and inserts `%% %%` at the parent's stale
-      //     selection in `## Notes`. See debug session
-      //     `cmd-slash-not-reaching-child.md`.
-      EditorView.domEventHandlers({
-        keydown: (event, view) => {
-          if (event.key !== '/' || !isMod(event)) return false;
-          // Run the language-aware comment toggle (the active LanguageSupport's
-          // commentTokens drive whether '#' or '//' is used).
-          // Cast to `(view: EditorView) => boolean` (Command shape) — same
-          // duplicate-@codemirror/state workaround as childEditorLanguage.ts:146.
-          const runComment = toggleLineComment as unknown as (v: EditorView) => boolean;
-          const handled = runComment(view);
-          if (handled) {
-            event.preventDefault();
-            event.stopPropagation();
-            // stopImmediatePropagation also blocks any other capture-phase
-            // listeners on the same element (defense-in-depth — Obsidian's
-            // Scope is on `document`, not `.cm-content`, but be safe).
-            event.stopImmediatePropagation();
-            return true;
-          }
-          return false;
-        },
-      }),
+      // 2a. Mod-/ document-level capture-phase intercept — see debug session
+      //     `cmd-slash-not-reaching-child.md`. Bubble-phase domEventHandlers
+      //     loses to Obsidian's Scope hotkey, so we install at capture phase
+      //     on the document and gate by event.target ∈ this view's
+      //     contentDOM. ViewPlugin lifecycle handles cleanup.
+      cmdSlashIntercept,
       // 2b. closeBracketsKeymap — top level, BEFORE main keymap (Pitfall D —
       //    Backspace handler wins over defaultKeymap). Language-agnostic so
       //    it lives outside the Compartment.

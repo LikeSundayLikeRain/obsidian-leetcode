@@ -28,6 +28,7 @@ vi.mock('@codemirror/view', () => {
     keymap: { of: vi.fn().mockReturnValue('mock-keymap') },
     drawSelection: vi.fn().mockReturnValue('mock-draw-selection'),
     highlightActiveLine: vi.fn().mockReturnValue('mock-highlight-active-line'),
+    ViewPlugin: { define: vi.fn().mockReturnValue('mock-view-plugin') },
   };
 });
 
@@ -321,14 +322,23 @@ describe('cmd-slash-not-reaching-child regression', () => {
     expect(factorySource).toMatch(/from '@codemirror\/commands'/);
   });
 
-  it('registers a domEventHandlers keydown handler on the child editor', () => {
-    expect(factorySource).toMatch(/EditorView\.domEventHandlers\(/);
-    expect(factorySource).toMatch(/keydown:/);
+  it('uses a ViewPlugin to install a document-level capture-phase listener', () => {
+    expect(factorySource).toMatch(/ViewPlugin\.define/);
+    expect(factorySource).toMatch(/addEventListener\('keydown', handler, true\)/);
+  });
+
+  it('registers cleanup on view destroy via ViewPlugin destroy()', () => {
+    expect(factorySource).toMatch(/destroy\(\)/);
+    expect(factorySource).toMatch(/removeEventListener\('keydown', handler, true\)/);
   });
 
   it('detects Mod-/ keystroke (event.key === "/" with metaKey or ctrlKey)', () => {
     expect(factorySource).toMatch(/event\.key !== '\/'/);
     expect(factorySource).toMatch(/metaKey \|\| event\.ctrlKey/);
+  });
+
+  it('gates by event.target ∈ this view contentDOM (multi-editor safety)', () => {
+    expect(factorySource).toMatch(/view\.contentDOM\.contains\(target\)/);
   });
 
   it('stops propagation so Obsidian Scope never sees the keystroke', () => {
