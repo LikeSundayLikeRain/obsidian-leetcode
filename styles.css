@@ -1903,6 +1903,8 @@
 }
 .cm-editor .lc-nested-editor .cm-editor {
   background: transparent;
+  height: auto !important;
+  max-height: none !important;
 }
 .cm-editor .lc-nested-editor .cm-content {
   font-family: var(--font-monospace);
@@ -1914,4 +1916,10 @@
 }
 .cm-editor .lc-nested-editor .cm-activeLine {
   background: var(--background-modifier-hover);
+}
+
+/* Phase 15 -- Auto-grow: disable child independent scrolling so parent
+ * scroll container handles all scrolling. Child height tracks content (D-13). */
+.cm-editor .lc-nested-editor .cm-scroller {
+  overflow: visible !important;
 }

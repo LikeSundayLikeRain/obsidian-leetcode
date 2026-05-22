@@ -288,6 +288,57 @@ export function unwireSync(filePath: string): void {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// Scroll Into View (D-14)
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Creates an updateListener that scrolls the parent viewport to keep the
+ * child's cursor visible when typing at the bottom of the code area.
+ *
+ * Gated: only fires on user-originated changes (not sync from parent via
+ * syncAnnotation — Pitfall 4 prevention). Uses coordsAtPos to locate
+ * the cursor in viewport coordinates and scrolls the parent scroll
+ * container if the cursor falls below the visible area.
+ *
+ * Ref: D-14 (auto-scroll into view when typing causes cursor to go below viewport).
+ */
+export function createScrollIntoViewExtension(): Extension {
+  return EditorView.updateListener.of((update) => {
+    try {
+      if (!update.docChanged && !update.selectionSet) return;
+
+      // Echo prevention gate (Pitfall 4): skip sync-originated updates
+      if (update.transactions.some((tr) => tr.annotation(syncAnnotation))) return;
+
+      // Get cursor coordinates in viewport
+      const coords = update.view.coordsAtPos(update.state.selection.main.head);
+      if (!coords) return;
+
+      // Find the PARENT scroll container (not the child's own .cm-scroller)
+      // Traverse: child .cm-editor -> .lc-nested-editor -> parent .cm-editor -> parent .cm-scroller
+      const parentScroller =
+        update.view.dom
+          .closest('.cm-editor')
+          ?.parentElement?.closest('.cm-editor')
+          ?.querySelector(':scope > .cm-scroller') ??
+        update.view.dom.closest('.workspace-leaf-content');
+
+      if (!parentScroller) return;
+
+      const scrollerRect = parentScroller.getBoundingClientRect();
+      const margin = 40; // px of breathing room below cursor
+
+      if (coords.bottom > scrollerRect.bottom - margin) {
+        // Cursor below visible area — scroll down to keep it in view
+        parentScroller.scrollTop += (coords.bottom - scrollerRect.bottom + margin);
+      }
+    } catch {
+      // Silently ignore — defensive per project convention
+    }
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Fence Repair (D-05, D-06, D-07)
 // ────────────────────────────────────────────────────────────────────────
 
