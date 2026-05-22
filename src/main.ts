@@ -92,6 +92,12 @@ import { resolveLangSlug, lcSlugToFenceTag, LC_LANG_DISPLAY_LABELS } from './sol
 // Phase 5.3 D-13 parity — chevron's atomic dispatch reuses Phase 5.1's exported
 // `findCodeFence` so fence detection has one source of truth.
 import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorExtension';
+// Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment.
+// `switchFenceLanguage` dispatches a Compartment.reconfigure on the child
+// (when present) immediately after the parent CM6 dispatch, so the child's
+// parser, indent unit, closeBrackets, and Cmd-/ keymap binding switch in
+// lock-step with the visible fence-tag flip.
+import { languageCompartment, buildLanguageExtensions } from './main/childEditorLanguage';
 // @codemirror/view is a transitive peer of obsidian@1.12.3; external in esbuild.
 // `view.editor.cm as EditorView` is the canonical (undocumented internal) path
 // for plugins reaching CM6 from a click handler — RESEARCH §Pitfall 6 +
@@ -2306,13 +2312,28 @@ export default class LeetCodePlugin extends Plugin {
    *   Step B — Single CM6 `view.dispatch({ changes: [openerChange, bodyChange],
    *            userEvent: 'leetcode.lang-switch' })`. ONE transaction → ONE
    *            Cmd-Z reverts opener + body atomically (D-08).
+   *   Step B′ — Phase 16 Plan 04 (LANG-01, D-12). If a child EditorView is
+   *            registered for `file.path`, dispatch
+   *            `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(
+   *            newSlug, getIndentSizeOverride())), userEvent: 'leetcode.lang-switch' }`
+   *            on the CHILD so its parser, indent unit, closeBrackets, and
+   *            Cmd-/ keymap switch in lock-step with the parent fence-tag
+   *            flip. Effects-only — `childEditorSync.ts:89` `docChanged`
+   *            guard skips it for child→parent propagation; the parent's
+   *            nestedEditor StateField never sees it (the dispatch goes to
+   *            the child, not the parent). userEvent is the CLAUDE.md
+   *            `'leetcode.*'` convention. Silent no-op when no child is
+   *            registered. Wrapped in try/catch matching the project
+   *            convention in `childEditorSync.ts` (child may be in teardown).
    *   Step C — `await app.fileManager.processFrontMatter(file, fm => { … })`.
    *            Lands on Obsidian's vault undo stack — separate from CM6's
    *            editor undo (Pitfall 1; accepted divergence).
    *
    * Order matters: doing C before B opens a 5–20 ms window where `lc-language`
    * says the new language but the fence still has the old one (Run during
-   * that window dispatches mismatched language to LC).
+   * that window dispatches mismatched language to LC). Step B′ between B and
+   * C keeps the visible fence-tag flip first; the child reconfigure is
+   * effects-only and idempotent w.r.t. ordering.
    *
    * Silent no-ops:
    *   - Active leaf moved off `file` between click and execution → bail.
@@ -2396,6 +2417,16 @@ export default class LeetCodePlugin extends Plugin {
       userEvent: 'leetcode.lang-switch',
     });
 
+    // Step B′ — Phase 16 Plan 04 (LANG-01, D-12). Child editor language
+    // Compartment reconfigure. Effects-only dispatch carries the CLAUDE.md
+    // 'leetcode.lang-switch' userEvent so the child sync extension's
+    // docChanged guard at childEditorSync.ts:89 short-circuits without
+    // echoing back to the parent. The dispatch goes to the CHILD; the
+    // parent's nestedEditor StateField never sees it, so no widget rebuild.
+    // Silent no-op when no child is registered. Reads the live override at
+    // dispatch time so a settings change is picked up on the next switch.
+    this.dispatchChildLanguageReconfigure(file.path, newSlug);
+
     // Step C — frontmatter write (separate undo stack — Pitfall 1 accepted).
     // The metadataCache `'changed'` listener will fire later and dispatch a
     // second `languageRefreshEffect.of(undefined)` once the cache is fresh;
@@ -2405,6 +2436,48 @@ export default class LeetCodePlugin extends Plugin {
     await this.app.fileManager.processFrontMatter(file, (fmObj: Record<string, unknown>) => {
       fmObj['lc-language'] = newSlug;
     });
+  }
+
+  /**
+   * Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment
+   * reconfigure helper extracted from `switchFenceLanguage` Step B′ for unit
+   * testability (see tests/main/switchFenceLanguage.test.ts).
+   *
+   * Dispatch shape:
+   *   `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(
+   *     newSlug, override)), userEvent: 'leetcode.lang-switch' }`
+   *
+   * Invariants:
+   *   - Effects-only — no `changes`, no `selection`. The child sync
+   *     extension's `if (!update.docChanged) return` guard at
+   *     `childEditorSync.ts:89` skips this transaction, so it cannot echo
+   *     back to the parent as a content edit (RESEARCH §6, VERIFIED).
+   *   - userEvent `'leetcode.lang-switch'` matches the CLAUDE.md
+   *     `'leetcode.*'` convention; identical to the parent-side annotation.
+   *   - Silent no-op when `childEditorRegistry.get(filePath)` returns
+   *     undefined (no open child for that file) — many notes can be
+   *     switched via the chevron without ever opening a child editor.
+   *   - try/catch matches `childEditorSync.ts:115` defensive convention —
+   *     the child may be in teardown when the chevron handler runs.
+   *   - `getIndentSizeOverride()` is read at dispatch time so the user's
+   *     current preference (D-06, Phase 16 Plan 02) is picked up on every
+   *     switch.
+   */
+  private dispatchChildLanguageReconfigure(filePath: string, newSlug: string): void {
+    const childView = this.childEditorRegistry?.get(filePath);
+    if (!childView) return; // silent no-op — no open child for this file
+    const indentOverride = this.settings.getIndentSizeOverride();
+    try {
+      childView.dispatch({
+        effects: languageCompartment.reconfigure(
+          buildLanguageExtensions(newSlug, indentOverride),
+        ),
+        userEvent: 'leetcode.lang-switch',
+      });
+    } catch {
+      // Silently ignore — child may be in teardown (defensive per project
+      // convention; mirrors childEditorSync.ts:115).
+    }
   }
 
   /**

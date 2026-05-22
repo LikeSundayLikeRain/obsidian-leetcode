@@ -67,11 +67,12 @@ function makeFakePlugin(opts: {
   };
 }
 
-const helper = (
-  LeetCodePlugin.prototype as unknown as {
-    dispatchChildLanguageReconfigure(filePath: string, newSlug: string): void;
-  }
-).dispatchChildLanguageReconfigure;
+// The helper is invoked exclusively via `helper.call(fakePlugin, …)` below,
+// which provides an explicit `this` binding; we never invoke it standalone.
+// eslint-disable-next-line @typescript-eslint/unbound-method -- intentional; bound via .call
+const helper = (LeetCodePlugin.prototype as unknown as {
+  dispatchChildLanguageReconfigure(filePath: string, newSlug: string): void;
+}).dispatchChildLanguageReconfigure;
 
 describe('dispatchChildLanguageReconfigure (LANG-01, D-12)', () => {
   beforeEach(() => {
@@ -129,6 +130,7 @@ describe('dispatchChildLanguageReconfigure (LANG-01, D-12)', () => {
     }).not.toThrow();
 
     expect(buildLanguageExtensions).not.toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- vi.fn() reference; not invoked
     expect(languageCompartment.reconfigure).not.toHaveBeenCalled();
   });
 
