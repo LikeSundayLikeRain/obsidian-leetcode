@@ -57,6 +57,16 @@ export interface PluginData {
   isPremium: boolean | null;
   problemsFolder: string;  // D-10: default 'LeetCode' (stored without trailing slash)
   defaultLanguage: string; // D-10: default 'python3' (LC's Python slug)
+  /** Phase 16 INDENT-04 D-06 — user-visible override for the code-editor
+   *  indent unit. `'auto'` defers to the per-language default
+   *  (`childEditorLanguage.ts:effectiveIndent`); a numeric literal forces that
+   *  many spaces for every language EXCEPT Go, which always uses tab regardless
+   *  (gofmt is non-negotiable — exception is enforced by the consumer, not
+   *  this field). Strict-equality shape-guard at load: anything that isn't
+   *  literally the number 2/4/8 collapses to `'auto'` (string '4', null,
+   *  missing field, typo, etc.) — mirrors the `previewClickBehavior`
+   *  posture (Phase 06 PREVIEW-02). */
+  indentSizeOverride: 'auto' | 2 | 4 | 8;
   problemIndex: ProblemIndex | null;
   /** Compound filter rules from the filter modal. Null = no filter active.
    *  Persisted so filter survives plugin reload / Obsidian restart. */
@@ -230,6 +240,10 @@ const DEFAULT_DATA: PluginData = {
   isPremium: null,
   problemsFolder: 'LeetCode',
   defaultLanguage: 'python3',
+  // Phase 16 INDENT-04 D-06 — 'auto' = per-language default applies. Go
+  // always uses '\t' regardless of override (gofmt non-negotiable);
+  // exception is enforced by the consumer (childEditorLanguage.ts).
+  indentSizeOverride: 'auto',
   problemIndex: null,
   filter: null,
   problemDetails: {},
@@ -627,6 +641,17 @@ export class SettingsStore {
       defaultLanguage: (typeof raw.defaultLanguage === 'string' && raw.defaultLanguage.trim())
         ? raw.defaultLanguage
         : DEFAULT_DATA.defaultLanguage,
+      // Phase 16 INDENT-04 D-06 — strict-equality shape-guard. Only literal
+      // numbers 2/4/8 pass; everything else (missing field, wrong type,
+      // string '4', invalid number 3, null, the literal string 'auto')
+      // collapses to 'auto'. Mirrors the previewClickBehavior strict-true
+      // posture (RESEARCH §7) — corrupt data.json never silently flips the
+      // user away from the language default.
+      indentSizeOverride: (raw.indentSizeOverride === 2 ||
+                           raw.indentSizeOverride === 4 ||
+                           raw.indentSizeOverride === 8)
+        ? raw.indentSizeOverride
+        : 'auto',
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
       filter: isValidCompoundFilter(raw.filter)
         ? sanitizeCompoundFilter(raw.filter)
@@ -757,6 +782,23 @@ export class SettingsStore {
   getDefaultLanguage(): string { return this.data.defaultLanguage; }
   async setDefaultLanguage(v: string): Promise<void> {
     this.data.defaultLanguage = v;
+    await this.persist();
+  }
+
+  /** Phase 16 INDENT-04 D-06 — read the user's code-editor indent override.
+   *  `'auto'` defers to the per-language default (4 for Python/Java/C/C++/Rust,
+   *  2 for JS/TS, tab for Go); a numeric literal forces that many spaces.
+   *  NOTE: Go always uses tab regardless of this override (gofmt is
+   *  non-negotiable). The exception is enforced by the consumer
+   *  (`childEditorLanguage.ts:effectiveIndent`), not this field. */
+  getIndentSizeOverride(): 'auto' | 2 | 4 | 8 {
+    return this.data.indentSizeOverride;
+  }
+
+  /** Phase 16 INDENT-04 D-06 — persist the indent override. UI bound to the
+   *  Settings tab "Code editor → Indent size" dropdown. */
+  async setIndentSizeOverride(v: 'auto' | 2 | 4 | 8): Promise<void> {
+    this.data.indentSizeOverride = v;
     await this.persist();
   }
 
