@@ -151,8 +151,8 @@ Plans:
 
 **Wave 1**
 
-- [ ] 16-01-PLAN.md — Dependencies + buildLanguageExtensions builder + unit tests (per-language indent map; languageCompartment singleton)
-- [ ] 16-02-PLAN.md — Settings: indentSizeOverride field + 'Code editor' settings UI
+- [x] 16-01-PLAN.md — Dependencies + buildLanguageExtensions builder + unit tests (per-language indent map; languageCompartment singleton)
+- [x] 16-02-PLAN.md — Settings: indentSizeOverride field + 'Code editor' settings UI
 
 **Wave 2** (blocked on Wave 1)
 
@@ -209,5 +209,5 @@ Plans:
 | 13. Nested Editor Foundation                | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
-| 16. Language Packs & Switching              | v1.2      | 0/5            | Not started | -          |
+| 16. Language Packs & Switching              | v1.2      | 2/5 | In Progress|  |
 | 17. Polish & Edge Cases                     | v1.2      | 0/TBD          | Not started | -          |

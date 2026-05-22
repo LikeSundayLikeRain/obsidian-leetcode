@@ -4,8 +4,8 @@ milestone: v1.2
 milestone_name: Code Editor Experience
 status: executing
 stopped_at: Phase 16 context gathered
-last_updated: "2026-05-22T16:27:37.462Z"
-last_activity: 2026-05-22 -- Phase 16 planning complete
+last_updated: "2026-05-22T17:18:33.003Z"
+last_activity: 2026-05-22 -- Phase 16 execution started
 progress:
   total_phases: 5
   completed_phases: 3
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21 — v1.2 milestone started)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** Phase 15 — focus, undo & cursor
+**Current focus:** Phase 16 — language-packs-switching
 
 ## Current Position
 
-Phase: 15
-Plan: 3 plans in 3 waves
-Status: Ready to execute
-Last activity: 2026-05-22 -- Phase 16 planning complete
+Phase: 16 (language-packs-switching) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 16
+Last activity: 2026-05-22 -- Phase 16 execution started
 
 Progress: [█████████░] 89%
 
