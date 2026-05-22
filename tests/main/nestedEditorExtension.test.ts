@@ -80,16 +80,27 @@ function createMockRegistry() {
   };
 }
 
-function createMockPlugin(opts: { slug?: string; filePath?: string } = {}) {
+function createMockPlugin(opts: {
+  slug?: string;
+  filePath?: string;
+  lcLanguage?: string;
+  indentOverride?: 'auto' | 2 | 4 | 8;
+} = {}) {
   const metadataCache = createFakeMetadataCache();
   const filePath = opts.filePath ?? 'LeetCode/0001-two-sum.md';
   if (opts.slug !== null) {
     metadataCache.setFrontmatter(filePath, {
       'lc-slug': opts.slug ?? 'two-sum',
-      'lc-language': 'python3',
+      'lc-language': opts.lcLanguage ?? 'python3',
     });
   }
-  const plugin = createFakePlugin({ metadataCache });
+  const basePlugin = createFakePlugin({ metadataCache });
+  // Phase 16: nested editor extension reads plugin.settings.getIndentSizeOverride()
+  const plugin = Object.assign(basePlugin, {
+    settings: {
+      getIndentSizeOverride: vi.fn(() => opts.indentOverride ?? 'auto'),
+    },
+  });
   return { plugin, metadataCache };
 }
 
@@ -205,28 +216,37 @@ describe('buildNestedDecorations', () => {
 describe('NestedEditorWidget', () => {
   it('eq() returns true when other.filePath matches this.filePath', () => {
     const registry = createMockRegistry();
-    const w1 = new NestedEditorWidget('path/a.md', registry as never, 'content1');
-    const w2 = new NestedEditorWidget('path/a.md', registry as never, 'content2');
+    const w1 = new NestedEditorWidget('path/a.md', registry as never, 'content1', 'python3', 'auto');
+    const w2 = new NestedEditorWidget('path/a.md', registry as never, 'content2', 'python3', 'auto');
     expect(w1.eq(w2)).toBe(true);
   });
 
   it('eq() returns true even when fenceContent differs (stable identity)', () => {
     const registry = createMockRegistry();
-    const w1 = new NestedEditorWidget('path/a.md', registry as never, 'hello');
-    const w2 = new NestedEditorWidget('path/a.md', registry as never, 'world');
+    const w1 = new NestedEditorWidget('path/a.md', registry as never, 'hello', 'python3', 'auto');
+    const w2 = new NestedEditorWidget('path/a.md', registry as never, 'world', 'python3', 'auto');
+    expect(w1.eq(w2)).toBe(true);
+  });
+
+  it('eq() returns true even when initialSlug or indentOverride differ — chevron reconfigure handles language switches without widget rebuild', () => {
+    // Phase 16: language changes go through Compartment.reconfigure (16-04), NOT
+    // a widget rebuild. The widget's stable identity (D-13) remains filePath-only.
+    const registry = createMockRegistry();
+    const w1 = new NestedEditorWidget('path/a.md', registry as never, 'content', 'python3', 'auto');
+    const w2 = new NestedEditorWidget('path/a.md', registry as never, 'content', 'java', 4);
     expect(w1.eq(w2)).toBe(true);
   });
 
   it('eq() returns false when filePath differs', () => {
     const registry = createMockRegistry();
-    const w1 = new NestedEditorWidget('path/a.md', registry as never, 'content');
-    const w2 = new NestedEditorWidget('path/b.md', registry as never, 'content');
+    const w1 = new NestedEditorWidget('path/a.md', registry as never, 'content', 'python3', 'auto');
+    const w2 = new NestedEditorWidget('path/b.md', registry as never, 'content', 'python3', 'auto');
     expect(w1.eq(w2)).toBe(false);
   });
 
   it('destroy() does NOT call registry.delete or childView.destroy', () => {
     const registry = createMockRegistry();
-    const widget = new NestedEditorWidget('path/a.md', registry as never, 'content');
+    const widget = new NestedEditorWidget('path/a.md', registry as never, 'content', 'python3', 'auto');
 
     // Create a container with a .cm-editor child to simulate widget DOM
     const container = document.createElement('div');
@@ -241,7 +261,7 @@ describe('NestedEditorWidget', () => {
 
   it('ignoreEvent() returns false', () => {
     const registry = createMockRegistry();
-    const widget = new NestedEditorWidget('path/a.md', registry as never, 'content');
+    const widget = new NestedEditorWidget('path/a.md', registry as never, 'content', 'python3', 'auto');
     expect(widget.ignoreEvent()).toBe(false);
   });
 
@@ -257,7 +277,7 @@ describe('NestedEditorWidget', () => {
     const { createChildEditor } = await import('../../src/main/childEditorFactory');
     (createChildEditor as ReturnType<typeof vi.fn>).mockReturnValue(mockChildView);
 
-    const widget = new NestedEditorWidget('path/a.md', registry as never, 'content');
+    const widget = new NestedEditorWidget('path/a.md', registry as never, 'content', 'python3', 'auto');
     const mockView = {} as never; // EditorView not used by toDOM except for container
     const dom = widget.toDOM(mockView);
 
@@ -273,14 +293,14 @@ describe('NestedEditorWidget', () => {
     mockChildView.dom.className = 'cm-editor';
     registry.get.mockReturnValue(mockChildView);
 
-    const widget = new NestedEditorWidget('path/a.md', registry as never, 'content');
+    const widget = new NestedEditorWidget('path/a.md', registry as never, 'content', 'python3', 'auto');
     const dom = widget.toDOM({} as never);
 
     expect(registry.get).toHaveBeenCalledWith('path/a.md');
     expect(dom.contains(mockChildView.dom)).toBe(true);
   });
 
-  it('toDOM() creates new child via factory when not in registry', async () => {
+  it('toDOM() creates new child via factory when not in registry, passing initialSlug + indentOverride (Phase 16)', async () => {
     const registry = createMockRegistry();
     registry.get.mockReturnValue(undefined);
 
@@ -293,24 +313,184 @@ describe('NestedEditorWidget', () => {
     const { createChildEditor } = await import('../../src/main/childEditorFactory');
     (createChildEditor as ReturnType<typeof vi.fn>).mockReturnValue(mockChildView);
 
-    const widget = new NestedEditorWidget('path/a.md', registry as never, 'some code');
+    const widget = new NestedEditorWidget('path/a.md', registry as never, 'some code', 'java', 4);
     widget.toDOM({} as never);
 
-    expect(createChildEditor).toHaveBeenCalledWith('some code', expect.any(HTMLElement));
+    // Phase 16: factory takes (content, parent, initialSlug, indentOverride)
+    expect(createChildEditor).toHaveBeenCalledWith(
+      'some code',
+      expect.any(HTMLElement),
+      'java',
+      4,
+    );
     expect(registry.set).toHaveBeenCalledWith('path/a.md', mockChildView);
   });
 
   it('estimatedHeight returns at least 60px', () => {
     const registry = createMockRegistry();
-    const widget = new NestedEditorWidget('path/a.md', registry as never, 'line1');
+    const widget = new NestedEditorWidget('path/a.md', registry as never, 'line1', 'python3', 'auto');
     expect(widget.estimatedHeight).toBeGreaterThanOrEqual(60);
   });
 
   it('estimatedHeight scales with line count', () => {
     const registry = createMockRegistry();
     const content = 'line1\nline2\nline3\nline4\nline5';
-    const widget = new NestedEditorWidget('path/a.md', registry as never, content);
+    const widget = new NestedEditorWidget('path/a.md', registry as never, content, 'python3', 'auto');
     expect(widget.estimatedHeight).toBe(5 * 20);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Phase 16 — buildNestedDecorations reads lc-language frontmatter +
+// plugin.settings.getIndentSizeOverride() and passes them through the widget
+// to createChildEditor.
+// ────────────────────────────────────────────────────────────────────────
+
+describe('buildNestedDecorations — Phase 16 language wiring', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reads lc-language from frontmatter and reaches createChildEditor with that slug', async () => {
+    const state = makeCanonicalState();
+    const { plugin } = createMockPlugin({ lcLanguage: 'java', indentOverride: 'auto' });
+    const registry = createMockRegistry();
+
+    const result = buildNestedDecorations(state, plugin as never, registry as never);
+    expect(result.size).toBeGreaterThan(0);
+
+    // Trigger widget toDOM by iterating decorations and finding the widget deco
+    const cursor = result.iter();
+    let widget: NestedEditorWidget | undefined;
+    while (cursor.value) {
+      const w = (cursor.value as { spec?: { widget?: unknown } }).spec?.widget;
+      if (w instanceof NestedEditorWidget) {
+        widget = w;
+        break;
+      }
+      cursor.next();
+    }
+    expect(widget).toBeDefined();
+
+    const mockChildView = { dom: document.createElement('div'), focus: vi.fn() };
+    const { createChildEditor } = await import('../../src/main/childEditorFactory');
+    (createChildEditor as ReturnType<typeof vi.fn>).mockReturnValue(mockChildView);
+
+    widget!.toDOM({} as never);
+    expect(createChildEditor).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(HTMLElement),
+      'java',
+      'auto',
+    );
+  });
+
+  it('reads getIndentSizeOverride from plugin.settings and passes it to createChildEditor', async () => {
+    const state = makeCanonicalState();
+    const { plugin } = createMockPlugin({ lcLanguage: 'python3', indentOverride: 8 });
+    const registry = createMockRegistry();
+
+    const result = buildNestedDecorations(state, plugin as never, registry as never);
+    const cursor = result.iter();
+    let widget: NestedEditorWidget | undefined;
+    while (cursor.value) {
+      const w = (cursor.value as { spec?: { widget?: unknown } }).spec?.widget;
+      if (w instanceof NestedEditorWidget) {
+        widget = w;
+        break;
+      }
+      cursor.next();
+    }
+    expect(widget).toBeDefined();
+
+    const mockChildView = { dom: document.createElement('div'), focus: vi.fn() };
+    const { createChildEditor } = await import('../../src/main/childEditorFactory');
+    (createChildEditor as ReturnType<typeof vi.fn>).mockReturnValue(mockChildView);
+
+    widget!.toDOM({} as never);
+    expect(createChildEditor).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(HTMLElement),
+      'python3',
+      8,
+    );
+  });
+
+  it('falls back to "python3" when lc-language is absent', async () => {
+    // Set lc-slug but omit lc-language by setting frontmatter manually
+    const metadataCache = createFakeMetadataCache();
+    metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', { 'lc-slug': 'two-sum' });
+    const basePlugin = createFakePlugin({ metadataCache });
+    const plugin = Object.assign(basePlugin, {
+      settings: { getIndentSizeOverride: vi.fn(() => 'auto' as const) },
+    });
+    const state = makeCanonicalState();
+    const registry = createMockRegistry();
+
+    const result = buildNestedDecorations(state, plugin as never, registry as never);
+    const cursor = result.iter();
+    let widget: NestedEditorWidget | undefined;
+    while (cursor.value) {
+      const w = (cursor.value as { spec?: { widget?: unknown } }).spec?.widget;
+      if (w instanceof NestedEditorWidget) {
+        widget = w;
+        break;
+      }
+      cursor.next();
+    }
+    expect(widget).toBeDefined();
+
+    const mockChildView = { dom: document.createElement('div'), focus: vi.fn() };
+    const { createChildEditor } = await import('../../src/main/childEditorFactory');
+    (createChildEditor as ReturnType<typeof vi.fn>).mockReturnValue(mockChildView);
+
+    widget!.toDOM({} as never);
+    expect(createChildEditor).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(HTMLElement),
+      'python3',
+      'auto',
+    );
+  });
+
+  it('falls back to "python3" when lc-language is a non-string value', async () => {
+    // Frontmatter with lc-language as a number (corrupt user edit)
+    const metadataCache = createFakeMetadataCache();
+    metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', {
+      'lc-slug': 'two-sum',
+      'lc-language': 42 as unknown as string, // intentionally wrong type
+    });
+    const basePlugin = createFakePlugin({ metadataCache });
+    const plugin = Object.assign(basePlugin, {
+      settings: { getIndentSizeOverride: vi.fn(() => 'auto' as const) },
+    });
+    const state = makeCanonicalState();
+    const registry = createMockRegistry();
+
+    const result = buildNestedDecorations(state, plugin as never, registry as never);
+    const cursor = result.iter();
+    let widget: NestedEditorWidget | undefined;
+    while (cursor.value) {
+      const w = (cursor.value as { spec?: { widget?: unknown } }).spec?.widget;
+      if (w instanceof NestedEditorWidget) {
+        widget = w;
+        break;
+      }
+      cursor.next();
+    }
+    expect(widget).toBeDefined();
+
+    const mockChildView = { dom: document.createElement('div'), focus: vi.fn() };
+    const { createChildEditor } = await import('../../src/main/childEditorFactory');
+    (createChildEditor as ReturnType<typeof vi.fn>).mockReturnValue(mockChildView);
+
+    widget!.toDOM({} as never);
+    expect(createChildEditor).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(HTMLElement),
+      'python3',
+      'auto',
+    );
   });
 });
 
