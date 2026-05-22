@@ -156,8 +156,8 @@ Plans:
 
 **Wave 2** (blocked on Wave 1)
 
-- [ ] 16-03-PLAN.md — Child editor wiring: replace hardcoded indentUnit/python with languageCompartment + closeBracketsKeymap
-- [ ] 16-04-PLAN.md — Chevron switch dispatch: Compartment.reconfigure on child via 'leetcode.lang-switch' (LANG-01)
+- [x] 16-03-PLAN.md — Child editor wiring: replace hardcoded indentUnit/python with languageCompartment + closeBracketsKeymap
+- [x] 16-04-PLAN.md — Chevron switch dispatch: Compartment.reconfigure on child via 'leetcode.lang-switch' (LANG-01)
 
 **Wave 3** (blocked on Wave 2)
 
@@ -209,5 +209,5 @@ Plans:
 | 13. Nested Editor Foundation                | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
-| 16. Language Packs & Switching              | v1.2      | 2/5 | In Progress|  |
+| 16. Language Packs & Switching              | v1.2      | 4/5 | In Progress|  |
 | 17. Polish & Edge Cases                     | v1.2      | 0/TBD          | Not started | -          |
