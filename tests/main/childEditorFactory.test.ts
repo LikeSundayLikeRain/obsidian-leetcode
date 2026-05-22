@@ -15,6 +15,7 @@ vi.mock('@codemirror/view', () => {
     destroy = vi.fn();
     static theme = vi.fn().mockReturnValue('mock-theme-extension');
     static lineWrapping = 'mock-line-wrapping';
+    static domEventHandlers = vi.fn().mockReturnValue('mock-dom-event-handlers');
     static instances: MockEditorView[] = [];
     opts: unknown;
     constructor(opts: unknown) {
@@ -47,6 +48,7 @@ vi.mock('@codemirror/commands', () => ({
   indentWithTab: { key: 'Tab', run: vi.fn() },
   defaultKeymap: [{ key: 'mock-default' }],
   historyKeymap: [{ key: 'mock-history' }],
+  toggleLineComment: vi.fn().mockReturnValue(true),
 }));
 
 // Phase 16: factory consumes 16-01's exports instead of importing python() directly.
@@ -293,5 +295,49 @@ describe('createChildEditor — language Compartment wiring (Phase 16)', () => {
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     const extensions = createArgs.extensions as unknown[];
     expect(extensions[0]).toBe('mock-lang-compartment');
+  });
+});
+
+// Source-level regression test for debug session `cmd-slash-not-reaching-child`.
+// Obsidian's Scope-based hotkey for `editor:toggle-comments` intercepts Cmd-/
+// at the document level and dispatches to the parent MarkdownView's editor,
+// inserting `%% %%` at the parent's stale selection in `## Notes`. The fix
+// adds an EditorView.domEventHandlers keydown listener to the child editor
+// that intercepts Mod-/ at the contentDOM keydown phase, runs
+// toggleLineComment on the child directly, and stops propagation so
+// Obsidian's hotkey is never reached.
+describe('cmd-slash-not-reaching-child regression', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- matches existing source-inspection pattern in childEditorSync.test.ts
+  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- matches existing source-inspection pattern in childEditorSync.test.ts
+  const path = require('path');
+  const factorySource = fs.readFileSync(
+    path.join(__dirname, '../../src/main/childEditorFactory.ts'),
+    'utf8',
+  );
+
+  it('imports toggleLineComment from @codemirror/commands', () => {
+    expect(factorySource).toMatch(/toggleLineComment/);
+    expect(factorySource).toMatch(/from '@codemirror\/commands'/);
+  });
+
+  it('registers a domEventHandlers keydown handler on the child editor', () => {
+    expect(factorySource).toMatch(/EditorView\.domEventHandlers\(/);
+    expect(factorySource).toMatch(/keydown:/);
+  });
+
+  it('detects Mod-/ keystroke (event.key === "/" with metaKey or ctrlKey)', () => {
+    expect(factorySource).toMatch(/event\.key !== '\/'/);
+    expect(factorySource).toMatch(/metaKey \|\| event\.ctrlKey/);
+  });
+
+  it('stops propagation so Obsidian Scope never sees the keystroke', () => {
+    expect(factorySource).toMatch(/event\.preventDefault\(\)/);
+    expect(factorySource).toMatch(/event\.stopPropagation\(\)/);
+    expect(factorySource).toMatch(/event\.stopImmediatePropagation\(\)/);
+  });
+
+  it('runs toggleLineComment on the child view when Mod-/ is captured', () => {
+    expect(factorySource).toMatch(/toggleLineComment as unknown as/);
   });
 });
