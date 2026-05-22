@@ -55,3 +55,8 @@ blocked: 0
 severity: low
 description: overflow:visible on .cm-scroller causes hidden fence lines to leak through visually when Vim insert mode is active. Vim overrides height/display on CM6 lines.
 fix_scope: Phase 17 (Polish & Edge Cases — Vim support listed as deferred)
+
+### GAP-3: Verdict modal close loses all focus
+severity: low
+description: After the VerdictModal closes (both Run and Submit verdict results), focus is lost entirely — not returned to child editor or parent editor. User cannot type or navigate with arrow keys until clicking somewhere. Pre-existing issue (not caused by Phase 15 changes) but more noticeable now that the child editor is the primary editing surface. RunModal close works fine (Obsidian naturally restores focus). VerdictModal stays open longer (polling, results, review stream) which likely causes Obsidian to lose the prior focus context.
+fix_scope: Phase 17 (Polish & Edge Cases — event propagation)
