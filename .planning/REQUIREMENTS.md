@@ -28,7 +28,7 @@ Make editing code inside the `## Code` solution fence feel like a proper code ed
 - [ ] **BRACKET-02**: Typing `*`, `_`, or backtick inside the fence body does NOT trigger markdown auto-pair behavior
 - [ ] **BRACKET-03**: Typing a closing bracket `)`, `]`, `}` when cursor is before an auto-inserted closer overtypes it instead of doubling
 - [ ] **BRACKET-04**: Pressing Backspace between an auto-inserted pair (e.g., `{|}`) deletes both opener and closer
-- [ ] **BRACKET-05**: Typing backtick-backtick-backtick (template literal) inside JS/TS fence auto-closes with matching backtick
+- [ ] **BRACKET-05**: Typing backtick-backtick-backtick (template literal) inside JS/TS fence auto-closes with matching backtick *(Deferred — see Future Requirements; per Phase 16 D-09)*
 
 ### Language Switching
 
@@ -50,6 +50,7 @@ Make editing code inside the `## Code` solution fence feel like a proper code ed
 - **FUTURE-02**: Error squiggles / linting inside fence (requires language service integration)
 - **FUTURE-03**: Snippet expansion (e.g., `for` → full for-loop template)
 - **FUTURE-04**: Multi-cursor editing inside fence
+- **BRACKET-05**: Triple-backtick template literal auto-close in JS/TS (CM6 stock closeBrackets does not cover triple-quote sequences; deferred to v1.3 if user-reported).
 
 ---
 
@@ -80,7 +81,7 @@ Make editing code inside the `## Code` solution fence feel like a proper code ed
 | BRACKET-02 | Phase 16: Language Packs & Switching           | Pending |
 | BRACKET-03 | Phase 16: Language Packs & Switching           | Pending |
 | BRACKET-04 | Phase 16: Language Packs & Switching           | Pending |
-| BRACKET-05 | Phase 16: Language Packs & Switching           | Pending |
+| BRACKET-05 | Phase 16: Language Packs & Switching           | Deferred |
 | LANG-01    | Phase 16: Language Packs & Switching           | Pending |
 | COMMENT-01 | Phase 16: Language Packs & Switching           | Pending |
 | HIGHLIGHT-01 | Phase 16: Language Packs & Switching         | Pending |
