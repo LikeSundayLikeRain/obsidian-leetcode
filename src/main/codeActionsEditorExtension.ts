@@ -156,10 +156,10 @@ export class CodeActionsWidget extends WidgetType {
   }
 
   ignoreEvent(): boolean {
-    // Let click events reach the button handlers inside the row. The helper
-    // already calls preventDefault + stopPropagation so CM6's selection
-    // behavior doesn't interfere (RESEARCH Pitfall 3).
-    return false;
+    // Parent CM6 must ignore all events on this widget so clicking buttons
+    // doesn't transfer focus from the child editor to the parent (D-02).
+    // Direct addEventListener handlers on buttons still fire normally.
+    return true;
   }
 }
 
