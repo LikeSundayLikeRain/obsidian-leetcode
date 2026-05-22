@@ -528,6 +528,52 @@ describe('childEditorSync', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
+  // Undo isolation (D-11)
+  // ──────────────────────────────────────────────────────────────────────
+
+  describe('undo isolation (D-11)', () => {
+    it('child-to-parent sync dispatches include addToHistory:false (source assertion)', () => {
+      // Source-level assertion: childEditorSync.ts must have exactly 2 occurrences
+      // of addToHistory.of(false) — one per dispatch site (primary sync + fence repair retry)
+      const fs = require('fs');
+      const source = fs.readFileSync(
+        require('path').resolve(__dirname, '../../src/main/childEditorSync.ts'),
+        'utf8',
+      );
+      const matches = source.match(/addToHistory\.of\(false\)/g);
+      expect(matches).not.toBeNull();
+      expect(matches!.length).toBe(2);
+    });
+
+    it('child-to-parent sync dispatches still include leetcode.child-sync userEvent', () => {
+      // Source-level assertion: both dispatch sites retain the userEvent annotation
+      const fs = require('fs');
+      const source = fs.readFileSync(
+        require('path').resolve(__dirname, '../../src/main/childEditorSync.ts'),
+        'utf8',
+      );
+      const matches = source.match(/Transaction\.userEvent\.of\('leetcode\.child-sync'\)/g);
+      expect(matches).not.toBeNull();
+      expect(matches!.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('annotations are arrays (both userEvent and addToHistory in same dispatch)', () => {
+      // Source-level assertion: annotations must be arrays (not single values)
+      // in the two child-sync dispatch sites
+      const fs = require('fs');
+      const source = fs.readFileSync(
+        require('path').resolve(__dirname, '../../src/main/childEditorSync.ts'),
+        'utf8',
+      );
+      // Pattern: annotations: [\n ... userEvent ... addToHistory ... ]
+      const arrayAnnotationPattern = /annotations:\s*\[\s*\n?\s*Transaction\.userEvent\.of\('leetcode\.child-sync'\),\s*\n?\s*Transaction\.addToHistory\.of\(false\)/g;
+      const matches = source.match(arrayAnnotationPattern);
+      expect(matches).not.toBeNull();
+      expect(matches!.length).toBe(2);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
   // repairFenceStructure
   // ──────────────────────────────────────────────────────────────────────
 

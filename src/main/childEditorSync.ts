@@ -107,7 +107,10 @@ export function createChildSyncExtension(
       try {
         parentView.dispatch({
           changes: { from: bodyStart, to: bodyEnd, insert: update.view.state.doc.toString() },
-          annotations: Transaction.userEvent.of('leetcode.child-sync'),
+          annotations: [
+            Transaction.userEvent.of('leetcode.child-sync'),
+            Transaction.addToHistory.of(false),
+          ],
         });
       } catch { /* editor teardown */ }
       return;
@@ -154,7 +157,10 @@ function propagateChildChanges(
   try {
     parentView.dispatch({
       changes: parentChanges,
-      annotations: Transaction.userEvent.of('leetcode.child-sync'),
+      annotations: [
+        Transaction.userEvent.of('leetcode.child-sync'),
+        Transaction.addToHistory.of(false),
+      ],
     });
   } catch {
     // Silently ignore — the editor may be in teardown (defensive per project convention)
