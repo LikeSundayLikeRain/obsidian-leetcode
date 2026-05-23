@@ -113,6 +113,27 @@ cosmetic_gaps: 1
 secondary_regressions_resolved: 1
 phase17_polish_carry: 2
 
+## Phase 17 Carry-overs
+
+- truth: "Reset code's undo history is scoped to the child editor only — Cmd-Z after Reset never leaks the prior solution into the Notes section"
+  status: deferred
+  reason: "Discovered after Reset fix landed (post-Phase-16 close). Two scenarios both fail: (1) Focus stays in editor after Reset; Cmd-Z brings prior solution INTO Notes section instead of restoring the editor body. (2) Focus moves to Notes after Reset; Cmd-Z fires twice (first 'works' in editor scope but 2nd press inserts solution into Notes); refocus to editor reveals 4 undo entries instead of 2 — meaning the Reset transaction was recorded in BOTH parent CM6 history AND child CM6 history. Likely root cause: the Reset fix dispatches via parent CM6 with userEvent 'leetcode.reset', which: (a) lands in parent's undo history; (b) when parent undoes it, the rewrite replays at the parent's current cursor (which can be in Notes after refocus); (c) Phase 14/15's child-sync extension may also mirror the change into child history, doubling state. Architectural fix candidates: dispatch with addToHistory: false on the parent transaction; OR scope the Reset to only the child editor's CM6 (mirror-only-to-child path); OR mark the parent transaction with an annotation that the parent's history filter excludes. User screenshot shows clear corruption — entire prior solution appears under ## Notes heading."
+  severity: major
+  test: post-phase-16-followup
+  user_flagged_priority: "scope it into Phase 17"
+  evidence: "User screenshot: Notes section shows full Java solution body that was supposed to be reset. Reproduced with both focus-states (editor active and Notes active)."
+  reproduction:
+    - "Open a problem note with a populated solution"
+    - "Run Reset code (confirms via modal)"
+    - "Test 1: Cursor stays in editor → Cmd-Z → solution body inserts into ## Notes"
+    - "Test 2: Click into ## Notes → Cmd-Z (works in editor scope, no obvious effect) → Cmd-Z again → solution body inserts into ## Notes → click back into editor → Cmd-Z empties to starter, Cmd-Z again brings solution back (4 history entries instead of 2)"
+  artifacts:
+    - path: "src/solve/resetCodeWithConfirm.ts"
+      issue: "CM6 dispatch lands in parent's undo stack; should be addToHistory: false on the parent and recorded in child history only"
+    - path: "src/main/childEditorSync.ts"
+      issue: "May be mirroring the Reset change into child history, doubling state"
+  related_invariant: "Phase 15 D-05 cm-z scope isolation — confirmed for typing edits in earlier UAT (Test 16). Reset breaks this invariant because it goes through a different write path."
+
 ## Gaps
 
 - truth: "Chevron switch updates child editor body to new language starter code without note reload"
