@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 16-language-packs-switching
 source: [16-01-SUMMARY.md, 16-02-SUMMARY.md, 16-03-SUMMARY.md, 16-04-SUMMARY.md, 16-05-SUMMARY.md]
 started: 2026-05-22T20:25:00Z
-updated: 2026-05-22T22:15:00Z
+updated: 2026-05-22T22:50:00Z
 ---
 
 ## Current Test
 
-number: 7
-name: Java Cmd-/ line comment (COMMENT-01)
-expected: |
-  In a Java fence — place cursor on a code line, press Cmd-/ (Mac) or Ctrl-/ (Win/Linux). Line gets `// ` prefix. Press Cmd-/ again → prefix removed. (Test 8 will verify Go right after.)
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -45,43 +41,47 @@ notes: "Initial fail (Obsidian's editor:toggle-comments hijacked Cmd-/). Two ite
 
 ### 7. Java Cmd-/ line comment (COMMENT-01)
 expected: In a Java fence — Cmd-/ on a code line adds `// ` prefix. Press again to remove.
-result: [pending]
+result: pass
 
 ### 8. Go Cmd-/ line comment (COMMENT-01 / Pitfall E gate)
 expected: In a Go fence — Cmd-/ on a code line adds `// ` prefix. Press again to remove. (Automated test passed; visual confirmation expected — if this fails it triggers Pitfall E remediation.)
-result: [pending]
+result: pass
+notes: "Cmd-/ works (// prefix toggles correctly). User noted Go has no syntax highlighting — already tracked as a separate low-priority gap from Test 3 (legacy-modes StreamLanguage tags don't bind to defaultHighlightStyle). COMMENT-01 unblocked across all 5 confirmed languages (Python, Java, JS implied, Go); Pitfall E NOT triggered."
 
 ### 9. Bracket match highlight (HIGHLIGHT-01 / D-15)
 expected: Position cursor adjacent to a `{` in any fence — observe BOTH the `{` and its matching `}` are visually highlighted.
-result: [pending]
+result: pass
+notes: "User confirms match highlight is visible. Side note: hard to see in dark mode — Phase 17 polish candidate (low priority, decoupled from HIGHLIGHT-01 functionality which is intact). Lines up with D-16 deferred theme-aware highlighting work."
 
 ### 10. Java Enter after `{` indents (ENTER-02)
 expected: In a Java fence on a fresh empty line, type `if (x) {` and press Enter. The new line is indented one level deeper than the `if` line (4 spaces beyond).
-result: [pending]
+result: pass
 
 ### 11. Python Enter after `:` indents (ENTER-03)
 expected: In a Python fence on a fresh empty line, type `def foo():` and press Enter. The new line is indented one level deeper than the `def` line (4 spaces beyond).
-result: [pending]
+result: pass
 
 ### 12. Java Enter between `{|}` splits 3 lines (ENTER-04)
 expected: In a Java fence, type `{` (auto-pairs to `{}` with cursor between), then press Enter. Result: `{` on line N, an indented blank line on line N+1 with the cursor on it, `}` on line N+2 aligned with the original `{` line's indent.
-result: [pending]
+result: pass
 
 ### 13. Phase 15 regression — focus stays in child
 expected: Click into the child editor body — focus stays in the child (does not bounce up to the parent).
-result: [pending]
+result: pass
 
 ### 14. Phase 15 regression — focus returns to parent on Notes click
 expected: Click into the ## Notes section — focus returns to the parent editor.
-result: [pending]
+result: pass
+notes: "Focus transfer works. User flagged an unrelated regression while on this note: Reset code action — see new gap below (test 14 secondary)."
 
 ### 15. Phase 15 regression — Tab indents inside child
 expected: With cursor in the child editor, press Tab. The line indents (it does NOT move focus elsewhere).
-result: [pending]
+result: pass
+notes: "User confirms Tab indents inside child (not focus-navigation — the Phase 15 invariant). Side note (carried forward as previously-documented polish): Tab indents the whole line regardless of cursor position; ideal CM6 behavior would be 'insert tab at cursor mid-line, indent line at line-start'. Phase 17 polish candidate, not blocking phase close."
 
 ### 16. Phase 15 regression — Cmd-Z scoped to child
 expected: Make an edit in the child, then Cmd-Z. Only the child edit is undone; ## Notes section content is unchanged.
-result: [pending]
+result: pass
 
 ### 17. Phase 14 regression — Copy to Code without echo loop
 expected: Trigger Copy to Code from a past submission. The child editor updates with the copied code; no echo loop / no duplicated content.
@@ -90,24 +90,28 @@ notes: "Confirmed during chevron-fix retest: past submission retrieval works, co
 
 ### 18. Phase 5.5 regression — section lock holds
 expected: Try to type into the ## Problem section. The keystroke is dropped (no-op). The section lock is intact.
-result: [pending]
+result: pass
 
 ### 19. Phase 5.4 regression — Run/Submit buttons work
 expected: Click the Run button in the action row → solution executes against LeetCode test cases. Click Submit → submission goes through. Both still work end-to-end.
-result: [pending]
+result: pass
 
 ### 20. Bundle ceiling decision
 expected: Phase 16 bundle is 1,577,935 bytes raw / 418,581 bytes gzipped (+297 KB raw / +106 KB gz vs baseline). Within CLAUDE.md's ~1.5 MB v1.2 architectural ceiling, but over `scripts/check-bundle-size.mjs` HARD_LIMIT (1,300,000). Choose: A) bump HARD_LIMIT to 1,600,000 / SOFT_WARN to 1,440,000 (recommended — same precedent as Phase 07-03/08-02 bumps); B) defer to Phase 17 to investigate dynamic-import; C) accept regression-gate failing for Phase 16, revisit in polish. Reply with "A", "B", or "C".
-result: [pending]
+result: pass
+notes: "User chose A. Bumped HARD_LIMIT to 1,600,000 / SOFT_WARN to 1,440,000 in scripts/check-bundle-size.mjs with Phase 16 Plan 05 ceiling-bump comment block matching the 07-03/08-02 precedent style. Verified: `node scripts/check-bundle-size.mjs` returns 'BUNDLE CHECK OK' (with expected SOFT_WARN). Gate now bites with ~10% headroom for Phase 17 polish."
 
 ## Summary
 
 total: 20
-passed: 6
-issues: 1
-pending: 13
+passed: 19
+issues: 2
+pending: 0
 skipped: 0
 blocked: 0
+cosmetic_gaps: 1
+secondary_regressions: 1
+phase17_polish_carry: 2
 
 ## Gaps
 
@@ -134,6 +138,29 @@ blocked: 0
   artifacts: []
   missing: []
   debug_session: ""
+
+- truth: "Reset code action returns the child editor and parent fence body to the language's starter code, with all four sources of truth in sync (editor view, markdown body, chevron dropdown, lc-language frontmatter)"
+  status: failed
+  reason: "User reported: 'reset code is not working, i'm in java, after reset, the content not changed in editor, but in the markdown, it changed to a empty code block with python as language, both dropdown and lc-language both showing java though.' Partial-state corruption: 4 sources of truth disagree after Reset. (1) Disk markdown: empty fence, language tag = python. (2) Editor view: still shows old Java content (parent CM6 stale relative to disk). (3) Chevron dropdown: shows Java. (4) Frontmatter lc-language: java. The reset path appears to write the markdown via vault.process (or similar) rather than through the parent CM6 dispatch, AND it picks up wrong starter code (python instead of java's). Likely root cause: Reset was implemented before Phase 16 changed the language plumbing, never updated for the chevron/frontmatter/Compartment world. Worth a separate debug session — not in scope for COMMENT-01 fix."
+  severity: major
+  test: 14
+  user_flagged_priority: "regression — separate from current testing path"
+  root_cause: ""
+  artifacts: []
+  missing: []
+  debug_session: ""
+
+- truth: "Bracket match highlight is visible in dark mode"
+  status: failed
+  reason: "User reported: 'i could see it, but hard to see in dark mode though'. HIGHLIGHT-01 functionality is intact (the bracketMatching extension is wired); the issue is purely the highlight color contrast against Obsidian's dark theme background. Functional pass with cosmetic gap."
+  severity: cosmetic
+  test: 9
+  user_flagged_priority: "low priority"
+  root_cause: ""
+  artifacts: []
+  missing: []
+  debug_session: ""
+  defer_to: "Phase 17 polish — lines up with D-16 deferred theme-aware HighlightStyle work"
 
 - truth: "Cmd-/ in child editor toggles language-aware line comment (# for Python, // for Java/JS/Go/Rust)"
   status: resolved

@@ -6,9 +6,9 @@
 // silently failed on macOS / Windows runners). See 06-RESEARCH.md
 // §Pitfall 6.
 //
-// Thresholds:
-//   HARD_LIMIT = 1_300_000 bytes — exit 1 (fails CI)
-//   SOFT_WARN  = 1_080_000 bytes — exit 0 with stderr WARN
+// Thresholds (current — bumped in Phase 16 Plan 05; see ceiling-bump block below):
+//   HARD_LIMIT = 1_600_000 bytes — exit 1 (fails CI)
+//   SOFT_WARN  = 1_440_000 bytes — exit 0 with stderr WARN
 //
 // Phase 07 Plan 03 ceiling bump (Rule 3 — Architectural deviation):
 //   The original 500 KB / 400 KB thresholds were locked in 06-CONTEXT.md §E
@@ -61,12 +61,38 @@
 //   preserves the same proportional warning posture as the 07-03 bump
 //   (900 KB / 1 MB = 90% → 1.08 MB / 1.2 MB = 90%).
 //
+// Phase 16 Plan 05 ceiling bump (Rule 3 — Architectural deviation):
+//   Phase 16 wires full CM6 LanguageSupport for all 8 LeetCode languages
+//   (Python, Java, C, C++, JavaScript, TypeScript, Go, Rust) into the child
+//   editor, with chevron-driven Compartment.reconfigure() for atomic switching
+//   (LANG-01) and language-aware Cmd-/ comment toggling (COMMENT-01).
+//   New direct dependencies on the bundle graph:
+//     - @codemirror/lang-rust        (Rust LanguageSupport, Lezer-based)
+//     - @codemirror/legacy-modes     (Go via StreamLanguage.define(go))
+//     - @codemirror/autocomplete     (closeBrackets() + closeBracketsKeymap;
+//                                    promoted from transitive)
+//   16-RESEARCH.md §9 estimated +25-40 KB gz; reality post-Plan-16-05:
+//   1,577,935 bytes raw / 418,581 bytes gzipped — a +297 KB raw / +106 KB gz
+//   delta over the Phase 08-02 baseline. Rust's Lezer parser tables overshoot
+//   the estimate. This is functional cost, not bloat: lang-rust ships the
+//   full incremental Rust grammar, legacy-modes ships brace-counting Go, and
+//   closeBrackets() ships per-language pair behavior driven by each
+//   LanguageSupport's languageData.
+//
+//   New ceiling: 1.6 MB hard / 1.44 MB soft (~10% headroom — slightly tighter
+//   than 08-02's 16% to keep regression-gate bite). Within CLAUDE.md's ~1.5 MB
+//   v1.2 architectural ceiling for the milestone. Phase 17 polish may
+//   investigate dynamic-import for the lang packs (`await
+//   import('@codemirror/lang-rust')`), though Obsidian's CJS-only plugin
+//   loader makes this infeasible in practice (same constraint that forced
+//   the 07-03 bump).
+//
 // Invoked from `npm run check:bundle-size` and from the Phase 06 GitHub
 // Actions workflow at .github/workflows/ci.yml.
 import fs from 'node:fs';
 
-const HARD_LIMIT = 1_300_000;
-const SOFT_WARN = 1_170_000;
+const HARD_LIMIT = 1_600_000;
+const SOFT_WARN = 1_440_000;
 const PATH = 'main.js';
 
 if (!fs.existsSync(PATH)) {
