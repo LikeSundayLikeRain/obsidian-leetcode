@@ -181,9 +181,9 @@ Plans:
 
 **Wave 1**
 
-- [ ] 17-01-PLAN.md — Reset undo refactor (D-03..D-06): dispatch via child CM6 + restore Phase 15 cm-z scope isolation
-- [ ] 17-02-PLAN.md — Fence opener/closer auto-recovery debug + fix (D-06b..D-06d)
-- [ ] 17-03-PLAN.md — Tab mid-line vs line-start behavior (D-11..D-12)
+- [x] 17-01-PLAN.md — Reset undo refactor (D-03..D-06): dispatch via child CM6 + restore Phase 15 cm-z scope isolation
+- [x] 17-02-PLAN.md — Fence opener/closer auto-recovery debug + fix (D-06b..D-06d)
+- [x] 17-03-PLAN.md — Tab mid-line vs line-start behavior (D-11..D-12)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -224,4 +224,4 @@ Plans:
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
 | 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
-| 17. Polish & Edge Cases                     | v1.2      | 0/6            | Planned     | -          |
+| 17. Polish & Edge Cases                     | v1.2      | 3/6 | In Progress|  |
