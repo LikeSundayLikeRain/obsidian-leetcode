@@ -191,7 +191,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 17-05-PLAN.md — Themed HighlightStyle + bracket-match contrast + Go conditional (D-15..D-17)
+- [x] 17-05-PLAN.md — Themed HighlightStyle + bracket-match contrast + Go conditional (D-15..D-17)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -224,4 +224,4 @@ Plans:
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
 | 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
-| 17. Polish & Edge Cases                     | v1.2      | 4/6 | In Progress|  |
+| 17. Polish & Edge Cases                     | v1.2      | 5/6 | In Progress|  |
