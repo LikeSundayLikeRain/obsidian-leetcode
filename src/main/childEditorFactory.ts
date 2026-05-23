@@ -31,12 +31,7 @@ import {
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { EditorState, type Extension } from '@codemirror/state';
-import {
-  syntaxHighlighting,
-  defaultHighlightStyle,
-  bracketMatching,
-  indentUnit,
-} from '@codemirror/language';
+import { bracketMatching, indentUnit } from '@codemirror/language';
 import {
   history,
   indentMore,
@@ -49,6 +44,7 @@ import { closeBracketsKeymap } from '@codemirror/autocomplete';
 import type { App, Scope } from 'obsidian';
 import { languageCompartment, buildLanguageExtensions } from './childEditorLanguage';
 import { createScrollIntoViewExtension } from './childEditorSync';
+import { createThemedHighlight } from './childEditorTheme';
 
 // Phase 16 / debug session `cmd-slash-not-reaching-child`:
 // Obsidian registers Mod-/ as `editor:toggle-comments` via its Scope-based
@@ -251,9 +247,11 @@ export function createChildEditor(
       //    Backspace handler wins over defaultKeymap). Language-agnostic so
       //    it lives outside the Compartment.
       keymap.of(closeBracketsKeymap),
-      // 3. Syntax highlighting + bracket matching (HIGHLIGHT-01 / D-15
-      //    unchanged from Phase 13).
-      syntaxHighlighting(defaultHighlightStyle),
+      // 3. Syntax highlighting (Phase 17 D-15/D-16: themed via Obsidian CSS
+      //    variables — see src/main/childEditorTheme.ts) + bracket matching
+      //    (HIGHLIGHT-01 firing logic unchanged; Phase 17 D-16 bracket-match
+      //    contrast theme is bundled inside createThemedHighlight).
+      ...createThemedHighlight(),
       bracketMatching(),
       // 4. Editing primitives.
       history(),

@@ -38,11 +38,13 @@ vi.mock('@codemirror/state', () => ({
 
 // Phase 17 Plan 03: `indentUnit` is now imported by the factory itself
 // (read by customTabCommand mid-line branch via state.facet). Re-exposed in
-// the mock for that reason. Phase 16 still owned syntaxHighlighting,
-// defaultHighlightStyle, and bracketMatching here.
+// the mock for that reason. Phase 17 Plan 05 (D-15): `syntaxHighlighting` +
+// `defaultHighlightStyle` are no longer imported by childEditorFactory —
+// the themed highlight + bracket-match contrast theme are now produced by
+// createThemedHighlight() from src/main/childEditorTheme (mocked below).
+// `bracketMatching` stays here (Pitfall 5 — bracketMatching firing logic
+// remains at childEditorFactory.ts:178).
 vi.mock('@codemirror/language', () => ({
-  syntaxHighlighting: vi.fn().mockReturnValue('mock-syntax-highlighting'),
-  defaultHighlightStyle: { style: 'default' },
   bracketMatching: vi.fn().mockReturnValue('mock-bracket-matching'),
   indentUnit: { of: vi.fn().mockReturnValue('mock-indent-unit-extension') },
 }));
@@ -77,6 +79,16 @@ vi.mock('../../src/main/childEditorSync', () => ({
   createScrollIntoViewExtension: vi.fn().mockReturnValue('mock-scroll-into-view-extension'),
 }));
 
+// Phase 17 Plan 05 (D-15/D-16): childEditorTheme module owns the themed
+// HighlightStyle + bracket-match contrast theme. Spread into the factory's
+// extensions array as `...createThemedHighlight()`. Mock returns two sentinel
+// strings so the spread is verifiable.
+vi.mock('../../src/main/childEditorTheme', () => ({
+  createThemedHighlight: vi
+    .fn()
+    .mockReturnValue(['mock-themed-syntax-highlighting', 'mock-themed-bracket-match-theme']),
+}));
+
 // Import module under test and mocked modules AFTER vi.mock declarations
 import {
   createChildEditor,
@@ -85,11 +97,12 @@ import {
 } from '../../src/main/childEditorFactory';
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
+import { bracketMatching } from '@codemirror/language';
 import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import { languageCompartment, buildLanguageExtensions } from '../../src/main/childEditorLanguage';
 import { closeBracketsKeymap } from '@codemirror/autocomplete';
 import { createScrollIntoViewExtension } from '../../src/main/childEditorSync';
+import { createThemedHighlight } from '../../src/main/childEditorTheme';
 
 describe('createChildEditor', () => {
   let parent: HTMLElement;
@@ -124,12 +137,19 @@ describe('createChildEditor', () => {
     expect(viewInstance.opts.parent).toBe(parent);
   });
 
-  it('includes syntaxHighlighting with defaultHighlightStyle', () => {
+  it('spreads createThemedHighlight() into extensions (Phase 17 D-15/D-16)', () => {
     createChildEditor('code', parent, 'python3', 'auto');
 
-    expect(syntaxHighlighting).toHaveBeenCalledWith(defaultHighlightStyle);
+    // The factory replaces the Phase-13/16 `syntaxHighlighting(default
+    // HighlightStyle)` line with `...createThemedHighlight()`. The themed
+    // highlight module owns both the Lezer-tag→CSS-variable HighlightStyle
+    // (D-15) and the high-contrast `.cm-matchingBracket` theme (D-16).
+    // Verifies: factory invokes the theme factory exactly once, and both
+    // sentinels appear in the extensions array (spread, not nested).
+    expect(createThemedHighlight).toHaveBeenCalledOnce();
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(createArgs.extensions).toContain('mock-syntax-highlighting');
+    expect(createArgs.extensions).toContain('mock-themed-syntax-highlighting');
+    expect(createArgs.extensions).toContain('mock-themed-bracket-match-theme');
   });
 
   it('includes bracketMatching extension (HIGHLIGHT-01 / D-15 preserved)', () => {

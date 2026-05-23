@@ -27,3 +27,12 @@ started.
 either the bundle-size threshold constants in `scripts/check-bundle-size.mjs`
 or the test fixture, or investigate genuine bundle-size growth from a prior
 phase. Not blocking for v1.2 Phase 17 polish work.
+
+## 17-05 (Themed HighlightStyle + bracket-match contrast)
+
+### Same pre-existing bundle-size test failures
+Re-confirmed during 17-05 Task 2 (re-stashed baseline). Same 3 failures in
+`tests/foundations/check-bundle-size.test.ts`. Plan 17-05 added a single
+small module (`src/main/childEditorTheme.ts`, ~70 LOC source) and removed
+one import — no AI SDK touch, no language pack additions. Bundle-size delta
+is negligible.
