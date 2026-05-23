@@ -85,7 +85,7 @@ import { EphemeralTabStore } from './solve/ephemeralTabStore';
 import { deriveArity } from './solve/runArity';
 import { registerRunCommand } from './solve/runCommandRegistration';
 import { retrofit as retrofitStarterCode } from './solve/starterCodeInjector';
-import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
+import { resetCodeWithConfirm, extractFenceBodyFromFullNote } from './solve/resetCodeWithConfirm';
 import { makeFileOpenHandler } from './main/fileOpenHook';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug, lcSlugToFenceTag, LC_LANG_DISPLAY_LABELS } from './solve/languages';
@@ -2738,7 +2738,21 @@ export default class LeetCodePlugin extends Plugin {
    *  `resetCodeWithConfirm` helper. Opens ConfirmOverwriteModal (D-11)
    *  when the existing fence is non-empty; bypasses the modal when the
    *  fence is empty or absent. Success Notice copy is locked to
-   *  "Code reset to starter." per UI-SPEC §Copywriting. */
+   *  "Code reset to starter." per UI-SPEC §Copywriting.
+   *
+   *  Phase 17 D-03 / D-05 — `getDispatchHandle` looks up the child editor
+   *  via `this.childEditorRegistry?.get(file.path)`; when a child is
+   *  registered, the helper routes the write through the child's CM6
+   *  instance (userEvent `'leetcode.reset.child'`) so the undo entry
+   *  lands on the child. The existing `createChildSyncExtension` mirror
+   *  in `src/main/childEditorSync.ts:82-121` propagates the change to the
+   *  parent with `addToHistory.of(false)`. When no child is registered
+   *  (note not open in a MarkdownView), the helper falls back to
+   *  `app.vault.process(...)` per D-04. This restores the Phase 15 D-05
+   *  cm-z scope isolation invariant for Reset — Cmd-Z after Reset never
+   *  inserts the prior solution body into adjacent sections. The chevron
+   *  switch wiring at `dispatchChildLanguageReconfigure` is the
+   *  structural template for this lookup pattern. */
   private async resetCode(file: TFile, slug: string): Promise<void> {
     await resetCodeWithConfirm({
       app: this.app,
@@ -2755,6 +2769,49 @@ export default class LeetCodePlugin extends Plugin {
         }),
       notify: (message) => {
         new Notice(message, 3000);
+      },
+      getDispatchHandle: (targetFile: TFile) => {
+        // Phase 17 D-03 — child-first lookup. The chevron switch at
+        // `dispatchChildLanguageReconfigure` (~line 2462) is the
+        // structural template — same `childEditorRegistry?.get` pattern,
+        // same `userEvent: 'leetcode.<verb>'` convention, same null-guard
+        // semantics. When a child is registered, return a handle that
+        // dispatches a full-body replace on the child; when not, return
+        // null so the helper falls back to vault.process (D-04).
+        const childView = this.childEditorRegistry?.get(targetFile.path);
+        if (!childView) return null;
+        return {
+          replaceFullBody: (next: string) => {
+            // The child's doc IS the fence body — slice the body-only
+            // payload out of the full-note string produced by
+            // forceInjectCodeSection. Defensive fallback in
+            // extractFenceBodyFromFullNote keeps the dispatch a no-op-ish
+            // identity when fence detection fails (should never happen
+            // since forceInjectCodeSection just produced it).
+            const bodyOnly = extractFenceBodyFromFullNote(next);
+            try {
+              childView.dispatch({
+                changes: {
+                  from: 0,
+                  to: childView.state.doc.length,
+                  insert: bodyOnly,
+                },
+                userEvent: 'leetcode.reset.child',
+                // NOTE: NO Transaction.addToHistory.of(false) here. Reset
+                // is a normal child edit and deserves a child undo entry;
+                // the existing parent-side mirror in
+                // childEditorSync.ts:108-114 carries
+                // addToHistory.of(false) so the parent never picks up
+                // the Reset entry — that's the Phase 15 D-05 invariant.
+              });
+            } catch {
+              // Silent — child may be in teardown; vault on disk still
+              // gets updated by the next sync mirror dispatch when the
+              // child re-attaches. Mirrors the defensive try/catch in
+              // dispatchChildLanguageReconfigure / childEditorSync.ts.
+            }
+          },
+        };
       },
     });
   }

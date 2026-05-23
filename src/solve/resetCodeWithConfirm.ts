@@ -20,6 +20,71 @@ import type { DetailCacheEntry } from '../settings/SettingsStore';
 import { forceInjectCodeSection } from './starterCodeInjector';
 import { hasExistingCodeBlock } from '../graph/copyToCode';
 
+/**
+ * Phase 17 D-03 helper — slice the fence body out of a full-note string.
+ *
+ * Used by the production caller in `src/main.ts:resetCode` to derive the
+ * body-only payload for a child-CM6 dispatch (the child's doc IS the fence
+ * body, so dispatching the full note onto the child would inject the
+ * surrounding markdown — frontmatter, headings, fence markers — into the
+ * code editor).
+ *
+ * Pattern H from 17-PATTERNS.md — uses the same fence-detection SSoT
+ * (`findCodeFence`) used by every other plugin path. Returns the substring
+ * exclusive of opener and closer marker lines. If the fence cannot be
+ * detected (defensive — should never happen since `forceInjectCodeSection`
+ * just produced it), returns the input unchanged so the caller can fall
+ * through to a no-op rather than corrupting the child doc.
+ */
+export function extractFenceBodyFromFullNote(fullNote: string): string {
+  const lines = fullNote.split('\n');
+  const FENCE_RE = /^\s*```/;
+  const H2_CODE_RE = /^\s*##\s+Code\s*$/;
+  const H2_ANY_RE = /^\s*##\s+.+$/;
+
+  let inCodeSection = false;
+  let openerIdx = -1;
+  let closerIdx = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i] ?? '';
+    if (H2_CODE_RE.test(text)) {
+      inCodeSection = true;
+      continue;
+    }
+    if (H2_ANY_RE.test(text)) {
+      inCodeSection = false;
+      continue;
+    }
+    if (inCodeSection && FENCE_RE.test(text)) {
+      openerIdx = i;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (FENCE_RE.test(lines[j] ?? '')) {
+          closerIdx = j;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  if (openerIdx < 0 || closerIdx < 0 || closerIdx <= openerIdx) {
+    return fullNote;
+  }
+  // Body lines are (openerIdx, closerIdx) exclusive on both ends.
+  return lines.slice(openerIdx + 1, closerIdx).join('\n');
+}
+
+export interface ResetCodeDispatchHandle {
+  /**
+   * Replace the entire ## Code fence body. The argument is the **full new
+   * note string** produced by `forceInjectCodeSection(currentBody, ...)` —
+   * the implementation extracts the body slice between fence markers and
+   * dispatches it on the appropriate CM6 view.
+   */
+  replaceFullBody(next: string): void;
+}
+
 export interface ResetCodeWithConfirmDeps {
   app: App;
   file: TFile;
@@ -32,6 +97,31 @@ export interface ResetCodeWithConfirmDeps {
   confirm: () => Promise<boolean>;
   /** Fires the user-visible success Notice. In production, `(msg) => new Notice(msg, 3000)`. */
   notify: (message: string) => void;
+  /**
+   * Phase 17 D-03 / D-05 — caller-supplied seam for dispatching the Reset
+   * write through the child editor's CM6 instance instead of the vault layer.
+   *
+   * Callers SHOULD look up the child editor first via the plugin's
+   * `childEditorRegistry`. When a child is registered for `file`, return a
+   * handle that dispatches on the child (the existing
+   * `createChildSyncExtension` in `src/main/childEditorSync.ts:82-121`
+   * automatically mirrors the change to the parent with
+   * `addToHistory.of(false)`, restoring the Phase 15 D-05 cm-z scope
+   * isolation invariant). When no child is registered, return `null` and the
+   * helper falls back to `app.vault.process(...)` — D-04 fallback semantics
+   * preserved for the no-MarkdownView path.
+   *
+   * The dispatch on the child MUST carry `userEvent: 'leetcode.reset.child'`
+   * (CLAUDE.md §Conventions audited callsites — child-origin Reset). It must
+   * NOT carry `Transaction.addToHistory.of(false)` — Reset deserves a child
+   * undo entry; the existing parent-side mirror already runs with
+   * `addToHistory.of(false)` on the parent.
+   *
+   * Omitting the field entirely (or supplying a function that always returns
+   * null) is equivalent to the legacy vault.process-only path — used by all
+   * unit tests that do not exercise the child route.
+   */
+  getDispatchHandle?: (file: TFile) => ResetCodeDispatchHandle | null;
 }
 
 /**
@@ -42,16 +132,32 @@ export interface ResetCodeWithConfirmDeps {
 export async function resetCodeWithConfirm(
   deps: ResetCodeWithConfirmDeps,
 ): Promise<void> {
-  await readCurrentBody(deps.app, deps.file);
+  const currentBody = await readCurrentBody(deps.app, deps.file);
 
   const detail = deps.settings.getProblemDetail(deps.slug);
   const langSlug = deps.settings.getDefaultLanguage();
   const starter =
     detail?.codeSnippets?.find((s) => s.langSlug === langSlug)?.code ?? '';
 
-  await deps.app.vault.process(deps.file, (body) =>
-    forceInjectCodeSection(body, { starterCode: starter, langSlug }),
-  );
+  // Phase 17 D-03 — child-CM6 dispatch path. When a child is registered for
+  // this file, route the write through the child so the undo entry lands on
+  // the child (Phase 15 D-05 cm-z scope isolation). The handle's caller in
+  // src/main.ts looks up the child via `this.childEditorRegistry?.get(...)`.
+  const handle = deps.getDispatchHandle?.(deps.file) ?? null;
+  if (handle) {
+    const next = forceInjectCodeSection(currentBody, {
+      starterCode: starter,
+      langSlug,
+    });
+    handle.replaceFullBody(next);
+  } else {
+    // Phase 17 D-04 — vault.process fallback for the no-child path (note not
+    // open in a MarkdownView). The reopen path will rebuild the child from
+    // disk content.
+    await deps.app.vault.process(deps.file, (body) =>
+      forceInjectCodeSection(body, { starterCode: starter, langSlug }),
+    );
+  }
 
   deps.notify('Code reset to starter.');
 }

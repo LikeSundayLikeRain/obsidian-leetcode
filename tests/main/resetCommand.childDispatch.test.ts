@@ -21,6 +21,13 @@
 //      ECHO_PRONE_USER_EVENTS — guards against a regression where someone
 //      adds it and silently breaks child→parent sync.
 
+// vi.fn() spies stand in for unbound EditorView methods (dispatch). The
+// `unbound-method` rule fires on `expect(childView.dispatch)` because the
+// reference looks like a class method — but the test mock IS a vi.fn(),
+// not a real method. The convention is established in
+// tests/main/childEditorSync.test.ts (which the lint baseline accepts).
+/* eslint-disable @typescript-eslint/unbound-method */
+
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
