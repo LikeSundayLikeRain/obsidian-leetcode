@@ -187,7 +187,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 17-04-PLAN.md — External lc-language fm reactivity (D-13/D-14) + Edge-input UAT scaffold (D-07..D-10)
+- [x] 17-04-PLAN.md — External lc-language fm reactivity (D-13/D-14) + Edge-input UAT scaffold (D-07..D-10)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -224,4 +224,4 @@ Plans:
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
 | 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
-| 17. Polish & Edge Cases                     | v1.2      | 3/6 | In Progress|  |
+| 17. Polish & Edge Cases                     | v1.2      | 4/6 | In Progress|  |
