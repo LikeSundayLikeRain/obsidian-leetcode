@@ -94,8 +94,14 @@ export function createChildSyncExtension(
     // D-10: Always re-derive offsets via findCodeFence (never cached)
     const fence = findCodeFence(parentView.state);
     if (!fence) {
+      // Phase 17: derive activeSlug from the parent doc's `lc-language`
+      // frontmatter (read directly from doc text since createChildSyncExtension
+      // doesn't have a plugin/metadataCache handle); fall back to 'python3'
+      // matching the convention in nestedEditorExtension.ts:216.
+      // See .planning/debug/fence-auto-recovery-regression.md.
+      const activeSlug = readLcLanguageFromDoc(parentView.state) ?? 'python3';
       // Attempt fence repair before giving up
-      const repaired = repairFenceStructure(parentView);
+      const repaired = repairFenceStructure(parentView, activeSlug);
       if (!repaired) return; // degraded — cannot sync
       // CR-04 fix: after repair, dispatch full-replace of child content to parent
       // rather than mapping incremental changes (repair shifted offsets)
@@ -343,23 +349,76 @@ export function createScrollIntoViewExtension(): Extension {
 // ────────────────────────────────────────────────────────────────────────
 
 /**
+ * Phase 17: parse `lc-language` directly from the parent doc's YAML
+ * frontmatter. createChildSyncExtension does not have a plugin/metadataCache
+ * handle, and we want repair to use the canonical language slug so the
+ * inserted opener carries the right tag (preserving the chevron / fm /
+ * fence-opener 4-sources-of-truth invariant — same family as the Phase 16
+ * reset-code-language-regression fix). Returns null when no frontmatter or
+ * no lc-language key — caller falls back to a sensible default.
+ *
+ * See .planning/debug/fence-auto-recovery-regression.md "Planned Fix Scope".
+ */
+function readLcLanguageFromDoc(state: import('@codemirror/state').EditorState): string | null {
+  const doc = state.doc;
+  if (doc.lines === 0) return null;
+  // Frontmatter must start at line 1 with `---` and end at the next `---`.
+  if (doc.line(1).text.trim() !== '---') return null;
+  const total = doc.lines;
+  for (let i = 2; i <= total; i++) {
+    const text = doc.line(i).text;
+    if (text.trim() === '---') return null; // end of fm without lc-language
+    const match = /^\s*lc-language\s*:\s*(.+?)\s*$/.exec(text);
+    if (match) {
+      const raw = match[1] ?? '';
+      // Strip surrounding quotes if present (`"java"` or `'java'`).
+      const cleaned = raw.replace(/^['"]|['"]$/g, '').trim();
+      return cleaned.length > 0 ? cleaned : null;
+    }
+  }
+  return null;
+}
+
+/**
  * Attempt to repair broken fence structure when findCodeFence returns null.
  *
  * Per D-07: Scans for ## Code heading, determines section boundaries.
  * Per D-05: Repair dispatches use userEvent 'leetcode.fence-repair' (undo-able).
  * Per D-06: Standard CM6 history handles undo of repairs.
  *
+ * Phase 17 (D-06b/D-06c hypothesis a fix): repair must distinguish a surviving
+ * fence OPENER (line ends with a language tag — e.g. ` ```python `) from a
+ * surviving CLOSER (bare ` ``` `) so it can correctly identify which marker
+ * went missing. Pre-fix, the FENCE_RE pattern matched both, the surviving
+ * marker was always treated as the opener, and missing-opener / both-missing
+ * inputs orphaned the user's body content outside the new fence. Pre-fix,
+ * the inserted opener also lacked a language tag — breaking the chevron / fm /
+ * fence-opener 4-sources-of-truth invariant. Both bugs are addressed by:
+ *   1. OPENER_RE / CLOSER_RE language-tag-aware patterns
+ *   2. Body-aware insertion: opener lands ABOVE the first body line; closer
+ *      lands BELOW the last body line (when both are missing)
+ *   3. activeSlug threaded through so inserted openers carry the right tag
+ *
+ * See .planning/debug/fence-auto-recovery-regression.md.
+ *
+ * @param parentView the parent CM6 EditorView whose doc has a damaged fence
+ * @param activeSlug the language slug for the file (typically read from
+ *   `lc-language` frontmatter); used as the inserted opener's tag. Caller
+ *   falls back to `'python3'` when frontmatter is unavailable.
  * @returns true if repair succeeded (fence structure restored), false if
- * ## Code heading not found or fence is already intact.
+ *   ## Code heading not found or fence is already intact.
  */
-export function repairFenceStructure(parentView: EditorView): boolean {
+export function repairFenceStructure(parentView: EditorView, activeSlug: string = 'python3'): boolean {
   const state = parentView.state;
   const doc = state.doc;
   const total = doc.lines;
 
   const H2_CODE_RE = /^\s*##\s+Code\s*$/;
   const H2_ANY_RE = /^\s*##\s+.+$/;
-  const FENCE_RE = /^\s*```/;
+  // Phase 17: language-tag awareness — opener must carry a non-empty tag,
+  // closer must be bare (whitespace only after the backticks).
+  const OPENER_RE = /^\s*```\S+\s*$/;
+  const CLOSER_RE = /^\s*```\s*$/;
 
   // Step 1: Find ## Code heading
   let codeHeadingLine = -1;
@@ -371,7 +430,8 @@ export function repairFenceStructure(parentView: EditorView): boolean {
   }
   if (codeHeadingLine === -1) return false;
 
-  // Step 2: Find section end (next ## heading or EOF)
+  // Step 2: Find section end (next ## heading or EOF). sectionEndLine is the
+  // last line BELONGING to the Code section (inclusive).
   let sectionEndLine = total;
   for (let i = codeHeadingLine + 1; i <= total; i++) {
     if (H2_ANY_RE.test(doc.line(i).text)) {
@@ -380,36 +440,83 @@ export function repairFenceStructure(parentView: EditorView): boolean {
     }
   }
 
-  // Step 3: Scan for fence opener and closer within the Code section
+  // Step 3: Phase 17 marker-disambiguation scan — separately track opener
+  // (line with a language tag) and closer (bare backticks). A line that
+  // matches OPENER_RE counts as an opener; a line matching CLOSER_RE counts
+  // as a closer. If multiple openers / closers appear, the first of each
+  // wins (consistent with findCodeFence's first-match-in-Code-section rule).
   let openerLine = -1;
   let closerLine = -1;
   for (let i = codeHeadingLine + 1; i <= sectionEndLine; i++) {
-    if (FENCE_RE.test(doc.line(i).text)) {
-      if (openerLine === -1) {
-        openerLine = i;
-      } else {
-        closerLine = i;
-        break;
-      }
+    const text = doc.line(i).text;
+    if (openerLine === -1 && OPENER_RE.test(text)) {
+      openerLine = i;
+      continue;
+    }
+    if (closerLine === -1 && CLOSER_RE.test(text)) {
+      closerLine = i;
+      continue;
     }
   }
 
   // If both are present, fence is intact — nothing to repair
   if (openerLine !== -1 && closerLine !== -1) return false;
 
-  // Step 4: Determine what's missing and repair
+  // Step 4: Phase 17 — locate the user's body content inside the Code
+  // section. Body lines = any line in [codeHeadingLine+1, sectionEndLine]
+  // that is NOT blank and NOT a fence marker. firstBodyLine / lastBodyLine
+  // are 1-indexed line numbers; -1 when the section has no body content.
+  let firstBodyLine = -1;
+  let lastBodyLine = -1;
+  for (let i = codeHeadingLine + 1; i <= sectionEndLine; i++) {
+    if (i === openerLine || i === closerLine) continue;
+    const text = doc.line(i).text;
+    if (text.trim() === '') continue; // skip blank lines
+    if (firstBodyLine === -1) firstBodyLine = i;
+    lastBodyLine = i;
+  }
+
+  // Step 5: Determine what's missing and repair, preserving the user's body
+  // content INSIDE the new fence. All inserted openers carry activeSlug.
   const changes: Array<{ from: number; insert: string }> = [];
+  const newOpener = '```' + activeSlug;
 
   if (openerLine === -1 && closerLine === -1) {
-    // Both missing — insert opener + empty body + closer as a single change
-    changes.push({ from: doc.line(codeHeadingLine).to + 1, insert: '```\n\n```\n' });
+    // Both missing.
+    if (firstBodyLine === -1) {
+      // No body content — empty fence after `## Code` heading.
+      changes.push({ from: doc.line(codeHeadingLine).to + 1, insert: newOpener + '\n\n```\n' });
+    } else {
+      // Insert opener IMMEDIATELY ABOVE first body line, closer
+      // IMMEDIATELY BELOW last body line — body stays in place between.
+      // Two separate insertions; sort applied during dispatch.
+      changes.push({
+        from: doc.line(firstBodyLine).from,
+        insert: newOpener + '\n',
+      });
+      changes.push({
+        from: doc.line(lastBodyLine).to,
+        insert: '\n```',
+      });
+    }
   } else if (openerLine === -1) {
-    // Missing opener only — insert at start of code section body
-    const insertPos = doc.line(codeHeadingLine).to + 1;
-    changes.push({ from: insertPos, insert: '```\n' });
+    // Missing opener only — surviving closer is at closerLine. Insert opener
+    // ABOVE the first body line so the user's body is INSIDE the new fence
+    // (between new opener and surviving closer). When there's no body content
+    // between `## Code` and the closer, insert opener immediately above the
+    // closer.
+    const insertPos =
+      firstBodyLine !== -1
+        ? doc.line(firstBodyLine).from
+        : doc.line(closerLine).from;
+    changes.push({ from: insertPos, insert: newOpener + '\n' });
   } else if (closerLine === -1) {
-    // Missing closer only — insert before section end
-    const insertPos = doc.line(sectionEndLine).to;
+    // Missing closer only — surviving opener is at openerLine. Insert closer
+    // BELOW the last body line (or at section end when no body content).
+    const insertPos =
+      lastBodyLine !== -1
+        ? doc.line(lastBodyLine).to
+        : doc.line(sectionEndLine).to;
     changes.push({ from: insertPos, insert: '\n```' });
   }
 

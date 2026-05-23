@@ -212,11 +212,22 @@ fix: |
   `detectAndPropagateExternalChange` (childEditorSync.ts:186-241).
 
 verification: |
-  Filled in by Task 3 after the fix is applied and tests run green.
+  - npm test -- tests/main/childEditorSync.repair.test.ts: 5/5 pass (was 3/5
+    failing on main pre-fix — RED state confirmed in commit de2f54c).
+  - npm test -- tests/main/childEditorSync.test.ts: 28/28 pass (no Phase 14
+    regressions; existing dispatch-shape assertions remain valid).
+  - npm run build: clean (tsc -noEmit -skipLibCheck + esbuild production).
+  - npm test (full suite): 1645/1654 pass; 3 pre-existing failures in
+    tests/foundations/check-bundle-size.test.ts are stale-threshold assertions
+    (`HARD_LIMIT=1_300_000` expected; actual is `1_600_000` per Phase 16 D-19)
+    UNRELATED to this fix and predate Phase 17 — same failures observed in
+    Phase 16 reset-code-language-regression debug session.
+  - 6 skipped tests are pre-existing (not introduced by this plan).
+  - 0 new console.debug or instrumentation in src (verified via
+    `grep -c "console.debug" src/main/childEditorSync.ts src/main/nestedEditorExtension.ts`).
 
 files_changed:
-  - src/main/childEditorSync.ts (repairFenceStructure refactor + caller signature update)
+  - src/main/childEditorSync.ts (repairFenceStructure refactor + caller signature update + readLcLanguageFromDoc helper)
   - tests/main/childEditorSync.repair.test.ts (NEW — regression fixture)
 
-post_fix_verification: |
-  Filled in by Task 3.
+final_commit_sha: filled in after the Task 3 commit lands
