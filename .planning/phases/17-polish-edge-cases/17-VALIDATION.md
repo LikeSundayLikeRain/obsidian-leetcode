@@ -2,9 +2,10 @@
 phase: 17
 slug: polish-edge-cases
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-05-23
+updated: 2026-05-23
 ---
 
 # Phase 17 — Validation Strategy
@@ -64,12 +65,14 @@ created: 2026-05-23
 
 ## Wave 0 Requirements
 
-> Wave 0 = test infrastructure additions before Wave 1 work begins.
+> Wave 0 = test infrastructure additions before Wave 1 work begins. **Status: COMPLETE BY REUSE — no new infrastructure plan required.**
 
-- [ ] Confirm or extend `tests/helpers/obsidian-stub.ts` to expose a `makeChildEditorMock()` helper that allows asserting `addToHistory.of(false)` annotations and `userEvent` strings on dispatched transactions (Wave 1 needs this for Reset + fence-repair regression tests)
-- [ ] Stub `app.metadataCache.on('changed', ...)` registration in `tests/helpers/obsidian-stub.ts` (Wave 2 fm reactivity tests)
-- [ ] No new framework install — vitest 4.1.5 already configured
-- [ ] No conftest equivalent — `vi.mock(...)` per-file pattern is established
+- [x] **`makeChildEditorMock` helper:** NOT needed as a new exported helper. Investigation (revision iteration 1, 2026-05-23) confirmed that `tests/helpers/obsidian-stub.ts` already exposes the stubs Wave-1 tests need (`Notice`, `TFile`, `MarkdownView`, `Workspace`, `makeStateForLockTests`, `makeFakeTransaction`). The `vi.fn()`-style child editor + registry mocks are inlined per-test following the established project convention at `tests/main/childEditorSync.test.ts:87-109` (`makeMockChildView`, `makeMockRegistry`) and `tests/main/childEditorRegistry.test.ts:10` (`{ destroy: vi.fn() }`-shape mocks). Plans 17-01, 17-02, 17-03 each inline their own factories — same pattern, scoped to the test file. **No shared helper needed**; promoting the inline shape to a shared helper would add coupling without removing duplication beyond ~5 LOC per file.
+- [x] **`metadataCache.on('changed')` stubbing:** NOT needed as a new helper. Wave-2 fm-reactivity test (Plan 17-04 Task 1) uses the existing project pattern: `app: { metadataCache: { getFileCache: vi.fn() } }` inlined in a `makeMockPlugin()` factory, mirroring `tests/main/codeActionsPostProcessor.test.ts:103-105` (`createFakeMetadataCache().setFrontmatter(...)`) and the chevron analog at `src/main/codeActionsEditorExtension.ts:329-359`. Plan 17-04 invokes the extracted `createFmReactivityHandler(plugin)` directly without registering the event — no real metadataCache event-emitter is needed.
+- [x] **Framework install:** vitest 4.1.5 already configured in `package.json` and `vitest.config.ts`.
+- [x] **Conftest equivalent:** N/A — vitest's per-file `vi.mock(...)` pattern is the established project convention (no global setup file needed).
+
+**Conclusion:** Wave 0 is satisfied without any pre-Wave-1 plan. The Wave-1 plans (17-01, 17-02, 17-03) declare `depends_on: []` and may run in Wave 1 in parallel.
 
 *Track gap closure with: `/gsd:plan-phase 17 --gaps` if Wave 0 holes surface during execution.*
 
@@ -97,11 +100,11 @@ created: 2026-05-23
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or are listed in Manual-Only with a UAT script reference
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify (manual UAT clusters in Wave 2 are accepted because edge-input behaviors cannot be reliably simulated)
-- [ ] Wave 0 covers all MISSING test-helper references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30 seconds (full suite)
-- [ ] `nyquist_compliant: true` set in frontmatter once all sign-off boxes are checked
+- [x] All tasks have `<automated>` verify or are listed in Manual-Only with a UAT script reference
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify (manual UAT clusters in Wave 2 are accepted because edge-input behaviors cannot be reliably simulated)
+- [x] Wave 0 covers all MISSING test-helper references (satisfied by reuse — see Wave 0 Requirements above)
+- [x] No watch-mode flags
+- [x] Feedback latency < 30 seconds (full suite)
+- [x] `nyquist_compliant: true` set in frontmatter (all sign-off boxes checked)
 
-**Approval:** pending
+**Approval:** approved (revision 1, 2026-05-23 — Wave-0 reuse confirmed; no new infrastructure plan required)

@@ -176,12 +176,26 @@ Plans:
   4. Bundle size is documented and justified (language packs raise ceiling to ~1.5 MB); no unused code shipped
   5. All lifecycle cleanup verified: no memory leaks after 20 note open/close cycles; plugin unload destroys all child editors
 
-**Plans**: 3 plans
+**Plans**: 6 plans across 4 waves
 Plans:
 
-- [x] 13-01-PLAN.md — Registry + factory (child EditorView lifecycle & creation)
-- [ ] 13-02-PLAN.md — Nested editor extension (StateField, widget, cursor redirect)
-- [x] 13-03-PLAN.md — Integration wiring + CSS + human verification
+**Wave 1**
+
+- [ ] 17-01-PLAN.md — Reset undo refactor (D-03..D-06): dispatch via child CM6 + restore Phase 15 cm-z scope isolation
+- [ ] 17-02-PLAN.md — Fence opener/closer auto-recovery debug + fix (D-06b..D-06d)
+- [ ] 17-03-PLAN.md — Tab mid-line vs line-start behavior (D-11..D-12)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 17-04-PLAN.md — External lc-language fm reactivity (D-13/D-14) + Edge-input UAT scaffold (D-07..D-10)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 17-05-PLAN.md — Themed HighlightStyle + bracket-match contrast + Go conditional (D-15..D-17)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 17-06-PLAN.md — Vim mode (D-18..D-21 — gated by D-19 hard bundle ceiling) + lifecycle tests (D-23a) + manual UAT execution (D-07..D-10/D-15..D-17/D-20/D-23b) + bundle audit (D-24)
 
 ## Progress
 
@@ -210,4 +224,4 @@ Plans:
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
 | 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
-| 17. Polish & Edge Cases                     | v1.2      | 0/TBD          | Not started | -          |
+| 17. Polish & Edge Cases                     | v1.2      | 0/6            | Planned     | -          |
