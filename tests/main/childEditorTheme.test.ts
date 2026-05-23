@@ -78,29 +78,26 @@ describe('childEditorTheme', () => {
     });
 
     it('uses --background-modifier-active-hover for tinted bg (D-16 contrast)', () => {
-      const matching = (bracketMatchThemeSpec as Record<string, Record<string, string>>)[
-        '.cm-matchingBracket'
-      ];
+      const spec = bracketMatchThemeSpec as Record<string, Record<string, string>>;
+      const matching = spec['.cm-matchingBracket'];
       expect(matching).toBeDefined();
       // Concatenate all values for an "any field references the variable" sanity check.
-      const allValues = Object.values(matching).join(' ');
+      const allValues = Object.values(matching ?? {}).join(' ');
       expect(allValues).toContain('var(--background-modifier-active-hover)');
     });
 
     it('uses --code-keyword for high-contrast foreground (D-16)', () => {
-      const matching = (bracketMatchThemeSpec as Record<string, Record<string, string>>)[
-        '.cm-matchingBracket'
-      ];
-      const allValues = Object.values(matching).join(' ');
+      const spec = bracketMatchThemeSpec as Record<string, Record<string, string>>;
+      const matching = spec['.cm-matchingBracket'];
+      const allValues = Object.values(matching ?? {}).join(' ');
       expect(allValues).toContain('var(--code-keyword)');
     });
 
     it('contains a .cm-nonmatchingBracket selector with --text-error', () => {
       expect(bracketMatchThemeSpec).toHaveProperty('.cm-nonmatchingBracket');
-      const nonMatching = (
-        bracketMatchThemeSpec as Record<string, Record<string, string>>
-      )['.cm-nonmatchingBracket'];
-      const allValues = Object.values(nonMatching).join(' ');
+      const spec = bracketMatchThemeSpec as Record<string, Record<string, string>>;
+      const nonMatching = spec['.cm-nonmatchingBracket'];
+      const allValues = Object.values(nonMatching ?? {}).join(' ');
       expect(allValues).toContain('var(--text-error)');
     });
   });
