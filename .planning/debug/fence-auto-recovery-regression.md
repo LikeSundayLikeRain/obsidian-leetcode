@@ -230,4 +230,8 @@ files_changed:
   - src/main/childEditorSync.ts (repairFenceStructure refactor + caller signature update + readLcLanguageFromDoc helper)
   - tests/main/childEditorSync.repair.test.ts (NEW — regression fixture)
 
-final_commit_sha: filled in after the Task 3 commit lands
+final_commit_sha: f7c4d8a (Task 3 — fix + debug doc verification update)
+plan_commits:
+  - e609c05 (Task 1 — debug doc with hypothesis enumeration + root cause)
+  - de2f54c (Task 2 — RED-state regression test fixture)
+  - f7c4d8a (Task 3 — GREEN fix: marker-disambiguation + body-aware insertion + activeSlug threading)
