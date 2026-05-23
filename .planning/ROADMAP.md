@@ -209,5 +209,5 @@ Plans:
 | 13. Nested Editor Foundation                | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
-| 16. Language Packs & Switching              | v1.2      | 5/5 | Complete   | 2026-05-22 |
+| 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
 | 17. Polish & Edge Cases                     | v1.2      | 0/TBD          | Not started | -          |

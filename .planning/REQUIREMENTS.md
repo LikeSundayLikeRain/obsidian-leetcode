@@ -18,29 +18,29 @@ Make editing code inside the `## Code` solution fence feel like a proper code ed
 ### Smart Enter
 
 - [x] **ENTER-01**: User pressing Enter inside the fence body preserves the current line's indent level on the new line
-- [ ] **ENTER-02**: User pressing Enter after an opening brace/paren `{` `(` indents the new line one level deeper
-- [ ] **ENTER-03**: User pressing Enter after Python colon `:` (def, if, for, while, class, etc.) indents the new line one level deeper
-- [ ] **ENTER-04**: User pressing Enter between matched braces `{|}` splits into three lines: current, indented blank, dedented closing brace
+- [x] **ENTER-02**: User pressing Enter after an opening brace/paren `{` `(` indents the new line one level deeper
+- [x] **ENTER-03**: User pressing Enter after Python colon `:` (def, if, for, while, class, etc.) indents the new line one level deeper
+- [x] **ENTER-04**: User pressing Enter between matched braces `{|}` splits into three lines: current, indented blank, dedented closing brace
 
 ### Bracket & Pair Handling
 
-- [ ] **BRACKET-01**: Typing `{`, `[`, `(`, `"`, `'` inside the fence body auto-inserts the matching closer
-- [ ] **BRACKET-02**: Typing `*`, `_`, or backtick inside the fence body does NOT trigger markdown auto-pair behavior
-- [ ] **BRACKET-03**: Typing a closing bracket `)`, `]`, `}` when cursor is before an auto-inserted closer overtypes it instead of doubling
-- [ ] **BRACKET-04**: Pressing Backspace between an auto-inserted pair (e.g., `{|}`) deletes both opener and closer
-- [ ] **BRACKET-05**: Typing backtick-backtick-backtick (template literal) inside JS/TS fence auto-closes with matching backtick *(Deferred — see Future Requirements; per Phase 16 D-09)*
+- [x] **BRACKET-01**: Typing `{`, `[`, `(`, `"`, `'` inside the fence body auto-inserts the matching closer
+- [x] **BRACKET-02**: Typing `*`, `_`, or backtick inside the fence body does NOT trigger markdown auto-pair behavior
+- [x] **BRACKET-03**: Typing a closing bracket `)`, `]`, `}` when cursor is before an auto-inserted closer overtypes it instead of doubling
+- [x] **BRACKET-04**: Pressing Backspace between an auto-inserted pair (e.g., `{|}`) deletes both opener and closer
+- [x] **BRACKET-05**: Typing backtick-backtick-backtick (template literal) inside JS/TS fence auto-closes with matching backtick *(Deferred — see Future Requirements; per Phase 16 D-09)*
 
 ### Language Switching
 
-- [ ] **LANG-01**: When user switches language via the chevron dropdown, indent rules and bracket behavior update to match the new language without re-opening the note
+- [x] **LANG-01**: When user switches language via the chevron dropdown, indent rules and bracket behavior update to match the new language without re-opening the note
 
 ### Comment Toggling
 
-- [ ] **COMMENT-01**: User can press Cmd-/ (Mac) or Ctrl-/ (Win/Linux) inside the fence body to toggle line comment using the active language's comment syntax (// for Java/JS/C++, # for Python)
+- [x] **COMMENT-01**: User can press Cmd-/ (Mac) or Ctrl-/ (Win/Linux) inside the fence body to toggle line comment using the active language's comment syntax (// for Java/JS/C++, # for Python)
 
 ### Matching Bracket Highlight
 
-- [ ] **HIGHLIGHT-01**: When cursor is adjacent to a bracket `{`, `}`, `(`, `)`, `[`, `]` inside the fence body, both the bracket and its match are visually highlighted
+- [x] **HIGHLIGHT-01**: When cursor is adjacent to a bracket `{`, `}`, `(`, `)`, `[`, `]` inside the fence body, both the bracket and its match are visually highlighted
 
 ---
 
@@ -74,14 +74,14 @@ Make editing code inside the `## Code` solution fence feel like a proper code ed
 | INDENT-03  | Phase 15: Focus, Undo & Cursor                | Complete |
 | INDENT-04  | Phase 16: Language Packs & Switching           | Complete |
 | ENTER-01   | Phase 14: Bidirectional Sync                   | Complete |
-| ENTER-02   | Phase 16: Language Packs & Switching           | Pending |
-| ENTER-03   | Phase 16: Language Packs & Switching           | Pending |
-| ENTER-04   | Phase 16: Language Packs & Switching           | Pending |
-| BRACKET-01 | Phase 16: Language Packs & Switching           | Pending |
-| BRACKET-02 | Phase 16: Language Packs & Switching           | Pending |
-| BRACKET-03 | Phase 16: Language Packs & Switching           | Pending |
-| BRACKET-04 | Phase 16: Language Packs & Switching           | Pending |
+| ENTER-02   | Phase 16: Language Packs & Switching           | Complete |
+| ENTER-03   | Phase 16: Language Packs & Switching           | Complete |
+| ENTER-04   | Phase 16: Language Packs & Switching           | Complete |
+| BRACKET-01 | Phase 16: Language Packs & Switching           | Complete |
+| BRACKET-02 | Phase 16: Language Packs & Switching           | Complete |
+| BRACKET-03 | Phase 16: Language Packs & Switching           | Complete |
+| BRACKET-04 | Phase 16: Language Packs & Switching           | Complete |
 | BRACKET-05 | Phase 16: Language Packs & Switching           | Deferred |
-| LANG-01    | Phase 16: Language Packs & Switching           | Pending |
-| COMMENT-01 | Phase 16: Language Packs & Switching           | Pending |
-| HIGHLIGHT-01 | Phase 16: Language Packs & Switching         | Pending |
+| LANG-01    | Phase 16: Language Packs & Switching           | Complete |
+| COMMENT-01 | Phase 16: Language Packs & Switching           | Complete |
+| HIGHLIGHT-01 | Phase 16: Language Packs & Switching         | Complete |
