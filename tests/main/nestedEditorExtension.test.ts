@@ -316,12 +316,14 @@ describe('NestedEditorWidget', () => {
     const widget = new NestedEditorWidget('path/a.md', registry as never, 'some code', 'java', 4);
     widget.toDOM({} as never);
 
-    // Phase 16: factory takes (content, parent, initialSlug, indentOverride)
+    // Phase 16: factory takes (content, parent, initialSlug, indentOverride, app?)
+    // — `app` is optional; widget was constructed without it here, so 5th arg is undefined.
     expect(createChildEditor).toHaveBeenCalledWith(
       'some code',
       expect.any(HTMLElement),
       'java',
       4,
+      undefined,
     );
     expect(registry.set).toHaveBeenCalledWith('path/a.md', mockChildView);
   });
@@ -382,6 +384,7 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       expect.any(HTMLElement),
       'java',
       'auto',
+      expect.anything(),
     );
   });
 
@@ -413,6 +416,7 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       expect.any(HTMLElement),
       'python3',
       8,
+      expect.anything(),
     );
   });
 
@@ -450,6 +454,7 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       expect.any(HTMLElement),
       'python3',
       'auto',
+      expect.anything(),
     );
   });
 
@@ -490,6 +495,7 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       expect.any(HTMLElement),
       'python3',
       'auto',
+      expect.anything(),
     );
   });
 });
@@ -527,5 +533,88 @@ describe('extractFenceBody', () => {
     // opener at line 3, closer at line 5
     const result = extractFenceBody(state, { openerLine: 3, closerLine: 5 });
     expect(result).toBe('pass');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// chevron-switch-child-body-stale regression (2026-05-22)
+//
+// Source-level invariants on src/main/nestedEditorExtension.ts:
+// the parent's externalChangeListener must skip ONLY echo-prone userEvents
+// (`leetcode.child-sync`, `leetcode.fence-repair`), not the entire
+// `'leetcode.*'` namespace. The Phase 14 broad-prefix gate over-blocked
+// the Phase 16 chevron-driven `'leetcode.lang-switch'` parent dispatch,
+// leaving the child editor body stale until app reload.
+//
+// We assert by reading the source file because the listener is wired
+// internally inside `buildNestedEditorExtension` (private closure over
+// `registry`) and has no exported handle. Source-level assertion is the
+// project convention for invariant guards (see tests/main/childEditorSync.test.ts:548).
+// ────────────────────────────────────────────────────────────────────────
+
+describe('chevron-switch-child-body-stale regression — externalChangeListener echo gate', () => {
+  it('uses an explicit ECHO_PRONE_USER_EVENTS skip-set rather than a broad "leetcode.*" prefix', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(
+      require('path').resolve(__dirname, '../../src/main/nestedEditorExtension.ts'),
+      'utf8',
+    );
+    // The fixed listener uses `ECHO_PRONE_USER_EVENTS.has(ev)` — not a startsWith call.
+    expect(source).toMatch(/ECHO_PRONE_USER_EVENTS\.has\(ev\)/);
+  });
+
+  it('skip-set contains leetcode.child-sync (echo from child→parent dispatches)', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(
+      require('path').resolve(__dirname, '../../src/main/nestedEditorExtension.ts'),
+      'utf8',
+    );
+    // The Set literal should declare leetcode.child-sync as an echo-prone event.
+    expect(source).toMatch(/'leetcode\.child-sync'/);
+    // And it should appear inside the ECHO_PRONE_USER_EVENTS Set declaration.
+    const setBlock = /ECHO_PRONE_USER_EVENTS\s*=\s*new Set\(\[([\s\S]*?)\]\)/.exec(source);
+    expect(setBlock).not.toBeNull();
+    expect(setBlock![1]).toContain("'leetcode.child-sync'");
+  });
+
+  it('skip-set contains leetcode.fence-repair (parent-side fence marker repair)', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(
+      require('path').resolve(__dirname, '../../src/main/nestedEditorExtension.ts'),
+      'utf8',
+    );
+    const setBlock = /ECHO_PRONE_USER_EVENTS\s*=\s*new Set\(\[([\s\S]*?)\]\)/.exec(source);
+    expect(setBlock).not.toBeNull();
+    expect(setBlock![1]).toContain("'leetcode.fence-repair'");
+  });
+
+  it('skip-set does NOT contain leetcode.lang-switch (Phase 16 chevron must propagate to child)', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(
+      require('path').resolve(__dirname, '../../src/main/nestedEditorExtension.ts'),
+      'utf8',
+    );
+    const setBlock = /ECHO_PRONE_USER_EVENTS\s*=\s*new Set\(\[([\s\S]*?)\]\)/.exec(source);
+    expect(setBlock).not.toBeNull();
+    // CRITICAL invariant: lang-switch must reach detectAndPropagateExternalChange
+    // so the chevron-driven body rewrite mirrors into the child editor.
+    expect(setBlock![1]).not.toContain("'leetcode.lang-switch'");
+  });
+
+  it('externalChangeListener does NOT use the broad startsWith("leetcode.") gate (Phase 14 over-block regression)', () => {
+    const fs = require('fs');
+    const source = fs.readFileSync(
+      require('path').resolve(__dirname, '../../src/main/nestedEditorExtension.ts'),
+      'utf8',
+    );
+    // Locate the externalChangeListener block and assert no broad-prefix gate.
+    const listenerBlock =
+      /externalChangeListener\s*=\s*EditorView\.updateListener\.of\(\(update\)\s*=>\s*\{([\s\S]*?)\}\);/.exec(
+        source,
+      );
+    expect(listenerBlock).not.toBeNull();
+    // The body must NOT contain a `startsWith('leetcode.')` test — that was
+    // the Phase 14 design that caused the chevron-switch-child-body-stale bug.
+    expect(listenerBlock![1]).not.toMatch(/startsWith\(['"]leetcode\.['"]\)/);
   });
 });

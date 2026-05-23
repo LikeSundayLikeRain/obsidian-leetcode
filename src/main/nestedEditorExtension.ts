@@ -83,6 +83,7 @@ export class NestedEditorWidget extends WidgetType {
     readonly fenceContent: string,
     readonly initialSlug: string,
     readonly indentOverride: 'auto' | 2 | 4 | 8,
+    readonly app?: import('obsidian').App,
   ) {
     super();
   }
@@ -112,6 +113,7 @@ export class NestedEditorWidget extends WidgetType {
         container,
         this.initialSlug,
         this.indentOverride,
+        this.app,
       );
       this.registry.set(this.filePath, childView);
     } else {
@@ -220,7 +222,7 @@ export function buildNestedDecorations(
   // 2. Block widget anchored at opener line end (side: 1 = renders after)
   const anchor = state.doc.line(fence.openerLine).to;
   builder.add(anchor, anchor, Decoration.widget({
-    widget: new NestedEditorWidget(file.path, registry, fenceContent, initialSlug, indentOverride),
+    widget: new NestedEditorWidget(file.path, registry, fenceContent, initialSlug, indentOverride, plugin.app),
     block: true,
     side: 1,
   }));
@@ -232,6 +234,38 @@ export function buildNestedDecorations(
 
   return builder.finish();
 }
+
+// ────────────────────────────────────────────────────────────────────────
+// Echo-prone userEvents — explicit skip-list for parent→child mirroring
+// ────────────────────────────────────────────────────────────────────────
+//
+// The parent's `externalChangeListener` (below) calls
+// `detectAndPropagateExternalChange` to mirror parent fence-body edits into
+// the child EditorView. Some `'leetcode.*'` userEvents on the parent must NOT
+// be propagated to the child:
+//
+//   - `'leetcode.child-sync'` — child→parent echo. Child already has the
+//     content (it's the source); re-mirroring would clobber the child's
+//     selection/cursor and could trip the syncAnnotation guard.
+//   - `'leetcode.fence-repair'` — parent-side fence-marker repair. Re-inserts
+//     missing ``` markers without changing the body content; the child has
+//     no marker awareness and shouldn't observe these edits.
+//
+// All OTHER `'leetcode.*'` userEvents (notably `'leetcode.lang-switch'`,
+// the chevron-driven language switch from Phase 16) DO carry parent-side
+// body rewrites that the child must mirror. The Phase 14 broad-prefix gate
+// silently dropped these (regression observed in
+// `.planning/debug/chevron-switch-child-body-stale.md` — Java→Python switch
+// flipped fence tag + child syntax highlight but left child body stale).
+//
+// Echo-loop defense for parent→child dispatches is independently provided
+// by `syncAnnotation` (see `childEditorSync.ts:236` parent→child dispatch
+// and `childEditorSync.ts:92` child sync echo guard) — narrowing this gate
+// does NOT introduce a new echo path.
+const ECHO_PRONE_USER_EVENTS = new Set([
+  'leetcode.child-sync',
+  'leetcode.fence-repair',
+]);
 
 /**
  * Build the complete nested editor CM6 extension.
@@ -248,7 +282,11 @@ export function buildNestedEditorExtension(plugin: PluginHost): Extension {
       return buildNestedDecorations(state, plugin, registry);
     },
     update(old, tr) {
-      // Skip rebuild for plugin-internal dispatches (WR-03 fix)
+      // Skip rebuild for plugin-internal dispatches (WR-03 fix). Note: this
+      // gate intentionally stays broad (`leetcode.*`) — it's a perf
+      // optimization (decoration map vs full rebuild) that's safe for ALL
+      // parent-internal events. Only the propagation listener below needs
+      // the narrower skip-list (see ECHO_PRONE_USER_EVENTS rationale).
       const userEvent = tr.annotation(Transaction.userEvent);
       if (userEvent && userEvent.startsWith('leetcode.')) {
         return old.map(tr.changes);
@@ -266,10 +304,19 @@ export function buildNestedEditorExtension(plugin: PluginHost): Extension {
 
   // CR-03 fix: detect external fence-body changes via updateListener (side-effect-safe)
   // instead of inside StateField.update() which must be pure.
+  //
+  // chevron-switch-child-body-stale fix (2026-05-22): previously this gate
+  // skipped ALL `'leetcode.*'` userEvents, which over-blocked the Phase 16
+  // chevron-driven `'leetcode.lang-switch'` parent dispatch — child body
+  // was left stale until app reload. Now we skip ONLY echo-prone events
+  // (see ECHO_PRONE_USER_EVENTS); all other parent-side `'leetcode.*'`
+  // dispatches with body changes flow through to detectAndPropagateExternalChange.
+  // Echo-loop defense for parent→child dispatches is provided by
+  // syncAnnotation (childEditorSync.ts) — independent of userEvent gating.
   const externalChangeListener = EditorView.updateListener.of((update) => {
     if (!update.docChanged) return;
     const ev = update.transactions[0]?.annotation(Transaction.userEvent);
-    if (ev && ev.startsWith('leetcode.')) return;
+    if (ev && ECHO_PRONE_USER_EVENTS.has(ev)) return;
     for (const tr of update.transactions) {
       if (tr.docChanged) {
         detectAndPropagateExternalChange(tr, plugin, registry);

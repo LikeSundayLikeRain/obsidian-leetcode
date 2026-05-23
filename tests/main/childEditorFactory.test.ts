@@ -322,32 +322,29 @@ describe('cmd-slash-not-reaching-child regression', () => {
     expect(factorySource).toMatch(/from '@codemirror\/commands'/);
   });
 
-  it('uses a ViewPlugin to install a document-level capture-phase listener', () => {
+  it('uses a ViewPlugin lifecycle for Mod-/ Scope intercept', () => {
     expect(factorySource).toMatch(/ViewPlugin\.define/);
-    expect(factorySource).toMatch(/addEventListener\('keydown', handler, true\)/);
   });
 
-  it('registers cleanup on view destroy via ViewPlugin destroy()', () => {
-    expect(factorySource).toMatch(/destroy\(\)/);
-    expect(factorySource).toMatch(/removeEventListener\('keydown', handler, true\)/);
+  it('pushes an Obsidian Scope on focus and pops on blur', () => {
+    expect(factorySource).toMatch(/app\.keymap\.pushScope/);
+    expect(factorySource).toMatch(/app\.keymap\.popScope/);
+    expect(factorySource).toMatch(/contentDOM\.addEventListener\('focus'/);
+    expect(factorySource).toMatch(/contentDOM\.addEventListener\('blur'/);
   });
 
-  it('detects Mod-/ keystroke (event.key === "/" with metaKey or ctrlKey)', () => {
-    expect(factorySource).toMatch(/event\.key !== '\/'/);
-    expect(factorySource).toMatch(/metaKey \|\| event\.ctrlKey/);
+  it('registers Mod-/ inside the Scope to run toggleLineComment', () => {
+    expect(factorySource).toMatch(/scope\.register\(\['Mod'\], '\/'/);
+    expect(factorySource).toMatch(/runComment\(view\)/);
   });
 
-  it('gates by event.target ∈ this view contentDOM (multi-editor safety)', () => {
-    expect(factorySource).toMatch(/view\.contentDOM\.contains\(target\)/);
-  });
-
-  it('stops propagation so Obsidian Scope never sees the keystroke', () => {
-    expect(factorySource).toMatch(/event\.preventDefault\(\)/);
-    expect(factorySource).toMatch(/event\.stopPropagation\(\)/);
-    expect(factorySource).toMatch(/event\.stopImmediatePropagation\(\)/);
-  });
-
-  it('runs toggleLineComment on the child view when Mod-/ is captured', () => {
+  it('runs toggleLineComment on the child view via cast', () => {
     expect(factorySource).toMatch(/toggleLineComment as unknown as/);
+  });
+
+  it('cleans up Scope and listeners on ViewPlugin destroy', () => {
+    expect(factorySource).toMatch(/destroy\(\)/);
+    expect(factorySource).toMatch(/removeEventListener\('focus'/);
+    expect(factorySource).toMatch(/removeEventListener\('blur'/);
   });
 });
