@@ -3,7 +3,7 @@ status: in-progress
 phase: 17-polish-edge-cases
 source: [17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md, 17-04-SUMMARY.md, 17-05-SUMMARY.md, 17-06-SUMMARY.md]
 started: 2026-05-23T10:14:00Z
-updated: 2026-05-23T10:14:00Z
+updated: 2026-05-23T10:27:00Z
 ---
 
 ## Current Test
@@ -84,11 +84,52 @@ expected: Open a Java problem note in pane A. Without switching focus to pane A,
 result: pending
 notes: ""
 
+### 13. THEME-01 — Themed HighlightStyle dark theme legibility (D-15)
+
+expected: Open a Java problem note in dark theme (Obsidian default dark or any community dark theme). Verify keywords (`class`, `public`, `return`), strings (`"hello"`), comments (`// note`), function names (`solve(...)`), type names (`String`, `Integer`), property names, operators (`==`, `+`), and numeric literals all render with Obsidian's dark-theme code colors. The colors are visually distinct from each other (no white-on-white, no fully-invisible tokens, no two adjacent tag classes rendering identically). Comments are italicized. Repeat with a Python note (`def`, `self`, `None`, `if __name__ == '__main__':`) and a JavaScript note (`const`, `=>`, template literals); same legibility properties.
+result: pending
+notes: ""
+
+### 14. THEME-02 — Themed HighlightStyle light theme legibility (D-15)
+
+expected: With the same Java/Python/JS notes still open from Test 13, switch Obsidian to a light theme (Settings → Appearance → Base color scheme → Light, OR pick a community light theme). DO NOT reload the plugin, DO NOT close+reopen the note. The same syntax tokens MUST automatically re-render in the light-theme palette (the `var(--code-keyword)` etc. bindings resolve against Obsidian's now-active theme). Same legibility properties as Test 13: each tag visually distinct, comments italic, no fully-invisible tokens. Switch back to dark to confirm bidirectional theme tracking.
+result: pending
+notes: ""
+
+### 15. HIGHLIGHT-DARK-01 — Bracket-match contrast in dark theme (D-16)
+
+expected: In dark theme, open a Java note with populated code containing nested brackets (e.g. `for (int i = 0; i < n; i++) { arr[i] = compute(args[k]); }`). Place the cursor IMMEDIATELY adjacent to a `{`. The matching `}` is highlighted with HIGH-CONTRAST styling: foreground uses `var(--code-keyword)` (a strong accent against the code-block background), background uses `var(--background-modifier-active-hover)` (a clearly tinted state — distinguishable from the surrounding code-block surface), and a 1px outline using `var(--code-keyword)` is visible around the bracket. The highlight is unambiguously distinguishable from regular text — NOT the Phase 16 carry-over symptom of "barely visible / can't tell which bracket is matched". Repeat for `[` ↔ `]` and `(` ↔ `)`. Switch to a light theme and confirm the SAME high-contrast properties hold (variables resolve to light-theme equivalents). Resolves the 16-UAT.md Test 9 cosmetic carry-over from Phase 16.
+result: pending
+notes: ""
+
+### 16. GO-01 — Go syntax highlighting after themed swap (D-17 conditional)
+
+expected: Open a problem note. Use the chevron to switch to a Go fence (or open a note whose `lc-language: golang`). Type a Go function with comments and strings, e.g.:
+```
+package main
+
+import "fmt"
+
+// Sum returns the sum of two ints.
+func Sum(a int, b int) int {
+    s := "hello"
+    return a + b
+}
+```
+Observe whether the themed `HighlightStyle` produces colorization on Go tokens.
+
+  CASE A (themed style binds successfully to legacy-modes Go tags): Keywords (`func`, `package`, `return`, `import`), strings (`"fmt"`, `"hello"`), comments (`// Sum returns...`), and types (`int`) are all colorized using Obsidian theme variables. Mark `result: pass` — Go ships colorized in v1.2.
+
+  CASE B (Go remains plain text after the swap): Keywords/strings/comments render as default text color (no highlighting visible). Mark `result: fail` and set `notes: "Defer Go highlighting to v1.3 per CONTEXT D-17 escape clause — legacy-modes StreamLanguage tag binding requires explicit work beyond the ~20 LOC ceiling"`. Additionally update `.planning/REQUIREMENTS.md` (or whichever requirements registry tracks LANG-01 / Go highlighting) to flag Go as a v1.3 deferral, AND add a one-line entry to `.planning/RETROSPECTIVE.md` or the phase 17 final SUMMARY noting the deferral and reason. Plan 17-06 Task 4 records the case and triggers the documentation update if CASE B.
+
+result: pending
+notes: ""
+
 ## Summary
 
-total: 12
+total: 16
 passed: 0
 issues: 0
-pending: 12
+pending: 16
 skipped: 0
 blocked: 0
