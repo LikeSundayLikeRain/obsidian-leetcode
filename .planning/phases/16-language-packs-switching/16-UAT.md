@@ -1,14 +1,18 @@
 ---
-status: partial
+status: testing
 phase: 16-language-packs-switching
 source: [16-01-SUMMARY.md, 16-02-SUMMARY.md, 16-03-SUMMARY.md, 16-04-SUMMARY.md, 16-05-SUMMARY.md]
 started: 2026-05-22T20:25:00Z
-updated: 2026-05-22T21:55:00Z
+updated: 2026-05-22T22:15:00Z
 ---
 
 ## Current Test
 
-[testing paused — Cmd-/ keymap not reaching child editor; routing to debug. Tests 6/7/8 grouped under one root cause.]
+number: 7
+name: Java Cmd-/ line comment (COMMENT-01)
+expected: |
+  In a Java fence — place cursor on a code line, press Cmd-/ (Mac) or Ctrl-/ (Win/Linux). Line gets `// ` prefix. Press Cmd-/ again → prefix removed. (Test 8 will verify Go right after.)
+awaiting: user response
 
 ## Tests
 
@@ -36,21 +40,16 @@ result: pass
 
 ### 6. Python Cmd-/ line comment (COMMENT-01)
 expected: In a Python fence — place cursor on a code line, press Cmd-/ (Mac) or Ctrl-/ (Win/Linux). Line gets `# ` prefix. Press Cmd-/ again → prefix removed.
-result: issue
-reported: "no, it doesn't work, my cursor is in fenced block, but when I hit cmd + /, it insert %% %% at Note section.."
-severity: major
+result: pass
+notes: "Initial fail (Obsidian's editor:toggle-comments hijacked Cmd-/). Two iterations: bubble-phase domEventHandlers (failed), then capture-phase document/window listeners (failed — Obsidian's hotkey doesn't go through DOM). Final fix: push Obsidian Scope on focus, register Mod-/ inside the Scope. User confirmed: 'wow the test looks good, it works !'."
 
 ### 7. Java Cmd-/ line comment (COMMENT-01)
 expected: In a Java fence — Cmd-/ on a code line adds `// ` prefix. Press again to remove.
-result: blocked
-blocked_by: prior-phase
-reason: "Blocked on Test 6 root cause — Cmd-/ never reaches child editor. Will retest after fix."
+result: [pending]
 
 ### 8. Go Cmd-/ line comment (COMMENT-01 / Pitfall E gate)
 expected: In a Go fence — Cmd-/ on a code line adds `// ` prefix. Press again to remove. (Automated test passed; visual confirmation expected — if this fails it triggers Pitfall E remediation.)
-result: blocked
-blocked_by: prior-phase
-reason: "Blocked on Test 6 root cause — Cmd-/ never reaches child editor. Will retest after fix."
+result: [pending]
 
 ### 9. Bracket match highlight (HIGHLIGHT-01 / D-15)
 expected: Position cursor adjacent to a `{` in any fence — observe BOTH the `{` and its matching `}` are visually highlighted.
@@ -104,11 +103,11 @@ result: [pending]
 ## Summary
 
 total: 20
-passed: 5
-issues: 2
-pending: 11
+passed: 6
+issues: 1
+pending: 13
 skipped: 0
-blocked: 2
+blocked: 0
 
 ## Gaps
 
@@ -137,11 +136,16 @@ blocked: 2
   debug_session: ""
 
 - truth: "Cmd-/ in child editor toggles language-aware line comment (# for Python, // for Java/JS/Go/Rust)"
-  status: failed
-  reason: "User reported: no, it doesn't work, my cursor is in fenced block, but when I hit cmd + /, it insert %% %% at Note section.. Two compounding signals: (1) Obsidian's parent-level Toggle comment command (inserts %% %% markdown comments) wins over the child's CM6 toggleLineComment keymap; (2) the %% %% lands in the Notes section, not at the child's cursor — suggesting the child editor isn't capturing key events when nominally focused, or focus drifted to the parent before keystroke. Likely root causes: (a) Cmd-/ keymap binding either missing from child extensions array or not at high enough precedence, OR (b) Obsidian's hotkey command intercepts before CM6 keymap gets a chance, OR (c) child editor focus state isn't propagating correctly so keystrokes route to parent's Notes section."
+  status: resolved
+  reason: "User reported: no, it doesn't work, my cursor is in fenced block, but when I hit cmd + /, it insert %% %% at Note section.."
   severity: major
   test: 6
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "Obsidian's app-level `editor:toggle-comments` hotkey is dispatched through Obsidian's internal Scope-based keymap manager, NOT a DOM event. DOM-level capture-phase listeners (window/document/contentDOM) cannot prevent it. Confirmed via diagnostic logging: our DOM listener fired AND ran toggleLineComment successfully, but Obsidian's hotkey ALSO fired in parallel through its own dispatch path."
+  artifacts:
+    - path: "src/main/childEditorFactory.ts"
+      issue: "Initial fix used bubble-phase domEventHandlers (couldn't intercept Obsidian's Scope), second iteration used document-level capture-phase listeners (also bypassed by Obsidian's internal dispatch)"
+    - path: "src/main/nestedEditorExtension.ts"
+      issue: "Widget signature needed `app` to plumb through to the factory's Scope override"
+  missing:
+    - "Replaced DOM-event interception with Obsidian Scope mechanism: createCmdSlashScopeExtension(app) pushes a Scope on child editor focus, registers Mod-/ inside the Scope to run toggleLineComment on the child, pops Scope on blur. Plumbed app through factory and widget."
+  debug_session: ".planning/debug/cmd-slash-not-reaching-child.md"
