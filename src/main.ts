@@ -879,6 +879,27 @@ export default class LeetCodePlugin extends Plugin {
       ),
     );
 
+    // Step 6g.5 — Phase 17 Plan 04 (D-13/D-14, Wave 2) — external `lc-language`
+    // frontmatter reactivity. When a user (or another plugin) writes a
+    // different `lc-language` value to the frontmatter of an open `lc-slug`
+    // note, the child editor reconfigures its language Compartment to match —
+    // reusing the Phase 16 chevron-switch plumbing (`languageCompartment` +
+    // `buildLanguageExtensions`). The listener does NOT rewrite the fence
+    // opener tag (D-14 — frontmatter is the source of truth in this passive-
+    // listener scenario; users who want the fence opener to flip use the
+    // chevron). Pitfall 3 (recursive metadataCache.changed during the plugin's
+    // own processFrontMatter writes) is dedupe-prevented by Gate 3 (slug
+    // equality check inside `handleFmChangeForLanguageReactivity`).
+    //
+    // Analog: src/main/codeActionsEditorExtension.ts:329-359 (parent-side
+    // chevron metadataCache subscription). This block adds the CHILD-side
+    // reactivity dispatching Compartment.reconfigure on the registered child.
+    this.registerEvent(
+      this.app.metadataCache.on('changed', (file, _data, cache) => {
+        this.handleFmChangeForLanguageReactivity(file, cache);
+      }),
+    );
+
     // Step 6h — Phase 5.2 D-13 python3 → python language-tag alias for
     // Reading-Mode Prism highlighting. Global application (not gated on
     // lc-slug) so any note with a ```python3 fence benefits. Synchronous
@@ -2478,6 +2499,149 @@ export default class LeetCodePlugin extends Plugin {
       // Silently ignore — child may be in teardown (defensive per project
       // convention; mirrors childEditorSync.ts:115).
     }
+  }
+
+  /**
+   * Phase 17 Plan 04 (D-13 / D-14, Wave 2) — external frontmatter reactivity
+   * listener body. Extracted from the inline `metadataCache.on('changed')`
+   * callback in `onload` for unit testability (see
+   * tests/main/fmReactivity.test.ts).
+   *
+   * Gates (in order — short-circuit on first miss):
+   *
+   *   Gate 1 (lc-slug). The note must carry `lc-slug` in frontmatter.
+   *           Non-LC notes never receive a dispatch.
+   *   Gate 2 (child registered). A child EditorView must be present in
+   *           `childEditorRegistry` for `file.path`. Notes that are not
+   *           open in a MarkdownView have no child to reconfigure.
+   *   Gate 3 (slug equality / Pitfall 3 dedupe). The new `lc-language`
+   *           value must differ from the slug currently applied to the
+   *           parent fence opener. This is the canonical dedupe — when
+   *           the plugin's own `processFrontMatter` writes a slug that
+   *           the fence opener already reflects (e.g., chevron switch
+   *           Step C reaches metadataCache after Step B has already
+   *           reconfigured the child), Gate 3 trips and the listener
+   *           short-circuits.
+   *
+   * On all three gates passing, dispatches the same Compartment payload
+   * the chevron switch path (D-12) uses on the child:
+   *
+   *   `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(
+   *     fmLang, getIndentSizeOverride())) }`
+   *
+   * The dispatch is INTENTIONALLY effect-only — no `changes:` payload, no
+   * `userEvent` annotation. Effect-only dispatches are not subject to the
+   * section-lock changeFilter (CLAUDE.md §Conventions), so the convention
+   * `'leetcode.<verb>'` userEvent is not required here. See Plan 17-04
+   * Task 1 Test 6 (the inline guard comment that codifies this).
+   *
+   * D-14 invariant: the listener does NOT rewrite the fence opener tag.
+   * In passive-listener mode, frontmatter is the source of truth for the
+   * child editor's language; the visible fence opener stays whatever it
+   * currently says (users who want the fence opener flipped use the
+   * chevron). The unit test asserts neither `vault.process` nor
+   * `fileManager.processFrontMatter` is called from this code path.
+   *
+   * Defensive try/catch wraps the dispatch — the child may be in teardown
+   * when the listener fires (mirrors the `dispatchChildLanguageReconfigure`
+   * convention at lines ~2473-2476).
+   */
+  private handleFmChangeForLanguageReactivity(
+    file: { path: string },
+    cache: { frontmatter?: Record<string, unknown> } | null | undefined,
+  ): void {
+    // Gate 1 — lc-slug note only.
+    const slugRaw = cache?.frontmatter?.['lc-slug'];
+    if (typeof slugRaw !== 'string' || slugRaw.length === 0) return;
+
+    // Gate 2 — child registered for this file path.
+    const childView = this.childEditorRegistry?.get(file.path);
+    if (!childView) return;
+
+    // Gate 3 — lc-language present and differs from the slug currently
+    // applied to the parent fence opener. Reading the active fence slug
+    // via `readActiveFenceSlug` (which consults the active MarkdownView's
+    // CM6 state when available, falling back to the metadataCache value
+    // for non-active windows) is what closes Pitfall 3: when the plugin
+    // itself writes lc-language via processFrontMatter, the chevron path
+    // has already updated the parent fence opener, so the read returns
+    // the same slug and Gate 3 trips.
+    const fmLangRaw = cache?.frontmatter?.['lc-language'];
+    if (typeof fmLangRaw !== 'string' || fmLangRaw.length === 0) return;
+    const currentSlug = this.readActiveFenceSlug(file);
+    if (currentSlug === fmLangRaw) return;
+
+    // All gates passed — dispatch Compartment.reconfigure on the child.
+    // Effect-only dispatches (no changes: payload) are not subject to the
+    // section-lock changeFilter per CLAUDE.md §Conventions, so the dispatch
+    // does NOT carry a 'leetcode.*' userEvent annotation.
+    try {
+      childView.dispatch({
+        effects: languageCompartment.reconfigure(
+          buildLanguageExtensions(
+            fmLangRaw,
+            this.settings.getIndentSizeOverride(),
+          ),
+        ),
+        // Per D-14: NO `changes:` payload. Frontmatter is the source of
+        // truth in passive-listener mode; the fence opener tag is not
+        // rewritten.
+      });
+    } catch {
+      // Silently ignore — child may be in teardown (defensive per project
+      // convention; mirrors childEditorSync.ts:115 and
+      // dispatchChildLanguageReconfigure above).
+    }
+  }
+
+  /**
+   * Phase 17 Plan 04 (D-13 helper) — read the language slug currently
+   * applied to the parent fence opener for `file`.
+   *
+   * Strategy:
+   *   1. If the active MarkdownView is showing this file, parse its CM6
+   *      state via `findCodeFence` and extract the slug from the opener
+   *      line. This is the freshest source of truth — the chevron switch
+   *      path updates the parent doc atomically via CM6 dispatch BEFORE
+   *      `processFrontMatter` lands.
+   *   2. Fallback to the metadataCache's `lc-language` value when no
+   *      active CM6 view is available (e.g., note open in a background
+   *      leaf). This is sufficient for Gate 3 because in non-active
+   *      contexts the child editor cannot exist either (Gate 2 already
+   *      tripped).
+   *   3. Return undefined if neither source yields a slug — Gate 3 will
+   *      then proceed to dispatch (treats unknown current as a forced
+   *      reconfigure rather than a silent skip; safe given Gates 1-2
+   *      already gated this path).
+   */
+  private readActiveFenceSlug(file: { path: string }): string | undefined {
+    try {
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      if (view && view.file && view.file.path === file.path) {
+        const cm = (view.editor as unknown as { cm: EditorView }).cm;
+        const fence = findCodeFence(cm.state);
+        if (fence) {
+          const openerText = cm.state.doc.line(fence.openerLine).text;
+          // Match the opener tag: ```python3 or ```python or ```\tjava etc.
+          const m = /^\s*```\s*(\S+)\s*$/.exec(openerText);
+          if (m && m[1]) return m[1];
+        }
+      }
+    } catch {
+      // defensive — fall through to metadataCache fallback.
+    }
+    // Fallback: read lc-language from the metadataCache directly. Mirrors
+    // the source-of-truth used by Phase 16 D-12 when the chevron is
+    // re-rendered for a non-active leaf.
+    try {
+      const fm = this.app.metadataCache.getFileCache(file as TFile)
+        ?.frontmatter as Record<string, unknown> | undefined;
+      const fmLang = fm?.['lc-language'];
+      if (typeof fmLang === 'string' && fmLang.length > 0) return fmLang;
+    } catch {
+      // defensive — return undefined.
+    }
+    return undefined;
   }
 
   /**

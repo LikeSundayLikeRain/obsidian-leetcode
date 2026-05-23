@@ -63,6 +63,14 @@ interface FakeFile {
 interface FakePluginShape {
   childEditorRegistry: { get: ReturnType<typeof vi.fn> };
   settings: { getIndentSizeOverride: ReturnType<typeof vi.fn> };
+  /**
+   * Stubbed `readActiveFenceSlug` returning the configured `activeFenceSlug`.
+   * The production implementation reads the active MarkdownView's CM6 state
+   * and falls back to metadataCache; the unit test shortcuts that by binding
+   * the return value directly on the fake `this`. This keeps Gate 3 dedupe
+   * (Pitfall 3) verifiable without standing up a real CM6 view in the test.
+   */
+  readActiveFenceSlug: ReturnType<typeof vi.fn>;
   app: {
     workspace: { getActiveViewOfType: ReturnType<typeof vi.fn> };
     vault: { process: ReturnType<typeof vi.fn> };
@@ -78,12 +86,6 @@ function makeFakePlugin(opts: {
   override?: 'auto' | 2 | 4 | 8;
 }): FakePluginShape {
   const childView = opts.childView;
-  // We stand up a minimal active MarkdownView whose CM6 state.doc reports a
-  // single line containing the opener for the configured `activeFenceSlug`.
-  // The helper consults `readActiveFenceSlug(file)` which (per impl) falls
-  // through to checking the active view's parent CM6. For the unit-test,
-  // we shortcut by stubbing `getActiveViewOfType` to return undefined and
-  // expose the active-fence slug via the metadataCache fallback path.
   return {
     childEditorRegistry: {
       get: vi.fn().mockReturnValue(childView),
@@ -91,6 +93,9 @@ function makeFakePlugin(opts: {
     settings: {
       getIndentSizeOverride: vi.fn().mockReturnValue(opts.override ?? 'auto'),
     },
+    // Stub the helper that the SUT calls via `this.readActiveFenceSlug(...)`.
+    // Production impl is exercised via integration in 17-UAT.md Test 12.
+    readActiveFenceSlug: vi.fn().mockReturnValue(opts.activeFenceSlug),
     app: {
       workspace: {
         getActiveViewOfType: vi.fn().mockReturnValue(undefined),
@@ -102,9 +107,8 @@ function makeFakePlugin(opts: {
         processFrontMatter: vi.fn(),
       },
       metadataCache: {
-        // Some impls re-read frontmatter to derive the active fence slug.
-        // Return a synthetic cache reflecting the configured fence slug so
-        // the helper can perform Gate 3 dedupe correctly.
+        // Surfaced for D-14 guard test — the listener must NOT consult
+        // metadataCache for vault writes.
         getFileCache: vi.fn().mockReturnValue({
           frontmatter: opts.activeFenceSlug
             ? { 'lc-slug': 'two-sum', 'lc-language': opts.activeFenceSlug }
