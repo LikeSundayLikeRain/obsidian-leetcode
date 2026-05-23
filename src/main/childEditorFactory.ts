@@ -26,6 +26,7 @@ import {
   drawSelection,
   highlightActiveLine,
   ViewPlugin,
+  type Command,
   type PluginValue,
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
@@ -34,10 +35,12 @@ import {
   syntaxHighlighting,
   defaultHighlightStyle,
   bracketMatching,
+  indentUnit,
 } from '@codemirror/language';
 import {
   history,
-  indentWithTab,
+  indentMore,
+  indentLess,
   defaultKeymap,
   historyKeymap,
   toggleLineComment,
@@ -61,6 +64,82 @@ import { createScrollIntoViewExtension } from './childEditorSync';
 function isMod(event: KeyboardEvent): boolean {
   return event.metaKey || event.ctrlKey;
 }
+
+// Phase 17 Plan 03 (D-11/D-12) — Custom Tab handler that branches on cursor
+// position. Replaces the bare `indentWithTab` keymap entry from Phase 15:
+//
+//   - Multi-line selection (sel spans >1 line) → ALWAYS indent all lines as
+//     a single transaction (CM6 indentMore is single-tx → preserves the
+//     Phase 15 INDENT-03 single-undo invariant).
+//   - Cursor at or before first non-whitespace of line → indent the line
+//     (delegates to indentMore — INDENT-01 preserved).
+//   - Mid-line cursor (after at least one non-whitespace char) → insert
+//     the indentUnit facet's string at cursor (D-11 NEW).
+//
+// IMPORTANT (Rule 1 deviation from RESEARCH.md): CM6's `insertTab` from
+// `@codemirror/commands` HARDCODES a real `\t` character — it does NOT read
+// the `indentUnit` facet. Verified by inspecting the bundled source:
+//   `dispatch(state.update(state.replaceSelection("\t"), ...))`
+// To honor INDENT-04 (4 spaces for Java/Python, 2 for JS, real \t for Go —
+// per the per-language indentUnit map in childEditorLanguage.ts), we read
+// the `indentUnit` facet ourselves and dispatch a replaceSelection with the
+// right string. Single transaction → single undo step preserved.
+//
+// `indentMore` and `indentLess` are `StateCommand`-typed (target =
+// {state, dispatch}). EditorView is a structural superset (has `state` and
+// `dispatch`), so passing `view` directly to them works at runtime — but
+// the duplicate `@codemirror/state` resolution (root @6.6.0 vs
+// @codemirror/commands' transitive @6.5.0) makes the `state` types
+// nominally distinct under tsc. We cast through the looser StateCommand
+// signature to bypass the structural-equality TS2345 noise without leaving
+// runtime behavior touched (same workaround used in Phase 16 behavioral
+// test — see tests/main/childEditorLanguage.behavioral.test.ts §50-57).
+//
+// Phase 15 priority invariant: this command MUST be bound BEFORE
+// defaultKeymap in keymap.of(...) so it takes precedence over CM6's stock
+// Tab handler (which would otherwise trigger focus navigation per the Phase
+// 15 D-05 cm-z scope isolation work).
+type LooseStateCommand = (target: {
+  state: EditorState;
+  dispatch: (tr: ReturnType<EditorState['update']>) => void;
+}) => boolean;
+const indentMoreLoose = indentMore as unknown as LooseStateCommand;
+const indentLessLoose = indentLess as unknown as LooseStateCommand;
+
+export const customTabCommand: Command = (view) => {
+  const { state } = view;
+  const sel = state.selection.main;
+  // Multi-line selection → always indent (preserves INDENT-03 single-undo).
+  // We test by line number, not raw offsets, so a selection that ends right
+  // at a line boundary (`\n` index) is still treated correctly.
+  if (
+    !sel.empty &&
+    state.doc.lineAt(sel.from).number !== state.doc.lineAt(sel.to).number
+  ) {
+    return indentMoreLoose(view);
+  }
+  // Cursor at or before first non-whitespace of line → indent the line.
+  const line = state.doc.lineAt(sel.head);
+  const beforeCursor = line.text.slice(0, sel.head - line.from);
+  if (/^\s*$/.test(beforeCursor)) {
+    return indentMoreLoose(view);
+  }
+  // Mid-line → insert the indentUnit facet's string at cursor (real \t for
+  // Go, N spaces otherwise). One dispatch → one undo entry.
+  const unit = state.facet(indentUnit);
+  view.dispatch(
+    state.update(state.replaceSelection(unit), {
+      scrollIntoView: true,
+      userEvent: 'input',
+    }),
+  );
+  return true;
+};
+
+// Shift-Tab dedents the current line (or all selected lines for multi-line
+// selections) regardless of cursor position. Simple delegation to indentLess
+// preserves the Phase 15 INDENT-02 invariant.
+export const customShiftTabCommand: Command = (view) => indentLessLoose(view);
 
 /**
  * ViewPlugin that pushes an Obsidian Scope on focus and pops on blur.
@@ -180,9 +259,16 @@ export function createChildEditor(
       history(),
       drawSelection(),
       highlightActiveLine(),
-      // 5. Main keymap. indentWithTab MUST be first (priority over
-      //    defaultKeymap's Tab handling — Phase 15).
-      keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
+      // 5. Main keymap. customTabCommand MUST be first — branches on cursor
+      //    position per Phase 17 D-11 (line-start → indent line; mid-line →
+      //    insert indentUnit at cursor; multi-line selection → indent all
+      //    lines as one undo step). Phase 15 priority preserved (Tab does
+      //    NOT trigger focus-nav).
+      keymap.of([
+        { key: 'Tab', run: customTabCommand, shift: customShiftTabCommand },
+        ...defaultKeymap,
+        ...historyKeymap,
+      ]),
       // 6. Visual extensions.
       EditorView.lineWrapping,
       EditorView.theme({

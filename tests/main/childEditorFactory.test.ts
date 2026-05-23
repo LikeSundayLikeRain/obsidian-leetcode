@@ -36,17 +36,26 @@ vi.mock('@codemirror/state', () => ({
   EditorState: { create: vi.fn().mockReturnValue({ doc: 'mock-state' }) },
 }));
 
-// Phase 16: indentUnit no longer used by the factory — only syntaxHighlighting,
-// defaultHighlightStyle, and bracketMatching remain.
+// Phase 17 Plan 03: `indentUnit` is now imported by the factory itself
+// (read by customTabCommand mid-line branch via state.facet). Re-exposed in
+// the mock for that reason. Phase 16 still owned syntaxHighlighting,
+// defaultHighlightStyle, and bracketMatching here.
 vi.mock('@codemirror/language', () => ({
   syntaxHighlighting: vi.fn().mockReturnValue('mock-syntax-highlighting'),
   defaultHighlightStyle: { style: 'default' },
   bracketMatching: vi.fn().mockReturnValue('mock-bracket-matching'),
+  indentUnit: { of: vi.fn().mockReturnValue('mock-indent-unit-extension') },
 }));
 
 vi.mock('@codemirror/commands', () => ({
   history: vi.fn().mockReturnValue('mock-history-extension'),
-  indentWithTab: { key: 'Tab', run: vi.fn() },
+  // Phase 17 Plan 03 (D-11/D-12): the bare `indentWithTab` keymap was
+  // replaced by a customTabCommand that branches on cursor position. The
+  // factory now imports `indentMore`, `indentLess` (no longer `insertTab`
+  // — see RULE 1 deviation in childEditorFactory.ts: CM6's insertTab
+  // hardcodes `\t` and ignores indentUnit; we read the facet ourselves).
+  indentMore: vi.fn().mockReturnValue(true),
+  indentLess: vi.fn().mockReturnValue(true),
   defaultKeymap: [{ key: 'mock-default' }],
   historyKeymap: [{ key: 'mock-history' }],
   toggleLineComment: vi.fn().mockReturnValue(true),
@@ -69,11 +78,15 @@ vi.mock('../../src/main/childEditorSync', () => ({
 }));
 
 // Import module under test and mocked modules AFTER vi.mock declarations
-import { createChildEditor } from '../../src/main/childEditorFactory';
+import {
+  createChildEditor,
+  customTabCommand,
+  customShiftTabCommand,
+} from '../../src/main/childEditorFactory';
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
-import { history, indentWithTab, defaultKeymap, historyKeymap } from '@codemirror/commands';
+import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import { languageCompartment, buildLanguageExtensions } from '../../src/main/childEditorLanguage';
 import { closeBracketsKeymap } from '@codemirror/autocomplete';
 import { createScrollIntoViewExtension } from '../../src/main/childEditorSync';
@@ -166,30 +179,48 @@ describe('createChildEditor', () => {
     createChildEditor('code', parent, 'python3', 'auto');
 
     expect(keymap.of).toHaveBeenCalled();
-    // Main keymap is the keymap.of call that contains defaultKeymap + historyKeymap.
-    // The closeBracketsKeymap call is a separate top-level keymap.of invocation.
+    // Main keymap is the keymap.of call that contains the customTabCommand
+    // KeyBinding object plus the spread defaultKeymap + historyKeymap. The
+    // closeBracketsKeymap call is a separate top-level keymap.of invocation.
     const allCalls = (keymap.of as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     const mainKeymap = allCalls.find(
       (arr: unknown) =>
-        Array.isArray(arr) && arr.some((entry: unknown) => entry === indentWithTab),
+        Array.isArray(arr) &&
+        arr.some(
+          (entry: unknown) =>
+            typeof entry === 'object' &&
+            entry !== null &&
+            (entry as { run?: unknown }).run === customTabCommand,
+        ),
     );
     expect(mainKeymap).toBeDefined();
     expect(mainKeymap).toEqual(expect.arrayContaining(defaultKeymap as []));
     expect(mainKeymap).toEqual(expect.arrayContaining(historyKeymap as []));
   });
 
-  it('includes indentWithTab as first entry in main keymap (Phase 15 priority)', () => {
+  it('includes customTabCommand as first entry in main keymap (Phase 15 priority + Phase 17 D-11)', () => {
     createChildEditor('code', parent, 'python3', 'auto');
 
     expect(keymap.of).toHaveBeenCalled();
     const allCalls = (keymap.of as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     const mainKeymap = allCalls.find(
       (arr: unknown) =>
-        Array.isArray(arr) && arr.some((entry: unknown) => entry === indentWithTab),
+        Array.isArray(arr) &&
+        arr.some(
+          (entry: unknown) =>
+            typeof entry === 'object' &&
+            entry !== null &&
+            (entry as { run?: unknown }).run === customTabCommand,
+        ),
     ) as unknown[] | undefined;
     expect(mainKeymap).toBeDefined();
-    // indentWithTab must be the FIRST entry for priority (before defaultKeymap spread)
-    expect(mainKeymap![0]).toBe(indentWithTab);
+    // The customTabCommand KeyBinding must be the FIRST entry — preserves the
+    // Phase 15 D-05 priority (Tab does NOT trigger focus-nav) and lets the
+    // Phase 17 D-11 cursor-position branching run before defaultKeymap.
+    const first = mainKeymap![0] as { key?: string; run?: unknown; shift?: unknown };
+    expect(first.key).toBe('Tab');
+    expect(first.run).toBe(customTabCommand);
+    expect(first.shift).toBe(customShiftTabCommand);
   });
 
   it('includes createScrollIntoViewExtension in extensions (D-14)', () => {
@@ -273,9 +304,19 @@ describe('createChildEditor — language Compartment wiring (Phase 16)', () => {
     // in the extensions array. closeBrackets must come BEFORE main.
     const cbCallIdx = (keymap.of as ReturnType<typeof vi.fn>).mock.calls
       .findIndex((c) => c[0] === closeBracketsKeymap);
+    // Phase 17 Plan 03: the main keymap's first entry is the
+    // customTabCommand KeyBinding object, not the bare indentWithTab. Detect
+    // by structural shape (has `run === customTabCommand`).
     const mainCallIdx = (keymap.of as ReturnType<typeof vi.fn>).mock.calls
       .findIndex(
-        (c) => Array.isArray(c[0]) && (c[0] as unknown[]).includes(indentWithTab),
+        (c) =>
+          Array.isArray(c[0]) &&
+          (c[0] as unknown[]).some(
+            (entry) =>
+              typeof entry === 'object' &&
+              entry !== null &&
+              (entry as { run?: unknown }).run === customTabCommand,
+          ),
       );
     expect(cbCallIdx).toBeGreaterThanOrEqual(0);
     expect(mainCallIdx).toBeGreaterThanOrEqual(0);

@@ -135,8 +135,8 @@ describe('customTabCommand (Phase 17-03 D-11/D-12)', () => {
 
     it('Test 3: cursor mid-line — Tab inserts indentUnit at cursor', () => {
       // doc "hello world", cursor at offset 5 (between `hello` and ` world`).
-      // The slice before cursor is "hello" — non-whitespace — so we delegate
-      // to insertTab.
+      // The slice before cursor is "hello" — non-whitespace — so we take
+      // the mid-line insert path (indentUnit string spliced in at cursor).
       const state = makeStateWithIndent('hello world', 5, '    ');
       const view = makeMockView(state);
 
@@ -146,10 +146,12 @@ describe('customTabCommand (Phase 17-03 D-11/D-12)', () => {
       expect(view.dispatch).toHaveBeenCalledTimes(1);
       const tr = view.dispatch.mock.calls[0]![0];
       expect(tr.docChanged).toBe(true);
-      // insertTab inserts 4 spaces at cursor (indentUnit="    ").
-      // Result: "hello    world".
+      // 4 spaces from indentUnit get inserted at offset 5; the original
+      // ' world' (with its leading space) is preserved untouched. Result:
+      // "hello" + "    " (inserted) + " world" = "hello     world" (5
+      // contiguous spaces — 4 from indentUnit + 1 original).
       const newDoc = tr.state.doc.toString();
-      expect(newDoc).toBe('hello    world');
+      expect(newDoc).toBe('hello     world');
     });
 
     it('Test 4: multi-line selection — Tab indents all lines as ONE transaction (D-12 single-undo)', () => {
@@ -238,7 +240,9 @@ describe('customTabCommand (Phase 17-03 D-11/D-12)', () => {
 
   describe('indentUnit awareness (INDENT-04)', () => {
     it('Test 6a: indentUnit "  " (JS — 2 spaces) inserts 2 spaces at mid-line cursor', () => {
-      const state = makeStateWithIndent('hello world', 5, '  ');
+      // Use 'helloworld' (no space) so the inserted indentUnit can be
+      // asserted exactly without arithmetic on adjacent whitespace.
+      const state = makeStateWithIndent('helloworld', 5, '  ');
       const view = makeMockView(state);
 
       const ret = customTabCommand(view as never);
@@ -247,12 +251,12 @@ describe('customTabCommand (Phase 17-03 D-11/D-12)', () => {
       expect(view.dispatch).toHaveBeenCalledTimes(1);
       const tr = view.dispatch.mock.calls[0]![0];
       const newDoc = tr.state.doc.toString();
-      // 2 spaces inserted (NOT 4)
+      // Exactly 2 spaces inserted at offset 5.
       expect(newDoc).toBe('hello  world');
     });
 
     it('Test 6b: indentUnit "\\t" (Go) inserts a real tab at mid-line cursor', () => {
-      const state = makeStateWithIndent('hello world', 5, '\t');
+      const state = makeStateWithIndent('helloworld', 5, '\t');
       const view = makeMockView(state);
 
       const ret = customTabCommand(view as never);
@@ -261,7 +265,7 @@ describe('customTabCommand (Phase 17-03 D-11/D-12)', () => {
       expect(view.dispatch).toHaveBeenCalledTimes(1);
       const tr = view.dispatch.mock.calls[0]![0];
       const newDoc = tr.state.doc.toString();
-      // Real tab character inserted
+      // Real tab character inserted at offset 5.
       expect(newDoc).toBe('hello\tworld');
     });
 
