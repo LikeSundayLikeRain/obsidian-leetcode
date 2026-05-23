@@ -105,12 +105,12 @@ notes: "User chose A. Bumped HARD_LIMIT to 1,600,000 / SOFT_WARN to 1,440,000 in
 
 total: 20
 passed: 19
-issues: 2
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0
 cosmetic_gaps: 1
-secondary_regressions: 1
+secondary_regressions_resolved: 1
 phase17_polish_carry: 2
 
 ## Gaps
@@ -140,15 +140,22 @@ phase17_polish_carry: 2
   debug_session: ""
 
 - truth: "Reset code action returns the child editor and parent fence body to the language's starter code, with all four sources of truth in sync (editor view, markdown body, chevron dropdown, lc-language frontmatter)"
-  status: failed
-  reason: "User reported: 'reset code is not working, i'm in java, after reset, the content not changed in editor, but in the markdown, it changed to a empty code block with python as language, both dropdown and lc-language both showing java though.' Partial-state corruption: 4 sources of truth disagree after Reset. (1) Disk markdown: empty fence, language tag = python. (2) Editor view: still shows old Java content (parent CM6 stale relative to disk). (3) Chevron dropdown: shows Java. (4) Frontmatter lc-language: java. The reset path appears to write the markdown via vault.process (or similar) rather than through the parent CM6 dispatch, AND it picks up wrong starter code (python instead of java's). Likely root cause: Reset was implemented before Phase 16 changed the language plumbing, never updated for the chevron/frontmatter/Compartment world. Worth a separate debug session — not in scope for COMMENT-01 fix."
+  status: resolved
+  reason: "User reported: 'reset code is not working, i'm in java, after reset, the content not changed in editor, but in the markdown, it changed to a empty code block with python as language, both dropdown and lc-language both showing java though.' Partial-state corruption: 4 sources of truth disagree after Reset."
   severity: major
   test: 14
-  user_flagged_priority: "regression — separate from current testing path"
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "resetCodeWithConfirm.ts derived langSlug from settings.getDefaultLanguage() (user's preference) rather than the active fence/frontmatter language. Combined with the empty-snippet fallback (?? '') and vault.process bypassing the parent CM6 transaction filter, three symptoms compounded: wrong language tag, empty body, stale editor view."
+  artifacts:
+    - path: "src/solve/resetCodeWithConfirm.ts"
+      issue: "Used getDefaultLanguage() instead of the active fence/frontmatter language; vault.process bypassed parent CM6"
+    - path: "src/main.ts"
+      issue: "resetCode method needed to wire the CM6 dispatch path"
+  missing:
+    - "Lang priority resolver: lc-language frontmatter → active fence opener tag → getDefaultLanguage() fallback"
+    - "CM6 dispatch with userEvent: 'leetcode.reset' when MarkdownView is open; vault.process fallback otherwise"
+    - "processFrontMatter() to sync lc-language with the resolved langSlug — keeps all 4 sources of truth aligned"
+  debug_session: ".planning/debug/reset-code-language-regression.md"
+  verification: "User UAT in dev vault: open Java problem note → Cmd-P → Reset code → confirm. All 4 sources of truth agree on Java with Java starter snippet populated. User confirmed: pass."
 
 - truth: "Bracket match highlight is visible in dark mode"
   status: failed
