@@ -28,8 +28,15 @@ vi.mock('../../src/main/childEditorRegistry', () => ({
   ChildEditorRegistry: vi.fn(),
 }));
 
-import { repairFenceStructure } from '../../src/main/childEditorSync';
+import {
+  repairFenceStructure,
+  // Phase 17 Plan 13: round-2 parent-side runtime trigger.
+  // See .planning/debug/fence-auto-recovery-regression-round2.md.
+  createParentRepairExtension,
+} from '../../src/main/childEditorSync';
 import { findCodeFence } from '../../src/main/codeActionsEditorExtension';
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+import { Transaction } from '@codemirror/state';
 
 // ────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -339,5 +346,210 @@ describe('repairFenceStructure regression (Phase 17 D-06b/D-06d)', () => {
     // either silently no-ops or wipes out unrelated content.
     const enclosedBody = repairedState.doc.sliceString(bodyStart, bodyEnd);
     expect(enclosedBody).toContain('class Solution {');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Phase 17 Plan 13 — round-2 regression suite (REPAIR-02 / Plan 17-13).
+//
+// See .planning/debug/fence-auto-recovery-regression-round2.md for the full
+// hypothesis matrix. These tests cover:
+//   Test 6 — Bug 1 (runtime trigger gap): parent-side runtime trigger fires
+//            repair on parent-only damage WITHOUT a child dispatch.
+//   Test 7 — Bug 2 Hyp E (duplicate-fence input idempotency): the user's
+//            exact duplicate-fence reproduction returns false from repair
+//            and dispatches nothing.
+//   Test 8 — Re-entry idempotency: calling repair on the post-repair
+//            (intact) state is a no-op.
+// ────────────────────────────────────────────────────────────────────────
+
+/** User's exact duplicate-fence reproduction snippet from the round-2 prompt
+ *  (2026-05-23). Original opener+body+closer above + SECOND `\`\`\`java + duplicate
+ *  body block below before `## Notes`. See debug doc Symptoms section. */
+const USER_DUPLICATE_FENCE_REPRO = [
+  '---',
+  'lc-slug: two-sum',
+  'lc-language: java',
+  '---',
+  '',
+  '## Code',
+  '',
+  '```java',
+  'class Solution {',
+  '    public int[] twoSum(int[] nums, int target) {',
+  '        return new int[0];',
+  '    }',
+  '}',
+  '```',
+  '```java',
+  'class Solution {',
+  '    public int[] twoSum(int[] nums, int target) {',
+  '        return new int[0];',
+  '    }',
+  '}',
+  '',
+  '## Notes',
+].join('\n');
+
+/**
+ * Build a synthetic parent-side `ViewUpdate` shape sufficient to drive the
+ * `createParentRepairExtension`'s updateListener. The listener consumes:
+ *   - update.docChanged — boolean
+ *   - update.state — EditorState (read by findCodeFence + readLcLanguageFromDoc)
+ *   - update.view — EditorView (passed to repairFenceStructure)
+ *   - update.transactions — Transaction[] (re-entry guard reads userEvent annotation)
+ * The mock parent view tracks dispatched changes so we can verify
+ * `'leetcode.fence-repair'` userEvent dispatches were emitted.
+ */
+function makeMockParentUpdate(
+  docContent: string,
+  parentView: ReturnType<typeof makeMockParentView>,
+  opts: { docChanged?: boolean; userEvent?: string } = {},
+) {
+  const docChanged = opts.docChanged ?? true;
+  // Build a minimal Transaction shape with the userEvent annotation.
+  const fakeTx: { annotation: (kind: unknown) => string | undefined } = {
+    annotation(kind: unknown) {
+      // The listener calls `tr.annotation(Transaction.userEvent)`.
+      // Transaction.userEvent is the AnnotationType singleton imported from
+      // @codemirror/state; we accept any kind argument and return the
+      // configured userEvent string (or undefined).
+      if (kind === Transaction.userEvent) return opts.userEvent;
+      return undefined;
+    },
+  };
+  return {
+    docChanged,
+    get state() {
+      return makeStateForLockTests({ body: docContent });
+    },
+    view: parentView,
+    transactions: [fakeTx],
+  };
+}
+
+describe('repairFenceStructure round-2 regression (Phase 17 Plan 13 / REPAIR-02)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Test 6 — Bug 1 (runtime trigger gap)
+  // REPAIR-02 Bug 1 — parent-side runtime trigger fires repair without
+  // requiring a child dispatch. See
+  // .planning/debug/fence-auto-recovery-regression-round2.md "Bug 1 —
+  // Runtime trigger gap (mechanical certainty)".
+  it('Test 6 — parent-side runtime trigger fires repair on parent-only damage', () => {
+    // RED on current main: createParentRepairExtension does not exist (the
+    // import at the top of this file will throw at module-load time on main),
+    // turning all tests in this describe block into errors. After Task 3
+    // GREEN ships the helper + the parent-side wiring through
+    // wireSyncIfNeeded, this test passes.
+    const parent = makeMockParentView(MISSING_CLOSER);
+
+    // Construct the parent-side updateListener directly via the new helper.
+    const ext = createParentRepairExtension();
+
+    // Extract the listener function. The Extension returned by
+    // EditorView.updateListener.of carries the listener under .value (CM6
+    // FacetExtension shape). Tests reach into this shape — the contract is
+    // stable across @codemirror/view 6.x; if it breaks, the test will fail
+    // loudly and we update accordingly.
+    const listener = (ext as unknown as { value: (u: unknown) => void }).value;
+    expect(typeof listener).toBe('function');
+
+    // Simulate a parent-side update where the closer was just deleted.
+    const update = makeMockParentUpdate(MISSING_CLOSER, parent, {
+      docChanged: true,
+      userEvent: 'input.delete', // user-input, not 'leetcode.fence-repair'
+    });
+    listener(update);
+
+    // Repair must have fired exactly once with 'leetcode.fence-repair'
+    // userEvent (the existing round-1 dispatch annotation).
+    expect(parent.dispatch).toHaveBeenCalled();
+    const dispatchSpec = (parent.dispatch as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0] as
+      | { annotations?: unknown }
+      | undefined;
+    // The dispatch carries a single annotation Transaction.userEvent.of('leetcode.fence-repair').
+    // We verify by re-issuing the listener against the post-repair state and
+    // confirming the listener does NOT re-fire repair on its own dispatch.
+    expect(dispatchSpec).toBeDefined();
+
+    // Re-entry guard: a follow-up update carrying the repair's own userEvent
+    // must NOT trigger another dispatch.
+    (parent.dispatch as unknown as { mockClear: () => void }).mockClear();
+    const repairedDoc = parent.getDocAfterDispatch();
+    const repairUpdate = makeMockParentUpdate(repairedDoc, parent, {
+      docChanged: true,
+      userEvent: 'leetcode.fence-repair',
+    });
+    listener(repairUpdate);
+    expect(parent.dispatch).not.toHaveBeenCalled();
+  });
+
+  // Test 7 — Bug 2 Hyp E (duplicate-fence input idempotency)
+  // REPAIR-02 Bug 2 — repair on the user's duplicate-fence reproduction
+  // input is a no-op (findCodeFence finds the first fence; repair returns
+  // false). See debug doc "Bug 2 Hyp E" + "Confirmed Root Cause".
+  it("Test 7 — user's exact duplicate-fence reproduction yields a no-op repair (idempotent on the bad shape)", () => {
+    const parent = makeMockParentView(USER_DUPLICATE_FENCE_REPRO);
+
+    // findCodeFence on the duplicate-fence input finds the FIRST fence
+    // (opener at the first `\`\`\`java`, closer at the first bare `\`\`\``).
+    const initialFence = findCodeFence(parent.state);
+    expect(initialFence).not.toBeNull();
+    if (!initialFence) return; // type narrowing
+
+    // Repair must return false because both opener and closer are present
+    // (round-1 marker scan stops at first OPENER_RE / CLOSER_RE match).
+    const result = repairFenceStructure(parent, ACTIVE_SLUG);
+    expect(result).toBe(false);
+    expect(parent.dispatch).not.toHaveBeenCalled();
+
+    // Doc shape unchanged: the post-repair state EQUALS the input. Both
+    // before and after, the input has TWO `\`\`\`java` openers — this is
+    // the duplicate state the user reported. Plan 17-13 ships a
+    // regression-prevention pin asserting repair does NOT WORSEN this
+    // shape (no third opener inserted, no third body block appended).
+    // Active clean-up of the duplicate is out of scope per round-2 fix
+    // (the duplicate-fence emergence path cannot be deterministically
+    // reproduced from source trace alone — see debug doc Hyp E).
+    const openerMatchesPre = (USER_DUPLICATE_FENCE_REPRO.match(/^\s*```java/gm) ?? []).length;
+    const openerMatchesPost = (parent.getDocAfterDispatch().match(/^\s*```java/gm) ?? []).length;
+    expect(openerMatchesPre).toBe(2);
+    expect(openerMatchesPost).toBe(openerMatchesPre); // repair did not worsen
+
+    // Sanity: findCodeFence returns valid offsets enclosing the FIRST body
+    // block. The duplicate body below the first closer is leaked content,
+    // not part of the fence. The user sees their solution rendered (first
+    // fence is structurally valid).
+    const bodyText = parent.state.doc.sliceString(
+      parent.state.doc.line(initialFence.openerLine).to + 1,
+      parent.state.doc.line(initialFence.closerLine).from,
+    );
+    expect(bodyText).toContain('class Solution {');
+    expect(bodyText).toContain('twoSum');
+  });
+
+  // Test 8 — Re-entry idempotency
+  // REPAIR-02 Bug 2 Hyp D (post-fix invariant) — calling repair twice (once
+  // on a damaged input, once on the post-repair intact state) — second
+  // call returns false and does not dispatch. See debug doc "Bug 2 Hyp D"
+  // + "Planned Fix Scope" re-entry guard discussion.
+  it('Test 8 — re-entry idempotency: repair on the post-repair intact state is a no-op', () => {
+    // First call: damage the closer. Repair must succeed (round-1 invariant).
+    const parent = makeMockParentView(MISSING_CLOSER);
+    const firstResult = repairFenceStructure(parent, ACTIVE_SLUG);
+    expect(firstResult).toBe(true);
+    expect(parent.dispatch).toHaveBeenCalledTimes(1);
+
+    // Second call: build a fresh mock view backed by the post-repair doc.
+    // The post-repair state has both opener and closer (round-1 fix).
+    const repairedDoc = parent.getDocAfterDispatch();
+    const reparent = makeMockParentView(repairedDoc);
+
+    const secondResult = repairFenceStructure(reparent, ACTIVE_SLUG);
+    expect(secondResult).toBe(false);
+    expect(reparent.dispatch).not.toHaveBeenCalled();
   });
 });
