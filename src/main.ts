@@ -2977,6 +2977,42 @@ export default class LeetCodePlugin extends Plugin {
           },
         };
       },
+      resolveActiveLangSlug: (targetFile: TFile): string | undefined => {
+        // Phase 17 gap-closure (17-08, 17-UAT.md Issue 2 / Test 10) — restore
+        // Phase 16 D-06 canonical priority chain: lc-language frontmatter >
+        // fence opener tag > settings.getDefaultLanguage(). The Phase 17 D-03
+        // dispatch path swap (Plan 17-01) inadvertently dropped this chain
+        // because the helper hardcoded settings.getDefaultLanguage() — see
+        // .planning/debug/reset-code-language-regression.md for the original
+        // fix. We do NOT call this.readActiveFenceSlug(file) here because
+        // that helper's internal metadataCache fallback collapses the
+        // priority distinction by treating fence-opener-fallback and
+        // fm-fallback as the same source. The resolver's Priority 1 must be
+        // EXPLICIT-fm-only so unset fm correctly drops to fence opener.
+        try {
+          // Priority 1 — lc-language frontmatter (canonical, chevron's SoT).
+          const fm = this.app.metadataCache.getFileCache(targetFile)
+            ?.frontmatter as Record<string, unknown> | undefined;
+          const fmLang = fm?.['lc-language'];
+          if (typeof fmLang === 'string' && fmLang.length > 0) return fmLang;
+
+          // Priority 2 — active fence opener tag. Active MarkdownView only.
+          const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+          if (view && view.file && view.file.path === targetFile.path) {
+            const cm = (view.editor as unknown as { cm: EditorView }).cm;
+            const fence = findCodeFence(cm.state);
+            if (fence) {
+              const openerText = cm.state.doc.line(fence.openerLine).text;
+              const m = /^\s*```\s*(\S+)\s*$/.exec(openerText);
+              if (m && m[1]) return m[1];
+            }
+          }
+        } catch {
+          // Defensive — fall through to undefined → helper uses default.
+        }
+        // Priority 3 — let the helper fall back to settings.getDefaultLanguage().
+        return undefined;
+      },
     });
   }
 }
