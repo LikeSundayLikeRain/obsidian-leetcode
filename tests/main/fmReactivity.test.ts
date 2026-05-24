@@ -69,8 +69,25 @@ interface FakePluginShape {
    * and falls back to metadataCache; the unit test shortcuts that by binding
    * the return value directly on the fake `this`. This keeps Gate 3 dedupe
    * (Pitfall 3) verifiable without standing up a real CM6 view in the test.
+   *
+   * Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12): existing tests
+   * keep this stub for fixture compatibility; new round-trip tests rely on
+   * `childLanguageTracker` instead per the post-fix design.
    */
   readActiveFenceSlug: ReturnType<typeof vi.fn>;
+  /**
+   * Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3) — per-child slug tracker.
+   * Records the language slug currently applied to each child editor's
+   * `languageCompartment`. Updated whenever a Compartment.reconfigure dispatch
+   * lands (chevron switch path AND fm-reactivity listener path). Gate 3 of the
+   * fm-reactivity listener reads from this tracker — NOT from
+   * `readActiveFenceSlug` — because per D-14 the parent fence opener does not
+   * change on the listener path. Tracker values are seeded by the dispatch
+   * sites; absent entries are treated as "unknown current" and the listener
+   * proceeds to dispatch (idempotent — Compartment.reconfigure with an equal
+   * LanguageSupport is a no-op visually but updates the tracker).
+   */
+  childLanguageTracker: WeakMap<object, string>;
   app: {
     workspace: { getActiveViewOfType: ReturnType<typeof vi.fn> };
     vault: { process: ReturnType<typeof vi.fn> };
@@ -84,8 +101,20 @@ function makeFakePlugin(opts: {
   /** The slug currently applied in the parent fence opener (D-13 Gate 3). */
   activeFenceSlug?: string;
   override?: 'auto' | 2 | 4 | 8;
+  /**
+   * Phase 17 Plan 09 — pre-seeded child language tracker entry. When provided,
+   * the fake plugin's `childLanguageTracker` is initialized with
+   * `tracker.set(opts.childView, opts.trackedSlug)`. Absent → tracker is empty
+   * (post-fix Gate 3 treats this as "unknown current" and proceeds to
+   * dispatch — see Test 11 below).
+   */
+  trackedSlug?: string;
 }): FakePluginShape {
   const childView = opts.childView;
+  const childLanguageTracker = new WeakMap<object, string>();
+  if (childView && typeof opts.trackedSlug === 'string') {
+    childLanguageTracker.set(childView, opts.trackedSlug);
+  }
   return {
     childEditorRegistry: {
       get: vi.fn().mockReturnValue(childView),
@@ -96,6 +125,7 @@ function makeFakePlugin(opts: {
     // Stub the helper that the SUT calls via `this.readActiveFenceSlug(...)`.
     // Production impl is exercised via integration in 17-UAT.md Test 12.
     readActiveFenceSlug: vi.fn().mockReturnValue(opts.activeFenceSlug),
+    childLanguageTracker,
     app: {
       workspace: {
         getActiveViewOfType: vi.fn().mockReturnValue(undefined),
@@ -325,5 +355,169 @@ describe('handleFmChangeForLanguageReactivity (D-13 / D-14, Wave 2)', () => {
     expect(dispatchSpec.userEvent).toBeUndefined();
     // Effects key MUST be present (the whole point of the dispatch).
     expect(dispatchSpec.effects).toBeDefined();
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Phase 17 Plan 09 — Round-trip fm reactivity (17-UAT.md Issue 3 / Test 12)
+  //
+  // The bug: Java → Python3 → Java fm swap dispatches only ONCE on current
+  // main. Gate 3 reads from `readActiveFenceSlug` which parses the parent
+  // fence opener tag — but per D-14 the listener does NOT rewrite the
+  // opener, so after the first swap the opener still says ```java`. The
+  // second swap (Python3 → Java in fm) reads currentSlug = 'java' from the
+  // unchanged opener, compares to fmLangRaw = 'java', and trips Gate 3
+  // early — no dispatch fires.
+  //
+  // Fix: introduce a per-child `childLanguageTracker: WeakMap<EditorView,
+  // string>` on the plugin instance. Both dispatch sites (chevron switch +
+  // fm-reactivity listener) update the tracker. Gate 3 reads from the
+  // tracker, not from `readActiveFenceSlug`.
+  //
+  // Tests below codify the post-fix design:
+  //   Test 7  — round-trip Java → Python3 → Java BOTH dispatch (RED on main)
+  //   Test 8  — Gate 3 dedupe still works via tracker comparison
+  //   Test 9  — empty tracker treated as "unknown current" → dispatches
+  //   Test 10 — D-14 invariant preserved across all post-fix scenarios
+  // ───────────────────────────────────────────────────────────────────────
+
+  it('round-trip fm swap — java → python3 → java BOTH dispatch (Plan 17-09 / 17-UAT.md Issue 3)', () => {
+    const dispatchMock = vi.fn();
+    // Tracker pre-seeded to 'java' simulating the chevron switch path or
+    // initial mount having recorded the note's starting language. Per D-14
+    // the parent fence opener tag does NOT change on the listener path, so
+    // we keep `readActiveFenceSlug` returning the stale 'java' value
+    // throughout — this is exactly the production scenario that exposes the
+    // asymmetry on current main: Step B's Gate 3 reads 'java' from the
+    // opener and trips early, dropping the second dispatch.
+    const fake = makeFakePlugin({
+      childView: { dispatch: dispatchMock },
+      activeFenceSlug: 'java',
+      trackedSlug: 'java',
+    });
+    const file: FakeFile = { path: 'LeetCode/1-two-sum.md' };
+
+    // ── Step A: Java → Python3 ────────────────────────────────────────────
+    helper.call(fake as unknown as object, file, {
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
+    });
+    expect(dispatchMock).toHaveBeenCalledTimes(1);
+    expect(buildLanguageExtensions).toHaveBeenLastCalledWith('python3', 'auto');
+    // Tracker MUST be updated by the dispatch site (the contract Task 2
+    // satisfies). The post-fix Gate 3 will consult this on the next swap.
+    const childView = fake.childEditorRegistry.get('LeetCode/1-two-sum.md') as object;
+    expect(fake.childLanguageTracker.get(childView)).toBe('python3');
+
+    // ── Step B (the failing leg on current main): Python3 → Java ─────────
+    helper.call(fake as unknown as object, file, {
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+    });
+    // On current main this assertion FAILS — dispatchMock was called only
+    // once because Gate 3's readActiveFenceSlug returned the stale 'java'
+    // from the unchanged fence opener, matched fmLangRaw='java', and
+    // short-circuited. Post-fix: Gate 3 reads tracker.get(childView) =
+    // 'python3' (from Step A's tracker.set), sees it differs from 'java',
+    // and dispatches symmetrically.
+    expect(dispatchMock).toHaveBeenCalledTimes(2);
+    expect(buildLanguageExtensions).toHaveBeenLastCalledWith('java', 'auto');
+    expect(fake.childLanguageTracker.get(childView)).toBe('java');
+  });
+
+  it('Gate 3 dedupe still works after tracker swap — same-slug fm write no-op', () => {
+    const dispatchMock = vi.fn();
+    // Tracker says 'java'; fm now says 'java' → same-slug → Gate 3 trips
+    // via tracker comparison (NOT via readActiveFenceSlug post-fix).
+    // activeFenceSlug deliberately set to a DIFFERENT value ('python3') to
+    // prove the post-fix Gate 3 reads from the tracker, not from the helper.
+    const fake = makeFakePlugin({
+      childView: { dispatch: dispatchMock },
+      activeFenceSlug: 'python3',
+      trackedSlug: 'java',
+    });
+    const file: FakeFile = { path: 'LeetCode/1-two-sum.md' };
+
+    helper.call(fake as unknown as object, file, {
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+    });
+
+    // No dispatch — tracker.get(childView) === 'java' === fmLangRaw.
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(buildLanguageExtensions).not.toHaveBeenCalled();
+    expect(languageCompartment.reconfigure).not.toHaveBeenCalled();
+  });
+
+  it('Gate 3 with empty childLanguageTracker — first fm change dispatches even if equal to initialSlug', () => {
+    const dispatchMock = vi.fn();
+    // No `trackedSlug` → tracker has no entry for childView. This models the
+    // first metadataCache.changed event after note open, before any chevron
+    // switch or fm dispatch has seeded the tracker. Post-fix: tracker.get
+    // returns undefined; Gate 3 treats undefined !== fmLangRaw and proceeds
+    // to dispatch (idempotent — Compartment.reconfigure with an equal
+    // LanguageSupport is a no-op visually but seeds the tracker for the
+    // next swap).
+    const fake = makeFakePlugin({
+      childView: { dispatch: dispatchMock },
+      activeFenceSlug: 'java',
+    });
+    const file: FakeFile = { path: 'LeetCode/1-two-sum.md' };
+
+    helper.call(fake as unknown as object, file, {
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+    });
+
+    // Dispatch fires even though fm 'java' equals readActiveFenceSlug 'java'
+    // — because the tracker is empty, Gate 3 cannot dedupe and proceeds.
+    expect(dispatchMock).toHaveBeenCalledTimes(1);
+    // Tracker is now seeded with the dispatched slug — proves the dispatch
+    // site is the tracker-write contract.
+    const childView = fake.childEditorRegistry.get('LeetCode/1-two-sum.md') as object;
+    expect(fake.childLanguageTracker.get(childView)).toBe('java');
+  });
+
+  it('round-trip path preserves D-14 — listener never calls vault.process or processFrontMatter', () => {
+    const file: FakeFile = { path: 'LeetCode/1-two-sum.md' };
+
+    // Scenario A: round-trip swap (Test 7)
+    {
+      const fake = makeFakePlugin({
+        childView: { dispatch: vi.fn() },
+        activeFenceSlug: 'java',
+        trackedSlug: 'java',
+      });
+      helper.call(fake as unknown as object, file, {
+        frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
+      });
+      helper.call(fake as unknown as object, file, {
+        frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      });
+      expect(fake.app.vault.process).not.toHaveBeenCalled();
+      expect(fake.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
+    }
+
+    // Scenario B: tracker dedupe (Test 8)
+    {
+      const fake = makeFakePlugin({
+        childView: { dispatch: vi.fn() },
+        activeFenceSlug: 'python3',
+        trackedSlug: 'java',
+      });
+      helper.call(fake as unknown as object, file, {
+        frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      });
+      expect(fake.app.vault.process).not.toHaveBeenCalled();
+      expect(fake.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
+    }
+
+    // Scenario C: empty tracker (Test 9)
+    {
+      const fake = makeFakePlugin({
+        childView: { dispatch: vi.fn() },
+        activeFenceSlug: 'java',
+      });
+      helper.call(fake as unknown as object, file, {
+        frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      });
+      expect(fake.app.vault.process).not.toHaveBeenCalled();
+      expect(fake.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
+    }
   });
 });
