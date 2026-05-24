@@ -36,3 +36,32 @@ Re-confirmed during 17-05 Task 2 (re-stashed baseline). Same 3 failures in
 small module (`src/main/childEditorTheme.ts`, ~70 LOC source) and removed
 one import — no AI SDK touch, no language pack additions. Bundle-size delta
 is negligible.
+
+## Plan 17-11 deferred lint errors (pre-existing, out of scope)
+
+Discovered during 17-11 final lint check. None introduced by 17-11 — all
+predate the plan (verified via git blame). Logged here per the executor
+scope-boundary rule (only fix issues directly caused by current task's changes).
+
+src/main/childEditorFactory.ts (introduced in commits e05731ef, d7bff1f):
+  - 44:1 warning — Unused eslint-disable directive (Plan 17-06 left a now-stale
+    eslint-disable-next-line for import/no-extraneous-dependencies on the
+    @replit/codemirror-vim import; the violation no longer fires).
+  - 168:20 error — @typescript-eslint/no-unnecessary-type-assertion on
+    `event as KeyboardEvent` inside the Scope register callback (Phase 16
+    cmd-slash code).
+  - 184:9 warning — obsidianmd/prefer-active-doc on `document.activeElement`
+    inside the focus retention plumbing (Phase 16).
+
+tests/main/childEditorFactory.test.ts (introduced in commit c2225e0f):
+  - 98:1, 99:1 errors — import/no-extraneous-dependencies for
+    @codemirror/view + @codemirror/state (transitive peers of obsidian;
+    listed external in esbuild but not in package.json — same pattern as
+    childEditorSync.test.ts).
+  - 125, 201, 224, 280, 283, 305 errors — @typescript-eslint/unbound-method
+    on EditorState.create / keymap.of / EditorView.theme references inside
+    `expect(...).toHaveBeenCalled()` assertions (vitest mock-pattern friction;
+    fix would require the `as ReturnType<typeof vi.fn>` cast pattern that
+    is already applied at line 99-onward but not at the assertion sites).
+
+These do NOT affect runtime, build, or tests (all 1706 pass; build clean).
