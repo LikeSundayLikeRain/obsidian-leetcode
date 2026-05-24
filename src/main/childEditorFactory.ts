@@ -41,6 +41,8 @@ import {
   toggleLineComment,
 } from '@codemirror/commands';
 import { closeBracketsKeymap } from '@codemirror/autocomplete';
+// eslint-disable-next-line import/no-extraneous-dependencies -- direct dep added Phase 17 Plan 06 (D-18)
+import { vim } from '@replit/codemirror-vim';
 import type { App, Scope } from 'obsidian';
 import { languageCompartment, buildLanguageExtensions } from './childEditorLanguage';
 import { createScrollIntoViewExtension } from './childEditorSync';
@@ -230,6 +232,21 @@ export function createChildEditor(
   app?: App,
   syncExtensions?: Extension[],
 ): EditorView {
+  // Phase 17 Plan 06 (D-18) — Vim mode conditional. Read Obsidian's global
+  // `vimMode` setting ONCE at child mount; if true, prepend the vim() extension
+  // so its keybindings + mode indicator activate. If false, exclude it (no
+  // runtime keymap installed). Per CONTEXT D-21 the package is bundled either
+  // way (esbuild CJS + nosplit cannot truly defer the import), so the
+  // conditional only saves runtime cost, not bundle cost.
+  //
+  // `app.vault.getConfig('vimMode')` is undocumented — accessed via cast.
+  // Returns true when "Editor → Vim key bindings" is enabled in Obsidian.
+  const vimEnabled =
+    !!app &&
+    (app as unknown as { vault: { getConfig(key: string): unknown } }).vault.getConfig(
+      'vimMode',
+    ) === true;
+
   const state = EditorState.create({
     doc: content,
     extensions: [
@@ -237,6 +254,11 @@ export function createChildEditor(
       //    closeBrackets, and the Cmd-/ comment binding. Reconfigured by the
       //    chevron in 16-04 via `languageCompartment.reconfigure(...)`.
       languageCompartment.of(buildLanguageExtensions(initialSlug, indentOverride)),
+      // 1b. Vim mode (Phase 17 D-18) — conditionally prepended so vim's
+      //     keymap precedes our Tab/Cmd-/ bindings (D-20: Esc Insert→Normal,
+      //     Tab in Insert falls through to customTabCommand, Cmd-/ via the
+      //     Obsidian Scope still wins because it's at app-level not editor-level).
+      ...(vimEnabled ? [vim()] : []),
       // 2a. Mod-/ Obsidian Scope intercept — see debug session
       //     `cmd-slash-not-reaching-child.md`. Pushes a Scope on focus to
       //     override `editor:toggle-comments` for this child editor only.

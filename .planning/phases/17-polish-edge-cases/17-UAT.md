@@ -125,11 +125,41 @@ Observe whether the themed `HighlightStyle` produces colorization on Go tokens.
 result: pending
 notes: ""
 
+### 17. VIM-01 — Vim mode activates from Obsidian global setting (D-18)
+
+expected: In Obsidian Settings → Editor → enable "Vim key bindings". Reload the dev vault (or close+reopen the vault) so plugins re-mount. Open a Java problem note. Click into the child editor inside the `## Code` fence. The cursor renders as a BLOCK (vim Normal mode default) — not a thin caret. A small `.cm-vim-panel` mode indicator strip is visible at the bottom of the child editor showing "-- NORMAL --". Press `i` → cursor changes to a thin caret (Insert mode); panel updates to "-- INSERT --". Press Esc → returns to Normal; cursor reverts to block; panel back to "-- NORMAL --". Toggle the global setting OFF; reload; reopen the same note → child editor is plain CM6 (caret cursor, no vim panel) — confirming the conditional read at child mount works in BOTH directions.
+result: pending
+notes: ""
+
+### 18. VIM-02 — Tab in vim Insert mode follows D-11 customTabCommand (D-20)
+
+expected: With vim mode enabled, open a Java note; click into the child editor; press `i` to enter Insert mode. (a) Cursor at line-start of an empty line → press Tab → exactly 4 spaces inserted (D-11 line-start branch — `indentMore` delegated). (b) Cursor mid-line after some non-whitespace text (e.g., after `if (x)` on `if (x) ` ) → press Tab → exactly 4 spaces inserted at cursor position; rest of line unchanged (D-11 mid-line branch). (c) Multi-line selection across 2 lines → press Tab → both lines indent in a SINGLE undo step (Cmd-Z reverts both at once; D-12 invariant). Vim Insert-mode does NOT shadow our custom Tab binding — the keymap precedence is correct. In vim Normal mode, Tab is the vim default (next jump / next match) — NOT our customTabCommand. This is intentional and acceptable per Pitfall 4 documentation.
+result: pending
+notes: ""
+
+### 19. VIM-03 — Cmd-/ comment toggle works in both vim Insert + Normal modes (D-20)
+
+expected: With vim mode enabled, open a Java note; click into the child editor. (a) In Normal mode, place cursor on a line with code; press Cmd-/ → the line is prefixed with `// ` (Java comment). Press Cmd-/ again → comment removed. (b) Press `i` to enter Insert mode; press Cmd-/ again → same toggle behavior; the comment toggle fires regardless of vim mode because the Obsidian Scope-based `Mod-/` override (factory.ts:165-170) intercepts at app level, not editor level. (c) Repeat with a Python note and verify `# ` prefix. (d) Repeat with a JavaScript/TypeScript note and verify `// ` prefix. COMMENT-01 holds in vim mode for all per-language prefixes.
+result: pending
+notes: ""
+
+### 20. VIM-04 — Esc-Esc / click-out returns focus to parent (D-20, Pitfall 4 documentation)
+
+expected: With vim mode enabled, open a Java note; click into the child editor (Insert mode active by default if you began typing, or Normal if just clicked). Vim's Esc binds to "enter Normal mode" with high precedence — so the Phase 15 escape-hatch behavior (Esc returns focus to parent) is shadowed when vim is on. Documented two-press path: (a) From Insert mode, press Esc → child enters Normal mode (focus stays in child, cursor block). (b) Press Esc a second time → either no-op in vim (acceptable) OR cursor moves to start of line (acceptable). The DOCUMENTED escape path for vim users is to CLICK INTO the `## Notes` section — focus returns to parent's Notes section, child editor blurs (vim panel grays). Confirm: clicking into `## Notes` from Normal mode returns focus to parent in one click. This is NOT a regression — it's the documented behavior per Pitfall 4. With vim mode OFF, the original single-Esc escape hatch behavior (Phase 15) is restored.
+result: pending
+notes: ""
+
+### 21. VIM-05 — `:w` in vim Normal mode is a no-op (D-20 documentation)
+
+expected: With vim mode enabled, open a Java note; click into the child editor; press Esc to ensure Normal mode; press `:` (colon) → vim's command palette appears at the bottom of the child editor; type `w` and press Enter → the command is processed by vim. Expected behavior: `:w` is treated as a no-op (vim's default save handler has nothing to save against — Obsidian auto-saves the parent doc on its own cadence, child→parent sync flushes on every keystroke). The note title bar's "•" unsaved indicator does NOT appear or disappear from `:w` (because the parent doc's saved state is owned by Obsidian's autosave). Users who want explicit save use Cmd-S, which Obsidian handles at the workspace level — `:w` is documented as "no-op for v1.2; use Cmd-S for explicit save". If `:w` instead produces a vim error popup ("can't save in this buffer") that's also acceptable behavior — log in notes.
+result: pending
+notes: ""
+
 ## Summary
 
-total: 16
+total: 21
 passed: 0
 issues: 0
-pending: 16
+pending: 21
 skipped: 0
 blocked: 0
