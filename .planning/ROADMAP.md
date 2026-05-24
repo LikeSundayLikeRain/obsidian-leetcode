@@ -176,7 +176,7 @@ Plans:
   4. Bundle size is documented and justified (language packs raise ceiling to ~1.5 MB); no unused code shipped
   5. All lifecycle cleanup verified: no memory leaks after 20 note open/close cycles; plugin unload destroys all child editors
 
-**Plans**: 11 plans across 5 waves (5 gap-closure plans added 2026-05-23 from 17-UAT.md)
+**Plans**: 13 plans across 5 waves (5 round-1 + 2 round-2 gap-closure plans added 2026-05-23 from 17-UAT.md and round-2 user manual testing)
 Plans:
 
 **Wave 1**
@@ -204,6 +204,8 @@ Plans:
 - [ ] 17-09-PLAN.md — fm reactivity round-trip symmetry: per-child childLanguageTracker WeakMap replaces fence-opener Gate 3 read (17-UAT.md Issue 3, Test 12) — depends on 17-04 + 17-08
 - [ ] 17-10-PLAN.md — Themed HighlightStyle CSS variable theme tracking: :where(.theme-light/.theme-dark) .lc-nested-editor scoped --code-* fallback palette (17-UAT.md Issue 4, Tests 13 + 14) — depends on 17-05
 - [ ] 17-11-PLAN.md — Vim Insert-mode cursor render + status panel: vim({status:true}) + .cm-cursor visibility forcing CSS (17-UAT.md Issues 5 + 6, Tests 17 + 20 sibling) — depends on 17-06 + 17-10
+- [ ] 17-12-PLAN.md — Line numbers gating: app.vault.getConfig('showLineNumber') conditional spread mirroring D-18 vim mount (LINENUM-01 round-2 gap-closure) — depends on 17-06
+- [ ] 17-13-PLAN.md — Fence auto-recovery round-2: parent-side runtime trigger + missing-closer correctness regression + re-entry idempotency (REPAIR-02 round-2 gap-closure) — depends on 17-02
 
 ## Progress
 
@@ -232,4 +234,4 @@ Plans:
 | 14. Bidirectional Sync                      | v1.2      | 3/3 | Complete    | 2026-05-21 |
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
 | 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
-| 17. Polish & Edge Cases                     | v1.2      | 5/6 | In Progress|  |
+| 17. Polish & Edge Cases                     | v1.2      | 5/13 | In Progress|            |
