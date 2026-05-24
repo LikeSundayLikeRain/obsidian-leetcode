@@ -137,4 +137,114 @@ describe('childEditorTheme', () => {
       expect(source).toContain('syntaxHighlighting');
     });
   });
+
+  // Phase 17 Plan 10 — theme-scoped --code-* fallback palette in styles.css.
+  //
+  // Background (17-UAT.md Issue 4, Tests 13 + 14): the themed HighlightStyle
+  // from Plan 17-05 binds Lezer tags to var(--code-*), but inside the child
+  // editor's Decoration.widget({block:true}) DOM subtree the variables don't
+  // resolve to a theme-dependent value — community themes scope --code-* to
+  // selectors the widget DOM doesn't match. Plan 17-10 ships theme-scoped
+  // fallback definitions in styles.css under :where(.theme-light/.theme-dark)
+  // .lc-nested-editor so the variables track Obsidian's mode automatically.
+  //
+  // These tests are SOURCE-LEVEL (read styles.css with fs) because vitest has
+  // no real Obsidian DOM to query computed styles against. The grep-style
+  // assertions prove (a) both theme scopes exist, (b) the keyword color
+  // VALUE differs between scopes (theme tracking proven), (c) ≥5 of the 8
+  // consumed --code-* variables are defined in each scope, and (d) Plan 17-05's
+  // childEditorTheme.ts var(--code-keyword) consumer reference is unchanged.
+  describe('Plan 17-10 — theme-scoped --code-* fallback palette in styles.css', () => {
+    const STYLES_PATH = 'styles.css';
+    const CONSUMED_VARS = [
+      '--code-keyword',
+      '--code-string',
+      '--code-comment',
+      '--code-function',
+      '--code-tag',
+      '--code-property',
+      '--code-operator',
+      '--code-value',
+    ];
+
+    // Match the body of either `.theme-LIGHT|DARK .lc-nested-editor { ... }`
+    // OR `:where(.theme-LIGHT|DARK) .lc-nested-editor { ... }`. The body is
+    // captured (group 1) so we can scan for variable declarations inside it.
+    function buildScopeRegex(mode: 'light' | 'dark'): RegExp {
+      return new RegExp(
+        `(?:\\.theme-${mode}|:where\\(\\s*\\.theme-${mode}\\s*\\))\\s+\\.lc-nested-editor\\s*\\{([^}]*)\\}`,
+        'i',
+      );
+    }
+
+    function readStyles(): string {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('node:fs') as typeof import('node:fs');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const path = require('node:path') as typeof import('node:path');
+      return fs.readFileSync(path.join(process.cwd(), STYLES_PATH), 'utf-8');
+    }
+
+    function extractKeywordColor(scopeBody: string | undefined): string | null {
+      if (!scopeBody) return null;
+      const match = scopeBody.match(/--code-keyword\s*:\s*([^;]+);/i);
+      return match ? match[1].trim().toLowerCase() : null;
+    }
+
+    it('Test N+1: styles.css defines --code-keyword in BOTH .theme-light and .theme-dark .lc-nested-editor scopes', () => {
+      const source = readStyles();
+      const lightMatch = source.match(buildScopeRegex('light'));
+      const darkMatch = source.match(buildScopeRegex('dark'));
+
+      expect(lightMatch, 'light scope rule block should exist').not.toBeNull();
+      expect(darkMatch, 'dark scope rule block should exist').not.toBeNull();
+      // And each block must define --code-keyword.
+      expect(lightMatch?.[1] ?? '').toMatch(/--code-keyword\s*:/);
+      expect(darkMatch?.[1] ?? '').toMatch(/--code-keyword\s*:/);
+    });
+
+    it('Test N+2: --code-keyword VALUE differs between light and dark scopes (proves theme tracking)', () => {
+      const source = readStyles();
+      const lightMatch = source.match(buildScopeRegex('light'));
+      const darkMatch = source.match(buildScopeRegex('dark'));
+
+      const lightKeyword = extractKeywordColor(lightMatch?.[1]);
+      const darkKeyword = extractKeywordColor(darkMatch?.[1]);
+
+      expect(lightKeyword, 'light --code-keyword color should be parseable').not.toBeNull();
+      expect(darkKeyword, 'dark --code-keyword color should be parseable').not.toBeNull();
+      // The KEY invariant — different colors per mode means tokens repaint
+      // when Obsidian flips theme. Specific hex values are NOT locked.
+      expect(lightKeyword).not.toEqual(darkKeyword);
+    });
+
+    it('Test N+3: at least 5 of the 8 consumed --code-* variables are defined in each scope', () => {
+      const source = readStyles();
+      const lightBody = source.match(buildScopeRegex('light'))?.[1] ?? '';
+      const darkBody = source.match(buildScopeRegex('dark'))?.[1] ?? '';
+
+      const countDefined = (body: string): number =>
+        CONSUMED_VARS.filter((v) =>
+          new RegExp(`${v.replace(/-/g, '\\-')}\\s*:`, 'i').test(body),
+        ).length;
+
+      expect(countDefined(lightBody)).toBeGreaterThanOrEqual(5);
+      expect(countDefined(darkBody)).toBeGreaterThanOrEqual(5);
+    });
+
+    it("Test N+4: childEditorTheme.ts still references 'var(--code-keyword)' — Plan 17-05 binding shape preserved", () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('node:fs') as typeof import('node:fs');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const path = require('node:path') as typeof import('node:path');
+      const source = fs.readFileSync(
+        path.join(process.cwd(), 'src/main/childEditorTheme.ts'),
+        'utf-8',
+      );
+      // The literal consumer string — guards against a future maintainer
+      // assuming the new CSS rules alone fix highlighting and removing the
+      // var() reference from the HighlightStyle binding.
+      expect(source).toContain("'var(--code-keyword)'");
+    });
+  });
 });
