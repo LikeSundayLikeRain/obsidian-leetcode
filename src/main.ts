@@ -255,6 +255,29 @@ export default class LeetCodePlugin extends Plugin {
   // Phase 13 — LRU cache for nested child EditorViews (cap=5, per D-12).
   childEditorRegistry!: ChildEditorRegistry;
 
+  /**
+   * Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12) — per-child
+   * slug tracker. Records the language slug currently applied to each child
+   * editor's `languageCompartment`. Updated whenever a Compartment.reconfigure
+   * dispatch lands (chevron switch path AND fm-reactivity listener path).
+   *
+   * Gate 3 of the fm-reactivity listener
+   * (`handleFmChangeForLanguageReactivity`) reads from this tracker — NOT
+   * from the parent fence opener tag — because per D-14 the listener does
+   * not rewrite the opener, so reading "current applied child language" from
+   * the opener is unsound and produces the asymmetric round-trip bug
+   * described in 17-UAT.md Issue 3 (Java → Python3 swaps but Python3 → Java
+   * silently no-ops).
+   *
+   * WeakMap auto-GCs entries when the EditorView is destroyed (registry
+   * destroy + browser GC) — no explicit cleanup needed. Pre-mount or
+   * pre-first-dispatch the tracker has no entry; Gate 3 treats absent
+   * entries as "unknown current" and proceeds to dispatch (idempotent —
+   * Compartment.reconfigure with an equal LanguageSupport is a no-op
+   * visually but updates the tracker for the next swap).
+   */
+  childLanguageTracker: WeakMap<EditorView, string> = new WeakMap();
+
   // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
   // AIProvider; values are the in-flight probe Promise. Cleared in the
   // testActiveAIConnection() finally block so a fresh click after the probe
@@ -2495,6 +2518,11 @@ export default class LeetCodePlugin extends Plugin {
         ),
         userEvent: 'leetcode.lang-switch',
       });
+      // Phase 17 Plan 09 — record the slug now applied to this child's
+      // languageCompartment. Gate 3 of the fm-reactivity listener consults
+      // this tracker (NOT the parent fence opener tag) so round-trip fm
+      // swaps (Java → Python3 → Java) dispatch symmetrically.
+      this.childLanguageTracker.set(childView, newSlug);
     } catch {
       // Silently ignore — child may be in teardown (defensive per project
       // convention; mirrors childEditorSync.ts:115).
@@ -2558,17 +2586,34 @@ export default class LeetCodePlugin extends Plugin {
     const childView = this.childEditorRegistry?.get(file.path);
     if (!childView) return;
 
-    // Gate 3 — lc-language present and differs from the slug currently
-    // applied to the parent fence opener. Reading the active fence slug
-    // via `readActiveFenceSlug` (which consults the active MarkdownView's
-    // CM6 state when available, falling back to the metadataCache value
-    // for non-active windows) is what closes Pitfall 3: when the plugin
-    // itself writes lc-language via processFrontMatter, the chevron path
-    // has already updated the parent fence opener, so the read returns
-    // the same slug and Gate 3 trips.
+    // Gate 3 — Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12):
+    // read the child's currently-applied language from the per-child
+    // `childLanguageTracker`, NOT from the parent fence opener tag. Per
+    // D-14 the listener does not rewrite the opener, so reading from
+    // `readActiveFenceSlug` makes round-trip swaps (Java → Python3 → Java)
+    // silently asymmetric: after the first swap the opener still says
+    // `java`, so the second swap reads `currentSlug = 'java'` from the
+    // unchanged opener, matches the new fm `java`, and trips Gate 3 early
+    // — no dispatch fires, child syntax stays Python3.
+    //
+    // The tracker is populated by both dispatch sites — chevron switch
+    // (`dispatchChildLanguageReconfigure`) AND the fm-reactivity dispatch
+    // below — so subsequent fm changes always see the freshest applied
+    // slug. Pitfall 3 dedupe still holds: when the plugin's own
+    // `processFrontMatter` writes lc-language during chevron switch /
+    // Reset, the chevron path's tracker.set has already recorded the new
+    // slug, and Gate 3 trips on tracker equality.
+    //
+    // Empty-tracker case (e.g., first metadataCache.changed event after
+    // note open, before any chevron or fm dispatch has seeded it):
+    // tracker.get returns undefined, undefined !== fmLangRaw, so the
+    // listener proceeds to dispatch. This is safe because
+    // Compartment.reconfigure with an equal LanguageSupport is idempotent
+    // (visually a no-op) but updates the tracker — the next fm change
+    // sees the correct current.
     const fmLangRaw = cache?.frontmatter?.['lc-language'];
     if (typeof fmLangRaw !== 'string' || fmLangRaw.length === 0) return;
-    const currentSlug = this.readActiveFenceSlug(file);
+    const currentSlug = this.childLanguageTracker.get(childView);
     if (currentSlug === fmLangRaw) return;
 
     // All gates passed — dispatch Compartment.reconfigure on the child.
@@ -2587,6 +2632,10 @@ export default class LeetCodePlugin extends Plugin {
         // truth in passive-listener mode; the fence opener tag is not
         // rewritten.
       });
+      // Phase 17 Plan 09 — record the slug now applied to this child's
+      // languageCompartment. Placed inside the try block so a failed
+      // dispatch leaves the tracker untouched (next fm change retries).
+      this.childLanguageTracker.set(childView, fmLangRaw);
     } catch {
       // Silently ignore — child may be in teardown (defensive per project
       // convention; mirrors childEditorSync.ts:115 and
@@ -2597,6 +2646,18 @@ export default class LeetCodePlugin extends Plugin {
   /**
    * Phase 17 Plan 04 (D-13 helper) — read the language slug currently
    * applied to the parent fence opener for `file`.
+   *
+   * NOTE (Phase 17 Plan 09 / 17-UAT.md Issue 3): No longer consumed by
+   * `handleFmChangeForLanguageReactivity` Gate 3 — the listener now reads
+   * from the per-child `childLanguageTracker` because per D-14 the
+   * listener does not rewrite the fence opener, so the opener tag is an
+   * unsound proxy for "current applied child language" (it never changes
+   * on the listener path, producing the asymmetric round-trip bug). The
+   * helper is retained because (a) the production caller in 17-08's
+   * `resetCode` resolver may still consult fence-opener slugs and (b)
+   * future work may need a "what does the parent fence opener currently
+   * say?" primitive. If a future refactor confirms zero callers, the
+   * helper can be removed.
    *
    * Strategy:
    *   1. If the active MarkdownView is showing this file, parse its CM6

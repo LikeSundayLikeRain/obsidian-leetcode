@@ -196,13 +196,23 @@ describe('handleFmChangeForLanguageReactivity (D-13 / D-14, Wave 2)', () => {
 
   // ───────────────────────────────────────────────────────────────────────
   // Test 2 — Pitfall 3: fm change to same slug does NOT dispatch
+  //
+  // Phase 17 Plan 09 migration: post-fix Gate 3 reads from
+  // `childLanguageTracker`, NOT from `readActiveFenceSlug`. The fixture
+  // seeds `trackedSlug: 'python'` so `tracker.get(childView) === fmLangRaw`
+  // trips Gate 3 — the legacy `activeFenceSlug` stub is left in place but
+  // is no longer consulted by the SUT (preserved as a contract guard: if
+  // a future regression re-introduces a `readActiveFenceSlug` read in
+  // Gate 3, this stub keeps the legacy assertion meaningful).
   // ───────────────────────────────────────────────────────────────────────
   it('fm change to same slug — no dispatch (Pitfall 3 dedupe via Gate 3)', () => {
     const dispatchMock = vi.fn();
-    // Parent fence says `python`; fm `python` → already in sync, Gate 3 trips.
+    // Tracker pre-seeded to 'python'; fm 'python' → tracker equality →
+    // Gate 3 trips.
     const fake = makeFakePlugin({
       childView: { dispatch: dispatchMock },
       activeFenceSlug: 'python',
+      trackedSlug: 'python',
     });
     const file: FakeFile = { path: 'LeetCode/1-two-sum.md' };
     const cache = {
@@ -283,11 +293,13 @@ describe('handleFmChangeForLanguageReactivity (D-13 / D-14, Wave 2)', () => {
       expect(fake.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
     }
 
-    // Scenario B: same-slug dedupe
+    // Scenario B: same-slug dedupe (Plan 17-09 migration: tracker-seeded
+    // to mirror the post-fix Gate 3 path)
     {
       const fake = makeFakePlugin({
         childView: { dispatch: vi.fn() },
         activeFenceSlug: 'python',
+        trackedSlug: 'python',
       });
       const cache = {
         frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'python' },
@@ -404,7 +416,9 @@ describe('handleFmChangeForLanguageReactivity (D-13 / D-14, Wave 2)', () => {
     expect(buildLanguageExtensions).toHaveBeenLastCalledWith('python3', 'auto');
     // Tracker MUST be updated by the dispatch site (the contract Task 2
     // satisfies). The post-fix Gate 3 will consult this on the next swap.
-    const childView = fake.childEditorRegistry.get('LeetCode/1-two-sum.md') as object;
+    const childView = (
+      fake.childEditorRegistry.get as unknown as (path: string) => object
+    )('LeetCode/1-two-sum.md');
     expect(fake.childLanguageTracker.get(childView)).toBe('python3');
 
     // ── Step B (the failing leg on current main): Python3 → Java ─────────
@@ -469,7 +483,9 @@ describe('handleFmChangeForLanguageReactivity (D-13 / D-14, Wave 2)', () => {
     expect(dispatchMock).toHaveBeenCalledTimes(1);
     // Tracker is now seeded with the dispatched slug — proves the dispatch
     // site is the tracker-write contract.
-    const childView = fake.childEditorRegistry.get('LeetCode/1-two-sum.md') as object;
+    const childView = (
+      fake.childEditorRegistry.get as unknown as (path: string) => object
+    )('LeetCode/1-two-sum.md');
     expect(fake.childLanguageTracker.get(childView)).toBe('java');
   });
 
