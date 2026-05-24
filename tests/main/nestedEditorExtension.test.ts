@@ -957,18 +957,20 @@ describe('Phase 17-07 — StateField update() rebuild on line-count change (17-U
 // ────────────────────────────────────────────────────────────────────────
 
 describe('Phase 17-07 — StateField update() source-level invariants', () => {
-  it('StateField update() references doc.lines on tr.startState and tr.state for the line-count delta check', () => {
+  it('StateField update() rebuilds decorations on any docChanged or reconfigured transaction (no leetcode.* fast-path skip)', () => {
     const fs = require('fs');
     const source = fs.readFileSync(
       require('path').resolve(__dirname, '../../src/main/nestedEditorExtension.ts'),
       'utf8',
     );
-    // The fix uses startState.doc.lines and state.doc.lines (or state.doc.lines
-    // and startState.doc.lines in either order) to detect line-count delta.
-    // grep target — must reference doc.lines at least twice.
-    const matches = source.match(/doc\.lines/g);
-    expect(matches).not.toBeNull();
-    expect(matches!.length).toBeGreaterThanOrEqual(2);
+    // The fix unconditionally rebuilds on docChanged/reconfigured. The body
+    // must contain the rebuild guard `if (tr.docChanged || tr.reconfigured)`
+    // and must NOT contain a `leetcode.*` userEvent fast-path that skips
+    // rebuild for plugin-internal dispatches (the round-2 Reset full-body
+    // replace edge case at 17-UAT.md Test 10 proved that fast-path unsafe).
+    const updateBlock = source.split('update(old, tr)')[1]?.split('provide(')[0] ?? '';
+    expect(updateBlock).toMatch(/tr\.docChanged[\s\S]*\|\|[\s\S]*tr\.reconfigured/);
+    expect(updateBlock).not.toMatch(/userEvent[\s\S]*startsWith\(['"]leetcode\./);
   });
 
   it('StateField update() body documents the 17-07 / 17-UAT.md Issue 1 rationale', () => {
