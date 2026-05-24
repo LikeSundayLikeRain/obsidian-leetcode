@@ -409,3 +409,105 @@ describe('cmd-slash-not-reaching-child regression', () => {
     expect(factorySource).toMatch(/removeEventListener\('blur'/);
   });
 });
+
+// Phase 17 Plan 11 — Source-level regression tests for 17-UAT.md Issues 5 + 6
+// (Test 17 vim Insert-mode caret render + Test 20 sibling vim mode-indicator
+// panel missing). Both fixes touch the same vim mount block in
+// src/main/childEditorFactory.ts:235-261 (Plan 17-06 D-18 ship-vim branch)
+// and the same .lc-nested-editor CSS scope in styles.css. These tests assert
+// the post-fix state via fs.readFileSync, mirroring the source-inspection
+// pattern established by Plan 17-05 / 17-10 (childEditorTheme.test.ts) —
+// vim()'s output is opaque CM6 Extensions, and the cursor-render bug is a
+// CSS measure-pass timing issue not unit-testable through CM6 mocks.
+describe('Phase 17 Plan 11 — vim panel + cursor visibility (17-UAT Issues 5 + 6)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- matches existing source-inspection pattern in childEditorSync.test.ts
+  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- matches existing source-inspection pattern in childEditorSync.test.ts
+  const path = require('path');
+  const factorySource: string = fs.readFileSync(
+    path.join(__dirname, '../../src/main/childEditorFactory.ts'),
+    'utf8',
+  );
+  const stylesSource: string = fs.readFileSync(
+    path.join(__dirname, '../../styles.css'),
+    'utf8',
+  );
+
+  it('vim() is called with { status: true } when vimMode is enabled — Issue 6 (cm-vim-panel)', () => {
+    // Allow whitespace variation around the option-object syntax. The fix
+    // replaces the Phase 17-06 bare `vim()` call with `vim({ status: true })`
+    // so the @replit/codemirror-vim package adds showPanel(statusPanel) to
+    // the extension array (the panel renders -- NORMAL -- / -- INSERT -- at
+    // the bottom of the child editor).
+    expect(factorySource).toMatch(
+      /vim\(\s*\{\s*status\s*:\s*true\s*\}(?:\s*as\s+[^)]+)?\s*\)/,
+    );
+
+    // Plan 17-06 invariant — vim is still gated on vimEnabled. Extract the
+    // conditional spread region and assert vim(...) is INSIDE it.
+    const conditionalMatch = factorySource.match(
+      /vimEnabled\s*\?\s*\[([^\]]*)\]\s*:\s*\[\s*\]/,
+    );
+    expect(conditionalMatch).not.toBeNull();
+    const inside = conditionalMatch![1];
+    expect(inside).toMatch(
+      /vim\(\s*\{\s*status\s*:\s*true\s*\}(?:\s*as\s+[^)]+)?\s*\)/,
+    );
+  });
+
+  it('styles.css contains .cm-vim-panel rule scoped under .lc-nested-editor — Issue 6 cosmetic', () => {
+    // Descendant selector under .lc-nested-editor so the panel only styles
+    // inside the child editor (not Obsidian's parent or other CM6 instances).
+    expect(stylesSource).toMatch(/\.lc-nested-editor[^\{]*\.cm-vim-panel\s*\{/);
+
+    // Extract the rule body and assert at least one real declaration —
+    // proves it's not an empty placeholder.
+    const ruleMatch = stylesSource.match(
+      /\.lc-nested-editor[^\{]*\.cm-vim-panel\s*\{([^\}]+)\}/,
+    );
+    expect(ruleMatch).not.toBeNull();
+    const body = ruleMatch![1];
+    // Allow font-family too — the plan's reference rule sets
+    // font-family/font-size/padding/background/color/border-top.
+    expect(body).toMatch(/(?:font-family|font-size|padding|background|color)/);
+  });
+
+  it('styles.css forces .cm-cursor / .cm-fat-cursor visibility under .lc-nested-editor — Issue 5 cursor render', () => {
+    // The fix forces opacity:1 / visibility:visible so vim's late measure-pass
+    // timing cannot leave the Insert-mode caret transparent. Either rule
+    // suffices to address the timing race (the plan's reference uses both).
+    // Match a CSS rule whose selector chain mentions .lc-nested-editor and
+    // either .cm-cursor or .cm-fat-cursor, with opacity:1 OR visibility:visible
+    // in the body. The selector list may include multiple comma-separated
+    // selectors — we tolerate that via a non-greedy character class.
+    expect(stylesSource).toMatch(
+      /\.lc-nested-editor[^\{]*\.cm-(?:fat-)?cursor[^\{]*\{[^\}]*(?:opacity\s*:\s*1|visibility\s*:\s*visible)/,
+    );
+
+    // Both selectors should appear in the visibility-forcing rule (the
+    // reference rule lists them as a comma-separated selector group).
+    expect(stylesSource).toMatch(/\.cm-cursor/);
+    expect(stylesSource).toMatch(/\.cm-fat-cursor/);
+  });
+
+  it('preserves Plan 17-06 D-18 conditional gating — vim only included when getConfig(vimMode) === true', () => {
+    // Plan 17-06 invariant guard. Tasks 2 + 3 of this plan must NOT regress
+    // the conditional spread that gates vim on Obsidian's vimMode setting.
+    // Tolerate multi-line call formatting (`getConfig(\n  'vimMode',\n)` —
+    // prettier wraps the long cast chain across lines).
+    expect(factorySource).toMatch(/getConfig\([\s\S]{0,80}'vimMode'/);
+    // The strict `=== true` check — vimMode read returns unknown; cast +
+    // strict equality protects against truthy-but-non-true values. Allow
+    // the call's `)` to land anywhere after the literal before `=== true`.
+    expect(factorySource).toMatch(
+      /getConfig\([\s\S]{0,80}'vimMode'[\s\S]{0,80}\)\s*===\s*true/,
+    );
+    // vimEnabled appears at minimum: const vimEnabled = ..., and the
+    // conditional spread `vimEnabled ? [...] : []`. >= 2 occurrences
+    // confirms both the declaration and the gate are still in use after
+    // Tasks 2 + 3 land. (The plan's >= 3 estimate counted JSDoc/comment
+    // refs that the actual source did not include in 17-06.)
+    const vimEnabledCount = (factorySource.match(/vimEnabled/g) ?? []).length;
+    expect(vimEnabledCount).toBeGreaterThanOrEqual(2);
+  });
+});
