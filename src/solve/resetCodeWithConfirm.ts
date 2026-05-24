@@ -122,6 +122,27 @@ export interface ResetCodeWithConfirmDeps {
    * unit tests that do not exercise the child route.
    */
   getDispatchHandle?: (file: TFile) => ResetCodeDispatchHandle | null;
+  /**
+   * `resolveActiveLangSlug` — Phase 17 gap-closure (17-08, 17-UAT.md Issue 2
+   * / Test 10) — restores the Phase 16 D-06 canonical language priority chain
+   * at the post-D-03 child-dispatch site. The resolver, when supplied, returns
+   * the langSlug the helper should write — implementing the canonical
+   * priority order:
+   *
+   *   1. `lc-language` frontmatter (highest — chevron's source of truth)
+   *   2. active fence opener tag (parsed from the active MarkdownView's CM6)
+   *   3. `undefined` → helper falls back to `settings.getDefaultLanguage()`
+   *
+   * Returning a non-empty slug short-circuits the default fallback. Returning
+   * `undefined` (or omitting the field entirely) preserves the legacy
+   * default-only path for backward compatibility — `tests/main/resetCommand.test.ts`
+   * legacy fixtures don't supply this seam and continue to work.
+   *
+   * Reference: `.planning/debug/reset-code-language-regression.md` (Phase 16
+   * fix), `.planning/phases/17-polish-edge-cases/17-UAT.md` Test 10 (RESET-01),
+   * Phase 17 D-06 CONTEXT note.
+   */
+  resolveActiveLangSlug?: (file: TFile) => string | undefined;
 }
 
 /**
@@ -135,7 +156,17 @@ export async function resetCodeWithConfirm(
   const currentBody = await readCurrentBody(deps.app, deps.file);
 
   const detail = deps.settings.getProblemDetail(deps.slug);
-  const langSlug = deps.settings.getDefaultLanguage();
+  // Phase 17 gap-closure (17-08 — restores Phase 16 D-06 priority chain at
+  // the Phase 17 D-03 child-dispatch site). Caller supplies the resolver
+  // implementing: lc-language fm > fence opener tag > default. When the
+  // resolver returns undefined or null (or is omitted entirely), fall back
+  // to the legacy default-only path so existing tests/main/resetCommand.test.ts
+  // fixtures keep working without modification.
+  const resolved = deps.resolveActiveLangSlug?.(deps.file);
+  const langSlug =
+    typeof resolved === 'string' && resolved.length > 0
+      ? resolved
+      : deps.settings.getDefaultLanguage();
   const starter =
     detail?.codeSnippets?.find((s) => s.langSlug === langSlug)?.code ?? '';
 
