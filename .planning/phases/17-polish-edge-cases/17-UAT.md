@@ -5,17 +5,17 @@ source: [17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md, 17-04-SUMMARY.md,
 started: 2026-05-23T10:14:00Z
 updated: 2026-05-23T21:50:00Z
 summary:
-  total: 23
+  total: 24
   pass: 14
   issue: 6
   deferred: 1
   skipped: 2
-  pending: 1
+  pending: 2
 ---
 
 ## Current Test
 
-[testing complete — 14 pass, 6 issues, 1 deferred, 2 skipped + 1 pending (Plan 17-13)]
+[testing complete — 14 pass, 6 issues, 1 deferred, 2 skipped + 2 pending (Plans 17-12 LINENUM-01 + 17-13 REPAIR-02)]
 
 ## Tests
 
@@ -208,12 +208,18 @@ expected: Open a Java problem note in the dev vault. In Source Mode (so direct k
 result: pending
 notes: ""
 
+### 24. LINENUM-01 — Line numbers gutter honors Obsidian's showLineNumber setting (gap-closure round 2)
+
+expected: Open Obsidian Settings → Editor → enable "Show line numbers". Reload the dev vault (or restart Obsidian) so the plugin re-mounts. Open a Java problem note. Click into the child editor inside the `## Code` fence. A line-number gutter renders on the LEFT side of the child editor (1, 2, 3, ... matching the body lines). The gutter background is transparent (per the existing `.cm-gutters` CSS at childEditorFactory.ts:312-315) — it inherits the child editor's themed background. Toggle Obsidian's "Show line numbers" OFF; reload; reopen the same note. Child editor renders WITHOUT a gutter — pure code body, no line numbers, no leftmost gutter column. With BOTH vim mode and line numbers enabled, in the child editor press Esc → `:` → `set nonu` → Enter; the gutter disappears (vim's runtime toggle); type `:set nu` to bring it back. The Obsidian setting is read ONCE at child mount — toggling it while a child is open does NOT take effect until note remount (Cmd-E flip in/out of Source/Live Preview, OR close+reopen the note). This is the documented behavior (matches D-18 vim mount semantic). Validates Plan 17-12 — LINENUM-01 closure.
+result: pending
+notes: ""
+
 ## Summary
 
-total: 23
+total: 24
 passed: 14
 issues: 6
-pending: 1
+pending: 2
 skipped: 2
 deferred: 1
 blocked: 0
