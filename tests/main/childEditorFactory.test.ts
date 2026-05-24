@@ -28,6 +28,12 @@ vi.mock('@codemirror/view', () => {
     keymap: { of: vi.fn().mockReturnValue('mock-keymap') },
     drawSelection: vi.fn().mockReturnValue('mock-draw-selection'),
     highlightActiveLine: vi.fn().mockReturnValue('mock-highlight-active-line'),
+    // Phase 17 Plan 12 (LINENUM-01) — line-number gutter conditional, mirrors
+    // the D-18 vim mount pattern. The mock factory function returns a sentinel
+    // string so the conditional spread inside createChildEditor's extensions
+    // array can be asserted by sentinel value (parallel to drawSelection /
+    // highlightActiveLine mocks above).
+    lineNumbers: vi.fn().mockReturnValue('mock-line-numbers'),
     ViewPlugin: { define: vi.fn().mockReturnValue('mock-view-plugin') },
   };
 });
@@ -95,7 +101,13 @@ import {
   customTabCommand,
   customShiftTabCommand,
 } from '../../src/main/childEditorFactory';
-import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
+import {
+  EditorView,
+  keymap,
+  drawSelection,
+  highlightActiveLine,
+  lineNumbers,
+} from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { bracketMatching } from '@codemirror/language';
 import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
@@ -511,5 +523,82 @@ describe('Phase 17 Plan 11 — vim panel + cursor visibility (17-UAT Issues 5 + 
     // refs that the actual source did not include in 17-06.)
     const vimEnabledCount = (factorySource.match(/vimEnabled/g) ?? []).length;
     expect(vimEnabledCount).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// Phase 17 Plan 12 — Line-numbers conditional via Obsidian's `showLineNumber`
+// global setting (LINENUM-01). Mirrors the D-18 vim mount pattern from Plan
+// 17-06 verbatim — read once at child mount, conditionally spread the
+// lineNumbers() extension into the EditorState extensions array. No reactivity:
+// toggling Obsidian's setting at runtime requires note remount (Cmd-E flip
+// or close+reopen) — this is identical to vim's contract and is intentional.
+describe('createChildEditor — lineNumbers conditional (Phase 17 Plan 12 / LINENUM-01)', () => {
+  let parent: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    parent = document.createElement('div');
+  });
+
+  it('includes lineNumbers extension when app.vault.getConfig("showLineNumber") === true at mount', () => {
+    // Build the mock app shape exactly as the D-18 vim mount pattern uses it.
+    // getConfig returns true ONLY for showLineNumber (so vimMode and any
+    // other key resolves false → vim conditional stays OFF in this test).
+    const getConfig = vi.fn((key: string) => key === 'showLineNumber');
+    const mockApp = { vault: { getConfig } } as unknown as Parameters<typeof createChildEditor>[4];
+
+    createChildEditor('code', parent, 'python3', 'auto', mockApp);
+
+    // Assert the literal key was consulted at least once.
+    expect(getConfig).toHaveBeenCalledWith('showLineNumber');
+
+    // Assert the lineNumbers sentinel landed inside the extensions array.
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(createArgs.extensions).toContain('mock-line-numbers');
+
+    // Assert the lineNumbers factory was invoked (the conditional fired GREEN).
+    expect(lineNumbers).toHaveBeenCalled();
+  });
+
+  it('excludes lineNumbers extension when app.vault.getConfig("showLineNumber") === false at mount', () => {
+    const getConfig = vi.fn(() => false);
+    const mockApp = { vault: { getConfig } } as unknown as Parameters<typeof createChildEditor>[4];
+
+    createChildEditor('code', parent, 'python3', 'auto', mockApp);
+
+    // The conditional spread is `lineNumbersEnabled ? [lineNumbers()] : []` —
+    // when the gate is false, lineNumbers() is never invoked.
+    expect(lineNumbers).not.toHaveBeenCalled();
+
+    // And the sentinel never appears in the extensions array.
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(createArgs.extensions).not.toContain('mock-line-numbers');
+  });
+
+  it('excludes lineNumbers when app is undefined — backward-compatible test fixture path', () => {
+    // The factory's existing test fixtures (lines 115-251) all call without
+    // `app`. The new conditional must guard `!!app && ...` like the D-18 vim
+    // gate, otherwise these legacy fixtures would crash on mockApp.vault access.
+    createChildEditor('code', parent, 'python3', 'auto');
+
+    expect(lineNumbers).not.toHaveBeenCalled();
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(createArgs.extensions).not.toContain('mock-line-numbers');
+  });
+
+  it('calls app.vault.getConfig("showLineNumber") exactly once per createChildEditor call', () => {
+    // Pin the read-once-at-mount semantic. Toggling the Obsidian setting
+    // while a child is open does NOT take effect until the child remounts —
+    // the gating must read the config exactly once per createChildEditor
+    // invocation, never on a listener / metadataCache event.
+    const getConfig = vi.fn(() => true);
+    const mockApp = { vault: { getConfig } } as unknown as Parameters<typeof createChildEditor>[4];
+
+    createChildEditor('code', parent, 'python3', 'auto', mockApp);
+
+    const showLineNumberCalls = getConfig.mock.calls.filter(
+      (c) => c[0] === 'showLineNumber',
+    ).length;
+    expect(showLineNumberCalls).toBe(1);
   });
 });
