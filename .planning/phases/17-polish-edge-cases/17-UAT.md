@@ -6,13 +6,13 @@ started: 2026-05-23T10:14:00Z
 updated: 2026-05-24T20:00:00Z
 summary:
   total: 24
-  pass: 16
-  issue: 4
+  pass: 17
+  issue: 3
   deferred: 1
   skipped: 2
   pending: 2
 notes:
-  - "2026-05-24: Tests 2 (PASTE-02) and 8 (SRCLIV-01) flipped issue→pass after discovering the round-1 phantom-render reproduction was caused by Obsidian loading from a stale shadow plugin folder (`.obsidian/plugins/leetcode/`) instead of the active install (`.obsidian/plugins/obsidian-leetcode/`). Both folders carried manifest id `leetcode`; Obsidian deduped to the older shadow. After deploying to the correct folder and a full app reload, Plan 17-07's fix was confirmed working via DevTools probes. Stale shadow folder deleted."
+  - "2026-05-24: Tests 2 (PASTE-02), 8 (SRCLIV-01), and 10 (RESET-01) flipped issue→pass. Tests 2/8 were initially reproducing because Obsidian was loading from a stale shadow plugin folder (`.obsidian/plugins/leetcode/`) instead of the active install (`.obsidian/plugins/obsidian-leetcode/`); both folders carried manifest id `leetcode` and Obsidian deduped to the older shadow. After deploying to the correct folder, a Reset edge case surfaced where line-count-unchanged full-body replace bypassed the line-count rebuild branch — fix simplified to always rebuild on docChanged or reconfigured (commit d65cb19). Test 10 confirmed Plan 17-08's language priority chain restoration. Stale shadow folder deleted."
 
 ## Current Test
 
@@ -79,12 +79,8 @@ notes: "User spot-checked 4 highest-risk surfaces: chevron switch (multi-languag
 ### 10. Phase 17 Wave 1 regression sanity — Reset undo restored (D-03)
 
 expected: Open a populated Java solution note with a non-empty fence body. Cmd-P → "Reset code" → confirm. The fence body resets to the Java starter snippet, the chevron + lc-language frontmatter both still say `java`. With focus IN the child editor, press Cmd-Z → the prior solution body is restored to the child editor (NOT inserted into the `## Notes` section). With focus IN the `## Notes` section, press Cmd-Z → it is a NO-OP for the child code state (Notes section text is NEVER receiving the prior solution body, even after multiple Cmd-Z presses). The undo history is scoped to the child CM6 view; the parent CM6 view does NOT carry a Reset undo entry that could leak the prior body into adjacent sections. Validates Plan 17-01 fix.
-result: issue
-reported: "Two findings: (1) ACCEPTED: To Cmd-Z the Reset, focus must be in the child editor first. Honors Phase 15 D-05 cm-z scope isolation invariant — undo only fires for the focused editor's history. Notes section is never receiving the prior solution body. (2) BUG: Reset wrote a Python starter into a Java problem note where chevron AND lc-language frontmatter both still say `java`. The language priority chain (D-06: fm > active fence opener tag > getDefaultLanguage) is not being honored."
-severity: major
-hypothesis: "Plan 17-01 refactored Reset to dispatch through child CM6 (D-03), and may have inadvertently lost the language priority resolution chain that the Phase 16 reset-code-language-regression fix put in place. The getActiveFenceLangSlug + frontmatter-read resolver chain in resolveActiveLangSlug() may not be wired through the new child-dispatch call site in src/main.ts:resetCode, so the helper falls back to settings.getDefaultLanguage() (which is set to python3 in user's settings)."
-artifacts: ["src/solve/resetCodeWithConfirm.ts (resolveActiveLangSlug)", "src/main.ts (resetCode wiring — getActiveFenceLangSlug + getDispatchHandle resolvers)"]
-missing: []
+result: pass
+notes: "Re-tested 2026-05-24 after Plan 17-08 restored the D-06 language priority chain (lc-language frontmatter > active fence opener tag > getDefaultLanguage) at the new Phase 17 D-03 child-dispatch call site. Reset on a Java note with `lc-language: java` and `python3` default writes the Java starter. Cmd-Z scope (focus in child) restores the prior body to the child only. Phase 15 D-05 cm-z scope isolation invariant preserved."
 
 ### 11. Phase 17 Wave 1 regression sanity — Tab mid-line behavior (INDENT-04)
 
