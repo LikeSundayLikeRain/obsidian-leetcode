@@ -282,17 +282,32 @@ export function buildNestedEditorExtension(plugin: PluginHost): Extension {
       return buildNestedDecorations(state, plugin, registry);
     },
     update(old, tr) {
+      // Phase 17 gap-closure (17-07, 17-UAT.md Issue 1) — the leetcode.* fast-path
+      //  must NOT swallow transactions whose line count changed (e.g., child→parent
+      //  mirror dispatching `'leetcode.child-sync'` with a paste / Enter+type insertion).
+      //  RangeSet.map(tr.changes) only shifts existing decoration positions; it does
+      //  NOT extend lc-fence-hidden coverage to lines added by the change. Without a
+      //  full rebuild, the new lines render as visible parent doc text below the
+      //  child editor in Source Mode (Pitfall 8). Order here is critical: line-count
+      //  rebuild branch evaluates BEFORE the userEvent fast-path.
+      const userEvent = tr.annotation(Transaction.userEvent);
+      const lineCountChanged =
+        tr.docChanged && tr.startState.doc.lines !== tr.state.doc.lines;
+      if (lineCountChanged || tr.reconfigured) {
+        return buildNestedDecorations(tr.state, plugin, registry);
+      }
       // Skip rebuild for plugin-internal dispatches (WR-03 fix). Note: this
       // gate intentionally stays broad (`leetcode.*`) — it's a perf
-      // optimization (decoration map vs full rebuild) that's safe for ALL
-      // parent-internal events. Only the propagation listener below needs
+      // optimization (decoration map vs full rebuild) that's safe for
+      // same-line edits. Line-count-changing leetcode.* transactions take
+      // the rebuild branch above. Only the propagation listener below needs
       // the narrower skip-list (see ECHO_PRONE_USER_EVENTS rationale).
-      const userEvent = tr.annotation(Transaction.userEvent);
       if (userEvent && userEvent.startsWith('leetcode.')) {
         return old.map(tr.changes);
       }
-      // Rebuild on doc change OR reconfigure (file switch triggers reconfigure without docChanged)
-      if (tr.docChanged || tr.reconfigured) {
+      // Rebuild on doc change (line-count delta already handled above; this
+      // branch covers same-line user-typing edits in the parent).
+      if (tr.docChanged) {
         return buildNestedDecorations(tr.state, plugin, registry);
       }
       return old.map(tr.changes);

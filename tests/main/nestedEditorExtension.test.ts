@@ -57,7 +57,6 @@ import {
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { EditorState, Transaction } from '@codemirror/state';
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import type { DecorationSet } from '@codemirror/view';
 
 // ────────────────────────────────────────────────────────────────────────
