@@ -177,39 +177,48 @@ describe('childEditorTheme', () => {
       );
     }
 
-    function readStyles(): string {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const fs = require('node:fs') as typeof import('node:fs');
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const path = require('node:path') as typeof import('node:path');
+    async function readStyles(): Promise<string> {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
       return fs.readFileSync(path.join(process.cwd(), STYLES_PATH), 'utf-8');
     }
 
     function extractKeywordColor(scopeBody: string | undefined): string | null {
-      if (!scopeBody) return null;
+      if (scopeBody === undefined) return null;
       const match = scopeBody.match(/--code-keyword\s*:\s*([^;]+);/i);
-      return match ? match[1].trim().toLowerCase() : null;
+      if (match === null) return null;
+      const captured = match[1];
+      if (captured === undefined) return null;
+      return captured.trim().toLowerCase();
     }
 
-    it('Test N+1: styles.css defines --code-keyword in BOTH .theme-light and .theme-dark .lc-nested-editor scopes', () => {
-      const source = readStyles();
+    it('Test N+1: styles.css defines --code-keyword in BOTH .theme-light and .theme-dark .lc-nested-editor scopes', async () => {
+      const source = await readStyles();
       const lightMatch = source.match(buildScopeRegex('light'));
       const darkMatch = source.match(buildScopeRegex('dark'));
 
       expect(lightMatch, 'light scope rule block should exist').not.toBeNull();
       expect(darkMatch, 'dark scope rule block should exist').not.toBeNull();
-      // And each block must define --code-keyword.
-      expect(lightMatch?.[1] ?? '').toMatch(/--code-keyword\s*:/);
-      expect(darkMatch?.[1] ?? '').toMatch(/--code-keyword\s*:/);
+      // And each block must define --code-keyword. The match[1] capture is
+      // the rule body; non-null was just asserted, but TS strict-null mode
+      // doesn't follow through `expect().not.toBeNull()`, so we re-narrow.
+      const lightBody = lightMatch === null ? '' : (lightMatch[1] ?? '');
+      const darkBody = darkMatch === null ? '' : (darkMatch[1] ?? '');
+      expect(lightBody).toMatch(/--code-keyword\s*:/);
+      expect(darkBody).toMatch(/--code-keyword\s*:/);
     });
 
-    it('Test N+2: --code-keyword VALUE differs between light and dark scopes (proves theme tracking)', () => {
-      const source = readStyles();
+    it('Test N+2: --code-keyword VALUE differs between light and dark scopes (proves theme tracking)', async () => {
+      const source = await readStyles();
       const lightMatch = source.match(buildScopeRegex('light'));
       const darkMatch = source.match(buildScopeRegex('dark'));
 
-      const lightKeyword = extractKeywordColor(lightMatch?.[1]);
-      const darkKeyword = extractKeywordColor(darkMatch?.[1]);
+      const lightKeyword = extractKeywordColor(
+        lightMatch === null ? undefined : lightMatch[1],
+      );
+      const darkKeyword = extractKeywordColor(
+        darkMatch === null ? undefined : darkMatch[1],
+      );
 
       expect(lightKeyword, 'light --code-keyword color should be parseable').not.toBeNull();
       expect(darkKeyword, 'dark --code-keyword color should be parseable').not.toBeNull();
@@ -218,10 +227,12 @@ describe('childEditorTheme', () => {
       expect(lightKeyword).not.toEqual(darkKeyword);
     });
 
-    it('Test N+3: at least 5 of the 8 consumed --code-* variables are defined in each scope', () => {
-      const source = readStyles();
-      const lightBody = source.match(buildScopeRegex('light'))?.[1] ?? '';
-      const darkBody = source.match(buildScopeRegex('dark'))?.[1] ?? '';
+    it('Test N+3: at least 5 of the 8 consumed --code-* variables are defined in each scope', async () => {
+      const source = await readStyles();
+      const lightMatch = source.match(buildScopeRegex('light'));
+      const darkMatch = source.match(buildScopeRegex('dark'));
+      const lightBody = lightMatch === null ? '' : (lightMatch[1] ?? '');
+      const darkBody = darkMatch === null ? '' : (darkMatch[1] ?? '');
 
       const countDefined = (body: string): number =>
         CONSUMED_VARS.filter((v) =>
@@ -232,11 +243,9 @@ describe('childEditorTheme', () => {
       expect(countDefined(darkBody)).toBeGreaterThanOrEqual(5);
     });
 
-    it("Test N+4: childEditorTheme.ts still references 'var(--code-keyword)' — Plan 17-05 binding shape preserved", () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const fs = require('node:fs') as typeof import('node:fs');
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const path = require('node:path') as typeof import('node:path');
+    it("Test N+4: childEditorTheme.ts still references 'var(--code-keyword)' — Plan 17-05 binding shape preserved", async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
       const source = fs.readFileSync(
         path.join(process.cwd(), 'src/main/childEditorTheme.ts'),
         'utf-8',

@@ -1923,3 +1923,50 @@
 .cm-editor .lc-nested-editor .cm-scroller {
   overflow: visible !important;
 }
+
+/* Phase 17 Plan 10 (17-UAT.md Issue 4 — Tests 13 + 14) — theme-scoped
+ * --code-* fallback palette for the child editor.
+ *
+ * Plan 17-05's themed HighlightStyle (src/main/childEditorTheme.ts) binds
+ * Lezer tags to var(--code-*). Without these scoped definitions, the
+ * variables fail to resolve to a theme-dependent value inside the
+ * Decoration.widget({block:true}) DOM subtree — the widget container does
+ * NOT inherit the source-mode .HyperMD-codeblock scope where some Obsidian
+ * themes define --code-*. Defining the variables under
+ * :where(.theme-light) / :where(.theme-dark) .lc-nested-editor gives them
+ * theme-dependent values at low specificity (the :where() pseudo-class
+ * contributes ZERO specificity, so the effective selector is just
+ * `.lc-nested-editor` = 0,1,0). Community themes that scope --code-* at
+ * higher specificity continue to win via normal CSS cascade — these rules
+ * are a fallback baseline, NOT an override.
+ *
+ * Hex values are GitHub-light / -dark inspired. The Plan 17-10 tests
+ * assert (a) BOTH scopes exist, (b) the keyword color VALUE differs
+ * between scopes (theme tracking proven), (c) >= 5 of the 8 consumed
+ * --code-* variables are defined per scope. Specific hex codes are NOT
+ * locked.
+ *
+ * Plan 17-05 invariants preserved: HighlightStyle.define spec list
+ * unchanged; HIGHLIGHT-DARK-01 bracket-match contrast unaffected;
+ * bracketMatching() at childEditorFactory.ts:277 untouched. */
+:where(.theme-light) .lc-nested-editor {
+  --code-keyword: #d73a49;
+  --code-string: #032f62;
+  --code-comment: #6a737d;
+  --code-function: #6f42c1;
+  --code-tag: #22863a;
+  --code-property: #005cc5;
+  --code-operator: #d73a49;
+  --code-value: #005cc5;
+}
+
+:where(.theme-dark) .lc-nested-editor {
+  --code-keyword: #ff7b72;
+  --code-string: #a5d6ff;
+  --code-comment: #8b949e;
+  --code-function: #d2a8ff;
+  --code-tag: #7ee787;
+  --code-property: #79c0ff;
+  --code-operator: #ff7b72;
+  --code-value: #79c0ff;
+}
