@@ -3,12 +3,12 @@ status: in-progress
 phase: 17-polish-edge-cases
 source: [17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md, 17-04-SUMMARY.md, 17-05-SUMMARY.md, 17-06-SUMMARY.md]
 started: 2026-05-23T10:14:00Z
-updated: 2026-05-23T10:27:00Z
+updated: 2026-05-23T21:08:00Z
 ---
 
 ## Current Test
 
-[testing pending — execute in Plan 17-06]
+[testing in progress — manual UAT execution]
 
 ## Tests
 
@@ -155,11 +155,17 @@ expected: With vim mode enabled, open a Java note; click into the child editor; 
 result: pending
 notes: ""
 
+### 22. LIFE-01 — Heap-snapshot lifecycle UAT (D-23 arm b)
+
+expected: Open and close 20 different lc-slug problem notes in the dev vault. Procedure: (1) Open Obsidian's built-in DevTools (Cmd-Shift-I on macOS / Ctrl-Shift-I on Win/Linux). (2) Switch to the Memory tab. (3) Take a baseline heap snapshot before opening any problem notes ("Snapshot 1: baseline"). (4) Open and close 20 different LeetCode problem notes — any combination from the dev vault's `LeetCode/problems/` folder. The registry capacity is 5, so by the 6th note the LRU eviction begins; by the 20th note 15 evictions have fired. (5) After closing the 20th note, force a garbage collection (DevTools Memory tab → "Collect garbage" / trash-can icon). (6) Take a second snapshot ("Snapshot 2: post-cycle"). (7) In DevTools' "Comparison" view of Snapshot 2 vs Snapshot 1, filter the constructor list by typing `EditorView`. Verify: the count of EditorView instances is at most 5 (the registry capacity) — the other 15 instances were destroyed on LRU eviction. Verify: no "Detached" EditorView instances appear (Detached = DOM-detached but JS-reachable, indicating a leak). Verify: registry size at end of cycle is 5. Verify: decoration set count is stable (not growing unboundedly) — drill into a remaining EditorView and confirm its `state.facet` decoration sets are bounded by the document size, not by the number of cycles. Pass criteria: zero detached EditorViews, registry size = 5, decoration sets stable. Fail criteria: any non-zero detached EditorView count, OR registry size > 5, OR unbounded decoration set growth. After completing this test, the executor (post-resume) creates `.planning/phases/17-polish-edge-cases/17-LIFE-SNAPSHOT.md` with the 5 required sections per CONTEXT D-23 arm b.
+result: pending
+notes: ""
+
 ## Summary
 
-total: 21
+total: 22
 passed: 0
 issues: 0
-pending: 21
+pending: 22
 skipped: 0
 blocked: 0
