@@ -1970,3 +1970,37 @@
   --code-operator: #ff7b72;
   --code-value: #79c0ff;
 }
+
+/* Phase 17 gap-closure (17-11, 17-UAT.md Issue 5) — force cursor
+ * visibility so vim Insert-mode caret renders deterministically.
+ * @replit/codemirror-vim relies on a measure-pass after Normal → Insert
+ * transition; the Decoration.widget({block:true}) mount can leave the
+ * cursor element transparent until the next user keystroke. Forcing
+ * opacity + visibility makes the cursor visible regardless of the
+ * vim package's measure timing. Applies to both .cm-cursor (Insert
+ * mode caret) and .cm-fat-cursor (Normal mode block cursor).
+ *
+ * Scoped to .lc-nested-editor so the rule applies ONLY to the child
+ * editor — Obsidian's parent editor and other CM6 instances elsewhere
+ * in the vault are unaffected. */
+.cm-editor .lc-nested-editor .cm-cursor,
+.cm-editor .lc-nested-editor .cm-fat-cursor {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* Phase 17 gap-closure (17-11, 17-UAT.md Issue 6 sibling) — vim mode
+ * indicator panel styling. The .cm-vim-panel renders at the bottom of
+ * the child editor showing -- NORMAL -- / -- INSERT -- (and other vim
+ * mode strings). Style for visual integration with the child editor
+ * scope: small font, muted background, minimal padding so it doesn't
+ * dominate the editing area. Uses Obsidian theme variables so the
+ * panel tracks light/dark themes automatically — no hardcoded colors. */
+.cm-editor .lc-nested-editor .cm-vim-panel {
+  font-family: var(--font-monospace);
+  font-size: 0.8em;
+  padding: 2px 8px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  border-top: 1px solid var(--background-modifier-border);
+}

@@ -444,9 +444,11 @@ describe('Phase 17 Plan 11 — vim panel + cursor visibility (17-UAT Issues 5 + 
     );
 
     // Plan 17-06 invariant — vim is still gated on vimEnabled. Extract the
-    // conditional spread region and assert vim(...) is INSIDE it.
+    // conditional spread region with a non-greedy match that allows nested
+    // square brackets inside the call args (e.g. `Parameters<typeof vim>[0]`
+    // type cast — the `[0]` is INSIDE the call, not the outer ternary array).
     const conditionalMatch = factorySource.match(
-      /vimEnabled\s*\?\s*\[([^\]]*)\]\s*:\s*\[\s*\]/,
+      /vimEnabled\s*\?\s*\[([\s\S]*?)\]\s*:\s*\[\s*\]/,
     );
     expect(conditionalMatch).not.toBeNull();
     const inside = conditionalMatch![1];
@@ -458,12 +460,12 @@ describe('Phase 17 Plan 11 — vim panel + cursor visibility (17-UAT Issues 5 + 
   it('styles.css contains .cm-vim-panel rule scoped under .lc-nested-editor — Issue 6 cosmetic', () => {
     // Descendant selector under .lc-nested-editor so the panel only styles
     // inside the child editor (not Obsidian's parent or other CM6 instances).
-    expect(stylesSource).toMatch(/\.lc-nested-editor[^\{]*\.cm-vim-panel\s*\{/);
+    expect(stylesSource).toMatch(/\.lc-nested-editor[^{]*\.cm-vim-panel\s*\{/);
 
     // Extract the rule body and assert at least one real declaration —
     // proves it's not an empty placeholder.
     const ruleMatch = stylesSource.match(
-      /\.lc-nested-editor[^\{]*\.cm-vim-panel\s*\{([^\}]+)\}/,
+      /\.lc-nested-editor[^{]*\.cm-vim-panel\s*\{([^}]+)\}/,
     );
     expect(ruleMatch).not.toBeNull();
     const body = ruleMatch![1];
@@ -481,7 +483,7 @@ describe('Phase 17 Plan 11 — vim panel + cursor visibility (17-UAT Issues 5 + 
     // in the body. The selector list may include multiple comma-separated
     // selectors — we tolerate that via a non-greedy character class.
     expect(stylesSource).toMatch(
-      /\.lc-nested-editor[^\{]*\.cm-(?:fat-)?cursor[^\{]*\{[^\}]*(?:opacity\s*:\s*1|visibility\s*:\s*visible)/,
+      /\.lc-nested-editor[^{]*\.cm-(?:fat-)?cursor[^{]*\{[^}]*(?:opacity\s*:\s*1|visibility\s*:\s*visible)/,
     );
 
     // Both selectors should appear in the visibility-forcing rule (the

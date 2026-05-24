@@ -258,7 +258,15 @@ export function createChildEditor(
       //     keymap precedes our Tab/Cmd-/ bindings (D-20: Esc Insert→Normal,
       //     Tab in Insert falls through to customTabCommand, Cmd-/ via the
       //     Obsidian Scope still wins because it's at app-level not editor-level).
-      ...(vimEnabled ? [vim()] : []),
+      //     The `{ status: true }` option enables the .cm-vim-panel mode-
+      //     indicator strip at the bottom of the child editor (Phase 17
+      //     gap-closure 17-11, 17-UAT.md Issue 6 sibling — without this
+      //     option vim ships without a visible mode indicator, breaking
+      //     discoverability of NORMAL vs INSERT mode). The package's
+      //     TypeScript .d.ts may not advertise the options object — cast
+      //     through Parameters<typeof vim>[0] to keep tsc happy without
+      //     touching runtime behavior.
+      ...(vimEnabled ? [vim({ status: true } as Parameters<typeof vim>[0])] : []),
       // 2a. Mod-/ Obsidian Scope intercept — see debug session
       //     `cmd-slash-not-reaching-child.md`. Pushes a Scope on focus to
       //     override `editor:toggle-comments` for this child editor only.
