@@ -1,6 +1,6 @@
 ---
 slug: fence-auto-recovery-regression-round2
-status: investigating
+status: resolved
 trigger: "Phase 17 round-2 gap closure (REPAIR-02) — user manual testing 2026-05-23 reports two compounding regressions in fence auto-recovery: (1) repairFenceStructure 'only fires on reload' when the user damages the fence in the parent doc (Source Mode keystrokes that delete the closer); (2) on the user's exact reproduction the recovered state contains a DUPLICATE fence shape — original opener+body+closer above followed by a SECOND `\`\`\`java + duplicate body + EOF/`## Notes` below — instead of a single intact fence."
 created: 2026-05-23
 updated: 2026-05-23
@@ -525,8 +525,27 @@ files_changed:
   - src/main/childEditorSync.ts (NEW createParentRepairExtension helper + wireSyncIfNeeded extended to also append parent-repair listener on first call per file; round-1 fix in repairFenceStructure preserved verbatim)
   - tests/main/childEditorSync.repair.test.ts (3 new it() blocks: Tests 6, 7, 8)
 
-final_commit_sha: (TBD — filled in by Task 3)
+final_commit_sha: 1c68997 (Task 3 — GREEN fix: createParentRepairExtension + wireSyncIfNeeded extension)
 plan_commits:
-  - (TBD Task 1 — debug doc commit hash)
-  - (TBD Task 2 — RED test commit hash)
-  - (TBD Task 3 — GREEN fix commit hash)
+  - 27568ee (Task 1 — round-2 debug doc with hypothesis matrix + confirmed root cause + planned fix scope)
+  - f5cb2f8 (Task 2 — RED-state regression tests; Test 6 reproduces Bug 1, Tests 7/8 pin round-1 invariants)
+  - 1c68997 (Task 3 — GREEN fix: parent-side runtime trigger + re-entry guard; round-1 invariants preserved verbatim)
+
+green_test_output: |
+  $ npx vitest run tests/main/childEditorSync.repair.test.ts
+   ✓ tests/main/childEditorSync.repair.test.ts (8 tests) 5ms
+   Test Files  1 passed (1)
+        Tests  8 passed (8)
+
+  $ npx vitest run tests/main/childEditorSync.test.ts
+   ✓ tests/main/childEditorSync.test.ts (28 tests) 9ms
+   Test Files  1 passed (1)
+        Tests  28 passed (28)
+
+  $ npx vitest run    # full suite
+   Test Files  195 passed | 1 skipped (196)
+        Tests  1687 passed | 6 skipped (1693)
+
+  $ npm run build
+   tsc -noEmit -skipLibCheck && node esbuild.config.mjs production
+   (clean — no errors, no output to stderr)

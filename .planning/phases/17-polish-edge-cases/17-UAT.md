@@ -5,16 +5,17 @@ source: [17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md, 17-04-SUMMARY.md,
 started: 2026-05-23T10:14:00Z
 updated: 2026-05-23T21:50:00Z
 summary:
-  total: 22
+  total: 23
   pass: 14
   issue: 6
   deferred: 1
   skipped: 2
+  pending: 1
 ---
 
 ## Current Test
 
-[testing complete — 14 pass, 6 issues, 1 deferred, 2 skipped]
+[testing complete — 14 pass, 6 issues, 1 deferred, 2 skipped + 1 pending (Plan 17-13)]
 
 ## Tests
 
@@ -201,11 +202,18 @@ findings:
   os_obsidian_version: "macOS / current Obsidian (user dev vault)"
   bundle_form: "production-built main.js from Phase 17 Wave 4 commits (post 17-06 Tasks 1-3)"
 
+### 23. REPAIR-02 — Fence auto-recovery runtime trigger + missing-closer correctness (gap-closure round 2)
+
+expected: Open a Java problem note in the dev vault. In Source Mode (so direct keystrokes hit the parent), select the line ` ``` ` (the fence closer at the bottom of `## Code`) and DELETE it. Type a single character (or just leave the keystroke that deleted the line). Within ONE parent transaction (no reload, no Cmd-E flip, no manual click into the child), observe the parent doc: the fence closer is automatically restored. The restored closer is a single bare ` ``` ` line placed immediately above `## Notes` (or after the last non-blank body line, BEFORE any trailing blank lines that precede `## Notes`). The parent doc has EXACTLY ONE opener (` ```java `) and EXACTLY ONE closer (` ``` `) — no duplicate fence block, no orphaned body content, no second copy of the user's solution. Repeat with the user's exact reproduction from `.planning/debug/fence-auto-recovery-regression-round2.md` (delete the closer; reload the app) — the recovered state is identical (single intact fence, no duplicate). The chevron + lc-language frontmatter still say `java`. Cmd-Z reverts the repair (the deleted closer comes back and the auto-restored closer goes away). Validates Plan 17-13 fix — Bug 1 (parent-side runtime trigger fires repair on parent-only damage WITHOUT reload or child dispatch) AND Bug 2 (missing-closer recovery produces a single intact fence, no duplicate-fence shape).
+result: pending
+notes: ""
+
 ## Summary
 
-total: 22
-passed: 0
-issues: 0
-pending: 22
-skipped: 0
+total: 23
+passed: 14
+issues: 6
+pending: 1
+skipped: 2
+deferred: 1
 blocked: 0
