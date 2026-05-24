@@ -1,9 +1,9 @@
 // Phase 06 FOUND-02 — bundle-size gate behavior contract.
 //
 // Asserts that `scripts/check-bundle-size.mjs`:
-//   - Exits 1 with FAIL when main.js > 1_300_000 bytes
-//   - Exits 0 with WARN when 1_170_000 < size <= 1_300_000
-//   - Exits 0 (no warn) when size <= 1_170_000
+//   - Exits 1 with FAIL when main.js > 1_800_000 bytes
+//   - Exits 0 with WARN when 1_710_000 < size <= 1_800_000
+//   - Exits 0 (no warn) when size <= 1_710_000
 //   - Exits 1 with FAIL when main.js does not exist
 //
 // Phase 07 Plan 03 ceiling bump (Rule 3): 500 KB → 1 MB when the AI SDK
@@ -13,6 +13,16 @@
 // became a live runtime consumer (Phase 07 import-only stub vs Phase 08
 // AIStreamModal actually iterating the textStream). Soft warning held at
 // 90% of HARD_LIMIT.
+//
+// Phase 16 Plan 05 ceiling bump (Rule 3): 1.2 MB → 1.6 MB when the full
+// CM6 LanguageSupport for all 8 LeetCode languages landed (lang-rust +
+// legacy-modes + autocomplete promotion). Soft warning at 90% of HARD.
+//
+// Phase 17 Plan 06 ceiling bump (Rule 3, user-approved): 1.6 MB → 1.8 MB
+// when @replit/codemirror-vim 6.3.0 shipped (D-18). Post-vim raw 1,707,327
+// bytes / gzipped 459,257 bytes; the conditional spread in childEditorFactory
+// saves runtime keymap install only, not bundle bytes (esbuild CJS constraint).
+// Soft warning at 95% of HARD to keep regression-gate bite within v1.3 budget.
 //
 // Spawns the script via `child_process.execFileSync` against fixture
 // directories under `os.tmpdir()` so the real `main.js` is never modified.
@@ -63,18 +73,18 @@ describe('scripts/check-bundle-size.mjs (FOUND-02)', () => {
     expect(r.stderr).not.toMatch(/WARN/);
   });
 
-  it('exits 0 with WARN when 1_170_000 < size <= 1_300_000 (soft warn band)', () => {
-    const r = runWithFixture(1_200_000);
+  it('exits 0 with WARN when 1_710_000 < size <= 1_800_000 (soft warn band)', () => {
+    const r = runWithFixture(1_750_000);
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/WARN/);
     expect(r.stderr).toMatch(/heading toward the gate/);
   });
 
-  it('exits 1 with FAIL when main.js > 1_300_000 bytes (hard limit)', () => {
-    const r = runWithFixture(1_400_000);
+  it('exits 1 with FAIL when main.js > 1_800_000 bytes (hard limit)', () => {
+    const r = runWithFixture(1_850_000);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/FAIL/);
-    expect(r.stderr).toMatch(/exceeds 1300000 bytes/);
+    expect(r.stderr).toMatch(/exceeds 1800000 bytes/);
   });
 
   it('exits 1 with FAIL when main.js is missing', () => {
@@ -96,11 +106,11 @@ describe('package.json — check:bundle-size script registration (FOUND-02)', ()
   });
 });
 
-describe('scripts/check-bundle-size.mjs — threshold constants (FOUND-02 + Phase 08 Plan 02 bump)', () => {
-  it('uses HARD_LIMIT=1_300_000 and SOFT_WARN=1_170_000 (1.3 MB ceiling for live streamText consumer)', () => {
+describe('scripts/check-bundle-size.mjs — threshold constants (FOUND-02 + Phase 17 Plan 06 bump)', () => {
+  it('uses HARD_LIMIT=1_800_000 and SOFT_WARN=1_710_000 (1.8 MB ceiling for vim-shipped v1.2)', () => {
     const src = readFileSync(SCRIPT_PATH, 'utf-8');
-    expect(src).toMatch(/HARD_LIMIT\s*=\s*1_?300_?000/);
-    expect(src).toMatch(/SOFT_WARN\s*=\s*1_?170_?000/);
+    expect(src).toMatch(/HARD_LIMIT\s*=\s*1_?800_?000/);
+    expect(src).toMatch(/SOFT_WARN\s*=\s*1_?710_?000/);
   });
 });
 

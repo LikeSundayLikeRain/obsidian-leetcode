@@ -6,9 +6,9 @@
 // silently failed on macOS / Windows runners). See 06-RESEARCH.md
 // §Pitfall 6.
 //
-// Thresholds (current — bumped in Phase 16 Plan 05; see ceiling-bump block below):
-//   HARD_LIMIT = 1_600_000 bytes — exit 1 (fails CI)
-//   SOFT_WARN  = 1_440_000 bytes — exit 0 with stderr WARN
+// Thresholds (current — bumped in Phase 17 Plan 06; see ceiling-bump block below):
+//   HARD_LIMIT = 1_800_000 bytes — exit 1 (fails CI)
+//   SOFT_WARN  = 1_710_000 bytes — exit 0 with stderr WARN
 //
 // Phase 07 Plan 03 ceiling bump (Rule 3 — Architectural deviation):
 //   The original 500 KB / 400 KB thresholds were locked in 06-CONTEXT.md §E
@@ -87,12 +87,31 @@
 //   loader makes this infeasible in practice (same constraint that forced
 //   the 07-03 bump).
 //
+// Phase 17 Plan 06 ceiling bump (Rule 3 — Architectural deviation, user-approved):
+//   Phase 17 D-18 ships @replit/codemirror-vim 6.3.0 to give vim users parity
+//   with Obsidian's global vim setting. The package's bundled CJS module is
+//   ~321 KB unminified; post-esbuild minification + bundle integration the
+//   delta against the Phase 16 baseline is +124,708 bytes raw / +39,190 bytes
+//   gzipped (measured 2026-05-23 — see 17-BUNDLE-AUDIT.md). esbuild's
+//   single-CJS-bundle constraint (Obsidian's plugin loader requires it)
+//   bundles vim eagerly even when `vimMode` is false, so the conditional spread
+//   in childEditorFactory.ts only saves runtime keymap installation, not bundle
+//   bytes (CONTEXT D-21).
+//
+//   Phase 16's 1.6 MB ceiling had ~17 KB headroom — vim's 124.7 KB delta
+//   exceeded it by ~7×. The Plan 17-06 Task 2 checkpoint (D-19 hard gate)
+//   surfaced the failure to the user, who explicitly approved a ceiling raise
+//   to 1.8 MB to ship vim in v1.2. Post-vim raw is 1,707,327 bytes; the new
+//   ceiling preserves ~92 KB headroom for v1.3 work. SOFT_WARN bumped
+//   proportionally to 1_710_000 (~95% of HARD — slightly tighter than 08-02's
+//   90% so the regression gate still bites within the v1.3 working budget).
+//
 // Invoked from `npm run check:bundle-size` and from the Phase 06 GitHub
 // Actions workflow at .github/workflows/ci.yml.
 import fs from 'node:fs';
 
-const HARD_LIMIT = 1_600_000;
-const SOFT_WARN = 1_440_000;
+const HARD_LIMIT = 1_800_000;
+const SOFT_WARN = 1_710_000;
 const PATH = 'main.js';
 
 if (!fs.existsSync(PATH)) {

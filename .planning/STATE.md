@@ -63,6 +63,7 @@ Recent decisions affecting current work:
 - v1.2 sync: CM6 split-view pattern with sync annotations to prevent echo loops; always re-derive offsets via `findCodeFence()` before dispatching
 - v1.2 section lock: No modifications needed — child→parent sync dispatches have no `input.*` userEvent, Gate 0 passes them through
 - v1.2 bundle: Accept ~1.5 MB ceiling (language packs add ~300 KB over current 1.155 MB)
+- 2026-05-23 (Phase 17 D-19, user-approved): Bundle ceiling raised from 1.6 MB → 1.8 MB to ship @replit/codemirror-vim 6.3.0 in v1.2. Post-vim raw 1,707,327 B / gzipped 459,257 B. Headroom ~92 KB for v1.3.
 - Phase 13-01: Monotonic tick counter for LRU ordering (avoids sub-ms Date.now() conflicts)
 - Phase 13-02: Widget decoration at openerLine.to between opener line-hide and body line-hides for RangeSetBuilder sorted-order compliance
 - Phase 13-03: Registry instantiation before all registerEditorExtension calls; nested editor registered between code-actions and section-lock for correct transactionFilter ordering
