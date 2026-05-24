@@ -266,10 +266,20 @@ export function wireSyncIfNeeded(
   if (SyncWiringState.has(filePath)) return;
 
   const syncExt = createChildSyncExtension(parentView, filePath, registry);
+  // Phase 17 Plan 13: parent-side repair listener — Bug 1 (runtime trigger
+  // gap). Appended once per (leaf, file) pair on first widget mount so
+  // parent-only fence damage (e.g., Source Mode closer deletion) gets
+  // repaired WITHIN ONE PARENT TRANSACTION without requiring a child
+  // dispatch or app reload. See
+  // .planning/debug/fence-auto-recovery-regression-round2.md.
+  const parentRepairExt = createParentRepairExtension();
 
   try {
     childView.dispatch({
       effects: StateEffect.appendConfig.of(syncExt),
+    });
+    parentView.dispatch({
+      effects: StateEffect.appendConfig.of(parentRepairExt),
     });
   } catch {
     // Silently ignore — child may be in teardown
@@ -345,7 +355,74 @@ export function createScrollIntoViewExtension(): Extension {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Fence Repair (D-05, D-06, D-07)
+// Parent-side Repair Trigger (Phase 17 Plan 13 — REPAIR-02 Bug 1)
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Phase 17 Plan 13: parent-side `EditorView.updateListener` that calls
+ * `repairFenceStructure` when the parent doc enters a `findCodeFence === null`
+ * state due to PARENT-only damage (e.g., Source Mode keystrokes that delete
+ * the fence closer line). Closes the round-2 runtime trigger gap (Bug 1) —
+ * before this extension, repair was reachable only via the CHILD-side
+ * updateListener in `createChildSyncExtension`, which observes child-doc
+ * changes only.
+ *
+ * Re-entry guard: skips when any transaction in the update carries
+ * `'leetcode.fence-repair'` userEvent — prevents the listener from firing
+ * repair on its own dispatch (which would loop the parent-update cycle).
+ *
+ * Code-section gate: fires repair only when `findCodeFence(state) === null`,
+ * which already implies the damage is in the Code section (the only place
+ * `findCodeFence` reads). No additional Code-section overlap probe is
+ * required — `findCodeFence` already encapsulates that check.
+ *
+ * Wired into the parent CM6 view via `wireSyncIfNeeded` (which runs once
+ * per (leaf, file) pair on first widget mount via `SyncWiringState`
+ * idempotency). See `wireSyncIfNeeded` for the appendConfig site.
+ *
+ * See .planning/debug/fence-auto-recovery-regression-round2.md.
+ */
+export function createParentRepairExtension(): Extension {
+  return EditorView.updateListener.of((update) => {
+    // Only fire on document changes — selection-only / focus updates can't
+    // damage the fence.
+    if (!update.docChanged) return;
+
+    // Phase 17 Plan 13: re-entry guard. Skip when this update carries our
+    // own repair dispatch userEvent so we don't loop on the dispatch we
+    // just emitted. Bug 2 Hyp D defense (see debug doc round-2 Hyp D
+    // verdict — refuted as a within-cycle re-entry mechanism in the
+    // shipped wiring, but the new parent-side listener MUST guard
+    // explicitly because it now CAN observe parent-side dispatches).
+    if (
+      update.transactions.some(
+        (tr) => tr.annotation(Transaction.userEvent) === 'leetcode.fence-repair',
+      )
+    ) {
+      return;
+    }
+
+    // Damage gate: only fire when the parent's fence is broken.
+    // findCodeFence walks the doc looking for the `## Code` section's
+    // first `\`\`\`<lang>` opener and matching closer; null means the
+    // fence is structurally broken (or the section doesn't exist).
+    if (findCodeFence(update.state) !== null) return;
+
+    // Derive activeSlug from the parent doc's `lc-language` frontmatter
+    // (same convention as createChildSyncExtension's child-side trigger).
+    // Fall back to 'python3' matching nestedEditorExtension.ts:216.
+    const activeSlug = readLcLanguageFromDoc(update.state) ?? 'python3';
+
+    // Fire repair on the parent view — the round-1 fix in
+    // repairFenceStructure handles the marker-disambiguation +
+    // body-aware insertion + activeSlug-aware opener tag. Round-1 fix
+    // is preserved verbatim by Plan 17-13.
+    repairFenceStructure(update.view, activeSlug);
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Fence Repair (D-05, D-06, D-07) — round-1 fix preserved verbatim
 // ────────────────────────────────────────────────────────────────────────
 
 /**
