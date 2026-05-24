@@ -3,15 +3,16 @@ status: partial
 phase: 17-polish-edge-cases
 source: [17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md, 17-04-SUMMARY.md, 17-05-SUMMARY.md, 17-06-SUMMARY.md]
 started: 2026-05-23T10:14:00Z
-updated: 2026-05-23T21:50:00Z
+updated: 2026-05-24T20:00:00Z
 summary:
   total: 24
-  pass: 14
-  issue: 6
+  pass: 16
+  issue: 4
   deferred: 1
   skipped: 2
   pending: 2
----
+notes:
+  - "2026-05-24: Tests 2 (PASTE-02) and 8 (SRCLIV-01) flipped issue→pass after discovering the round-1 phantom-render reproduction was caused by Obsidian loading from a stale shadow plugin folder (`.obsidian/plugins/leetcode/`) instead of the active install (`.obsidian/plugins/obsidian-leetcode/`). Both folders carried manifest id `leetcode`; Obsidian deduped to the older shadow. After deploying to the correct folder and a full app reload, Plan 17-07's fix was confirmed working via DevTools probes. Stale shadow folder deleted."
 
 ## Current Test
 
@@ -28,10 +29,8 @@ notes: ""
 ### 2. PASTE-02 — Paste from StackOverflow HTML → child (D-08)
 
 expected: Open a Python problem note. From a StackOverflow answer page, select a Python code block (which carries `<code>` HTML and syntax-highlighted `<span>` tags in the clipboard). Click into the child editor and paste. The pasted result is RAW code only — no `<code>` or `<span>` tags landing in the doc, no inline HTML, no tag attributes leaking through. Indentation preserved. The child fence stays a single `python` fence (no nested fence injection from StackOverflow's markdown serialization).
-result: issue
-reported: "Paste content arrives clean (no HTML/tags). BUT in Source Mode while child editor has focus, structural changes (paste / enter + type a new line) cause a phantom duplicate render of the parent fence body below the child editor. Existing-line edits do NOT cause duplication. Duplication disappears when the child editor loses focus."
-severity: major
-hypothesis: "Source Mode-only render bug. The CSS line-hide decorations in nestedEditorExtension.ts StateField are not extending to cover lines newly added by the child→parent mirror dispatch (addToHistory.of(false)). The mirror transaction adds lines to the parent doc, but the StateField's RangeSetBuilder range/decoration computation doesn't re-run for the new line range until a fresh render trigger (focus change). Pitfall 8 (Source Mode parity) — D-10 / SRCLIV-01 will likely surface the same root cause."
+result: pass
+notes: "Re-tested 2026-05-24 with corrected deploy target. Round-1 phantom-render reproduction was caused by Obsidian loading from a stale shadow plugin folder (`.obsidian/plugins/leetcode/`) instead of the active install (`.obsidian/plugins/obsidian-leetcode/`) — both registered the same manifest id and Obsidian deduped to the older one. After deploying to the correct folder and full app reload, Plan 17-07's StateField rebuild path is observed to fire correctly via DevTools probes (LC-PROBE-A/B/C, since reverted) and no phantom render reproduces in either Source Mode or Live Preview. Stale shadow folder removed."
 artifacts: []
 missing: []
 
@@ -69,7 +68,7 @@ reason: "No Korean IME available on user's system."
 
 expected: Open a Java problem note in Live Preview mode. Click into the child editor and TYPE several characters mid-line inside the fence (do NOT save manually — leave as pending edit). Press Cmd-E to flip the leaf to Reading Mode. The note renders in Reading Mode showing the latest edits (Obsidian flushes the pending CM6 doc to disk on mode flip). Press Cmd-E again to flip back to Live Preview. The child editor remounts cleanly; the cursor returns to a sensible position (start of body or last edit position — both acceptable); the typed characters from before the flip are still present; no widget-rebuild flicker visible to the user; no extension state corruption (next Cmd-/ still toggles comment correctly, next Tab still indents per Plan 17-03's mid-line behavior). Repeat once more (LP→Source→LP) — same parity.
 result: pass
-notes: "State preservation across Cmd-E flips works correctly — pending edits, cursor, extension state all survive. BUT: same Source Mode phantom render issue from Test 2 PASTE-02 reproduces here. Confirmed scope: the bug is a Source Mode rendering issue (Pitfall 8), independent of paste action. Linked to the gap from Test 2."
+notes: "State preservation across Cmd-E flips works correctly — pending edits, cursor, extension state all survive. The earlier round-1 reproduction of phantom render here had the same root cause as Test 2 (stale shadow plugin folder loading the pre-17-07 build). After deploy fix on 2026-05-24, no phantom render reproduces."
 
 ### 9. Phase 16 sanity regressions
 
