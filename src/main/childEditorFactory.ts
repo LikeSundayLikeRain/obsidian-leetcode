@@ -25,6 +25,7 @@ import {
   keymap,
   drawSelection,
   highlightActiveLine,
+  lineNumbers,
   ViewPlugin,
   type Command,
   type PluginValue,
@@ -247,6 +248,34 @@ export function createChildEditor(
       'vimMode',
     ) === true;
 
+  // Phase 17 Plan 12 (LINENUM-01) — Line-numbers gutter conditional. Mirrors
+  // the D-18 vim mount pattern verbatim: read Obsidian's global
+  // `showLineNumber` editor preference ONCE at child mount; if true,
+  // include the lineNumbers() extension so the gutter renders. There is
+  // NO plugin-level setting — this is purely a passthrough of Obsidian's
+  // existing global "Editor → Show line numbers" preference.
+  //
+  // REACTIVITY CONTRACT (DO NOT ADD A LISTENER): toggling Obsidian's
+  // showLineNumber setting while a child editor is open does NOT take
+  // effect until the child remounts (close+reopen the note OR Cmd-E flip
+  // in/out of Source/Live Preview). This is identical to the D-18 vim
+  // contract and is intentional — keeps the factory legible by sharing
+  // exactly one "conditional-extension-by-Obsidian-config" pattern.
+  // A future contributor MUST NOT add a metadataCache or layout-change
+  // listener to give this live reactivity; the locked design (per
+  // 17-CONTEXT "Conditional extension loading pattern") is read-once-at-mount.
+  //
+  // VIM INTERACTION: when both `vimMode` and `showLineNumber` are ON, vim's
+  // standard `:set nu` / `:set nonu` continues to work via @replit/codemirror-
+  // vim's existing handler — vim toggles the gutter's display because the
+  // lineNumbers extension is wired into the same extension array vim mounts
+  // into. No additional wiring required.
+  const lineNumbersEnabled =
+    !!app &&
+    (app as unknown as { vault: { getConfig(key: string): unknown } }).vault.getConfig(
+      'showLineNumber',
+    ) === true;
+
   const state = EditorState.create({
     doc: content,
     extensions: [
@@ -267,6 +296,16 @@ export function createChildEditor(
       //     through Parameters<typeof vim>[0] to keep tsc happy without
       //     touching runtime behavior.
       ...(vimEnabled ? [vim({ status: true } as Parameters<typeof vim>[0])] : []),
+      // 1c. Line-numbers gutter (Phase 17 Plan 12 / LINENUM-01) —
+      //     conditionally included when Obsidian's `showLineNumber`
+      //     editor preference is ON at child mount. Mirrors the D-18 vim
+      //     conditional shape exactly. Read-once-at-mount semantic — toggling
+      //     the setting at runtime requires note remount (Cmd-E flip OR
+      //     close+reopen). The .cm-gutters CSS rule below (lines 312-315 in
+      //     the EditorView.theme block) already covers gutter styling
+      //     (transparent background, no right border), so no styling change
+      //     is needed when the gutter appears.
+      ...(lineNumbersEnabled ? [lineNumbers()] : []),
       // 2a. Mod-/ Obsidian Scope intercept — see debug session
       //     `cmd-slash-not-reaching-child.md`. Pushes a Scope on focus to
       //     override `editor:toggle-comments` for this child editor only.

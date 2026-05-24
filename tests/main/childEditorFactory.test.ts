@@ -561,7 +561,8 @@ describe('createChildEditor — lineNumbers conditional (Phase 17 Plan 12 / LINE
   });
 
   it('excludes lineNumbers extension when app.vault.getConfig("showLineNumber") === false at mount', () => {
-    const getConfig = vi.fn(() => false);
+    // Typed argument so TS knows mock.calls entries are [string], not [].
+    const getConfig = vi.fn((_key: string) => false);
     const mockApp = { vault: { getConfig } } as unknown as Parameters<typeof createChildEditor>[4];
 
     createChildEditor('code', parent, 'python3', 'auto', mockApp);
@@ -591,7 +592,8 @@ describe('createChildEditor — lineNumbers conditional (Phase 17 Plan 12 / LINE
     // while a child is open does NOT take effect until the child remounts —
     // the gating must read the config exactly once per createChildEditor
     // invocation, never on a listener / metadataCache event.
-    const getConfig = vi.fn(() => true);
+    // Typed argument so TS knows mock.calls entries are [string], not [].
+    const getConfig = vi.fn((_key: string) => true);
     const mockApp = { vault: { getConfig } } as unknown as Parameters<typeof createChildEditor>[4];
 
     createChildEditor('code', parent, 'python3', 'auto', mockApp);
