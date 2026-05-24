@@ -334,4 +334,263 @@ describe('Reset code — child-CM6 dispatch (Phase 17 D-03 / D-04 / D-05 / D-06)
     expect(source).toContain('leetcode.child-sync');
     expect(source).toContain('leetcode.fence-repair');
   });
+
+  // ===========================================================================
+  // Phase 17 Plan 08 — language priority chain (17-UAT.md Issue 2 / Test 10).
+  //
+  // Restores the Phase 16 D-06 canonical chain at the post-D-03 child-dispatch
+  // site: lc-language frontmatter > active fence opener tag > getDefaultLanguage.
+  // Tests 5-7 fail on current main (helper hardcodes settings.getDefaultLanguage())
+  // and pass after the resolveActiveLangSlug seam is added. Test 8 is a
+  // backward-compat guard: legacy callers that don't supply the seam continue
+  // to use the default-only path so tests/main/resetCommand.test.ts stays GREEN.
+  // ===========================================================================
+
+  it('Test 5: Reset honors lc-language frontmatter over default — Java fm + Python default → Java starter', async () => {
+    const m = makeMockVaultApp({ [FILE_PATH]: INITIAL_NOTE });
+    const file = m.app.vault.getAbstractFileByPath(FILE_PATH)!;
+    // Detail has BOTH java and python3 snippets; default lang is python3 (the
+    // user's global preference). The resolveActiveLangSlug seam returns 'java'
+    // (simulating the production caller's chain reading lc-language: java).
+    const settings = makeSettings(
+      {
+        codeSnippets: [
+          {
+            lang: 'Java',
+            langSlug: 'java',
+            code: 'class Solution { /* JAVA */ }',
+          },
+          {
+            lang: 'Python3',
+            langSlug: 'python3',
+            code: 'class Solution: # PYTHON',
+          },
+        ],
+      },
+      'python3',
+    );
+
+    // Capture the dispatched `next` argument so we can prove which langSlug
+    // forceInjectCodeSection consumed.
+    const registry = makeMockRegistry();
+    const childView = makeMockChildView('OLD_CODE');
+    (
+      registry as unknown as { _map: Map<string, unknown> }
+    )._map.set(FILE_PATH, childView);
+
+    let capturedNext: string | undefined;
+    const getDispatchHandle = (targetFile: { path: string }) => {
+      const cv = (
+        registry as unknown as {
+          get(key: string): import('@codemirror/view').EditorView | undefined;
+        }
+      ).get(targetFile.path);
+      if (!cv) return null;
+      return {
+        replaceFullBody: (next: string) => {
+          capturedNext = next;
+          cv.dispatch({
+            changes: { from: 0, to: cv.state.doc.length, insert: next },
+            userEvent: 'leetcode.reset.child',
+          });
+        },
+      };
+    };
+
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm: vi.fn(async () => true),
+      notify: vi.fn(),
+      getDispatchHandle: getDispatchHandle as never,
+      // The seam — production caller derives this from lc-language fm.
+      resolveActiveLangSlug: (_file: never): string | undefined => 'java',
+    } as never);
+
+    // The langSlug used inside forceInjectCodeSection was 'java', not the
+    // default 'python3'. The full-note string contains the Java starter
+    // marker AND does NOT contain the Python marker.
+    expect(capturedNext).toBeDefined();
+    expect(capturedNext!).toContain('class Solution { /* JAVA */ }');
+    expect(capturedNext!).not.toContain('# PYTHON');
+  });
+
+  it('Test 6: Reset honors fence opener tag when fm unset — fence ```cpp + Python default → C++ starter', async () => {
+    const m = makeMockVaultApp({ [FILE_PATH]: INITIAL_NOTE });
+    const file = m.app.vault.getAbstractFileByPath(FILE_PATH)!;
+    const settings = makeSettings(
+      {
+        codeSnippets: [
+          {
+            lang: 'C++',
+            langSlug: 'cpp',
+            code: 'class Solution { /* CPP */ };',
+          },
+          {
+            lang: 'Python3',
+            langSlug: 'python3',
+            code: 'class Solution: # PYTHON',
+          },
+        ],
+      },
+      'python3',
+    );
+
+    const registry = makeMockRegistry();
+    const childView = makeMockChildView('OLD_CODE');
+    (
+      registry as unknown as { _map: Map<string, unknown> }
+    )._map.set(FILE_PATH, childView);
+
+    let capturedNext: string | undefined;
+    const getDispatchHandle = (targetFile: { path: string }) => {
+      const cv = (
+        registry as unknown as {
+          get(key: string): import('@codemirror/view').EditorView | undefined;
+        }
+      ).get(targetFile.path);
+      if (!cv) return null;
+      return {
+        replaceFullBody: (next: string) => {
+          capturedNext = next;
+          cv.dispatch({
+            changes: { from: 0, to: cv.state.doc.length, insert: next },
+            userEvent: 'leetcode.reset.child',
+          });
+        },
+      };
+    };
+
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm: vi.fn(async () => true),
+      notify: vi.fn(),
+      getDispatchHandle: getDispatchHandle as never,
+      // Seam returns 'cpp' — simulates fm absent → fence opener resolution.
+      resolveActiveLangSlug: (_file: never): string | undefined => 'cpp',
+    } as never);
+
+    expect(capturedNext).toBeDefined();
+    expect(capturedNext!).toContain('class Solution { /* CPP */ };');
+    expect(capturedNext!).not.toContain('# PYTHON');
+  });
+
+  it('Test 7: Reset falls back to getDefaultLanguage when resolver returns undefined', async () => {
+    const m = makeMockVaultApp({ [FILE_PATH]: INITIAL_NOTE });
+    const file = m.app.vault.getAbstractFileByPath(FILE_PATH)!;
+    const settings = makeSettings(
+      {
+        codeSnippets: [
+          {
+            lang: 'Python3',
+            langSlug: 'python3',
+            code: 'class Solution: # PYTHON',
+          },
+        ],
+      },
+      'python3',
+    );
+
+    const registry = makeMockRegistry();
+    const childView = makeMockChildView('OLD_CODE');
+    (
+      registry as unknown as { _map: Map<string, unknown> }
+    )._map.set(FILE_PATH, childView);
+
+    let capturedNext: string | undefined;
+    const getDispatchHandle = (targetFile: { path: string }) => {
+      const cv = (
+        registry as unknown as {
+          get(key: string): import('@codemirror/view').EditorView | undefined;
+        }
+      ).get(targetFile.path);
+      if (!cv) return null;
+      return {
+        replaceFullBody: (next: string) => {
+          capturedNext = next;
+          cv.dispatch({
+            changes: { from: 0, to: cv.state.doc.length, insert: next },
+            userEvent: 'leetcode.reset.child',
+          });
+        },
+      };
+    };
+
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm: vi.fn(async () => true),
+      notify: vi.fn(),
+      getDispatchHandle: getDispatchHandle as never,
+      // Resolver returns undefined → helper must fall back to default 'python3'.
+      resolveActiveLangSlug: (_file: never): string | undefined => undefined,
+    } as never);
+
+    expect(capturedNext).toBeDefined();
+    expect(capturedNext!).toContain('class Solution: # PYTHON');
+  });
+
+  it('Test 8: Reset works WITHOUT resolveActiveLangSlug supplied — backward compat (legacy default-only path)', async () => {
+    const m = makeMockVaultApp({ [FILE_PATH]: INITIAL_NOTE });
+    const file = m.app.vault.getAbstractFileByPath(FILE_PATH)!;
+    const settings = makeSettings(
+      {
+        codeSnippets: [
+          {
+            lang: 'Python3',
+            langSlug: 'python3',
+            code: 'class Solution: # PYTHON',
+          },
+        ],
+      },
+      'python3',
+    );
+
+    const registry = makeMockRegistry();
+    const childView = makeMockChildView('OLD_CODE');
+    (
+      registry as unknown as { _map: Map<string, unknown> }
+    )._map.set(FILE_PATH, childView);
+
+    let capturedNext: string | undefined;
+    const getDispatchHandle = (targetFile: { path: string }) => {
+      const cv = (
+        registry as unknown as {
+          get(key: string): import('@codemirror/view').EditorView | undefined;
+        }
+      ).get(targetFile.path);
+      if (!cv) return null;
+      return {
+        replaceFullBody: (next: string) => {
+          capturedNext = next;
+          cv.dispatch({
+            changes: { from: 0, to: cv.state.doc.length, insert: next },
+            userEvent: 'leetcode.reset.child',
+          });
+        },
+      };
+    };
+
+    // OMIT resolveActiveLangSlug entirely — protects existing legacy fixtures
+    // in tests/main/resetCommand.test.ts that don't know about the seam.
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm: vi.fn(async () => true),
+      notify: vi.fn(),
+      getDispatchHandle: getDispatchHandle as never,
+    } as never);
+
+    expect(capturedNext).toBeDefined();
+    expect(capturedNext!).toContain('class Solution: # PYTHON');
+  });
 });
