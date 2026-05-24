@@ -176,7 +176,7 @@ Plans:
   4. Bundle size is documented and justified (language packs raise ceiling to ~1.5 MB); no unused code shipped
   5. All lifecycle cleanup verified: no memory leaks after 20 note open/close cycles; plugin unload destroys all child editors
 
-**Plans**: 6 plans across 4 waves
+**Plans**: 11 plans across 5 waves (5 gap-closure plans added 2026-05-23 from 17-UAT.md)
 Plans:
 
 **Wave 1**
@@ -196,6 +196,14 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [ ] 17-06-PLAN.md — Vim mode (D-18..D-21 — gated by D-19 hard bundle ceiling) + lifecycle tests (D-23a) + manual UAT execution (D-07..D-10/D-15..D-17/D-20/D-23b) + bundle audit (D-24)
+
+**Wave 5** *(gap-closure for 17-UAT.md issues — sequential within wave on shared files)*
+
+- [ ] 17-07-PLAN.md — Source Mode phantom render fix: narrow leetcode.* fast-path so line-count-changing transactions rebuild decorations (17-UAT.md Issue 1, Tests 2 + 8)
+- [ ] 17-08-PLAN.md — Reset language priority chain restored at Phase 17 D-03 child-dispatch site: fm > fence opener > default (17-UAT.md Issue 2, Test 10) — depends on 17-01
+- [ ] 17-09-PLAN.md — fm reactivity round-trip symmetry: per-child childLanguageTracker WeakMap replaces fence-opener Gate 3 read (17-UAT.md Issue 3, Test 12) — depends on 17-04 + 17-08
+- [ ] 17-10-PLAN.md — Themed HighlightStyle CSS variable theme tracking: :where(.theme-light/.theme-dark) .lc-nested-editor scoped --code-* fallback palette (17-UAT.md Issue 4, Tests 13 + 14) — depends on 17-05
+- [ ] 17-11-PLAN.md — Vim Insert-mode cursor render + status panel: vim({status:true}) + .cm-cursor visibility forcing CSS (17-UAT.md Issues 5 + 6, Tests 17 + 20 sibling) — depends on 17-06 + 17-10
 
 ## Progress
 
