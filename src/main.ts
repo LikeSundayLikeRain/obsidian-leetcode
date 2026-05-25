@@ -124,6 +124,12 @@ import { buildSectionLockExtension } from './main/sectionLockExtension';
 // Phase 13 — nested child EditorView for ## Code fence (Plans 01-03).
 import { ChildEditorRegistry } from './main/childEditorRegistry';
 import { buildNestedEditorExtension } from './main/nestedEditorExtension';
+// Phase 18 Plan 02 (REPAIR-02-RESILIENT) — write-path-agnostic vault-side
+// repair trigger. Closes the vim-dd bypass where Plan 17-13's CM6
+// updateListener never fires because vim's app-level handler edits via
+// Obsidian commands rather than CM6 dispatch. See CONTEXT D-33 +
+// .planning/debug/fence-auto-recovery-regression-round2.md "Round 3".
+import { triggerRepairFromVaultModify } from './main/childEditorSync';
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
 // Phase 4 Plan 05 — knowledge-graph wiring.
@@ -920,6 +926,60 @@ export default class LeetCodePlugin extends Plugin {
     this.registerEvent(
       this.app.metadataCache.on('changed', (file, _data, cache) => {
         this.handleFmChangeForLanguageReactivity(file, cache);
+        // Phase 18 Plan 02 (REPAIR-02-RESILIENT) — D-34. After fm-reactivity
+        // runs (which may have refreshed the child's languageCompartment
+        // and therefore the childLanguageTracker entry), check whether the
+        // child's tracked slug now disagrees with parent fence opener tag /
+        // lc-language frontmatter. Disagreement forces a registry
+        // invalidation so the child re-mounts with the correct language
+        // on the next visible-frame nested-editor decoration rebuild.
+        // See .planning/debug/fence-auto-recovery-regression-round2.md
+        // "Round 3" § "Hypothesis & confirmation" / "Bug 2".
+        this.checkStaleChildAndInvalidate(file, cache);
+      }),
+    );
+
+    // Step 6g.5b — Phase 18 Plan 02 (REPAIR-02-RESILIENT) — D-33. Write-path-
+    // agnostic vault-side repair trigger. Plan 17-13's
+    // createParentRepairExtension is a CM6 EditorView.updateListener that
+    // observes only CM6 transactions. When the user damages the fence via
+    // vim's `dd` (Normal mode), Obsidian's app-level vim handler edits the
+    // doc via Obsidian's commands — NOT through CM6 dispatch — so 17-13's
+    // listener never fires. `vault.on('modify', file)` fires regardless of
+    // write-path origin (CM6 dispatch, vim command, vault.process, external
+    // editor) and bridges the gap.
+    //
+    // The triggerRepairFromVaultModify helper bundles the lc-slug + active-
+    // view + findCodeFence gates around repairFenceStructure (per D-33).
+    // Plan 17-13's createParentRepairExtension STAYS verbatim — both
+    // triggers coexist; one observes CM6 transactions, the other observes
+    // vault writes. Plan 17-13's idempotency guard
+    // ('leetcode.fence-repair' userEvent skip) transparently protects the
+    // vault-side path because findCodeFence !== null immediately after a
+    // successful repair dispatch.
+    //
+    // No new userEvent introduced. ECHO_PRONE_USER_EVENTS unchanged.
+    // See .planning/debug/fence-auto-recovery-regression-round2.md "Round 3".
+    this.registerEvent(
+      this.app.vault.on('modify', (file) => {
+        if (!(file instanceof TFile)) return;
+        // Wrap `this` so the helper's `getActiveViewOfType()` call
+        // (which forwards no klass) resolves through Obsidian's real
+        // `getActiveViewOfType(MarkdownView)`. The wrapper preserves
+        // structural typing for the helper while bridging the
+        // production-vs-test signature gap.
+        triggerRepairFromVaultModify(
+          {
+            app: {
+              metadataCache: this.app.metadataCache,
+              workspace: {
+                getActiveViewOfType: () =>
+                  this.app.workspace.getActiveViewOfType(MarkdownView),
+              },
+            },
+          },
+          file,
+        );
       }),
     );
 
@@ -2640,6 +2700,98 @@ export default class LeetCodePlugin extends Plugin {
       // Silently ignore — child may be in teardown (defensive per project
       // convention; mirrors childEditorSync.ts:115 and
       // dispatchChildLanguageReconfigure above).
+    }
+  }
+
+  /**
+   * Phase 18 Plan 02 (REPAIR-02-RESILIENT) — D-34. Stale-child registry
+   * invalidation. The child editor was registered in `childEditorRegistry`
+   * with one language slug (populated by Plan 17-09's `childLanguageTracker`
+   * WeakMap via the chevron switch path or fm-reactivity dispatch). A
+   * subsequent vim-driven write (or a chevron switch that didn't fully
+   * sync the four sources of truth — fence opener tag, lc-language
+   * frontmatter, child registry, childLanguageTracker) can flip the
+   * parent's lc-language and/or fence opener tag while the child's
+   * tracked slug goes stale. Without this invalidation, the user sees
+   * the wrong language rendered in the child editor (e.g., Python
+   * content on a Java-tagged note after reload — observed live in
+   * Test 23 / REPAIR-02 partial finding 2026-05-24).
+   *
+   * This method compares the child's tracked slug against (a) the
+   * `lc-language` frontmatter value and (b) the parent fence opener
+   * tag (`readActiveFenceSlug`'s primary path). On disagreement, the
+   * registry entry for `file.path` is deleted; the next visible-frame
+   * nested-editor decoration rebuild will re-mount the child with the
+   * correct language drawn from the freshly-read sources.
+   *
+   * Wired at TWO call sites:
+   *   (a) inside the existing `metadataCache.on('changed')` callback
+   *       AFTER `handleFmChangeForLanguageReactivity` (so the fm-
+   *       reactivity dispatch has already updated the tracker if it
+   *       was going to);
+   *   (b) at child mount via `nestedEditorExtension.ts:126` — the
+   *       wireSyncIfNeeded path's first call site already runs once
+   *       per (leaf, file) pair on first widget mount; the stale-child
+   *       check is naturally invoked from the metadataCache.changed
+   *       path on the very next fm event after mount, so a separate
+   *       mount-time invocation is not strictly necessary. The
+   *       invalidation is therefore wired ONLY at the
+   *       metadataCache.changed call site to keep the surface minimal.
+   *
+   * Empty-tracker semantic (Plan 17-09 Gate 3): when
+   * `childLanguageTracker.get(childView)` returns undefined, this
+   * method treats it as the trivial 'agreed' case and returns without
+   * invalidating. This matches the empty-tracker semantic at
+   * src/main.ts:2603-2609 — a forced reconfigure on the next dispatch
+   * will populate the tracker anyway.
+   *
+   * Defensive try/catch wraps the registry.delete to mirror the
+   * dispatch convention at handleFmChangeForLanguageReactivity above —
+   * the child may be in teardown when the listener fires.
+   *
+   * See .planning/debug/fence-auto-recovery-regression-round2.md
+   * "Round 3" for the full hypothesis matrix and locked fix shape.
+   */
+  private checkStaleChildAndInvalidate(
+    file: { path: string },
+    cache: { frontmatter?: Record<string, unknown> } | null | undefined,
+  ): void {
+    // Gate 1 — lc-slug note only (mirror handleFmChangeForLanguageReactivity).
+    const slugRaw = cache?.frontmatter?.['lc-slug'];
+    if (typeof slugRaw !== 'string' || slugRaw.length === 0) return;
+
+    // Gate 2 — child registered for this file path.
+    const childView = this.childEditorRegistry?.get(file.path);
+    if (!childView) return;
+
+    // Gate 3 — empty-tracker semantic. Plan 17-09 Gate 3 treats an
+    // empty tracker as the trivial agreed case (the next dispatch will
+    // populate it on the chevron / fm-reactivity / mount path).
+    const currentSlug = this.childLanguageTracker.get(childView);
+    if (currentSlug === undefined) return;
+
+    // Compare tracker against lc-language frontmatter.
+    const fmLangRaw = cache?.frontmatter?.['lc-language'];
+    const fmLang = typeof fmLangRaw === 'string' && fmLangRaw.length > 0 ? fmLangRaw : undefined;
+
+    // Compare tracker against parent fence opener tag (primary path of
+    // readActiveFenceSlug). The fallback metadataCache lookup inside
+    // readActiveFenceSlug returns the same lc-language we already read
+    // from `cache`; we do NOT consult it here to avoid double-counting
+    // the same source.
+    const openerSlug = this.readActiveFenceSlug(file);
+
+    // Disagreement check (per D-34): invalidate when tracker disagrees
+    // with EITHER fmLang OR openerSlug. Skip when both sources agree
+    // with the tracker (steady-state — no spurious unmounts).
+    const fmDisagrees = fmLang !== undefined && currentSlug !== fmLang;
+    const openerDisagrees = openerSlug !== undefined && currentSlug !== openerSlug;
+    if (!fmDisagrees && !openerDisagrees) return;
+
+    try {
+      this.childEditorRegistry.delete(file.path);
+    } catch {
+      // Defensive — child may already be in teardown.
     }
   }
 

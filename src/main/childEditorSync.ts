@@ -422,6 +422,117 @@ export function createParentRepairExtension(): Extension {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// Vault-side Repair Trigger (Phase 18 Plan 02 — REPAIR-02-RESILIENT, D-33)
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Phase 18 Plan 02 (REPAIR-02-RESILIENT) — write-path-agnostic repair
+ * trigger. Plan 17-13's `createParentRepairExtension` is a CM6
+ * `EditorView.updateListener` that observes only CM6 transactions. When
+ * the user damages the fence via vim's `dd` (Normal mode), Obsidian's
+ * app-level vim handler edits the doc via Obsidian's commands — NOT
+ * through CM6 dispatch. Result: 17-13's listener never fires.
+ *
+ * `vault.on('modify', file)` is Obsidian's documented event surface for
+ * "the file's content changed in the editor's buffer OR on disk", and
+ * fires regardless of write-path origin (CM6 dispatch, vim command,
+ * vault.process, external editor). This helper bundles the lc-slug +
+ * active-view + findCodeFence gates around `repairFenceStructure` for
+ * use from the production `vault.on('modify')` registration in
+ * `LeetCodePlugin.onload`.
+ *
+ * Gates (per CONTEXT D-33 + round-3 debug doc — all must pass before
+ * repair fires):
+ *
+ *   Gate 1 (lc-slug). The modified file's frontmatter must carry a
+ *           non-empty string `lc-slug`. Non-LC notes never trigger
+ *           repair (mirrors the precedent at childEditorSync.ts:201-205).
+ *   Gate 2 (active view). The modified file must match the active
+ *           MarkdownView's file. Background-leaf writes wait for the
+ *           next mount — repair runs against a CM6 view, and there is
+ *           no synthetic CM6 view to construct from disk content alone.
+ *   Gate 3 (broken fence). `findCodeFence(parentView.state) === null`.
+ *           Skip if the fence is already intact — repair is a no-op
+ *           in that case anyway, but the early return saves cycles on
+ *           every keystroke (vault.modify fires per save flush).
+ *
+ * On all gates passing, calls `repairFenceStructure(parentView,
+ * activeSlug)` where `activeSlug` is read from the file's `lc-language`
+ * frontmatter (fallback `'python3'` matching the project convention).
+ * The dispatch carries the existing `'leetcode.fence-repair'` userEvent
+ * — Plan 17-13's idempotency guard transparently protects against
+ * re-entry because `findCodeFence !== null` immediately after a
+ * successful repair dispatch (the follow-up `vault.modify` event raised
+ * by the repair's own `parentView.dispatch` short-circuits at Gate 3).
+ *
+ * No new userEvent introduced. Plan 17-13's
+ * `createParentRepairExtension` STAYS verbatim — both triggers coexist;
+ * one observes CM6 transactions, the other observes vault writes.
+ *
+ * See .planning/debug/fence-auto-recovery-regression-round2.md "Round 3"
+ * for the full hypothesis matrix.
+ */
+// Structural type capturing the host surface needed by
+// triggerRepairFromVaultModify. The `app.workspace.getActiveViewOfType`
+// signature is intentionally widened to a structural shape that matches
+// BOTH Obsidian's real `Workspace.getActiveViewOfType<T>(klass): T | null`
+// AND the test harness's synthetic stub. The helper itself relies only on
+// the structural fields it reads (`file.path`, `editor.cm`).
+export type RepairFromVaultModifyHost = {
+  app: {
+    metadataCache: {
+      getFileCache(file: { path: string }): { frontmatter?: Record<string, unknown> } | null;
+    };
+    workspace: {
+      getActiveViewOfType: (...args: unknown[]) => unknown;
+    };
+  };
+};
+
+export function triggerRepairFromVaultModify(
+  host: RepairFromVaultModifyHost,
+  file: { path: string },
+): void {
+  // Gate 1 — lc-slug frontmatter (D-33). Mirror precedent at line 201-205.
+  const fm = host.app.metadataCache.getFileCache(file)?.frontmatter as
+    | Record<string, unknown>
+    | undefined;
+  const slug = fm?.['lc-slug'];
+  if (typeof slug !== 'string' || slug.length === 0) return;
+
+  // Gate 2 — modified file matches the active MarkdownView's file.
+  // Repair runs against a CM6 view; no synthetic view from disk content.
+  // We pass no argument here because the test host's stub takes none and
+  // the real callers in src/main.ts pass `MarkdownView` from obsidian.
+  // The structural cast below mirrors the well-known internal pattern at
+  // src/main.ts:2674-2702 readActiveFenceSlug:
+  //   `(view.editor as unknown as { cm: EditorView }).cm`.
+  const activeViewRaw = host.app.workspace.getActiveViewOfType() as
+    | { file?: { path: string } | null; editor?: { cm?: EditorView } }
+    | null
+    | undefined;
+  if (!activeViewRaw || !activeViewRaw.file || activeViewRaw.file.path !== file.path) return;
+  const parentView = activeViewRaw.editor?.cm;
+  if (!parentView) return;
+
+  // Gate 3 — only fire when the parent's fence is structurally broken.
+  // Plan 17-13's createParentRepairExtension uses the same gate; this
+  // mirrors that protection on the vault-modify path. Idempotency
+  // guard: after a successful repair dispatch, findCodeFence !== null,
+  // so the follow-up vault.modify event raised by our own dispatch
+  // short-circuits here without re-firing repair.
+  if (findCodeFence(parentView.state) !== null) return;
+
+  // Derive activeSlug from lc-language frontmatter; fallback 'python3'
+  // matching nestedEditorExtension.ts:216 + createParentRepairExtension
+  // convention.
+  const fmLang = fm?.['lc-language'];
+  const activeSlug = typeof fmLang === 'string' && fmLang.length > 0 ? fmLang : 'python3';
+
+  repairFenceStructure(parentView, activeSlug);
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Fence Repair (D-05, D-06, D-07) — round-1 fix preserved verbatim
 // ────────────────────────────────────────────────────────────────────────
 

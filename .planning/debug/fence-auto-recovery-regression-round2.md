@@ -707,3 +707,66 @@ Two surgical additions per CONTEXT D-33 + D-34:
   does not modify the tracker's population mechanism.
 - Bundle stays under the 1.8 MB ceiling (CONTEXT D-19); the new
   listener + private method add < 1 KB.
+
+### Resolution (round-3)
+
+Implemented per Plan 18-02 Tasks 1-3:
+
+- **Task 1 (this doc — round-3 append).** Documented the vim-dd
+  bypass + stale-child render hypotheses, the planned fix shape,
+  and the preserved invariants.
+- **Task 2 (RED tests).** Extended
+  `tests/main/childEditorSync.repair.test.ts` with two new `it()`
+  blocks under a new describe `REPAIR-02-RESILIENT — vault.on(modify)
+  trigger (Phase 18 Plan 02)`. Both tests fail on round-2 main with
+  `TypeError: triggerRepairFromVaultModify is not a function`. The 8
+  prior tests (5 round-1 + 3 round-2) continue to pass.
+- **Task 3 (GREEN fix).**
+  - Added exported helper `triggerRepairFromVaultModify(host, file)`
+    in `src/main/childEditorSync.ts` (option A — thin wrapper). The
+    helper bundles the lc-slug + active-view + findCodeFence gates
+    around `repairFenceStructure`. Plan 17-13's
+    `createParentRepairExtension` is preserved verbatim above it.
+  - Added `this.registerEvent(this.app.vault.on('modify', file => …))`
+    in `src/main.ts` onload, adjacent to the existing
+    `metadataCache.on('changed')` registration. The handler
+    type-guards `file instanceof TFile` and forwards through
+    `triggerRepairFromVaultModify` with a structural host that
+    bridges the production `getActiveViewOfType(MarkdownView)`
+    signature to the helper's class-agnostic shape.
+  - Added private method
+    `LeetCodePlugin.checkStaleChildAndInvalidate(file, cache)` near
+    `handleFmChangeForLanguageReactivity`. Called after the existing
+    fm-reactivity callback inside `metadataCache.on('changed')`.
+    Compares `childLanguageTracker[child]` against `lc-language`
+    frontmatter AND the parent fence opener tag (via
+    `readActiveFenceSlug`). On disagreement, calls
+    `this.childEditorRegistry.delete(file.path)` so the child re-
+    mounts with the correct language on the next visible-frame.
+
+Test output (post-fix):
+
+```text
+$ npx vitest run tests/main/childEditorSync.repair.test.ts \
+                  tests/main/fmReactivity.test.ts
+ ✓ tests/main/childEditorSync.repair.test.ts (10 tests) 6ms
+ ✓ tests/main/fmReactivity.test.ts (10 tests) 6ms
+ Test Files  2 passed (2)
+      Tests  20 passed (20)
+
+$ npx vitest run    # full suite
+ Test Files  195 passed | 1 skipped (196)
+      Tests  1715 passed | 6 skipped (1721)
+
+$ npm run build
+ tsc -noEmit -skipLibCheck && node esbuild.config.mjs production
+ (clean — no errors, no output to stderr)
+```
+
+Commits:
+
+- `cea63cc` doc(18-02): append round-3 debug findings — vim-dd
+  bypass + stale-child invalidation
+- `cd72d55` test(18-02): RED — add 2 vault.on(modify) trigger tests
+  for REPAIR-02-RESILIENT
+- (Task 3 GREEN commit hash recorded in 18-02-SUMMARY.md)
