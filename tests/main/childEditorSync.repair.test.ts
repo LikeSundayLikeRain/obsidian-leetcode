@@ -33,6 +33,12 @@ import {
   // Phase 17 Plan 13: round-2 parent-side runtime trigger.
   // See .planning/debug/fence-auto-recovery-regression-round2.md.
   createParentRepairExtension,
+  // Phase 18 Plan 02 (REPAIR-02-RESILIENT): write-path-agnostic vault-side
+  // trigger that wraps repairFenceStructure with the same gates the
+  // production vault.on('modify') handler uses (lc-slug + findCodeFence
+  // null + activeSlug-from-lc-language). See D-33 + round-3 debug doc
+  // .planning/debug/fence-auto-recovery-regression-round2.md "Round 3".
+  triggerRepairFromVaultModify,
 } from '../../src/main/childEditorSync';
 import { findCodeFence } from '../../src/main/codeActionsEditorExtension';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
@@ -551,5 +557,161 @@ describe('repairFenceStructure round-2 regression (Phase 17 Plan 13 / REPAIR-02)
     const secondResult = repairFenceStructure(reparent, ACTIVE_SLUG);
     expect(secondResult).toBe(false);
     expect(reparent.dispatch).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Phase 18 Plan 02 — round-3 regression suite (REPAIR-02-RESILIENT).
+//
+// See .planning/debug/fence-auto-recovery-regression-round2.md "Round 3"
+// section for the full hypothesis matrix. Plan 17-13's
+// createParentRepairExtension is a CM6 EditorView.updateListener — it only
+// fires on CM6 transactions. When the user damages the fence via vim's `dd`
+// (Normal mode), Obsidian's app-level vim handler edits the doc via
+// Obsidian's commands, NOT through CM6 dispatch — so 17-13's listener
+// never fires. The fix per CONTEXT D-33 is to add a sibling
+// `vault.on('modify', file)` listener at plugin onload that fires repair
+// regardless of write-path origin (CM6 dispatch, vim command, vault.process,
+// external editor). The listener is gated on `lc-slug` frontmatter so
+// non-LC notes never trigger repair (mirror the existing precedent at
+// src/main/childEditorSync.ts:201-205).
+//
+// These tests drive a synthetic vault.on('modify') registration directly
+// against a mock plugin host. The production wiring lives in src/main.ts
+// (option B per Plan 18-02 Task 2 Behavior contract) — the helper-or-no
+// decision is documented inline below.
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Plan 18-02 Task 2 implementation-shape decision: **Option A** — a thin
+ * exported helper `triggerRepairFromVaultModify(host, file)` lives in
+ * src/main/childEditorSync.ts. The helper bundles the lc-slug + active-
+ * view + findCodeFence gates around `repairFenceStructure`, and the
+ * production wiring in src/main.ts onload registers
+ * `this.registerEvent(this.app.vault.on('modify', file => triggerRepairFromVaultModify(this, file)))`.
+ *
+ * The host shape required by the helper is the structural-typing minimum:
+ * `app.metadataCache.getFileCache(file)?.frontmatter` (read lc-slug + lc-
+ * language) AND a way to resolve the active parent CM6 view for the file
+ * (`app.workspace.getActiveViewOfType(MarkdownView)?.editor.cm` per the
+ * production convention at src/main.ts:2674-2702 readActiveFenceSlug).
+ *
+ * These tests construct a synthetic host that mirrors that shape exactly.
+ * If the production helper diverges, the type-shape mismatch will fail
+ * compilation and we update accordingly.
+ */
+type TestHost = {
+  app: {
+    metadataCache: {
+      getFileCache: (file: { path: string }) => { frontmatter?: Record<string, unknown> } | null;
+    };
+    workspace: {
+      // Production reads `getActiveViewOfType(MarkdownView)?.editor.cm`
+      // via the well-known internal cast; tests synthesize the cm-bearing
+      // editor directly. Exposing the lookup as a function keeps the
+      // helper signature stable across the test/production boundary.
+      getActiveViewOfType: () => { file: { path: string } | null; editor: { cm: import('@codemirror/view').EditorView } } | null;
+    };
+  };
+};
+
+function makeTestHost(opts: {
+  filePath: string;
+  frontmatter: Record<string, unknown> | null;
+  parentView: import('@codemirror/view').EditorView | null;
+  activeFilePath?: string | null;
+}): TestHost {
+  const activePath = opts.activeFilePath === undefined ? opts.filePath : opts.activeFilePath;
+  return {
+    app: {
+      metadataCache: {
+        getFileCache: (f: { path: string }) =>
+          f.path === opts.filePath ? { frontmatter: opts.frontmatter ?? undefined } : null,
+      },
+      workspace: {
+        getActiveViewOfType: () => {
+          if (!opts.parentView || activePath === null) return null;
+          return {
+            file: { path: activePath },
+            editor: { cm: opts.parentView },
+          };
+        },
+      },
+    },
+  };
+}
+
+describe('REPAIR-02-RESILIENT — vault.on(modify) trigger (Phase 18 Plan 02)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Test 9 — vault.on('modify') fires repair when modified file has lc-slug
+  // frontmatter and findCodeFence === null. Closes the vim-dd write-path
+  // bypass (Bug 1) per CONTEXT D-33 + round-3 debug doc
+  // (.planning/debug/fence-auto-recovery-regression-round2.md "Round 3" §
+  // "Hypothesis & confirmation" / "Bug 1").
+  it('Test 9 — vault.on(modify) fires repair when modified file has lc-slug frontmatter and findCodeFence==null', () => {
+    const parent = makeMockParentView(MISSING_CLOSER);
+    const file = { path: 'LeetCode/0001-two-sum.md' };
+    const host = makeTestHost({
+      filePath: file.path,
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      parentView: parent,
+    });
+
+    // Pre-condition: the parent doc has a missing closer — findCodeFence
+    // returns null (the round-1 marker scan finds opener but no closer).
+    expect(findCodeFence(parent.state)).toBeNull();
+
+    // Fire the helper — simulates vim's `dd` write landing on the file's
+    // buffer and Obsidian raising the modify event. Per D-33 + round-3
+    // debug doc, the helper bundles the lc-slug + active-view +
+    // findCodeFence gates around repairFenceStructure.
+    triggerRepairFromVaultModify(host as unknown as Parameters<typeof triggerRepairFromVaultModify>[0], file);
+
+    // Repair must have fired exactly once. The dispatch carries the
+    // existing 'leetcode.fence-repair' userEvent annotation (no new
+    // userEvent introduced — see D-33 + round-3 debug doc § "Invariants
+    // Preserved").
+    expect(parent.dispatch).toHaveBeenCalledTimes(1);
+
+    // Structural invariant: post-repair, findCodeFence returns offsets
+    // pointing at a fence that ENCLOSES the body content, and the opener
+    // carries the active language slug from lc-language frontmatter.
+    const repairedDoc = parent.getDocAfterDispatch();
+    const repairedState = makeStateForLockTests({ body: repairedDoc });
+    const fence = findCodeFence(repairedState);
+    expect(fence).not.toBeNull();
+    if (!fence) return;
+    const openerText = repairedState.doc.line(fence.openerLine).text;
+    expect(openerText).toMatch(/^\s*```java/);
+  });
+
+  // Test 10 — vault.on('modify') silently skips when modified file lacks
+  // lc-slug frontmatter (non-LC note). Per CONTEXT D-33 + round-3 debug
+  // doc § "Hypothesis & confirmation": the listener MUST be gated by
+  // lc-slug frontmatter to avoid wasting cycles on every vault file
+  // modification. Mirrors the existing precedent at
+  // src/main/childEditorSync.ts:201-205.
+  it('Test 10 — vault.on(modify) silently skips when modified file lacks lc-slug frontmatter', () => {
+    const parent = makeMockParentView(MISSING_CLOSER);
+    const file = { path: 'README.md' };
+    const host = makeTestHost({
+      filePath: file.path,
+      // Non-LC note — frontmatter has no lc-slug key.
+      frontmatter: { title: 'unrelated' },
+      parentView: parent,
+    });
+
+    // Fire the helper against a non-LC note. The lc-slug gate must
+    // short-circuit BEFORE any repair invocation.
+    expect(() =>
+      triggerRepairFromVaultModify(host as unknown as Parameters<typeof triggerRepairFromVaultModify>[0], file),
+    ).not.toThrow();
+
+    // Repair must NOT have fired. parent.dispatch is the test-mock's
+    // dispatcher — if it was called we'd see a non-zero call count.
+    expect(parent.dispatch).not.toHaveBeenCalled();
   });
 });
