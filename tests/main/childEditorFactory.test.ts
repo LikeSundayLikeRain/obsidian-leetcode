@@ -106,15 +106,6 @@ vi.mock('../../src/main/childEditorTheme', () => ({
     .mockReturnValue(['mock-themed-syntax-highlighting', 'mock-themed-bracket-match-theme']),
 }));
 
-// Phase 18 Plan 01 — childEditorVimScope is transitively loaded via the
-// factory's import. We mock the helper directly with a sentinel so the
-// factory's conditional spread can be asserted without dragging in the
-// real 'obsidian' Scope class or @replit/codemirror-vim package surface
-// (both of which would require their own deep mocks: StateField, etc.).
-vi.mock('../../src/main/childEditorVimScope', () => ({
-  createVimScopeExtension: vi.fn().mockReturnValue('mock-vim-scope-extension'),
-}));
-
 // Import module under test and mocked modules AFTER vi.mock declarations
 import {
   createChildEditor,

@@ -13,7 +13,6 @@ summary:
   pending: 0
 notes:
   - "2026-05-24: Tests 2 (PASTE-02), 8 (SRCLIV-01), and 10 (RESET-01) flipped issue→pass. Tests 2/8 were initially reproducing because Obsidian was loading from a stale shadow plugin folder (`.obsidian/plugins/leetcode/`) instead of the active install (`.obsidian/plugins/obsidian-leetcode/`); both folders carried manifest id `leetcode` and Obsidian deduped to the older shadow. After deploying to the correct folder, a Reset edge case surfaced where line-count-unchanged full-body replace bypassed the line-count rebuild branch — fix simplified to always rebuild on docChanged or reconfigured (commit d65cb19). Test 10 confirmed Plan 17-08's language priority chain restoration. Stale shadow folder deleted."
-  - "2026-05-25: Tests 17 (VIM-01) and 23 (REPAIR-02) flipped partial→pass via Plan 18-01 (Scope-based vim intercept) and Plan 18-02 (vault.on('modify') trigger + stale-child invalidation). All non-skipped/non-deferred tests now pass."
 
 ## Current Test
 
@@ -142,9 +141,8 @@ followup: "REQUIREMENTS.md FUTURE-06 entry; 17-SUMMARY.md deferral note"
 ### 17. VIM-01 — Vim mode activates from Obsidian global setting (D-18)
 
 expected: In Obsidian Settings → Editor → enable "Vim key bindings". Reload the dev vault (or close+reopen the vault) so plugins re-mount. Open a Java problem note. Click into the child editor inside the `## Code` fence. The cursor renders as a BLOCK (vim Normal mode default) — not a thin caret. A small `.cm-vim-panel` mode indicator strip is visible at the bottom of the child editor showing "-- NORMAL --". Press `i` → cursor changes to a thin caret (Insert mode); panel updates to "-- INSERT --". Press Esc → returns to Normal; cursor reverts to block; panel back to "-- NORMAL --". Toggle the global setting OFF; reload; reopen the same note → child editor is plain CM6 (caret cursor, no vim panel) — confirming the conditional read at child mount works in BOTH directions.
-result: pass
+result: partial
 reported: "Re-tested 2026-05-24 with Plan 17-11 (vim status panel + cursor visibility) and Plan 17-06 D-18 conditional vim mount. PASS: (a) Status panel works — shows --NORMAL-- / --INSERT-- correctly. (b) D-18 contract works — vim mounts when Obsidian setting is ON, unmounts when OFF. (c) Insert-mode cursor visibility from Plan 17-11 fix is acceptable. (d) Block cursor in Normal mode renders correctly. (e) Mode-specific cursor (block ↔ caret) toggles on `i`/Esc as expected. PARTIAL: vim navigation/edit commands (j, k, dd, etc.) intermittently leak to the parent editor instead of executing in the child. Reproduction: focus child, press i/a/o → status panel shows --INSERT-- → press j → cursor moves DOWN in the parent editor (parent has relative line numbers ON, visible motion). Press dd → deletes a line in the PARENT doc, not the child. Then press i or a → cursor returns to child and starts blinking, typing works normally again. DOM probe confirms document.activeElement IS inside .lc-nested-editor (inChild: true) when the leak happens — focus is correct but keystrokes still route to parent's vim. Intermittent; not every keystroke. SECONDARY: `:set nu` rejected with 'unknown option: nu' — `@replit/codemirror-vim` doesn't ship the abbreviated alias; full `:set number` works. Both findings captured as backlog 999.2."
-notes: "2026-05-25 (Phase 18 Plan 01 — VIM-INTERACTION-01): Scope-based intercept shipped per CONTEXT D-32. Vim navigation keys h/j/k/l/d/y/p/c/i/a/o/x/r/u/v/0/$/Esc/Ctrl-r now execute against child's vim instance, not parent's — childEditorVimScope.ts pushes an Obsidian Scope onto app.keymap on contentDOM focus and pops on blur, mirroring createCmdSlashScopeExtension shape. Each handler returns false (stops Obsidian dispatch) and forwards via Vim.handleKey(cm, key, 'editor'). `:set nu` / `:set nonu` aliases registered via Vim.defineEx('set', 'se', handler), idempotent across mounts. Source-level + behavioral test suite at tests/main/childEditorVimScope.test.ts (17 assertions across 3 describes — module shape, factory wiring, focus/blur lifecycle + j-handler return-false + child vim route + defineEx call shape) GREEN. Bundle delta: +1.2 KB (well under D-19 1.8 MB ceiling). Manual UAT re-verification scheduled for 18-04."
 severity: major
 hypothesis: "Obsidian's global vim mode wraps the parent CM6 view's keymap at app priority (likely via Obsidian's vim plugin or built-in keymap manager — analogous to the cmd-slash-not-reaching-child finding). When parent and child both have vim() extensions active, the parent's vim handler may fire FIRST in the keystroke pipeline (document-level capture or higher CM6 priority), process the key, and only then does the event bubble to the child. The status panel update is local to the child's vim panel and isn't synchronized with which vim instance actually handled the key. The Insert-mode entry (i/a/o) goes through CM6's keymap which our child does intercept correctly (focus is in child, child's vim transitions to Insert) — but then movement keys like j/dd are processed by parent's vim because they bypass CM6's local keymap and hit Obsidian's app-level vim handler. The 'a or i re-engages' behavior is consistent with this — those keystrokes again route through CM6's local keymap and re-anchor child's vim state. Likely fix: similar Scope-based intercept as `createCmdSlashScopeExtension` (childEditorFactory.ts:165-170) — register a Scope on app.keymap when child gains focus that intercepts vim navigation keys (h/j/k/l/d/y/p/o/i/a/x/etc.) and routes them to the child's vim. Alternative: capture-phase keydown listener on the child contentDOM that stops propagation."
 artifacts: ["src/main/childEditorFactory.ts (vim() spread + createCmdSlashScopeExtension precedent)", "@replit/codemirror-vim 6.3.0", "Obsidian's app.keymap / Scope manager"]
@@ -211,6 +209,7 @@ passed: 22
 partial: 1
 ||||||| parent of 08e101e (docs(18-03): append Test 25 LINENUM-RELATIVE-01 to 17-UAT.md (cross-phase continuity))
 total: 24
+<<<<<<< HEAD
 passed: 21
 issues: 0
 partial: 0
@@ -226,8 +225,20 @@ issues: 0
 partial: 0
 >>>>>>> 08e101e (docs(18-03): append Test 25 LINENUM-RELATIVE-01 to 17-UAT.md (cross-phase continuity))
 deferred: 1
+||||||| parent of cf7cd51 (Revert "chore: merge 18-01 vim Scope intercept (worktree-agent-a629da1dd8a14c9ff)")
+passed: 21
+issues: 0
+partial: 0
+deferred: 1
+=======
+passed: 15
+issues: 5
+pending: 2
+>>>>>>> cf7cd51 (Revert "chore: merge 18-01 vim Scope intercept (worktree-agent-a629da1dd8a14c9ff)")
 skipped: 2
+deferred: 1
 blocked: 0
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Remaining partial: Test 23 / REPAIR-02 (closure planned in Plan 18-02). Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
@@ -241,3 +252,7 @@ notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Sc
 =======
 notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
 >>>>>>> dc886a1 (Revert "chore: merge 18-03 relative line numbers (worktree-agent-a2e637fcc2d20bfc9)")
+||||||| parent of cf7cd51 (Revert "chore: merge 18-01 vim Scope intercept (worktree-agent-a629da1dd8a14c9ff)")
+notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
+=======
+>>>>>>> cf7cd51 (Revert "chore: merge 18-01 vim Scope intercept (worktree-agent-a629da1dd8a14c9ff)")
