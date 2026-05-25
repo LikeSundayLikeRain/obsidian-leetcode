@@ -235,3 +235,20 @@ Plans:
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
 | 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
 | 17. Polish & Edge Cases                     | v1.2      | 5/13 | In Progress|            |
+
+## Backlog
+
+### Phase 999.1: Opinionated Static Palette for Child Editor (BACKLOG)
+
+**Goal:** Add a settings option to override the child editor's theme-tracking behavior with a fixed VS Code-style palette (One Dark Pro, One Light Pro, Atom One Dark, Dracula). Some users prefer a predictable opinionated look regardless of which Obsidian theme is active.
+
+**Requirements:** TBD
+
+**Plans:** 0 plans (promote with /gsd-review-backlog when ready)
+
+**Context:**
+- Current behavior (Phase 17 Plan 10 round-3): child editor emits Obsidian/CM5-compatible semantic class names (cm-keyword, cm-type, cm-variable, cm-def, …) so Obsidian's app.css and community-theme HyperMD overrides cascade in. Theme-tracks but doesn't always match the user's mental "VS Code" model.
+- Desired alternative: ship hardcoded `EditorView.theme()` blocks scoped to `.lc-nested-editor` that win via specificity. Add a settings dropdown: "Match Obsidian theme" (default, current behavior) / "One Dark Pro" / "One Light Pro" / "Atom One Dark" / "Dracula".
+- Italic-on-parameters via Lezer `t.local(t.variableName)` binding.
+- Reversible — toggle back to "Match Obsidian theme" returns the round-3 behavior.
+- Reference: 17-UAT.md Test 13 trail (2026-05-24) has the user's One Dark Pro screenshot.
