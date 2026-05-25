@@ -295,3 +295,21 @@ Plans:
 **Severity:** major — auto-recovery is a v1.2 contract (CONTEXT D-29), so failure-to-fire on the most common vim user's deletion path is a real gap.
 
 **Linked to:** 999.2 (vim focus routing) — both stem from vim bypassing CM6's keystroke pipeline.
+
+### Phase 999.4: Relative Line Numbers in Child Editor (BACKLOG)
+
+**Goal:** Optionally render the child editor's gutter as relative line numbers (offset from the cursor) instead of absolute. Independent of any third-party Obsidian plugin.
+
+**Requirements:** TBD
+
+**Plans:** 0 plans (promote with /gsd-review-backlog when ready)
+
+**Context (from 17-UAT.md Test 24 stretch finding, 2026-05-24):** The user has a third-party relative-line-numbers plugin installed; it correctly relativises the parent editor's gutter but does not reach inside the child widget (the third-party plugin's CM6 extension targets the parent view only). Plan 17-12 wired Obsidian's `showLineNumber` setting to gate `lineNumbers()` on the child; relativization is a natural follow-up.
+
+**Design (option 2 from UAT discussion):**
+- Add a plugin setting: "Show relative line numbers in code editor" (boolean, default OFF).
+- When ON, replace `lineNumbers()` with `lineNumbers({ formatNumber: (n, state) => relative-to-cursor calculation })`.
+- Read-once-at-mount semantic (matches D-18 / Plan 17-12 — toggle requires note remount or Cmd-E flip).
+- Self-contained: no detection of third-party plugins, no shared config.
+
+**Severity:** stretch / quality-of-life. Vim users especially benefit (relative numbers + `j` / `k` / `dd` motions).

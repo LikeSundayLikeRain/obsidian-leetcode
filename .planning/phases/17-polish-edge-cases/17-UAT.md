@@ -6,11 +6,11 @@ started: 2026-05-23T10:14:00Z
 updated: 2026-05-24T20:00:00Z
 summary:
   total: 24
-  pass: 20
-  issue: 0
+  pass: 21
+  partial: 2
   deferred: 1
   skipped: 2
-  pending: 2
+  pending: 0
 notes:
   - "2026-05-24: Tests 2 (PASTE-02), 8 (SRCLIV-01), and 10 (RESET-01) flipped issue→pass. Tests 2/8 were initially reproducing because Obsidian was loading from a stale shadow plugin folder (`.obsidian/plugins/leetcode/`) instead of the active install (`.obsidian/plugins/obsidian-leetcode/`); both folders carried manifest id `leetcode` and Obsidian deduped to the older shadow. After deploying to the correct folder, a Reset edge case surfaced where line-count-unchanged full-body replace bypassed the line-count rebuild branch — fix simplified to always rebuild on docChanged or reconfigured (commit d65cb19). Test 10 confirmed Plan 17-08's language priority chain restoration. Stale shadow folder deleted."
 
@@ -196,8 +196,8 @@ linked_to: 999.3
 ### 24. LINENUM-01 — Line numbers gutter honors Obsidian's showLineNumber setting (gap-closure round 2)
 
 expected: Open Obsidian Settings → Editor → enable "Show line numbers". Reload the dev vault (or restart Obsidian) so the plugin re-mounts. Open a Java problem note. Click into the child editor inside the `## Code` fence. A line-number gutter renders on the LEFT side of the child editor (1, 2, 3, ... matching the body lines). The gutter background is transparent (per the existing `.cm-gutters` CSS at childEditorFactory.ts:312-315) — it inherits the child editor's themed background. Toggle Obsidian's "Show line numbers" OFF; reload; reopen the same note. Child editor renders WITHOUT a gutter — pure code body, no line numbers, no leftmost gutter column. With BOTH vim mode and line numbers enabled, in the child editor press Esc → `:` → `set nonu` → Enter; the gutter disappears (vim's runtime toggle); type `:set nu` to bring it back. The Obsidian setting is read ONCE at child mount — toggling it while a child is open does NOT take effect until note remount (Cmd-E flip in/out of Source/Live Preview, OR close+reopen the note). This is the documented behavior (matches D-18 vim mount semantic). Validates Plan 17-12 — LINENUM-01 closure.
-result: pending
-notes: ""
+result: pass
+notes: "Plan 17-12 LINENUM-01 fix verified 2026-05-24. Gutter renders when Obsidian's showLineNumber is ON, hides when OFF. Read-once-at-mount semantic confirmed (toggle takes effect after Cmd-E flip or close+reopen). Stretch finding: user has a third-party relative-line-numbers plugin installed but it does NOT apply to the child editor (the third-party plugin targets parent CM6 only, not child widget). Captured as backlog 999.4 (plugin-owned relative line numbers setting for the child editor)."
 
 ## Summary
 
