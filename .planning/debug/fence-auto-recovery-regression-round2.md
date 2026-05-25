@@ -549,3 +549,161 @@ green_test_output: |
   $ npm run build
    tsc -noEmit -skipLibCheck && node esbuild.config.mjs production
    (clean — no errors, no output to stderr)
+
+## Round 3 (Phase 18 Plan 02) — vim-dd bypass + stale-child invalidation
+
+Round-2 (Plan 17-13) closed Bug 1 for *Source-Mode keystroke* damage by adding
+`createParentRepairExtension`, a CM6 `EditorView.updateListener` wired into the
+parent view via `wireSyncIfNeeded`. Manual UAT 17-UAT.md Test 23 (re-run
+2026-05-24 against the round-2 build) immediately surfaced two compounding
+gaps that round-2 did not anticipate. Both are promoted into the v1.2 ship
+gate (Phase 18 Plan 02) per CONTEXT D-33 + D-34.
+
+### Symptoms (round-3)
+
+Verbatim from 17-UAT.md Test 23 partial finding (2026-05-24):
+
+- **Bug 1 — vim `dd` bypass.** "deletion of fence closer via vim's `dd`
+  (which goes through Obsidian's app-level vim handler, NOT CM6
+  transactions) bypasses the parent-side runtime trigger entirely —
+  `repairFenceStructure` never observes the change because no CM6
+  transaction fires. Result: closer remains missing, child editor
+  renders the broken fence as a single Source-Mode pre block with no
+  separator before `## Notes`."
+- **Bug 2 — stale child render.** "after reloading the app to recover,
+  the Code child editor displays a Python rendering (`class Solution:` +
+  `def canMeasureWater(self, x: int, y: int, target: int) -> bool:`)
+  while the parent doc text below still has the broken Java fence.
+  lc-language frontmatter is still `java`. Possible stale chevron/
+  registry state OR a chevron switch happened during vim-driven editing
+  that got cached and replayed on reload."
+
+Captured as backlog 999.3.
+
+### Hypothesis & confirmation
+
+**Bug 1 hypothesis (mechanical).** Obsidian's global vim mode is wired
+into Obsidian's `Scope` keymap manager at app priority. When the user
+issues `dd` in Normal mode, the keystroke is routed to Obsidian's
+app-level vim handler, which mutates the document via Obsidian's
+`Editor` commands (or, in some build paths, via direct `vault.modify`-
+adjacent surfaces). Either way, the mutation does NOT take the form of
+a CM6 `EditorView.dispatch` whose transaction the parent's
+`updateListener` would observe. As a result Plan 17-13's
+`createParentRepairExtension` never fires — `update.docChanged` is false
+for the entire parent CM6 view because no CM6 transaction was emitted.
+
+**Probe & verdict.** `vault.on('modify', file)` is Obsidian's documented
+event surface for "the file's content changed in the editor's buffer
+OR on disk", and it fires regardless of write-path origin: CM6 dispatch,
+Obsidian command (incl. vim), `vault.process`, or external editor. So
+adding a `vault.on('modify')` listener at plugin onload — gated on
+`lc-slug` frontmatter via `metadataCache.getFileCache(file)?.frontmatter`
+to avoid firing on non-LC notes — and dispatching `repairFenceStructure`
+against the active MarkdownView's CM6 view when `findCodeFence === null`
+gives us a write-path-agnostic repair trigger. Plan 17-13's
+`createParentRepairExtension` stays in place — both triggers coexist;
+one observes CM6 transactions, the other observes vault writes. The
+existing `'leetcode.fence-repair'` userEvent + `ECHO_PRONE_USER_EVENTS`
+re-entry guard in 17-13 transparently protects against repair firing on
+its own dispatch (the vault.modify event raised by repair's own
+`parentView.dispatch` fires the listener, but
+`findCodeFence(state) !== null` because repair just restored the fence,
+so the new listener short-circuits before re-firing). **Verdict:
+CONFIRMED — mechanical.**
+
+**Bug 2 hypothesis (probable).** The child editor was registered in
+`childEditorRegistry` at some prior point with one language slug
+(populated by Plan 17-09's `childLanguageTracker` WeakMap via the
+chevron switch path or fm-reactivity dispatch). A subsequent vim-driven
+write (or a chevron switch that didn't fully sync the four sources of
+truth — fence opener tag, lc-language frontmatter, child registry,
+childLanguageTracker) flipped the parent's lc-language and/or fence
+opener tag while the child's tracked slug went stale. On app reload,
+the child registry rebuilds from scratch — but during the brief window
+where the broken fence is visible, the existing child instance (from
+the LRU cache) gets re-attached with its stale slug. The user then sees
+Python rendering on a doc whose lc-language says `java`. **Verdict:
+PROBABLE.** The exact reproduction path is not deterministic from
+source trace alone (multiple keystrokes + reload sequences integrate
+intermediate states), so the round-3 fix is defensive: invalidate the
+registry entry whenever `childLanguageTracker[child]` disagrees with
+EITHER the parent fence opener tag OR `lc-language` frontmatter. The
+disagreement check fires at child mount AND on each
+`metadataCache.changed` event for the active LC note. On disagreement,
+`childEditorRegistry.delete(file.path)` destroys the stale child; the
+next visible-frame's nested-editor decoration rebuild will re-mount
+from `extractFenceBody` + the freshly-read lc-language slug.
+
+### Planned Fix Scope (round-3)
+
+Two surgical additions per CONTEXT D-33 + D-34:
+
+1. **`vault.on('modify', file)` listener at plugin onload (Bug 1
+   closure / D-33).** Registered via `this.registerEvent(this.app.vault.on('modify', ...))`
+   in `LeetCodePlugin.onload`. Handler body:
+   - TypeGuard `file instanceof TFile`.
+   - Read frontmatter via `this.app.metadataCache.getFileCache(file)?.frontmatter`.
+   - Gate on `typeof fm?.['lc-slug'] === 'string' && fm['lc-slug'].length > 0`
+     (mirror the precedent at `childEditorSync.ts:201-205`).
+   - Resolve active MarkdownView via
+     `this.app.workspace.getActiveViewOfType(MarkdownView)`.
+   - Verify `view?.file?.path === file.path` (only repair the
+     foreground note; background-leaf writes can wait for the next
+     mount).
+   - Extract parent CM6 view via `(view.editor as unknown as { cm:
+     EditorView }).cm` (matches `readActiveFenceSlug:2678`).
+   - If `findCodeFence(parentView.state) === null`, call
+     `repairFenceStructure(parentView, lc-language || 'python3')`.
+   - The dispatch carries `'leetcode.fence-repair'` userEvent
+     (existing); `findCodeFence !== null` immediately after the
+     dispatch ensures the listener short-circuits on its own
+     follow-up `vault.modify` event.
+
+2. **Stale-child invalidation (Bug 2 closure / D-34).** New private
+   method `LeetCodePlugin.checkStaleChildAndInvalidate(file, cache)`:
+   - Gate on `lc-slug` presence (mirror Gate 1 of
+     `handleFmChangeForLanguageReactivity`).
+   - Look up `childView = this.childEditorRegistry?.get(file.path)`;
+     return if no child registered.
+   - Read `currentSlug = this.childLanguageTracker.get(childView)`;
+     return if undefined (empty-tracker case — Plan 17-09 Gate 3
+     empty-tracker semantic: trivial agreed).
+   - Read `fmLang = cache?.frontmatter?.['lc-language']`.
+   - Read `openerSlug = this.readActiveFenceSlug(file)`.
+   - If `currentSlug !== fmLang || (openerSlug !== undefined &&
+     currentSlug !== openerSlug)` → `this.childEditorRegistry.delete(file.path)`.
+   - Wired at TWO call sites: (a) inside the existing
+     `metadataCache.on('changed')` callback at `src/main.ts:920` AFTER
+     `handleFmChangeForLanguageReactivity` (so the fm-reactivity
+     dispatch has already updated the tracker if it was going to);
+     (b) at the child mount call site in
+     `src/main/nestedEditorExtension.ts:126` (or as a sibling check
+     fired from `src/main.ts` once the child is mounted — placement
+     decided by the executor based on access to `this.app`).
+
+### Invariants Preserved
+
+- Plan 17-13's `createParentRepairExtension` STAYS verbatim at
+  `src/main/childEditorSync.ts:385-422`. Both triggers coexist; one
+  observes CM6 transactions, the other observes vault writes.
+- Plan 17-13's idempotency guard (`'leetcode.fence-repair'` userEvent
+  re-entry skip) STAYS — the vault-side listener inherits this
+  protection because `findCodeFence !== null` immediately after a
+  successful repair dispatch.
+- `ECHO_PRONE_USER_EVENTS` set at
+  `src/main/nestedEditorExtension.ts:265-268` UNCHANGED.
+  `'leetcode.fence-repair'` STAYS in the set (round-1 hypothesis (b)
+  refute preserved).
+- `'leetcode.reset.child'` is NOT added to `ECHO_PRONE_USER_EVENTS`
+  (CLAUDE.md `## Conventions` warning preserved).
+- No new userEvent string introduced. Repair continues to dispatch
+  `'leetcode.fence-repair'`.
+- CLAUDE.md `## Conventions` section UNCHANGED — no new convention.
+- Round-1 fix in `repairFenceStructure` (marker disambiguation +
+  body-aware insertion + activeSlug-aware opener tag) STAYS verbatim.
+- Plan 17-09 `childLanguageTracker` WeakMap declaration at
+  `src/main.ts:278` UNCHANGED. Plan 18-02 READS from this tracker;
+  does not modify the tracker's population mechanism.
+- Bundle stays under the 1.8 MB ceiling (CONTEXT D-19); the new
+  listener + private method add < 1 KB.
