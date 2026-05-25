@@ -48,6 +48,7 @@ import type { App, Scope } from 'obsidian';
 import { languageCompartment, buildLanguageExtensions } from './childEditorLanguage';
 import { createScrollIntoViewExtension } from './childEditorSync';
 import { createThemedHighlight } from './childEditorTheme';
+import { obsidianSemanticClasses } from './childEditorSemanticClasses';
 
 // Phase 16 / debug session `cmd-slash-not-reaching-child`:
 // Obsidian registers Mod-/ as `editor:toggle-comments` via its Scope-based
@@ -320,6 +321,20 @@ export function createChildEditor(
       //    variables — see src/main/childEditorTheme.ts) + bracket matching
       //    (HIGHLIGHT-01 firing logic unchanged; Phase 17 D-16 bracket-match
       //    contrast theme is bundled inside createThemedHighlight).
+      // Phase 17 Plan 10 round-3 (Test 13): emit Obsidian/CM5-compatible
+      // semantic class names (cm-keyword, cm-type, cm-variable, cm-def,
+      // cm-string, cm-comment, …) on syntax tokens so community theme
+      // CSS rules scoped to `.HyperMD-codeblock` cascade to the child
+      // editor's spans. The container also carries `HyperMD-codeblock`
+      // (see nestedEditorExtension.ts:103) so descendant selectors
+      // match. createThemedHighlight() now returns only the
+      // bracket-match theme (D-16) — the prior themedHighlightStyle
+      // entry was dropped because its inline `style="color: var(...)"`
+      // beat class-scoped theme rules via CSS specificity. Default
+      // colors come from Obsidian's app.css `.cm-keyword { color:
+      // var(--code-keyword); }`; community-theme overrides scoped to
+      // `.HyperMD-codeblock` win via natural cascade.
+      obsidianSemanticClasses,
       ...createThemedHighlight(),
       bracketMatching(),
       // 4. Editing primitives.

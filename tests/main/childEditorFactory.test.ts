@@ -34,7 +34,18 @@ vi.mock('@codemirror/view', () => {
     // array can be asserted by sentinel value (parallel to drawSelection /
     // highlightActiveLine mocks above).
     lineNumbers: vi.fn().mockReturnValue('mock-line-numbers'),
-    ViewPlugin: { define: vi.fn().mockReturnValue('mock-view-plugin') },
+    ViewPlugin: {
+      define: vi.fn().mockReturnValue('mock-view-plugin'),
+      // Phase 17 Plan 10 round-3 — Decoration.mark layer for Obsidian-
+      // compatible semantic class names uses ViewPlugin.fromClass; mock
+      // it as a sentinel so the factory build path can mount the module.
+      fromClass: vi.fn().mockReturnValue('mock-view-plugin-from-class'),
+    },
+    Decoration: {
+      mark: vi.fn().mockReturnValue({ range: vi.fn().mockReturnValue({}) }),
+      line: vi.fn().mockReturnValue({}),
+      widget: vi.fn().mockReturnValue({}),
+    },
   };
 });
 

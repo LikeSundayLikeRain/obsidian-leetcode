@@ -311,7 +311,7 @@ describe('NestedEditorWidget', () => {
     const mockView = {} as never; // EditorView not used by toDOM except for container
     const dom = widget.toDOM(mockView);
 
-    expect(dom.className).toBe('lc-nested-editor');
+    expect(dom.classList.contains('lc-nested-editor')).toBe(true);
   });
 
   it('toDOM() uses registry.get() for existing child and attaches its DOM', () => {

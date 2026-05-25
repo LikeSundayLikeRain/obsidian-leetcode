@@ -34,28 +34,26 @@ import {
 
 describe('childEditorTheme', () => {
   describe('createThemedHighlight()', () => {
-    it('returns a non-empty Extension array (>= 2 elements: highlight + theme)', () => {
+    it('returns a non-empty Extension array (round-3 shape: bracket-match theme only)', () => {
+      // Phase 17 Plan 10 round-3: createThemedHighlight() now returns
+      // ONLY the bracket-match theme (D-16). The HighlightStyle entry
+      // was dropped because its inline-style color beat class-scoped
+      // community-theme rules; the role is now filled by
+      // obsidianSemanticClasses (a separate ViewPlugin extension wired
+      // into childEditorFactory.ts).
       const result = createThemedHighlight();
       expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBeGreaterThanOrEqual(2);
+      expect(result.length).toBeGreaterThanOrEqual(1);
     });
 
     it('does NOT include bracketMatching() — Pitfall 5: that lives in childEditorFactory.ts', async () => {
-      // Re-import bracketMatching live to get its identity-by-call sentinel.
       const lang = await import('@codemirror/language');
       const bracketMatchingExt = lang.bracketMatching();
       const result = createThemedHighlight();
-      // Spread-equality check: createThemedHighlight's array elements are NOT
-      // the same identity as a freshly-built bracketMatching() — this is a
-      // structural sanity check (each call returns a new Extension), but the
-      // contract is "this module does NOT export the bracketMatching firing
-      // logic". The existence of the theme block + HighlightStyle wrapper is
-      // the real assertion (length >= 2 above).
-      // We additionally assert the array length is exactly 2 — if a future
-      // change added bracketMatching() into this factory, the array would
-      // become length 3.
-      expect(result.length).toBe(2);
-      // (No-op use of `bracketMatchingExt` to keep the import meaningful.)
+      // Round-3: array contains exactly one entry — the bracket-match
+      // theme (D-16). Bracket-match FIRING logic still lives in
+      // childEditorFactory.ts as the bare `bracketMatching()` call.
+      expect(result.length).toBe(1);
       expect(bracketMatchingExt).toBeDefined();
     });
   });

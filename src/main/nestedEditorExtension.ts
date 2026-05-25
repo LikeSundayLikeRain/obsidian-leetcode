@@ -100,7 +100,15 @@ export class NestedEditorWidget extends WidgetType {
 
   toDOM(view: EditorView): HTMLElement {
     const container = document.createElement('div');
-    container.className = 'lc-nested-editor';
+    // Phase 17 Plan 10 round-3 (17-UAT.md Test 13 tag-mapping pass):
+    // Many community themes (e.g., One Dark) override --code-keyword,
+    // --code-variable, etc. via selectors scoped to `.HyperMD-codeblock`
+    // (e.g., `.HyperMD-codeblock .cm-keyword { color: var(--purple); }`).
+    // Adding HyperMD-codeblock to the child container lets those theme
+    // overrides cascade to the child's CM6 spans, matching the visual
+    // palette of Obsidian's native code-block rendering. The plugin's
+    // own .lc-nested-editor rules in styles.css continue to apply.
+    container.className = 'lc-nested-editor HyperMD-codeblock';
 
     // Get or create child EditorView from registry
     let childView = this.registry.get(this.filePath);

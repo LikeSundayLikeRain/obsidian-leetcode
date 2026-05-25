@@ -19,7 +19,12 @@
 // tag → CSS variable mapping.
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+// Phase 17 Plan 10 round-3: syntaxHighlighting is no longer wired into
+// createThemedHighlight()'s return array (see function comment). The
+// HighlightStyle.define() spec is still exported as `themedHighlightStyle`
+// for testability and potential future re-enablement, so the import
+// stays.
+import { HighlightStyle } from '@codemirror/language';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { tags as t } from '@lezer/highlight';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
@@ -60,7 +65,14 @@ export const themedHighlightStyle = HighlightStyle.define([
   { tag: [t.propertyName, t.className], color: 'var(--code-property, #79c0ff)' },
   { tag: t.operator, color: 'var(--code-operator, #ff7b72)' },
   { tag: [t.number, t.bool, t.null], color: 'var(--code-value, #79c0ff)' },
-  { tag: t.typeName, color: 'var(--code-keyword, #ff7b72)' },
+  // Phase 17 Plan 10 round-3 (17-UAT.md Test 13 final tag-mapping pass):
+  // Obsidian's native renderer assigns class `cm-type` to type tokens
+  // (e.g., `boolean`, `int`, `String` in Java) which are colored via
+  // `--code-type`. Plan 17-05 mapped t.typeName → --code-keyword which
+  // collapsed types into the keyword color, breaking visual parity with
+  // the Notes block (verified live 2026-05-24 DOM probe). Map to
+  // --code-type with a sensible fallback for themes that don't define it.
+  { tag: t.typeName, color: 'var(--code-type, #79c0ff)' },
   { tag: t.invalid, color: 'var(--text-error)' },
 ]);
 
@@ -117,5 +129,24 @@ export const themedBracketMatchTheme: Extension = EditorView.theme(bracketMatchT
  * top-level extensions array in `childEditorFactory.ts`.
  */
 export function createThemedHighlight(): Extension[] {
-  return [syntaxHighlighting(themedHighlightStyle), themedBracketMatchTheme];
+  // Phase 17 Plan 10 round-3 (17-UAT.md Test 13 final pass): the
+  // syntaxHighlighting(themedHighlightStyle) entry was REMOVED from this
+  // returned array. Its inline `style="color: var(--code-keyword)"`
+  // beat class-scoped community-theme rules (e.g. One Dark's
+  // `.HyperMD-codeblock .cm-keyword { color: var(--purple); }`) via CSS
+  // specificity, so themes couldn't override the child editor's syntax
+  // colors. Round-3 emits Obsidian-compatible CM5 semantic classes
+  // (`cm-keyword`, `cm-type`, `cm-variable`, …) via
+  // `obsidianSemanticClasses` (a sibling extension wired in
+  // childEditorFactory.ts), and theme CSS now colors tokens by
+  // cascading through Obsidian's app.css `.cm-keyword { color:
+  // var(--code-keyword); }` (default) plus any community-theme
+  // overrides scoped to `.HyperMD-codeblock`. The bracket-match theme
+  // (D-16 — high-contrast `.cm-matchingBracket`) is unaffected and
+  // continues to ship here.
+  //
+  // The function name is preserved for API stability (existing callers
+  // and tests); the returned array now contains exactly one entry —
+  // the bracket-match theme.
+  return [themedBracketMatchTheme];
 }
