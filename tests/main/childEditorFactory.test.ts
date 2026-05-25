@@ -33,7 +33,13 @@ vi.mock('@codemirror/view', () => {
     // string so the conditional spread inside createChildEditor's extensions
     // array can be asserted by sentinel value (parallel to drawSelection /
     // highlightActiveLine mocks above).
-    lineNumbers: vi.fn().mockReturnValue('mock-line-numbers'),
+    //
+    // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — extended to capture the
+    // call argument so Tests A/B (relative line numbers conditional describe
+    // block below) can assert the cfg shape. Returns the same 'mock-line-numbers'
+    // sentinel for backward compatibility with Plan 17-12 tests
+    // (Test A: 'mock-line-numbers' contained, Test B: not called, etc.).
+    lineNumbers: vi.fn((_cfg?: unknown) => 'mock-line-numbers'),
     ViewPlugin: {
       define: vi.fn().mockReturnValue('mock-view-plugin'),
       // Phase 17 Plan 10 round-3 — Decoration.mark layer for Obsidian-
@@ -622,5 +628,181 @@ describe('createChildEditor — lineNumbers conditional (Phase 17 Plan 12 / LINE
       (c) => c[0] === 'showLineNumber',
     ).length;
     expect(showLineNumberCalls).toBe(1);
+  });
+});
+
+// Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — Relative line numbers
+// conditional. Layered ON TOP of the Plan 17-12 LINENUM-01 gate: when both
+// `showLineNumber` (Obsidian's editor setting) AND the new plugin-owned
+// `showRelativeLineNumbers` are true, the lineNumbers extension is invoked
+// with a `formatNumber: relativeFormatter` config so the gutter renders
+// relative-distance numbers. When `showRelativeLineNumbers` is false, Plan
+// 17-12's bare `lineNumbers()` baseline is preserved verbatim. When the
+// existing `showLineNumber` gate is false, the lineNumbers extension is
+// not included at all regardless of the new flag (the existing gate wins).
+//
+// Read-once-at-mount semantic per D-18 / Plan 17-12 — the new param is read
+// exactly once per createChildEditor invocation; toggling the setting at
+// runtime requires note remount (Cmd-E flip OR close+reopen). NO listener,
+// NO metadataCache subscription, NO live reactivity.
+//
+// Per planner's assumption #2 + 18-03-PLAN.md "must_haves": createChildEditor
+// gains a 7th parameter `showRelative?: boolean` (default undefined → false)
+// — cleaner than threading the entire plugin instance through.
+describe('createChildEditor — relative line numbers conditional (Phase 18 Plan 03 / LINENUM-RELATIVE-01)', () => {
+  let parent: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    parent = document.createElement('div');
+  });
+
+  it('Test A: includes lineNumbers WITH formatNumber when showRelative=true and showLineNumber=true at mount (D-35)', () => {
+    // CONTEXT.md D-35: when both showLineNumber AND showRelativeLineNumbers
+    // are ON, the gutter renders relative numbers via lineNumbers({
+    // formatNumber: relativeFormatter }). Mock app.vault.getConfig returns
+    // true for showLineNumber; vimMode also true to ensure no interaction
+    // with vim gating obscures the conditional.
+    const getConfig = vi.fn((key: string) => key === 'showLineNumber' || key === 'vimMode');
+    const mockApp = { vault: { getConfig } } as unknown as Parameters<typeof createChildEditor>[4];
+
+    // 7th param `showRelative` = true (Plan 18-03 / D-35).
+    createChildEditor('code', parent, 'python3', 'auto', mockApp, undefined, true);
+
+    // The lineNumbers factory is invoked exactly once.
+    expect(lineNumbers).toHaveBeenCalledTimes(1);
+
+    // The call argument is an OBJECT with a `formatNumber` property that is
+    // a function (the relativeFormatter pure function). This proves the
+    // formatNumber config flows through when both gates are true.
+    const lineNumbersCalls = (lineNumbers as ReturnType<typeof vi.fn>).mock.calls;
+    expect(lineNumbersCalls.length).toBe(1);
+    const cfg = lineNumbersCalls[0]![0] as { formatNumber?: unknown } | undefined;
+    expect(cfg).toBeDefined();
+    expect(typeof cfg!.formatNumber).toBe('function');
+
+    // The lineNumbers sentinel still appears in the extensions array (the
+    // mock returns 'mock-line-numbers' regardless of cfg, so the spread
+    // assertion below still works).
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(createArgs.extensions).toContain('mock-line-numbers');
+  });
+
+  it('Test B: includes lineNumbers WITHOUT formatNumber when showRelative=false and showLineNumber=true — Plan 17-12 baseline preserved (D-35)', () => {
+    // Plan 17-12 LINENUM-01 baseline: bare `lineNumbers()` with no config.
+    // CONTEXT.md D-35: when showRelativeLineNumbers is false, baseline must
+    // remain — the existing `showLineNumber=true → bare lineNumbers()` shape
+    // continues to work as before Plan 18-03.
+    const getConfig = vi.fn((key: string) => key === 'showLineNumber');
+    const mockApp = { vault: { getConfig } } as unknown as Parameters<typeof createChildEditor>[4];
+
+    // 7th param `showRelative` = false (Plan 18-03 / D-35).
+    createChildEditor('code', parent, 'python3', 'auto', mockApp, undefined, false);
+
+    // The lineNumbers factory is invoked exactly once.
+    expect(lineNumbers).toHaveBeenCalledTimes(1);
+
+    // The call argument MUST NOT carry a `formatNumber` property — it is
+    // either undefined OR an object without `formatNumber`. Plan 17-12
+    // baseline shape preserved verbatim.
+    const lineNumbersCalls = (lineNumbers as ReturnType<typeof vi.fn>).mock.calls;
+    const cfg = lineNumbersCalls[0]![0] as { formatNumber?: unknown } | undefined;
+    if (cfg !== undefined) {
+      expect((cfg as { formatNumber?: unknown }).formatNumber).toBeUndefined();
+    }
+
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(createArgs.extensions).toContain('mock-line-numbers');
+  });
+
+  it('Test C: excludes lineNumbers entirely when showLineNumber=false regardless of showRelative (Plan 17-12 gate wins)', () => {
+    // CONTEXT.md D-35: relative line numbers layer ON TOP of the existing
+    // showLineNumber gate. When showLineNumber=false, the gutter does not
+    // render at all — the new flag has no effect. The existing gate wins.
+    // Test C is a regression-prevention pin: the existing Plan 17-12
+    // gate excludes lineNumbers entirely on this codepath; the new param
+    // must not bypass it.
+    const getConfig = vi.fn((_key: string) => false);
+    const mockApp = { vault: { getConfig } } as unknown as Parameters<typeof createChildEditor>[4];
+
+    // 7th param `showRelative` = true — but it should still be excluded.
+    createChildEditor('code', parent, 'python3', 'auto', mockApp, undefined, true);
+
+    // lineNumbers is NOT invoked because the existing gate excluded it.
+    expect(lineNumbers).not.toHaveBeenCalled();
+
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(createArgs.extensions).not.toContain('mock-line-numbers');
+  });
+
+  it('Test D: read-once-at-mount: showRelative read exactly once per createChildEditor call (D-18/Plan 17-12 semantic preserved)', () => {
+    // CONTEXT.md D-35 + Plan 17-12: read-once-at-mount semantic. The new
+    // showRelative parameter is consumed exactly once per createChildEditor
+    // invocation. There is no listener, no metadataCache subscription, no
+    // live reactivity. Toggling requires note remount.
+    //
+    // Implementation contract: showRelative is a plain boolean parameter
+    // (per planner's assumption #2). Once createChildEditor accepts it, no
+    // additional read is performed against any external state — the read
+    // happened at the call site in main.ts BEFORE this function received it.
+    // This test pins that contract by verifying lineNumbers is called once
+    // and getConfig is called only for the existing gate keys (showLineNumber
+    // + vimMode), never for any new key.
+    const getConfig = vi.fn((key: string) => key === 'showLineNumber');
+    const mockApp = { vault: { getConfig } } as unknown as Parameters<typeof createChildEditor>[4];
+
+    createChildEditor('code', parent, 'python3', 'auto', mockApp, undefined, true);
+
+    // lineNumbers called once means showRelative was consulted exactly once
+    // at mount (it gates the formatNumber spread inside the lineNumbers call).
+    expect(lineNumbers).toHaveBeenCalledTimes(1);
+
+    // No new getConfig key was introduced (no 'showRelativeLineNumbers' lookup
+    // against Obsidian's vault config — the setting is plugin-owned per D-35).
+    const allKeys = getConfig.mock.calls.map((c) => c[0]);
+    expect(allKeys).not.toContain('showRelativeLineNumbers');
+  });
+});
+
+// Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — relativeFormatter pure
+// function unit tests. The function returns the absolute line number when on
+// the cursor's line; returns absolute distance from the cursor for other
+// lines. Vim relativenumber convention.
+describe('relativeFormatter — pure function (Phase 18 Plan 03 / LINENUM-RELATIVE-01)', () => {
+  // Helper: build a mock EditorState shape the formatter expects. The
+  // formatter reads `state.selection.main.head` and `state.doc.lineAt(...)`.
+  // Mock returns a doc where lineAt(head) yields `{ number: cursorLine }`.
+  function makeMockState(cursorLine: number): unknown {
+    return {
+      selection: { main: { head: cursorLine * 100 /* arbitrary head offset */ } },
+      doc: {
+        lineAt: (_offset: number) => ({ number: cursorLine }),
+      },
+    };
+  }
+
+  it('Test E: cursor line returns absolute line number (D-35 vim relativenumber convention)', async () => {
+    // Per D-35: when lineNo === cursorLine, the formatter returns the
+    // absolute line number as a string (e.g. cursor on line 5 → returns '5').
+    // This matches vim's relativenumber convention — the cursor line shows
+    // its absolute number, while surrounding lines show their distance.
+    const { relativeFormatter } = await import('../../src/main/childEditorFactory');
+    const state = makeMockState(5) as Parameters<typeof relativeFormatter>[1];
+    expect(relativeFormatter(5, state)).toBe('5');
+  });
+
+  it('Test F: non-cursor lines return absolute distance from cursor (D-35)', async () => {
+    // Per D-35: for lines other than the cursor, returns Math.abs(lineNo -
+    // cursorLine). Cursor on line 5: line 2 → '3' (above), line 8 → '3' (below).
+    const { relativeFormatter } = await import('../../src/main/childEditorFactory');
+    const state = makeMockState(5) as Parameters<typeof relativeFormatter>[1];
+    expect(relativeFormatter(2, state)).toBe('3');
+    expect(relativeFormatter(8, state)).toBe('3');
+    // Edge cases: distance of 1 (immediate neighbor), and large jump.
+    expect(relativeFormatter(4, state)).toBe('1');
+    expect(relativeFormatter(6, state)).toBe('1');
+    expect(relativeFormatter(50, state)).toBe('45');
+    // Line 1 (before cursor at 5) → distance 4.
+    expect(relativeFormatter(1, state)).toBe('4');
   });
 });
