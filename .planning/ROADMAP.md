@@ -275,3 +275,23 @@ Plans:
 - Bonus enhancement: register `:set nu` / `:set nonu` aliases (currently `@replit/codemirror-vim` rejects `nu` as unknown — only `:set number` works).
 
 **Severity:** major — affects core vim usability when v1.2 ships with vim mode wired in.
+
+### Phase 999.3: Fence Auto-Recovery Bypassed by Vim + Stale Child Render After Reload (BACKLOG)
+
+**Goal:** Two related findings from 17-UAT.md Test 23 (REPAIR-02) re-test 2026-05-24 — both involve vim-driven edits bypassing CM6's transaction model.
+
+**Requirements:** TBD
+
+**Plans:** 0 plans (promote with /gsd-review-backlog when ready)
+
+**Bug 1: vim `dd` on closer line bypasses parent repair listener.** Plan 17-13's parent-side `createParentRepairExtension` only fires on CM6 update transactions. When the user deletes the fence closer via vim (`dd` in Normal mode), the keystroke is intercepted by Obsidian's app-level vim handler and the resulting doc edit doesn't dispatch through CM6 in a way our updateListener observes. Result: `repairFenceStructure` never runs, the closer stays missing, and the fence is broken until manual repair.
+
+**Bug 2: After reloading the app on a broken-fence note, the child editor renders Python content while parent doc and lc-language frontmatter both say Java.** Hypothesis: stale chevron/registry state cached in `data.json`, OR a chevron switch happened during vim-driven editing that got cached and replayed on reload, OR the child editor mount path picked up a stale `lc-language` from an in-memory state instead of frontmatter. Possibly an interaction with 999.2 (vim focus routing) — vim's writes may have flipped the chevron without going through `switchFenceLanguage`'s lc-language frontmatter update.
+
+**Likely fix paths:**
+- Bug 1: add a `vault.on('modify', file)` or `metadataCache.on('changed', file)` listener that runs `repairFenceStructure` for the active LC problem note when the parent doc is modified outside CM6's transaction pipeline. Idempotency guard from 17-13 still applies.
+- Bug 2: investigate `data.json` cached state for the affected note. May want to invalidate stale child-mount state when frontmatter `lc-language` and child's tracked slug disagree.
+
+**Severity:** major — auto-recovery is a v1.2 contract (CONTEXT D-29), so failure-to-fire on the most common vim user's deletion path is a real gap.
+
+**Linked to:** 999.2 (vim focus routing) — both stem from vim bypassing CM6's keystroke pipeline.
