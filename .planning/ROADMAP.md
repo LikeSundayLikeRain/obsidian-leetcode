@@ -252,3 +252,26 @@ Plans:
 - Italic-on-parameters via Lezer `t.local(t.variableName)` binding.
 - Reversible — toggle back to "Match Obsidian theme" returns the round-3 behavior.
 - Reference: 17-UAT.md Test 13 trail (2026-05-24) has the user's One Dark Pro screenshot.
+
+### Phase 999.2: Vim Focus Routing — Child Editor Steals Navigation Keys (BACKLOG)
+
+**Goal:** Fix the bug where vim navigation/edit commands (j, k, dd, etc.) intermittently leak from the child editor to the parent editor when both have vim() extensions active.
+
+**Requirements:** TBD
+
+**Plans:** 0 plans (promote with /gsd-review-backlog when ready)
+
+**Context (from 17-UAT.md Test 17 — VIM-01, 2026-05-24):**
+- Reproduction: child editor focused, vim mode enabled globally in Obsidian. Press `i`/`a`/`o` → status panel shows --INSERT--. Press `j` → cursor moves down in PARENT editor instead of child. Press `dd` → deletes a line in the PARENT doc.
+- DOM probe confirms `document.activeElement` IS inside `.lc-nested-editor` (inChild: true) when the leak occurs — focus is correct, but keystrokes still route to parent's vim.
+- Pressing `i` or `a` again re-engages the child's vim cleanly.
+- Intermittent — not every keystroke.
+
+**Hypothesis:** Obsidian's global vim mode wraps the parent CM6 view's keymap at app priority (analogous to the cmd-slash-not-reaching-child finding from Phase 16). When both parent and child have `vim()` extensions, the parent's vim handler fires first in the keystroke pipeline, processes the key, and only then does the event reach the child. Status panel updates are local and not synchronized with which vim instance actually handled the key.
+
+**Likely fix path:**
+- Mirror the `createCmdSlashScopeExtension` pattern (childEditorFactory.ts:165-170) — register a Scope on `app.keymap` when the child gains focus, intercepting vim navigation keys (h/j/k/l/d/y/p/o/i/a/x/etc.) and routing them to the child's vim.
+- Alternative: capture-phase `keydown` listener on the child's `contentDOM` that calls `stopPropagation` for vim-relevant keys.
+- Bonus enhancement: register `:set nu` / `:set nonu` aliases (currently `@replit/codemirror-vim` rejects `nu` as unknown — only `:set number` works).
+
+**Severity:** major — affects core vim usability when v1.2 ships with vim mode wired in.
