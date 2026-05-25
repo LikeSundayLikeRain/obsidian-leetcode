@@ -5,9 +5,9 @@ source: [17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md, 17-04-SUMMARY.md,
 started: 2026-05-23T10:14:00Z
 updated: 2026-05-24T20:00:00Z
 summary:
-  total: 25
-  pass: 22
-  partial: 1
+  total: 24
+  pass: 21
+  partial: 2
   deferred: 1
   skipped: 2
   pending: 0
@@ -189,9 +189,8 @@ findings:
 ### 23. REPAIR-02 — Fence auto-recovery runtime trigger + missing-closer correctness (gap-closure round 2)
 
 expected: Open a Java problem note in the dev vault. In Source Mode (so direct keystrokes hit the parent), select the line ` ``` ` (the fence closer at the bottom of `## Code`) and DELETE it. Type a single character (or just leave the keystroke that deleted the line). Within ONE parent transaction (no reload, no Cmd-E flip, no manual click into the child), observe the parent doc: the fence closer is automatically restored. The restored closer is a single bare ` ``` ` line placed immediately above `## Notes` (or after the last non-blank body line, BEFORE any trailing blank lines that precede `## Notes`). The parent doc has EXACTLY ONE opener (` ```java `) and EXACTLY ONE closer (` ``` `) — no duplicate fence block, no orphaned body content, no second copy of the user's solution. Repeat with the user's exact reproduction from `.planning/debug/fence-auto-recovery-regression-round2.md` (delete the closer; reload the app) — the recovered state is identical (single intact fence, no duplicate). The chevron + lc-language frontmatter still say `java`. Cmd-Z reverts the repair (the deleted closer comes back and the auto-restored closer goes away). Validates Plan 17-13 fix — Bug 1 (parent-side runtime trigger fires repair on parent-only damage WITHOUT reload or child dispatch) AND Bug 2 (missing-closer recovery produces a single intact fence, no duplicate-fence shape).
-result: pass
+result: partial
 reported: "Re-tested 2026-05-24 with Plan 17-13 round-2 fix. PARTIAL: deletion of fence closer via vim's `dd` (which goes through Obsidian's app-level vim handler, NOT CM6 transactions) bypasses the parent-side runtime trigger entirely — `repairFenceStructure` never observes the change because no CM6 transaction fires. Result: closer remains missing, child editor renders the broken fence as a single Source-Mode pre block with no separator before `## Notes`. SECONDARY (worse): after reloading the app to recover, the Code child editor displays a Python rendering (`class Solution:` + `def canMeasureWater(self, x: int, y: int, target: int) -> bool:`) while the parent doc text below still has the broken Java fence. lc-language frontmatter is still `java`. Possible stale chevron/registry state OR a chevron switch happened during vim-driven editing that got cached and replayed on reload. Both findings captured as backlog 999.3."
-notes: "2026-05-24 (Phase 18 Plan 02 — REPAIR-02-RESILIENT): vault.on('modify') trigger added per CONTEXT D-33; vim-dd / external-write bypass closed. Stale-child invalidation per D-34 closes the cross-language render reproduction. Round-3 debug findings appended to .planning/debug/fence-auto-recovery-regression-round2.md. The 18-04 manual UAT pass will re-verify REPAIR-02 against the final v1.2 build; this plan's source change is the GREEN gate."
 linked_to: 999.3
 
 ### 24. LINENUM-01 — Line numbers gutter honors Obsidian's showLineNumber setting (gap-closure round 2)
@@ -202,57 +201,10 @@ notes: "Plan 17-12 LINENUM-01 fix verified 2026-05-24. Gutter renders when Obsid
 
 ## Summary
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 total: 24
-passed: 22
-partial: 1
-||||||| parent of 08e101e (docs(18-03): append Test 25 LINENUM-RELATIVE-01 to 17-UAT.md (cross-phase continuity))
-total: 24
-<<<<<<< HEAD
-passed: 21
-issues: 0
-partial: 0
-=======
-total: 25
-||||||| parent of dc886a1 (Revert "chore: merge 18-03 relative line numbers (worktree-agent-a2e637fcc2d20bfc9)")
-total: 25
-=======
-total: 24
->>>>>>> dc886a1 (Revert "chore: merge 18-03 relative line numbers (worktree-agent-a2e637fcc2d20bfc9)")
-passed: 21
-issues: 0
-partial: 0
->>>>>>> 08e101e (docs(18-03): append Test 25 LINENUM-RELATIVE-01 to 17-UAT.md (cross-phase continuity))
-deferred: 1
-||||||| parent of cf7cd51 (Revert "chore: merge 18-01 vim Scope intercept (worktree-agent-a629da1dd8a14c9ff)")
-passed: 21
-issues: 0
-partial: 0
-deferred: 1
-=======
-passed: 15
-issues: 5
+passed: 14
+issues: 6
 pending: 2
->>>>>>> cf7cd51 (Revert "chore: merge 18-01 vim Scope intercept (worktree-agent-a629da1dd8a14c9ff)")
 skipped: 2
 deferred: 1
 blocked: 0
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Remaining partial: Test 23 / REPAIR-02 (closure planned in Plan 18-02). Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
-||||||| parent of 08e101e (docs(18-03): append Test 25 LINENUM-RELATIVE-01 to 17-UAT.md (cross-phase continuity))
-notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
-=======
-notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Plan 18-03 (2026-05-24) appended Test 25 / LINENUM-RELATIVE-01 in pending state — closes backlog 999.4 via plugin-owned setting; manual UAT pass scheduled for 18-04. Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
->>>>>>> 08e101e (docs(18-03): append Test 25 LINENUM-RELATIVE-01 to 17-UAT.md (cross-phase continuity))
-||||||| parent of dc886a1 (Revert "chore: merge 18-03 relative line numbers (worktree-agent-a2e637fcc2d20bfc9)")
-notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Plan 18-03 (2026-05-24) appended Test 25 / LINENUM-RELATIVE-01 in pending state — closes backlog 999.4 via plugin-owned setting; manual UAT pass scheduled for 18-04. Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
-=======
-notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
->>>>>>> dc886a1 (Revert "chore: merge 18-03 relative line numbers (worktree-agent-a2e637fcc2d20bfc9)")
-||||||| parent of cf7cd51 (Revert "chore: merge 18-01 vim Scope intercept (worktree-agent-a629da1dd8a14c9ff)")
-notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
-=======
->>>>>>> cf7cd51 (Revert "chore: merge 18-01 vim Scope intercept (worktree-agent-a629da1dd8a14c9ff)")
