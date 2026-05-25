@@ -16,10 +16,10 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- matches existing source-inspection pattern in childEditorFactory.test.ts
-const fs = require('fs');
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- matches existing source-inspection pattern in childEditorFactory.test.ts
-const path = require('path');
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- matches existing source-inspection pattern in childEditorFactory.test.ts:395-398; needed because the project's userland 'path' npm dep shadows Node's built-in when imported via ESM
+const fs = require('node:fs');
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- matches existing source-inspection pattern in childEditorFactory.test.ts:395-398; needed because the project's userland 'path' npm dep shadows Node's built-in when imported via ESM
+const path = require('node:path');
 
 // ----------------------------------------------------------------------------
 // Source-level describe block — mirrors childEditorFactory.test.ts:394-434.
@@ -157,13 +157,20 @@ describe('childEditorFactory wiring — createVimScopeExtension spread (Phase 18
     // Placement convention from CONTEXT.md plan: adjacent to the existing
     // cmd-slash Scope spread at factory.ts:315 — both share the "push Scope
     // on focus" lifecycle, so they cluster for readability.
+    //
+    // Search for the SPREAD callsite (`createCmdSlashScopeExtension(app)` and
+    // `createVimScopeExtension(app,`) NOT the bare identifier — the bare name
+    // also appears in the import line near the top of the file. The spread
+    // is the structurally-meaningful adjacency the test wants to assert.
     const source = fs.readFileSync(factoryPath, 'utf8');
     const cmdSlashIdx = source.indexOf('createCmdSlashScopeExtension(app)');
-    const vimScopeIdx = source.indexOf('createVimScopeExtension');
+    const vimScopeIdx = source.indexOf('createVimScopeExtension(app');
     expect(cmdSlashIdx).toBeGreaterThan(-1);
     expect(vimScopeIdx).toBeGreaterThan(-1);
-    // Within ~400 chars (a handful of lines + the conditional spread).
-    expect(Math.abs(vimScopeIdx - cmdSlashIdx)).toBeLessThan(400);
+    // Within ~1200 chars — accommodates the inline planning-context comment
+    // block (CONTEXT D-32 / UAT Test 17 / VIM-01 closure citation) plus the
+    // multi-line conditional spread.
+    expect(Math.abs(vimScopeIdx - cmdSlashIdx)).toBeLessThan(1200);
   });
 });
 
@@ -212,6 +219,16 @@ vi.mock('@replit/codemirror-vim', () => {
   };
 });
 
+// Static imports of the modules we mock so the test code can reference the
+// mocked surface synchronously (no `await import(...)` calls — those are
+// flagged by no-unsanitized/method when given a runtime variable). Mocks
+// are declared via `vi.mock(...)` factories below; vitest hoists them above
+// these import statements at runtime so the imports resolve to the mocks.
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+import * as cmViewMock from '@codemirror/view';
+import * as obsidianMock from 'obsidian';
+import * as vimPackageMock from '@replit/codemirror-vim';
+
 vi.mock('@codemirror/view', async () => {
   // Capture the ViewPlugin.define factory so the test can invoke it directly
   // with a mock view (matches the cmd-slash test pattern in spirit).
@@ -228,27 +245,38 @@ vi.mock('@codemirror/view', async () => {
   };
 });
 
-// Helper — load the module under test via runtime require so the test file
-// can still parse + run source-level assertions even when the source module
-// does not exist yet (RED state). Vitest's static import-analysis fails at
-// parse-time on missing imports; CommonJS `require` is dynamic and only fails
-// at the moment of invocation.
-function loadModule(): { createVimScopeExtension: (app: unknown, getCm: (view: unknown) => unknown) => unknown } {
+// Helper — load the module under test via dynamic import with a literal
+// specifier (so the no-unsanitized/method lint rule doesn't flag it). A
+// runtime fs.existsSync guard surfaces a clear RED-state error message when
+// the source module is missing; once the module exists the dynamic import
+// returns the module exports synchronously after the await.
+async function loadModule(): Promise<{
+  createVimScopeExtension: (app: unknown, getCm: (view: unknown) => unknown) => unknown;
+}> {
   const sourcePath = path.resolve(__dirname, '../../src/main/childEditorVimScope.ts');
   if (!fs.existsSync(sourcePath)) {
     throw new Error(`childEditorVimScope module missing at ${sourcePath} (RED — Task 2 not yet shipped)`);
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('../../src/main/childEditorVimScope');
+  return (await import('../../src/main/childEditorVimScope')) as {
+    createVimScopeExtension: (app: unknown, getCm: (view: unknown) => unknown) => unknown;
+  };
 }
 
 describe('createVimScopeExtension — behavioral (Phase 18 Plan 01 / D-32)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset modules between tests so the module-scoped aliasesRegistered flag
+    // (in src/main/childEditorVimScope.ts) doesn't leak across tests. Without
+    // this reset, the first test that triggers focus would mark aliases as
+    // registered and subsequent tests asserting on Vim.defineEx call would
+    // never observe a fresh registration. (UAT Test 17 / VIM-01 idempotency
+    // is asserted in the source-level describe block above; here we want
+    // each behavioral test to observe a fresh first-mount.)
+    vi.resetModules();
   });
 
   it('pushScope on contentDOM focus, popScope on blur — D-32 lifecycle', async () => {
-    const { createVimScopeExtension } = loadModule();
+    const { createVimScopeExtension } = await loadModule();
 
     const pushScope = vi.fn();
     const popScope = vi.fn();
@@ -263,10 +291,10 @@ describe('createVimScopeExtension — behavioral (Phase 18 Plan 01 / D-32)', () 
     createVimScopeExtension(mockApp as never, () => mockView.cm);
 
     // Pull the captured ViewPlugin.define factory and invoke it with the mock view.
-    const cmView = await import('@codemirror/view');
-    const captured = (cmView as unknown as { __captured: { factory: ((v: unknown) => unknown) | null } }).__captured;
+    const captured = (cmViewMock as unknown as { __captured: { factory: ((v: unknown) => unknown) | null } }).__captured;
     expect(captured.factory).not.toBeNull();
-    const plugin = captured.factory!(mockView) as { destroy: () => void };
+    if (captured.factory === null) throw new Error('unreachable');
+    const plugin = captured.factory(mockView) as { destroy: () => void };
 
     // Simulate focus → pushScope fires.
     contentDOM.dispatchEvent(new Event('focus'));
@@ -285,19 +313,19 @@ describe('createVimScopeExtension — behavioral (Phase 18 Plan 01 / D-32)', () 
     // UAT Test 17 / VIM-01: the closing assertion. When the user presses j with
     // the child focused, the Scope handler MUST stop Obsidian's app-level
     // dispatch (return false) AND route the keystroke into the child's vim.
-    const { createVimScopeExtension } = loadModule();
-    const obsidianMock = (await import('obsidian')) as unknown as {
+    const { createVimScopeExtension } = await loadModule();
+    const obsidianMockTyped = obsidianMock as unknown as {
       Scope: new (parent: unknown) => { handlers: RegisteredHandler[] };
     };
-    const vimMock = (await import('@replit/codemirror-vim')) as unknown as {
+    const vimMockTyped = vimPackageMock as unknown as {
       Vim: { handleKey: ReturnType<typeof vi.fn> };
     };
 
+    let registeredScope: { handlers: RegisteredHandler[] } | null = null;
     const pushScope = vi.fn((scope: { handlers: RegisteredHandler[] }) => {
       // pushScope receives the Scope; surface it so we can introspect handlers.
       registeredScope = scope;
     });
-    let registeredScope: { handlers: RegisteredHandler[] } | null = null;
 
     const mockApp = {
       scope: { __sentinelScope: 'app' },
@@ -310,36 +338,41 @@ describe('createVimScopeExtension — behavioral (Phase 18 Plan 01 / D-32)', () 
 
     createVimScopeExtension(mockApp as never, () => childCm);
 
-    const cmView = await import('@codemirror/view');
-    const captured = (cmView as unknown as { __captured: { factory: ((v: unknown) => unknown) | null } }).__captured;
-    captured.factory!(mockView);
+    const captured = (cmViewMock as unknown as { __captured: { factory: ((v: unknown) => unknown) | null } }).__captured;
+    if (captured.factory === null) throw new Error('unreachable');
+    captured.factory(mockView);
 
     // Trigger focus to register the scope.
     contentDOM.dispatchEvent(new Event('focus'));
     expect(registeredScope).not.toBeNull();
-    expect(obsidianMock.Scope).toBeDefined();
+    expect(obsidianMockTyped.Scope).toBeDefined();
+    if (registeredScope === null) throw new Error('unreachable');
 
     // Find the handler for 'j'.
-    const jEntry = registeredScope!.handlers.find((h) => h.key === 'j');
+    const jEntry = (registeredScope as { handlers: RegisteredHandler[] }).handlers.find(
+      (h: RegisteredHandler) => h.key === 'j',
+    );
     expect(jEntry).toBeDefined();
+    if (jEntry === undefined) throw new Error('unreachable');
 
     // Invoke the handler — it MUST return false (stops Obsidian dispatch).
     const fakeEvent = { key: 'j' } as KeyboardEvent;
-    const result = jEntry!.handler(fakeEvent);
+    const result = jEntry.handler(fakeEvent);
     expect(result).toBe(false);
 
     // It MUST route the key into the child vim's handleKey.
-    expect(vimMock.Vim.handleKey).toHaveBeenCalled();
-    const call = vimMock.Vim.handleKey.mock.calls[0];
+    expect(vimMockTyped.Vim.handleKey).toHaveBeenCalled();
+    const call = vimMockTyped.Vim.handleKey.mock.calls[0];
     expect(call).toBeDefined();
+    if (call === undefined) throw new Error('unreachable — guarded by toBeDefined above');
     expect(call[0]).toBe(childCm);
     expect(call[1]).toBe('j');
   });
 
   it('Vim.defineEx is called for the set/se ex-alias on first mount (idempotency-safe)', async () => {
     // UAT Test 17 / VIM-01 secondary finding: `:set nu` / `:set nonu` aliases.
-    const { createVimScopeExtension } = loadModule();
-    const vimMock = (await import('@replit/codemirror-vim')) as unknown as {
+    const { createVimScopeExtension } = await loadModule();
+    const vimMockTyped = vimPackageMock as unknown as {
       Vim: { defineEx: ReturnType<typeof vi.fn> };
     };
 
@@ -352,9 +385,9 @@ describe('createVimScopeExtension — behavioral (Phase 18 Plan 01 / D-32)', () 
     const mockView = { contentDOM, cm: { __mockCm: true } };
 
     createVimScopeExtension(mockApp as never, () => mockView.cm);
-    const cmView = await import('@codemirror/view');
-    const captured = (cmView as unknown as { __captured: { factory: ((v: unknown) => unknown) | null } }).__captured;
-    captured.factory!(mockView);
+    const captured = (cmViewMock as unknown as { __captured: { factory: ((v: unknown) => unknown) | null } }).__captured;
+    if (captured.factory === null) throw new Error('unreachable');
+    captured.factory(mockView);
 
     // Trigger focus so any focus-time registration fires.
     contentDOM.dispatchEvent(new Event('focus'));
@@ -362,8 +395,8 @@ describe('createVimScopeExtension — behavioral (Phase 18 Plan 01 / D-32)', () 
     // Vim.defineEx must have been called with 'set' as the canonical name and
     // 'se' as the prefix (the @replit/codemirror-vim signature is
     // defineEx(name, prefix, func)).
-    expect(vimMock.Vim.defineEx).toHaveBeenCalled();
-    const calls = vimMock.Vim.defineEx.mock.calls;
+    expect(vimMockTyped.Vim.defineEx).toHaveBeenCalled();
+    const calls = vimMockTyped.Vim.defineEx.mock.calls;
     const setCall = calls.find(
       (c: unknown[]) => c[0] === 'set' && c[1] === 'se' && typeof c[2] === 'function',
     );

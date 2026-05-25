@@ -49,6 +49,10 @@ import { languageCompartment, buildLanguageExtensions } from './childEditorLangu
 import { createScrollIntoViewExtension } from './childEditorSync';
 import { createThemedHighlight } from './childEditorTheme';
 import { obsidianSemanticClasses } from './childEditorSemanticClasses';
+// Phase 18 Plan 01 (D-32) — Vim Scope intercept module. See
+// src/main/childEditorVimScope.ts for the full design. Wired below in the
+// extensions array, gated on `app && vimEnabled`.
+import { createVimScopeExtension } from './childEditorVimScope';
 
 // Phase 16 / debug session `cmd-slash-not-reaching-child`:
 // Obsidian registers Mod-/ as `editor:toggle-comments` via its Scope-based
@@ -313,6 +317,18 @@ export function createChildEditor(
       //     `app` is optional only to keep test fixtures simple — runtime
       //     callers MUST pass plugin.app or COMMENT-01 will silently regress.
       ...(app ? [createCmdSlashScopeExtension(app)] : []),
+      // 2a.1. Vim navigation/edit Scope intercept — Phase 18 Plan 01 / D-32.
+      //       Mirrors createCmdSlashScopeExtension shape: pushes a Scope on
+      //       child focus that registers vim navigation/edit keys
+      //       (h/j/k/l/d/y/p/o/i/a/x/w/b/e/u/Ctrl-r/Esc), each routing the
+      //       keystroke to the child's vim instance via Vim.handleKey. Closes
+      //       UAT Test 17 / VIM-01 (backlog 999.2) — without this, vim keys
+      //       leak to the parent because Obsidian's app-level vim handler
+      //       wins over CM6's local keymap. Gated on `app && vimEnabled` so
+      //       plain (non-vim) child editors NEVER push a vim Scope.
+      ...(app && vimEnabled
+        ? [createVimScopeExtension(app, (view) => (view as unknown as { cm: unknown }).cm)]
+        : []),
       // 2b. closeBracketsKeymap — top level, BEFORE main keymap (Pitfall D —
       //    Backspace handler wins over defaultKeymap). Language-agnostic so
       //    it lives outside the Compartment.
