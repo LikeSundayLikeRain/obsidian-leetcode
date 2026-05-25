@@ -54,6 +54,7 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
 - [x] **Phase 15: Focus, Undo & Cursor** (3/3 plans) — Focus model (child/parent/Obsidian), cursor transitions, undo stack isolation, Tab/keyboard routing, scroll integration (completed 2026-05-22)
 - [x] **Phase 16: Language Packs & Switching** — All 8 LC languages with full LanguageSupport, Compartment-based language switching via chevron, indent/bracket/comment/highlight all active (completed 2026-05-22)
 - [ ] **Phase 17: Polish & Edge Cases** — Paste/clipboard, IME/CJK, Find/Replace, event propagation, plugin review prep, bundle size validation
+- [ ] **Phase 18: Vim, Recovery & Polish** — Promote 999.2/999.3/999.4 from backlog: vim focus routing fix, vault.on('modify') auto-recovery for non-CM6 edits, plugin-owned relative line numbers setting
 
 ## Phase Details
 
@@ -235,6 +236,7 @@ Plans:
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
 | 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
 | 17. Polish & Edge Cases                     | v1.2      | 5/13 | In Progress|            |
+| 18. Vim, Recovery & Polish                  | v1.2      | 0/3  | Planned     |            |
 
 ## Backlog
 
@@ -313,3 +315,34 @@ Plans:
 - Self-contained: no detection of third-party plugins, no shared config.
 
 **Severity:** stretch / quality-of-life. Vim users especially benefit (relative numbers + `j` / `k` / `dd` motions).
+
+### Phase 18: Vim, Recovery & Polish
+
+**Goal:** Promote backlog items 999.2, 999.3, and 999.4 from v1.3 deferral into the v1.2 ship gate. Three independent fixes that close UAT-surfaced gaps from Tests 17, 23, and 24.
+
+**Depends on:** Phase 17
+
+**Requirements addressed:**
+- VIM-INTERACTION-01 (new) — vim navigation keys (j/k/dd/o/i/a/etc.) execute in the focused child editor, not the parent
+- REPAIR-02-RESILIENT (new) — fence auto-recovery fires regardless of how the closer was deleted (CM6 transaction, vim, external editor)
+- LINENUM-RELATIVE-01 (new) — child editor's gutter optionally renders relative line numbers via a plugin-owned setting, independent of any third-party plugin
+
+**Success Criteria:**
+1. With Obsidian's global vim mode ON, pressing j/k/dd/o/i/a/Esc inside the child editor executes in the child editor's vim — never leaks to the parent. DOM-probed `document.activeElement` and the keystroke recipient are consistent. `:set nu` / `:set nonu` aliases work alongside `:set number`.
+2. Deleting the fence closer line via vim's `dd` (or any non-CM6 path that mutates the parent file) triggers `repairFenceStructure` within ~100 ms via a `vault.on('modify', file)` listener — no reload required.
+3. After app reload on a previously-broken-fence note where parent doc + lc-language frontmatter agree on Java, the child editor renders Java content (not stale Python from a prior chevron switch). Stale state in `data.json` or in-memory child registry is invalidated when frontmatter and tracked slug disagree.
+4. New plugin setting "Show relative line numbers in code editor" (default OFF) gates a `lineNumbers({ formatNumber: ... })` extension on the child. Read-once-at-mount semantic (matches D-18 / Plan 17-12). Toggling it requires note remount or Cmd-E flip — no live reactivity.
+5. All Phase 17 invariants preserved: section lock, sync annotations, child-sync userEvent, ECHO_PRONE_USER_EVENTS set, focus-retention behavior on Run/Submit buttons, customTabCommand priority chain.
+
+**Plans:** 3 plans
+
+Plans:
+
+**Wave 1** (parallel — file-disjoint)
+
+- [ ] 18-01-PLAN.md — Vim focus routing (Scope-based intercept of vim navigation keys); files: `src/main/childEditorFactory.ts`, new `src/main/childEditorVimScope.ts`, new `tests/main/childEditorVimScope.test.ts`. From 999.2.
+- [ ] 18-02-PLAN.md — Fence recovery on non-CM6 edits + stale-child invalidation; files: `src/main/childEditorSync.ts` (vault.on('modify') wiring), `src/main.ts` or `src/main/childEditorRegistry.ts` (slug-mismatch invalidation), `tests/main/childEditorSync.repair.test.ts`. From 999.3.
+
+**Wave 2** *(blocked on Wave 1 — touches childEditorFactory.ts which 18-01 will have changed)*
+
+- [ ] 18-03-PLAN.md — Relative line numbers setting; files: `src/main/childEditorFactory.ts` (lineNumbers config), `src/settings/SettingsStore.ts` + settings tab UI, `tests/main/childEditorFactory.test.ts`. From 999.4.
