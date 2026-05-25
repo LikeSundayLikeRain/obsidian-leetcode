@@ -243,6 +243,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // Toggle UI shape mirrors autoAIReviewOnAC at lines ~310-320.
     new Setting(containerEl)
       .setName('Show relative line numbers in code editor')
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Obsidian" is a proper noun (the host application name); "Show line numbers" is the verbatim label of Obsidian's editor preference (a UI cross-reference, must match Obsidian's own capitalization). Both are correct in sentence-case English.
       .setDesc('When enabled, the code editor\'s gutter shows distance from the cursor instead of absolute line numbers. Requires Obsidian\'s "Show line numbers" enabled. Toggle takes effect after closing and reopening the note.')
       .addToggle((toggle) => toggle
         .setValue(this.plugin.settings.getShowRelativeLineNumbers())
