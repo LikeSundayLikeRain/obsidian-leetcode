@@ -302,11 +302,6 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     // default-state dropdown without diverging from any test's expectation.
     getIndentSizeOverride: () => 'auto' as const,
     setIndentSizeOverride: vi.fn(async (_v: 'auto' | 2 | 4 | 8) => undefined),
-    // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — relative line numbers
-    // toggle accessors used by SettingsTab "Code editor" section. Mock
-    // returns the D-35 default (false); setter is a no-op stub.
-    getShowRelativeLineNumbers: () => false,
-    setShowRelativeLineNumbers: vi.fn(async (_v: boolean) => undefined),
     getActiveAIProvider: () => activeProvider,
     setActiveAIProvider: vi.fn(async (p: AIProvider | null) => {
       activeProvider = p;

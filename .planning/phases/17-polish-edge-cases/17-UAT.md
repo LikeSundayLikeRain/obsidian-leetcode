@@ -10,11 +10,10 @@ summary:
   partial: 1
   deferred: 1
   skipped: 2
-  pending: 1
+  pending: 0
 notes:
   - "2026-05-24: Tests 2 (PASTE-02), 8 (SRCLIV-01), and 10 (RESET-01) flipped issue→pass. Tests 2/8 were initially reproducing because Obsidian was loading from a stale shadow plugin folder (`.obsidian/plugins/leetcode/`) instead of the active install (`.obsidian/plugins/obsidian-leetcode/`); both folders carried manifest id `leetcode` and Obsidian deduped to the older shadow. After deploying to the correct folder, a Reset edge case surfaced where line-count-unchanged full-body replace bypassed the line-count rebuild branch — fix simplified to always rebuild on docChanged or reconfigured (commit d65cb19). Test 10 confirmed Plan 17-08's language priority chain restoration. Stale shadow folder deleted."
   - "2026-05-25: Tests 17 (VIM-01) and 23 (REPAIR-02) flipped partial→pass via Plan 18-01 (Scope-based vim intercept) and Plan 18-02 (vault.on('modify') trigger + stale-child invalidation). All non-skipped/non-deferred tests now pass."
-  - "2026-05-24: Test 25 (LINENUM-RELATIVE-01) appended in pending state — Phase 18 Plan 03 closes backlog 999.4 (plugin-owned relative line numbers setting in child editor). Manual UAT pass scheduled for 18-04."
 
 ## Current Test
 
@@ -203,14 +202,9 @@ expected: Open Obsidian Settings → Editor → enable "Show line numbers". Relo
 result: pass
 notes: "Plan 17-12 LINENUM-01 fix verified 2026-05-24. Gutter renders when Obsidian's showLineNumber is ON, hides when OFF. Read-once-at-mount semantic confirmed (toggle takes effect after Cmd-E flip or close+reopen). Stretch finding: user has a third-party relative-line-numbers plugin installed but it does NOT apply to the child editor (the third-party plugin targets parent CM6 only, not child widget). Captured as backlog 999.4 (plugin-owned relative line numbers setting for the child editor)."
 
-### 25. LINENUM-RELATIVE-01 — Relative line numbers in child editor (Phase 18 Plan 03)
-
-expected: Open Obsidian Settings → Editor → enable "Show line numbers". Open the LeetCode plugin Settings → Code editor → enable the new "Show relative line numbers in code editor" toggle. Reload the dev vault. Open a Java problem note. Click into the child editor inside the `## Code` fence. The line-number gutter on the LEFT side renders RELATIVE numbers — the cursor's line shows its absolute number (e.g., '5'); lines above and below show their absolute distance from the cursor (e.g., line 2 shows '3', line 8 shows '3'). Move the cursor with arrow keys (or vim's j/k) — the gutter numbers re-render automatically as the cursor's line changes (formatNumber callback fires on every relevant render pass — the gutter updates without any listener or interval). Toggle the plugin's setting OFF; reload; reopen the same note. Gutter renders ABSOLUTE numbers (Plan 17-12 LINENUM-01 baseline preserved). Toggle Obsidian's "Show line numbers" OFF; reload; reopen. NO gutter renders regardless of the relative setting (the existing showLineNumber gate wins; relative layers ON TOP). Read-once-at-mount semantic: toggling the plugin setting while a note is open does NOT take effect until note remount (Cmd-E flip in/out of Source/Live Preview, OR close+reopen) — matches D-18 / Plan 17-12 contract. Vim interaction: with vim mode + showLineNumber + relative ON, vim's runtime `:set nu` / `:set nonu` continue to toggle the gutter visibility (via @replit/codemirror-vim's package handler); Plan 18-01's `:set nu` alias dispatches to the same handler — they interoperate naturally because both flow through the same lineNumbers extension instance.
-result: pending
-notes: ""
-
 ## Summary
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 total: 24
 passed: 22
@@ -222,14 +216,19 @@ issues: 0
 partial: 0
 =======
 total: 25
+||||||| parent of dc886a1 (Revert "chore: merge 18-03 relative line numbers (worktree-agent-a2e637fcc2d20bfc9)")
+total: 25
+=======
+total: 24
+>>>>>>> dc886a1 (Revert "chore: merge 18-03 relative line numbers (worktree-agent-a2e637fcc2d20bfc9)")
 passed: 21
 issues: 0
 partial: 0
 >>>>>>> 08e101e (docs(18-03): append Test 25 LINENUM-RELATIVE-01 to 17-UAT.md (cross-phase continuity))
 deferred: 1
 skipped: 2
-pending: 1
 blocked: 0
+<<<<<<< HEAD
 <<<<<<< HEAD
 notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Remaining partial: Test 23 / REPAIR-02 (closure planned in Plan 18-02). Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
 ||||||| parent of 08e101e (docs(18-03): append Test 25 LINENUM-RELATIVE-01 to 17-UAT.md (cross-phase continuity))
@@ -237,3 +236,8 @@ notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Sc
 =======
 notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Plan 18-03 (2026-05-24) appended Test 25 / LINENUM-RELATIVE-01 in pending state — closes backlog 999.4 via plugin-owned setting; manual UAT pass scheduled for 18-04. Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
 >>>>>>> 08e101e (docs(18-03): append Test 25 LINENUM-RELATIVE-01 to 17-UAT.md (cross-phase continuity))
+||||||| parent of dc886a1 (Revert "chore: merge 18-03 relative line numbers (worktree-agent-a2e637fcc2d20bfc9)")
+notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Plan 18-03 (2026-05-24) appended Test 25 / LINENUM-RELATIVE-01 in pending state — closes backlog 999.4 via plugin-owned setting; manual UAT pass scheduled for 18-04. Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
+=======
+notes: "Plan 18-01 (2026-05-25) flipped Test 17 / VIM-01 partial → pass via Scope-based intercept (CONTEXT D-32). Plan 18-02 flipped Test 23 / REPAIR-02 partial → pass via vault.on('modify') trigger + stale-child invalidation (CONTEXT D-33/D-34). Deferred: Test 22 / LIFE-01 deliverable doc (Plan 18-04 ship-readiness pass)."
+>>>>>>> dc886a1 (Revert "chore: merge 18-03 relative line numbers (worktree-agent-a2e637fcc2d20bfc9)")

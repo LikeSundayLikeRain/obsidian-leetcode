@@ -182,14 +182,6 @@ function makeFakePluginForSettingsTab(settings: KnowledgeGraphCapableStore) {
     setAutoAIKnowledgeGraph: vi.fn(async (_v: boolean) => undefined),
     getFeatureFlags: () => ({ lookAheadEdges: false }),
     setFeatureFlag: vi.fn(async (_k: string, _v: boolean) => undefined),
-    // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — SettingsTab now renders
-    // a "Show relative line numbers in code editor" toggle under the existing
-    // Code editor section. Mock returns false (D-35 default) and provides the
-    // setter so addToggle.onChange can be invoked safely if the test exercises
-    // the toggle path. Bound to `getShowRelativeLineNumbers` /
-    // `setShowRelativeLineNumbers` accessors on SettingsStore.
-    getShowRelativeLineNumbers: () => false,
-    setShowRelativeLineNumbers: vi.fn(async (_v: boolean) => undefined),
   } as unknown as KnowledgeGraphCapableStore & { getUsername(): string | null };
   return {
     auth: {
