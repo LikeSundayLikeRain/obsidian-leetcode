@@ -67,6 +67,17 @@ export interface PluginData {
    *  missing field, typo, etc.) — mirrors the `previewClickBehavior`
    *  posture (Phase 06 PREVIEW-02). */
   indentSizeOverride: 'auto' | 2 | 4 | 8;
+  /** Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — plugin-owned setting for
+   *  relative line numbers in the child code editor. When true (AND Obsidian's
+   *  global `showLineNumber` is also enabled), the child editor's gutter
+   *  renders relative-distance numbers (vim relativenumber convention): the
+   *  cursor's line shows its absolute number; other lines show their absolute
+   *  distance from the cursor. Default false (D-35 — opt-in).
+   *
+   *  Read-once-at-mount semantic per D-18 / Plan 17-12 — toggling at runtime
+   *  requires note remount (Cmd-E flip OR close+reopen). NOT a wrapper around
+   *  any third-party plugin's setting; the plugin owns this independently. */
+  showRelativeLineNumbers: boolean;
   problemIndex: ProblemIndex | null;
   /** Compound filter rules from the filter modal. Null = no filter active.
    *  Persisted so filter survives plugin reload / Obsidian restart. */
@@ -244,6 +255,10 @@ const DEFAULT_DATA: PluginData = {
   // always uses '\t' regardless of override (gofmt non-negotiable);
   // exception is enforced by the consumer (childEditorLanguage.ts).
   indentSizeOverride: 'auto',
+  // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — opt-in plugin-owned
+  // relative line numbers. Default false; users explicitly enable in
+  // Settings → Code editor → Show relative line numbers in code editor.
+  showRelativeLineNumbers: false,
   problemIndex: null,
   filter: null,
   problemDetails: {},
@@ -652,6 +667,14 @@ export class SettingsStore {
                            raw.indentSizeOverride === 8)
         ? raw.indentSizeOverride
         : 'auto',
+      // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — strict-boolean
+      // shape-guard mirroring autoBacklinksEnabled / autoAIReviewOnAC. Any
+      // non-boolean raw value (missing field, string 'true', null, object,
+      // truthy-but-non-true) collapses to the default `false` so a corrupt
+      // data.json never silently flips users into relative-line-numbers mode.
+      showRelativeLineNumbers: typeof raw.showRelativeLineNumbers === 'boolean'
+        ? raw.showRelativeLineNumbers
+        : DEFAULT_DATA.showRelativeLineNumbers,
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
       filter: isValidCompoundFilter(raw.filter)
         ? sanitizeCompoundFilter(raw.filter)
@@ -799,6 +822,24 @@ export class SettingsStore {
    *  Settings tab "Code editor → Indent size" dropdown. */
   async setIndentSizeOverride(v: 'auto' | 2 | 4 | 8): Promise<void> {
     this.data.indentSizeOverride = v;
+    await this.persist();
+  }
+
+  /** Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — read the plugin-owned
+   *  relative-line-numbers flag. When true (AND Obsidian's `showLineNumber`
+   *  is also enabled), the child editor's gutter renders relative-distance
+   *  numbers (vim relativenumber convention). Default false. Read once at
+   *  child mount per Plan 17-12 read-once-at-mount semantic — toggling
+   *  requires note remount (Cmd-E flip OR close+reopen). */
+  getShowRelativeLineNumbers(): boolean {
+    return this.data.showRelativeLineNumbers;
+  }
+
+  /** Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — persist the relative-
+   *  line-numbers flag. UI bound to Settings → Code editor → 'Show relative
+   *  line numbers in code editor' toggle. */
+  async setShowRelativeLineNumbers(v: boolean): Promise<void> {
+    this.data.showRelativeLineNumbers = v;
     await this.persist();
   }
 

@@ -129,6 +129,11 @@ function createMockPlugin(opts: {
   const plugin = Object.assign(basePlugin, {
     settings: {
       getIndentSizeOverride: vi.fn(() => opts.indentOverride ?? 'auto'),
+      // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — relative line
+      // numbers gate accessor; mock returns false (D-35 default) so the
+      // factory invocation in buildNestedDecorations passes
+      // showRelative=false through to createChildEditor.
+      getShowRelativeLineNumbers: vi.fn(() => false),
     },
   });
   return { plugin, metadataCache };
@@ -346,13 +351,17 @@ describe('NestedEditorWidget', () => {
     const widget = new NestedEditorWidget('path/a.md', registry as never, 'some code', 'java', 4);
     widget.toDOM({} as never);
 
-    // Phase 16: factory takes (content, parent, initialSlug, indentOverride, app?)
+    // Phase 16: factory takes (content, parent, initialSlug, indentOverride, app?, syncExtensions?, showRelative?)
     // — `app` is optional; widget was constructed without it here, so 5th arg is undefined.
+    // Phase 18 Plan 03 (D-35): factory accepts a 7th `showRelative?: boolean` arg threaded
+    // through the widget; widget constructed without it, so 6th + 7th args are undefined.
     expect(createChildEditor).toHaveBeenCalledWith(
       'some code',
       expect.any(HTMLElement),
       'java',
       4,
+      undefined,
+      undefined,
       undefined,
     );
     expect(registry.set).toHaveBeenCalledWith('path/a.md', mockChildView);
@@ -415,6 +424,8 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       'java',
       'auto',
       expect.anything(),
+      undefined,
+      false,
     );
   });
 
@@ -447,6 +458,8 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       'python3',
       8,
       expect.anything(),
+      undefined,
+      false,
     );
   });
 
@@ -456,7 +469,12 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
     metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', { 'lc-slug': 'two-sum' });
     const basePlugin = createFakePlugin({ metadataCache });
     const plugin = Object.assign(basePlugin, {
-      settings: { getIndentSizeOverride: vi.fn(() => 'auto' as const) },
+      settings: {
+        getIndentSizeOverride: vi.fn(() => 'auto' as const),
+        // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — relative line
+        // numbers gate accessor; mock returns false (D-35 default).
+        getShowRelativeLineNumbers: vi.fn(() => false),
+      },
     });
     const state = makeCanonicalState();
     const registry = createMockRegistry();
@@ -485,6 +503,8 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       'python3',
       'auto',
       expect.anything(),
+      undefined,
+      false,
     );
   });
 
@@ -497,7 +517,12 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
     });
     const basePlugin = createFakePlugin({ metadataCache });
     const plugin = Object.assign(basePlugin, {
-      settings: { getIndentSizeOverride: vi.fn(() => 'auto' as const) },
+      settings: {
+        getIndentSizeOverride: vi.fn(() => 'auto' as const),
+        // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — relative line
+        // numbers gate accessor; mock returns false (D-35 default).
+        getShowRelativeLineNumbers: vi.fn(() => false),
+      },
     });
     const state = makeCanonicalState();
     const registry = createMockRegistry();
@@ -526,6 +551,8 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       'python3',
       'auto',
       expect.anything(),
+      undefined,
+      false,
     );
   });
 });
@@ -732,6 +759,11 @@ function makePhase17Plugin(opts: { lcLanguage?: string } = {}) {
     childEditorRegistry: registry,
     settings: {
       getIndentSizeOverride: vi.fn(() => 'auto' as const),
+      // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — PluginHost contract
+      // gained `getShowRelativeLineNumbers()` for the new relative-line-
+      // numbers gate. Mock returns false (D-35 default) so test fixtures
+      // exercise the Plan 17-12 baseline path verbatim.
+      getShowRelativeLineNumbers: vi.fn(() => false),
     },
   });
 }

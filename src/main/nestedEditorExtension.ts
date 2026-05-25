@@ -56,6 +56,11 @@ type PluginHost = Plugin & {
   };
   settings: {
     getIndentSizeOverride(): 'auto' | 2 | 4 | 8;
+    /** Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — plugin-owned relative
+     *  line numbers flag. Read at decoration build time and threaded through
+     *  the widget constructor + factory call so the gutter renders relative
+     *  numbers when both this AND Obsidian's `showLineNumber` are true. */
+    getShowRelativeLineNumbers(): boolean;
   };
 };
 
@@ -84,6 +89,11 @@ export class NestedEditorWidget extends WidgetType {
     readonly initialSlug: string,
     readonly indentOverride: 'auto' | 2 | 4 | 8,
     readonly app?: import('obsidian').App,
+    // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — plugin-owned relative
+    // line numbers flag. Read at decoration build time (buildNestedDecorations)
+    // and forwarded to createChildEditor at child mount. Read-once-at-mount
+    // semantic per Plan 17-12 — toggling requires note remount.
+    readonly showRelative?: boolean,
   ) {
     super();
   }
@@ -116,12 +126,19 @@ export class NestedEditorWidget extends WidgetType {
       // Phase 16: pass initialSlug + indentOverride so the factory wires the
       // correct LanguageSupport at the moment of creation (no more "always
       // Python" debt from Phase 13).
+      // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — pass the
+      // showRelative flag through as the 7th arg. createChildEditor's 6th
+      // arg is `syncExtensions`; we pass `undefined` to preserve existing
+      // behavior (sync wiring happens in wireSyncIfNeeded below, not via
+      // factory-time syncExtensions).
       childView = createChildEditor(
         this.fenceContent,
         container,
         this.initialSlug,
         this.indentOverride,
         this.app,
+        undefined,
+        this.showRelative,
       );
       this.registry.set(this.filePath, childView);
     } else {
@@ -223,6 +240,12 @@ export function buildNestedDecorations(
   const lcLang = fm?.['lc-language'];
   const initialSlug = typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
   const indentOverride = plugin.settings.getIndentSizeOverride();
+  // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — read the plugin-owned
+  // relative line numbers flag at decoration build time (read-once-at-mount
+  // per Plan 17-12). Threaded into the widget constructor + factory call so
+  // the gutter renders relative numbers when this AND Obsidian's
+  // `showLineNumber` are both true.
+  const showRelative = plugin.settings.getShowRelativeLineNumbers();
 
   // 1. Opener line-hide
   builder.add(state.doc.line(fence.openerLine).from, state.doc.line(fence.openerLine).from, hideLine);
@@ -230,7 +253,7 @@ export function buildNestedDecorations(
   // 2. Block widget anchored at opener line end (side: 1 = renders after)
   const anchor = state.doc.line(fence.openerLine).to;
   builder.add(anchor, anchor, Decoration.widget({
-    widget: new NestedEditorWidget(file.path, registry, fenceContent, initialSlug, indentOverride, plugin.app),
+    widget: new NestedEditorWidget(file.path, registry, fenceContent, initialSlug, indentOverride, plugin.app, showRelative),
     block: true,
     side: 1,
   }));

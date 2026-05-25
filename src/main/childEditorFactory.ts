@@ -203,6 +203,30 @@ function createCmdSlashScopeExtension(app: App): Extension {
 }
 
 /**
+ * Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — pure formatter for the
+ * line-number gutter when relative line numbers are enabled.
+ *
+ * Returns the absolute line number when `lineNo` matches the cursor's line
+ * (vim relativenumber convention — cursor line shows its own number),
+ * otherwise returns the absolute distance from the cursor as a string.
+ *
+ * Pure function: takes `lineNo` (1-indexed line number from CM6's
+ * lineNumbers extension) and the current `state`, reads `state.selection
+ * .main.head` and `state.doc.lineAt(...).number` to derive the cursor
+ * line, and returns a formatted string. NO side effects, NO DOM access.
+ * The lineNumbers extension's `formatNumber` callback fires on every
+ * relevant render pass, so the gutter updates automatically when the
+ * cursor moves — no listener / setInterval / requestAnimationFrame needed.
+ *
+ * Exported for unit tests (childEditorFactory.test.ts).
+ */
+export function relativeFormatter(lineNo: number, state: EditorState): string {
+  const cursorLine = state.doc.lineAt(state.selection.main.head).number;
+  if (lineNo === cursorLine) return String(cursorLine);
+  return String(Math.abs(lineNo - cursorLine));
+}
+
+/**
  * Create a child EditorView with language-aware syntax highlighting and
  * standard editing extensions. The EditorView is mounted into the provided
  * parent HTMLElement.
@@ -228,6 +252,13 @@ function createCmdSlashScopeExtension(app: App): Extension {
  *   see debug session `cmd-slash-not-reaching-child.md`).
  * @param syncExtensions - Optional array of sync-related extensions
  *   (e.g., updateListener for child→parent sync)
+ * @param showRelative - Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) —
+ *   plugin-owned relative-line-numbers flag. Read-once-at-mount per Plan 17-12;
+ *   toggling requires note remount (Cmd-E flip OR close+reopen). When true
+ *   AND Obsidian's `showLineNumber` is also enabled, the gutter renders via
+ *   `lineNumbers({ formatNumber: relativeFormatter })`; otherwise the existing
+ *   Plan 17-12 baseline `lineNumbers()` is preserved verbatim. Defaults to
+ *   `false` when omitted (legacy callsite shape preserved).
  * @returns The created EditorView instance
  */
 export function createChildEditor(
@@ -237,6 +268,7 @@ export function createChildEditor(
   indentOverride: 'auto' | 2 | 4 | 8,
   app?: App,
   syncExtensions?: Extension[],
+  showRelative?: boolean,
 ): EditorView {
   // Phase 17 Plan 06 (D-18) — Vim mode conditional. Read Obsidian's global
   // `vimMode` setting ONCE at child mount; if true, prepend the vim() extension
@@ -281,6 +313,26 @@ export function createChildEditor(
       'showLineNumber',
     ) === true;
 
+  // Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — plugin-owned relative
+  // line numbers gate. LAYERS ON TOP of the Plan 17-12 lineNumbersEnabled
+  // gate above: when both are true, the lineNumbers extension is invoked
+  // with `formatNumber: relativeFormatter` so the gutter renders relative
+  // distance from the cursor; when only lineNumbersEnabled is true, the
+  // bare `lineNumbers()` baseline (Plan 17-12 LINENUM-01) is preserved
+  // verbatim. The existing showLineNumber gate wins when it's false — no
+  // gutter renders regardless of this flag.
+  //
+  // Plugin-owned per D-35 — NOT a wrapper around any third-party plugin's
+  // setting. Default false; surfaced via Settings → Code editor → "Show
+  // relative line numbers in code editor" toggle (SettingsTab.ts).
+  //
+  // Read-once-at-mount semantic (CONTEXT D-18 / Plan 17-12) — the bool
+  // arrived as a parameter, so this const is just a coerce-to-boolean. NO
+  // listener, NO metadataCache subscription, NO live reactivity. Toggling
+  // the setting at runtime requires note remount (Cmd-E flip OR close+
+  // reopen). Mirrors the locked design from Plan 17-12 LINENUM-01.
+  const relativeLineNumbersEnabled = !!showRelative;
+
   const state = EditorState.create({
     doc: content,
     extensions: [
@@ -310,7 +362,22 @@ export function createChildEditor(
       //     the EditorView.theme block) already covers gutter styling
       //     (transparent background, no right border), so no styling change
       //     is needed when the gutter appears.
-      ...(lineNumbersEnabled ? [lineNumbers()] : []),
+      //
+      //     Phase 18 Plan 03 (LINENUM-RELATIVE-01 / D-35) — relative line
+      //     numbers layer ON TOP of the showLineNumber gate. When both
+      //     `lineNumbersEnabled` AND `relativeLineNumbersEnabled` are true,
+      //     `lineNumbers({ formatNumber: relativeFormatter })` replaces the
+      //     bare `lineNumbers()` call so the gutter renders relative-distance
+      //     numbers (vim relativenumber convention). When only
+      //     `lineNumbersEnabled` is true, the Plan 17-12 baseline shape is
+      //     preserved verbatim.
+      ...(lineNumbersEnabled
+        ? [
+            relativeLineNumbersEnabled
+              ? lineNumbers({ formatNumber: relativeFormatter })
+              : lineNumbers(),
+          ]
+        : []),
       // 2a. Mod-/ Obsidian Scope intercept — see debug session
       //     `cmd-slash-not-reaching-child.md`. Pushes a Scope on focus to
       //     override `editor:toggle-comments` for this child editor only.
