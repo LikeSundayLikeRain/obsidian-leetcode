@@ -6,8 +6,8 @@ started: 2026-05-23T10:14:00Z
 updated: 2026-05-24T20:00:00Z
 summary:
   total: 24
-  pass: 18
-  issue: 2
+  pass: 19
+  issue: 1
   deferred: 1
   skipped: 2
   pending: 2
@@ -97,12 +97,8 @@ notes: "Re-tested 2026-05-24 after Plan 17-09 swapped Gate 3 dedupe to read from
 ### 13. THEME-01 — Themed HighlightStyle dark theme legibility (D-15)
 
 expected: Open a Java problem note in dark theme (Obsidian default dark or any community dark theme). Verify keywords (`class`, `public`, `return`), strings (`"hello"`), comments (`// note`), function names (`solve(...)`), type names (`String`, `Integer`), property names, operators (`==`, `+`), and numeric literals all render with Obsidian's dark-theme code colors. The colors are visually distinct from each other (no white-on-white, no fully-invisible tokens, no two adjacent tag classes rendering identically). Comments are italicized. Repeat with a Python note (`def`, `self`, `None`, `if __name__ == '__main__':`) and a JavaScript note (`const`, `=>`, template literals); same legibility properties.
-result: issue
-reported: "Re-tested 2026-05-24 after Plan 17-10. Theme tracking IS working — child editor colors DIFFER between dark and light Obsidian themes. BUT the plugin's fallback palette at `.lc-nested-editor` scope is overriding Obsidian's native theme palette in the cascade. DevTools probe in dark mode: `body --code-keyword` = `#fa99cd` (Obsidian's pink) but `.lc-nested-editor --code-keyword` = `#ff7b72` (plugin's red fallback). Notes codeblock (rendered by Obsidian) shows pink keywords, child editor shows red keywords — they should match on a system where Obsidian's --code-* are defined."
-severity: minor
-hypothesis: "Plan 17-10 used `:where(.theme-light/.theme-dark) .lc-nested-editor { --code-keyword: ...; }` to lower selector specificity for theme-class part. But `:where(.theme-dark) .lc-nested-editor` still has 0,1,0 specificity from `.lc-nested-editor`, while Obsidian's native `--code-keyword` is at body / :root level (0,0,0 or 0,0,1). The class scope wins, so Obsidian's native palette never reaches the child. Fix: move fallbacks to the consumer site as `var(--code-keyword, #ff7b72)` in the HighlightStyle (or in styles.css color values), and remove the `.lc-nested-editor`-scoped variable redefinitions so Obsidian's body-level vars cascade in. Cosmetic-only — the child IS legible and theme-tracks."
-artifacts: ["styles.css :where(.theme-light) .lc-nested-editor and :where(.theme-dark) .lc-nested-editor blocks", "src/main/childEditorTheme.ts createThemedHighlight()"]
-missing: []
+result: pass
+notes: "Re-tested 2026-05-24 after three rounds of refinement. Round 1 (cascade fix) moved --code-* fallbacks from .lc-nested-editor scope to the var() consumer site so Obsidian's native palette wins via cascade. Round 2 (typeName tag mapping) bound t.typeName to --code-type instead of --code-keyword. Round 3 (semantic class layer) — added a Decoration.mark ViewPlugin (src/main/childEditorSemanticClasses.ts) that emits Obsidian-compatible CM5-style class names (cm-keyword, cm-type, cm-variable, cm-def, cm-string, cm-comment, cm-number, cm-atom, cm-operator) on syntax tokens, plus added HyperMD-codeblock to the child container className. Removed the plugin's HighlightStyle from the extension array so theme CSS rules scoped to .HyperMD-codeblock cascade to the child's spans without losing to inline-style specificity. Bracket-match theme (D-16) preserved separately. Result: child editor now matches the user's One Dark theme palette closely (class/Solution/public/boolean/canMeasureWater/x,y,target — all picked up from theme CSS). Per-token parity is not pixel-exact across all themes (CM6 Lezer parser tags don't have 1:1 correspondence with Obsidian's CM5 token classes for every language), but the visual gap is acceptable. Theme tracking works (different colors in different themes; community-theme HyperMD overrides reach the child). Follow-up if exact parity ever needed: read the user's theme CSS at runtime."
 
 ### 14. THEME-02 — Themed HighlightStyle light theme legibility (D-15)
 
