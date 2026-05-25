@@ -54,7 +54,7 @@ Full milestone detail: [.planning/milestones/v1.1-ROADMAP.md](milestones/v1.1-RO
 - [x] **Phase 15: Focus, Undo & Cursor** (3/3 plans) — Focus model (child/parent/Obsidian), cursor transitions, undo stack isolation, Tab/keyboard routing, scroll integration (completed 2026-05-22)
 - [x] **Phase 16: Language Packs & Switching** — All 8 LC languages with full LanguageSupport, Compartment-based language switching via chevron, indent/bracket/comment/highlight all active (completed 2026-05-22)
 - [ ] **Phase 17: Polish & Edge Cases** — Paste/clipboard, IME/CJK, Find/Replace, event propagation, plugin review prep, bundle size validation
-- [ ] **Phase 18: Vim, Recovery & Polish** — Promote 999.2/999.3/999.4 from backlog: vim focus routing fix, vault.on('modify') auto-recovery for non-CM6 edits, plugin-owned relative line numbers setting
+- [ ] **Phase 18: Vim, Recovery & Polish + Ship Close** — Promote 999.2/999.3/999.4 from backlog (vim focus routing, vault.on('modify') auto-recovery, plugin-owned relative line numbers) PLUS the deferred ship-readiness work from 17-06 (heap-snapshot UAT, bundle audit doc, manual UAT close-out — re-run on the final v1.2 build that includes Phase 18 fixes)
 
 ## Phase Details
 
@@ -236,7 +236,7 @@ Plans:
 | 15. Focus, Undo & Cursor                    | v1.2      | 3/3            | Complete    | 2026-05-22 |
 | 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
 | 17. Polish & Edge Cases                     | v1.2      | 5/13 | In Progress|            |
-| 18. Vim, Recovery & Polish                  | v1.2      | 0/3  | Planned     |            |
+| 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 0/4  | Planned     |            |
 
 ## Backlog
 
@@ -334,7 +334,7 @@ Plans:
 4. New plugin setting "Show relative line numbers in code editor" (default OFF) gates a `lineNumbers({ formatNumber: ... })` extension on the child. Read-once-at-mount semantic (matches D-18 / Plan 17-12). Toggling it requires note remount or Cmd-E flip — no live reactivity.
 5. All Phase 17 invariants preserved: section lock, sync annotations, child-sync userEvent, ECHO_PRONE_USER_EVENTS set, focus-retention behavior on Run/Submit buttons, customTabCommand priority chain.
 
-**Plans:** 3 plans
+**Plans:** 4 plans
 
 Plans:
 
@@ -346,3 +346,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 — touches childEditorFactory.ts which 18-01 will have changed)*
 
 - [ ] 18-03-PLAN.md — Relative line numbers setting; files: `src/main/childEditorFactory.ts` (lineNumbers config), `src/settings/SettingsStore.ts` + settings tab UI, `tests/main/childEditorFactory.test.ts`. From 999.4.
+
+**Wave 3** *(blocked on Waves 1+2 — manual ship-readiness pass over the final v1.2 build)*
+
+- [ ] 18-04-PLAN.md — v1.2 Ship-Readiness Close. Re-run 17-UAT.md regression spot-checks against the final v1.2 build, capture `17-BUNDLE-AUDIT.md` (final main.js raw + gzipped + esbuild metafile contributor breakdown vs 1.8 MB ceiling), and capture `17-LIFE-SNAPSHOT.md` (heap-snapshot UAT per CONTEXT D-23 arm b — multiple open/close cycles, DevTools snapshot summary, leak verdict). Deferred from 17-06 because all three docs need to reflect the final shipped bundle including Phase 18 fixes. Files: `.planning/phases/17-polish-edge-cases/17-UAT.md`, `.planning/phases/17-polish-edge-cases/17-BUNDLE-AUDIT.md`, `.planning/phases/17-polish-edge-cases/17-LIFE-SNAPSHOT.md`. Manual / human-driven; no source changes.
