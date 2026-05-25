@@ -39,19 +39,28 @@ import { type Extension } from '@codemirror/state';
  * Exported as a named const (not just embedded in `createThemedHighlight`)
  * so unit tests can introspect the binding contract.
  */
+// Phase 17 Plan 10 round-2 (17-UAT.md Test 13 cascade follow-up): inline
+// fallbacks via the var() second argument so Obsidian's native --code-*
+// (defined at body / :root level) wins via natural cascade. Previous
+// iteration redefined --code-* under .lc-nested-editor scope, which had
+// higher specificity than Obsidian's body-level definitions and shadowed
+// the user's theme. Now Obsidian wins; the fallback hex codes only fire
+// when --code-* is genuinely undefined in the cascade. The :where()
+// fallback layers under .theme-light/.theme-dark in styles.css are
+// removed in lockstep.
 export const themedHighlightStyle = HighlightStyle.define([
-  { tag: t.keyword, color: 'var(--code-keyword)' },
+  { tag: t.keyword, color: 'var(--code-keyword, #ff7b72)' },
   {
     tag: [t.string, t.special(t.string), t.regexp, t.escape],
-    color: 'var(--code-string)',
+    color: 'var(--code-string, #a5d6ff)',
   },
-  { tag: t.comment, color: 'var(--code-comment)', fontStyle: 'italic' },
-  { tag: t.function(t.variableName), color: 'var(--code-function)' },
-  { tag: [t.tagName, t.angleBracket], color: 'var(--code-tag)' },
-  { tag: [t.propertyName, t.className], color: 'var(--code-property)' },
-  { tag: t.operator, color: 'var(--code-operator)' },
-  { tag: [t.number, t.bool, t.null], color: 'var(--code-value)' },
-  { tag: t.typeName, color: 'var(--code-keyword)' },
+  { tag: t.comment, color: 'var(--code-comment, #8b949e)', fontStyle: 'italic' },
+  { tag: t.function(t.variableName), color: 'var(--code-function, #d2a8ff)' },
+  { tag: [t.tagName, t.angleBracket], color: 'var(--code-tag, #7ee787)' },
+  { tag: [t.propertyName, t.className], color: 'var(--code-property, #79c0ff)' },
+  { tag: t.operator, color: 'var(--code-operator, #ff7b72)' },
+  { tag: [t.number, t.bool, t.null], color: 'var(--code-value, #79c0ff)' },
+  { tag: t.typeName, color: 'var(--code-keyword, #ff7b72)' },
   { tag: t.invalid, color: 'var(--text-error)' },
 ]);
 

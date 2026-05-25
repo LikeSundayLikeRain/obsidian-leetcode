@@ -6,8 +6,8 @@ started: 2026-05-23T10:14:00Z
 updated: 2026-05-24T20:00:00Z
 summary:
   total: 24
-  pass: 17
-  issue: 3
+  pass: 18
+  issue: 2
   deferred: 1
   skipped: 2
   pending: 2
@@ -91,22 +91,18 @@ notes: "All three Tab behaviors confirmed: line-start indents whole line, mid-li
 ### 12. Phase 17 Wave 2 regression sanity — fm reactivity (D-13/D-14)
 
 expected: Open a Java problem note in pane A. Without switching focus to pane A, open the note's properties panel (or use Source mode + frontmatter edit) and CHANGE the `lc-language` frontmatter value from `java` to `python`. Switch focus back to pane A. Within ~1 second of the focus return, the child editor's syntax highlighter has flipped from Java to Python (you can verify by typing `def foo():` and observing Python coloring), the child's indent unit reflects Python (4 spaces — same for Java but verify the per-language map is consulted), the child's Cmd-/ uses `# ` (Python prefix) NOT `// ` (Java prefix). The fence opener TAG in the parent doc still says ` ```java ` — the listener does NOT rewrite the fence opener (D-14: passive-listener; frontmatter is SoT for the child only; users who want the fence opener flipped use the chevron). The note does NOT need to be closed and reopened. Repeat with `python → cpp` and observe C++ syntax + 4-space indent + `// ` comment prefix in the child. Validates Plan 17-04 listener.
-result: issue
-reported: "Asymmetric reactivity. Direction Java → Python3: chevron updates AND child editor syntax coloring changes (works correctly). Reverse direction Python3 → Java: chevron updates BUT child editor's syntax coloring remains stuck on Python3 (Compartment.reconfigure does not fire / does not take effect). Fence opener tag stays unchanged in both directions (D-14 honored)."
-severity: major
-hypothesis: "The fm-reactivity handler in src/main.ts (handleFmChangeForLanguageReactivity / readActiveFenceSlug) appears to compare against a stale reference. Possible causes: (a) the 'currently applied language' tracking in childEditorRegistry / child state isn't updated after the first reconfigure, so the slug-equality gate evaluates `currentSlug === fmSlug` as true on the second swap → no dispatch fires; (b) slug normalization is asymmetric (e.g., `java` vs `python3` — the trailing version digit on python normalizes one way but not back); (c) the readActiveFenceSlug helper reads from the parent's fence opener tag instead of the child's currently-applied compartment value, and since the fence opener tag never changed (D-14), it always reports 'java' — which means going to python3 detects mismatch but going BACK to java reads `java === java` → no-op."
-artifacts: ["src/main.ts (handleFmChangeForLanguageReactivity, readActiveFenceSlug, registerEvent block in onload)", "src/main/childEditorLanguage.ts (Compartment.reconfigure target)", "tests/main/fmReactivity.test.ts (Test 6 effect-only dispatch coverage)"]
-missing: ["Test for round-trip language swaps (Java→Python3→Java) — current 6-test suite likely only covers the forward direction"]
+result: pass
+notes: "Re-tested 2026-05-24 after Plan 17-09 swapped Gate 3 dedupe to read from a per-child WeakMap<EditorView, string> tracker instead of from readActiveFenceSlug (which reads the parent fence opener tag — D-14 keeps that stale by design). Round-trip Java → Python3 → Java now dispatches symmetrically: chevron AND child syntax coloring both update on each swap. Same-slug fm changes still no-op (Pitfall 3 dedupe preserved)."
 
 ### 13. THEME-01 — Themed HighlightStyle dark theme legibility (D-15)
 
 expected: Open a Java problem note in dark theme (Obsidian default dark or any community dark theme). Verify keywords (`class`, `public`, `return`), strings (`"hello"`), comments (`// note`), function names (`solve(...)`), type names (`String`, `Integer`), property names, operators (`==`, `+`), and numeric literals all render with Obsidian's dark-theme code colors. The colors are visually distinct from each other (no white-on-white, no fully-invisible tokens, no two adjacent tag classes rendering identically). Comments are italicized. Repeat with a Python note (`def`, `self`, `None`, `if __name__ == '__main__':`) and a JavaScript note (`const`, `=>`, template literals); same legibility properties.
 result: issue
-reported: "Highlighting works (tokens are colored, distinguishable from each other), and dark mode is legible. BUT: identical syntax colors across two vaults running different themes (one Atom, one default) — verified on Java side. The Obsidian theme palette is NOT being picked up by the child editor's HighlightStyle."
-severity: major
-hypothesis: "The plugin's `src/main/childEditorTheme.ts` HighlightStyle correctly uses `var(--code-keyword)`, `var(--code-string)`, etc. references (verified in source). However, the child editor's DOM is mounted via `Decoration.widget({block:true})`, which inserts a fresh DOM subtree. The CSS variables `--code-keyword` etc. are scoped to specific Obsidian selectors (e.g., `.markdown-source-view .HyperMD-codeblock`) that the widget's DOM tree does NOT inherit from. As a result, `var(--code-keyword)` resolves to the inherited fallback (current-color text) — same hue across all themes. Either: (a) the plugin's `styles.css` needs to define the `--code-*` variables explicitly on the child editor's container with sensible defaults, AND respond to `.theme-dark` / `.theme-light` body classes, OR (b) the child editor's container needs to live inside Obsidian's code-block scope so the cascade reaches it."
-artifacts: ["src/main/childEditorTheme.ts (HighlightStyle.define spec)", "styles.css (currently has NO --code-* variable definitions)", "src/main/childEditorFactory.ts (widget mount — DOM container's CSS scope)"]
-missing: ["Theme-resolution test: assert child editor's computed style for a keyword token differs between dark and light themes (currently no such test in tests/main/childEditorTheme.test.ts)"]
+reported: "Re-tested 2026-05-24 after Plan 17-10. Theme tracking IS working — child editor colors DIFFER between dark and light Obsidian themes. BUT the plugin's fallback palette at `.lc-nested-editor` scope is overriding Obsidian's native theme palette in the cascade. DevTools probe in dark mode: `body --code-keyword` = `#fa99cd` (Obsidian's pink) but `.lc-nested-editor --code-keyword` = `#ff7b72` (plugin's red fallback). Notes codeblock (rendered by Obsidian) shows pink keywords, child editor shows red keywords — they should match on a system where Obsidian's --code-* are defined."
+severity: minor
+hypothesis: "Plan 17-10 used `:where(.theme-light/.theme-dark) .lc-nested-editor { --code-keyword: ...; }` to lower selector specificity for theme-class part. But `:where(.theme-dark) .lc-nested-editor` still has 0,1,0 specificity from `.lc-nested-editor`, while Obsidian's native `--code-keyword` is at body / :root level (0,0,0 or 0,0,1). The class scope wins, so Obsidian's native palette never reaches the child. Fix: move fallbacks to the consumer site as `var(--code-keyword, #ff7b72)` in the HighlightStyle (or in styles.css color values), and remove the `.lc-nested-editor`-scoped variable redefinitions so Obsidian's body-level vars cascade in. Cosmetic-only — the child IS legible and theme-tracks."
+artifacts: ["styles.css :where(.theme-light) .lc-nested-editor and :where(.theme-dark) .lc-nested-editor blocks", "src/main/childEditorTheme.ts createThemedHighlight()"]
+missing: []
 
 ### 14. THEME-02 — Themed HighlightStyle light theme legibility (D-15)
 
