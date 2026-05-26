@@ -957,7 +957,6 @@ export default class LeetCodePlugin extends Plugin {
           const slug = typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
           const { repairFenceStructure: repair } = require('./main/childEditorSync') as
             typeof import('./main/childEditorSync');
-          console.log('[lc-repair-file-open] fence damaged, repairing with slug:', slug);
           repair(cm, slug);
         }, 100);
       }),
