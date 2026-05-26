@@ -63,7 +63,10 @@ describe('file-open retrofit hook (D-06)', () => {
     await Promise.resolve();
 
     expect(retrofit).toHaveBeenCalledTimes(1);
-    expect(retrofit).toHaveBeenCalledWith(app, file, { codeSnippets: [] }, settings);
+    expect(retrofit).toHaveBeenCalledWith(app, file, { codeSnippets: [] }, expect.objectContaining({ getDefaultLanguage: expect.any(Function) }));
+    // Phase 18: no lc-language in frontmatter → falls back to settings default
+    const passedSettings = (retrofit.mock.calls[0] as unknown[])[3] as { getDefaultLanguage(): string };
+    expect(passedSettings.getDefaultLanguage()).toBe('python3');
   });
 
   it('no-op when file is null', async () => {

@@ -297,6 +297,13 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     setDefaultLanguage: vi.fn(async (_v: string) => undefined),
     getPreviewClickBehavior: () => 'preview',
     setPreviewClickBehavior: vi.fn(async (_v: 'preview' | 'open') => undefined),
+    // Phase 16 Plan 02 — indentSizeOverride field on SettingsStore. Mock
+    // returns 'auto' so SettingsTab's "Code editor" section renders the
+    // default-state dropdown without diverging from any test's expectation.
+    getIndentSizeOverride: () => 'auto' as const,
+    setIndentSizeOverride: vi.fn(async (_v: 'auto' | 2 | 4 | 8) => undefined),
+    getShowRelativeLineNumbers: () => false,
+    setShowRelativeLineNumbers: vi.fn(async (_v: boolean) => undefined),
     getActiveAIProvider: () => activeProvider,
     setActiveAIProvider: vi.fn(async (p: AIProvider | null) => {
       activeProvider = p;

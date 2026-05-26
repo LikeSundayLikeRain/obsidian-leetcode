@@ -1879,3 +1879,105 @@
   background: color-mix(in srgb, var(--background-secondary) 70%, var(--interactive-accent) 30%);
   border-color: var(--interactive-accent);
 }
+
+/* Phase 13 — Nested editor: hide fence lines (opener, body, closer).
+ * Content stays in document model; visually replaced by child EditorView widget. */
+.cm-editor .lc-fence-hidden {
+  height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  line-height: 0 !important;
+}
+
+/* Phase 13 — Nested editor container styling. Darker background matching
+ * Obsidian code block rendering (D-05). Uses only CSS variables — no
+ * hardcoded colors. */
+.cm-editor .lc-nested-editor {
+  background: var(--code-background, var(--background-secondary));
+  border-radius: 4px;
+  padding: 8px 0;
+}
+.cm-editor .lc-nested-editor .cm-editor {
+  background: transparent;
+  height: auto !important;
+  max-height: none !important;
+}
+.cm-editor .lc-nested-editor .cm-content {
+  font-family: var(--font-monospace);
+  font-size: 14px;
+}
+.cm-editor .lc-nested-editor .cm-gutters {
+  background: transparent;
+  border-right: none;
+}
+.cm-editor .lc-nested-editor .cm-activeLine {
+  background: var(--background-modifier-hover);
+}
+
+/* Phase 15 -- Auto-grow: disable child independent scrolling so parent
+ * scroll container handles all scrolling. Child height tracks content (D-13). */
+.cm-editor .lc-nested-editor .cm-scroller {
+  overflow: visible !important;
+}
+
+/* Phase 17 Plan 10 round-2 (17-UAT.md Test 13 follow-up) —
+ * The original Plan 17-10 redefined --code-* under
+ * `:where(.theme-light/.theme-dark) .lc-nested-editor`, but the
+ * `.lc-nested-editor` class adds 0,1,0 specificity, which beat Obsidian's
+ * body / :root-level --code-* and shadowed the user's theme palette
+ * inside the child editor. Per-token fallbacks now live in the consumer
+ * site (src/main/childEditorTheme.ts: `var(--code-keyword, #ff7b72)`),
+ * so Obsidian's native --code-* wins via cascade and the GitHub-dark
+ * hex codes only fire when --code-* is genuinely undefined. */
+/* Phase 17 gap-closure (17-11, 17-UAT.md Issue 5) — force cursor
+ * visibility so vim Insert-mode caret renders deterministically.
+ * @replit/codemirror-vim relies on a measure-pass after Normal → Insert
+ * transition; the Decoration.widget({block:true}) mount can leave the
+ * cursor element transparent until the next user keystroke. Forcing
+ * opacity + visibility makes the cursor visible regardless of the
+ * vim package's measure timing. Applies to both .cm-cursor (Insert
+ * mode caret) and .cm-fat-cursor (Normal mode block cursor).
+ *
+ * Scoped to .lc-nested-editor so the rule applies ONLY to the child
+ * editor — Obsidian's parent editor and other CM6 instances elsewhere
+ * in the vault are unaffected. */
+/* Phase 18: the child CM6 never gets cm-focused. Force both cursor layers
+ * visible. Mode-based toggling (which cursor to show) is handled by JS
+ * adding/removing `lc-vim-insert` class on .lc-nested-editor. */
+.lc-nested-editor .cm-vimCursorLayer {
+  display: block !important;
+}
+.lc-nested-editor .cm-layer-above.cm-cursorLayer {
+  display: block !important;
+}
+/* Normal mode (default): show fat cursor (solid, no blink), hide default pipe */
+.lc-nested-editor:not(.lc-vim-insert) .cm-layer-above.cm-cursorLayer {
+  display: none !important;
+}
+.lc-nested-editor:not(.lc-vim-insert) .cm-vimCursorLayer {
+  animation: none !important;
+}
+/* Insert mode (.lc-vim-insert): show default pipe, hide fat cursor */
+.lc-nested-editor.lc-vim-insert .cm-vimCursorLayer {
+  display: none !important;
+}
+
+/* Phase 17 gap-closure (17-11, 17-UAT.md Issue 6 sibling) — vim mode
+ * indicator panel styling. The .cm-vim-panel renders at the bottom of
+ * the child editor showing -- NORMAL -- / -- INSERT -- (and other vim
+ * mode strings). Style for visual integration with the child editor
+ * scope: small font, muted background, minimal padding so it doesn't
+ * dominate the editing area. Uses Obsidian theme variables so the
+ * panel tracks light/dark themes automatically — no hardcoded colors. */
+.cm-editor .lc-nested-editor .cm-vim-panel {
+  font-family: var(--font-monospace);
+  font-size: 0.8em;
+  padding: 2px 8px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  border-top: 1px solid var(--background-modifier-border);
+}

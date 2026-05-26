@@ -273,6 +273,9 @@ export function makeStateForLockTests(opts: LockTestStateOpts): EditorState {
       get length() {
         return opts.body.length;
       },
+      sliceString(from: number, to: number) {
+        return opts.body.slice(from, to);
+      },
     },
     field(_f: unknown) {
       // Tests supply a fake state that always reports the configured file.

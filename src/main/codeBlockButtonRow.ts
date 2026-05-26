@@ -48,6 +48,9 @@ export function buildCodeBlockButtonRow(
   const aiSolBtn = doc.createElement('button');
   aiSolBtn.className = 'leetcode-code-action-ai-solution';
   aiSolBtn.textContent = 'AI solution';
+  aiSolBtn.addEventListener('mousedown', (e) => {
+    e.preventDefault(); // Prevent focus transfer to button (D-02)
+  });
   aiSolBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -58,6 +61,9 @@ export function buildCodeBlockButtonRow(
   const runBtn = doc.createElement('button');
   runBtn.className = 'leetcode-code-action-run';
   runBtn.textContent = 'Run';
+  runBtn.addEventListener('mousedown', (e) => {
+    e.preventDefault(); // Prevent focus transfer to button (D-02)
+  });
   runBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -68,6 +74,9 @@ export function buildCodeBlockButtonRow(
   const submitBtn = doc.createElement('button');
   submitBtn.className = 'leetcode-code-action-submit';
   submitBtn.textContent = 'Submit';
+  submitBtn.addEventListener('mousedown', (e) => {
+    e.preventDefault(); // Prevent focus transfer to button (D-02)
+  });
   submitBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
