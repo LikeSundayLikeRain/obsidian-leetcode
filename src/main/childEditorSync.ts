@@ -20,7 +20,7 @@ import {
 } from '@codemirror/state';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { EditorView } from '@codemirror/view';
-import { editorInfoField, type Plugin } from 'obsidian';
+import { editorInfoField, MarkdownView, TFile, type Plugin } from 'obsidian';
 import { findCodeFence } from './codeActionsEditorExtension';
 import { extractFenceBody } from './nestedEditorExtension';
 import { ChildEditorRegistry } from './childEditorRegistry';
@@ -611,4 +611,124 @@ export function repairFenceStructure(parentView: EditorView, activeSlug: string 
   }
 
   return true;
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Phase 18 Plan 02 — vault.on('modify') runtime repair trigger (D-33)
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Phase 18 Plan 02: minimal plugin host surface for the vault-modify repair
+ * trigger. Only what's needed to (a) read the active MarkdownView, (b) read
+ * frontmatter via metadataCache, (c) register an EventRef for auto-cleanup.
+ */
+export interface VaultModifyRepairPluginHost {
+  app: import('obsidian').App;
+  registerEvent(eventRef: import('obsidian').EventRef): void;
+}
+
+/**
+ * Phase 18 Plan 02 — registers a `vault.on('modify')` listener that fires
+ * `repairFenceStructure` for active LC problem notes when the parent CM6
+ * state shows a damaged fence (`findCodeFence === null`).
+ *
+ * Closes the gap where vim's `dd` Normal-mode keystroke on the fence closer
+ * line edits the doc via Obsidian's vault layer, bypassing CM6 transactions
+ * that the existing `createParentRepairExtension` updateListener observes.
+ *
+ * **Three short-circuit gates** ensure the listener is surgical and never
+ * fires spuriously:
+ *
+ * 1. **lc-slug gate (D-33):** the modified file's frontmatter must carry an
+ *    `lc-slug` key — restricts the trigger to LC problem notes, never to
+ *    arbitrary vault edits.
+ * 2. **active-view gate:** the modified file must equal the active
+ *    MarkdownView's file — repair only the editor the user is looking at,
+ *    not background-loaded notes.
+ * 3. **damage gate:** `findCodeFence(parentView.state) === null` — same
+ *    gate as Plan 17-13's `createParentRepairExtension`. The chevron's
+ *    atomic CM6 transaction at `switchFenceLanguage` (src/main.ts:2451-2458)
+ *    leaves `findCodeFence` non-null at the `processFrontMatter` write that
+ *    fires `vault.on('modify')`, so this gate naturally short-circuits the
+ *    chevron mid-flight case (CRITICAL: prevents the chevron-blank-on-
+ *    python3-c regression that the previous Phase 18 attempt produced).
+ *
+ * **activeSlug derivation (D-33 idempotency-preserving):** read from
+ * `app.metadataCache.getFileCache(file).frontmatter['lc-language']` rather
+ * than from doc text. The metadataCache is hydrated synchronously by
+ * Obsidian on file load, so it reflects the canonical LC slug (`python3`,
+ * `c`, etc.) — NOT the D-04-remapped fence opener tag (`python`, `cpp`).
+ * This is what avoids the python3-fallback bug seen in
+ * `createParentRepairExtension` (which reads from doc text via
+ * `readLcLanguageFromDoc` and falls back to `'python3'`).
+ *
+ * **Write-path invariant (Phase 17 D-05):** repair flows through
+ * `repairFenceStructure(parentView, activeSlug)` which uses
+ * `parentView.dispatch` internally. NEVER calls `vault.process(...)` —
+ * doing so during a `vault.on('modify')` event would corrupt CM6 state.
+ *
+ * **Cleanup:** uses `plugin.registerEvent(...)` so the listener auto-detaches
+ * on plugin unload.
+ *
+ * **Decision 1 (Phase 18 redesign):** the previous attempt's
+ * `checkStaleChildAndInvalidate` registry-deletion path is FORBIDDEN to
+ * re-introduce. This helper does NOT compare any tracker slug against the
+ * parent fence opener tag and does NOT delete from the child registry.
+ * Stale-child cases are covered by Plan 17-09 (per-child language tracker
+ * WeakMap), Plan 17-12 (line-number gating at mount), and Plan 17-13
+ * (parent-side updateListener-based repair).
+ *
+ * @param plugin minimal plugin host — must expose `app` and `registerEvent`.
+ *   `LeetCodePlugin` (extends Obsidian's `Plugin`) satisfies this contract.
+ *
+ * See `.planning/phases/18-vim-recovery-polish/18-02-PLAN.md`.
+ */
+export function registerVaultModifyRepairTrigger(plugin: VaultModifyRepairPluginHost): void {
+  const { app } = plugin;
+
+  plugin.registerEvent(
+    app.vault.on('modify', (file) => {
+      // Gate 0: file must be a TFile (defensive — Obsidian only fires modify
+      // for files, but the typing allows TAbstractFile broadly).
+      if (!(file instanceof TFile)) return;
+
+      // Gate 1 (D-33): lc-slug frontmatter must be present. Restricts the
+      // trigger to LC problem notes.
+      const fm = app.metadataCache.getFileCache(file)?.frontmatter as
+        | Record<string, unknown>
+        | undefined;
+      const lcSlug = fm?.['lc-slug'];
+      if (typeof lcSlug !== 'string' || lcSlug.length === 0) return;
+
+      // Gate 2: active MarkdownView's file must equal the modified file.
+      // We can only repair the editor the user is currently looking at —
+      // background-loaded notes don't have a CM6 instance available.
+      const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+      if (!activeView || activeView.file?.path !== file.path) return;
+
+      // Read the active CM6 EditorView. `editor.cm` is the CM6 view per
+      // Obsidian's editor-cm convention (used throughout main.ts:2422 etc).
+      const cm = (activeView.editor as unknown as { cm: EditorView }).cm;
+      if (!cm) return;
+
+      // Gate 3 (damage gate): only fire when the fence is structurally
+      // broken. Same gate as `createParentRepairExtension`. CRITICAL — this
+      // gate is what prevents the chevron-blank regression: chevron's
+      // atomic CM6 transaction leaves the fence intact at the time the
+      // subsequent `processFrontMatter` write fires `vault.on('modify')`.
+      if (findCodeFence(cm.state) !== null) return;
+
+      // Derive activeSlug from metadataCache (NOT from doc text). This
+      // reads the canonical LC slug — `python3` / `c` — never the
+      // D-04-remapped fence opener tag.
+      const lcLang = fm?.['lc-language'];
+      const activeSlug =
+        typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
+
+      // Phase 17 D-05 canonical write-path pattern: repair flows through
+      // parentView.dispatch (inside repairFenceStructure). Never via
+      // vault.process — that would corrupt CM6 state mid-vault-event.
+      repairFenceStructure(cm, activeSlug);
+    }),
+  );
 }

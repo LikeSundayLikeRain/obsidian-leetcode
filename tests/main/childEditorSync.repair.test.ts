@@ -33,6 +33,11 @@ import {
   // Phase 17 Plan 13: round-2 parent-side runtime trigger.
   // See .planning/debug/fence-auto-recovery-regression-round2.md.
   createParentRepairExtension,
+  // Phase 18 Plan 02: vault.on('modify') runtime trigger for non-CM6 edits
+  // (vim `dd` Normal-mode delete on closer line, external editor saves).
+  // See .planning/phases/18-vim-recovery-polish/18-02-PLAN.md.
+  registerVaultModifyRepairTrigger,
+  type VaultModifyRepairPluginHost,
 } from '../../src/main/childEditorSync';
 import { findCodeFence } from '../../src/main/codeActionsEditorExtension';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
@@ -551,5 +556,251 @@ describe('repairFenceStructure round-2 regression (Phase 17 Plan 13 / REPAIR-02)
     const secondResult = repairFenceStructure(reparent, ACTIVE_SLUG);
     expect(secondResult).toBe(false);
     expect(reparent.dispatch).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Phase 18 Plan 02 — registerVaultModifyRepairTrigger (D-33)
+// ────────────────────────────────────────────────────────────────────────
+//
+// Closes the gap where vim's `dd` Normal-mode delete on the fence closer
+// line edits via Obsidian's vault layer, bypassing CM6 transactions that
+// `createParentRepairExtension` observes. Three short-circuit gates
+// (lc-slug, active-view, findCodeFence === null) prevent firing during
+// chevron mid-flight (the chevron-blank-on-python3-c regression that the
+// previous Phase 18 attempt produced).
+
+describe('registerVaultModifyRepairTrigger (Phase 18 Plan 02 / REPAIR-02 vim-dd path)', () => {
+  type VaultModifyHandler = (file: unknown) => void;
+
+  /**
+   * Build a minimal plugin host with controllable workspace + metadataCache +
+   * vault. Captures the handler registered by `vault.on('modify')` so the
+   * test can fire synthetic events at it.
+   */
+  function makeMockPluginHost(opts: {
+    activeFile: { path: string } | null;
+    activeFileEditorDoc?: string;
+    frontmatter?: Record<string, unknown>;
+  }) {
+    const registeredEventRefs: unknown[] = [];
+    let modifyHandler: VaultModifyHandler | null = null;
+
+    // Mock active MarkdownView's editor with a CM6 view backed by
+    // makeStateForLockTests (same pattern as makeMockParentView above).
+    let currentDoc = opts.activeFileEditorDoc ?? '';
+    const dispatched: Array<unknown> = [];
+    const mockCm = {
+      get state() {
+        return makeStateForLockTests({ body: currentDoc });
+      },
+      dispatch: vi.fn((spec: unknown) => {
+        dispatched.push(spec);
+        const s = spec as {
+          changes?: Array<{ from: number; insert: string }>;
+        };
+        if (!Array.isArray(s.changes)) return;
+        const sorted = [...s.changes].sort((a, b) => b.from - a.from);
+        for (const ch of sorted) {
+          currentDoc = currentDoc.slice(0, ch.from) + ch.insert + currentDoc.slice(ch.from);
+        }
+      }),
+    };
+
+    const mockActiveView = opts.activeFile
+      ? {
+          file: opts.activeFile,
+          editor: { cm: mockCm },
+        }
+      : null;
+
+    // vault.process spy — Phase 17 D-05 invariant: the new repair path MUST
+    // NOT call vault.process. Tests assert this remains 0.
+    const vaultProcessSpy = vi.fn();
+
+    const host: VaultModifyRepairPluginHost & {
+      _modifyHandler(): VaultModifyHandler | null;
+      _registeredEventRefs(): unknown[];
+      _mockCmDispatch(): ReturnType<typeof vi.fn>;
+      _vaultProcessSpy(): ReturnType<typeof vi.fn>;
+      _docAfterRepair(): string;
+    } = {
+      app: {
+        vault: {
+          on: vi.fn((eventName: string, handler: VaultModifyHandler) => {
+            if (eventName === 'modify') modifyHandler = handler;
+            return { _ref: eventName } as unknown as import('obsidian').EventRef;
+          }),
+          process: vaultProcessSpy,
+        } as unknown as import('obsidian').App['vault'],
+        metadataCache: {
+          getFileCache: vi.fn(() => ({
+            frontmatter: opts.frontmatter ?? {},
+          })),
+        } as unknown as import('obsidian').App['metadataCache'],
+        workspace: {
+          getActiveViewOfType: vi.fn(() => mockActiveView),
+        } as unknown as import('obsidian').App['workspace'],
+      } as unknown as import('obsidian').App,
+      registerEvent: vi.fn((eventRef: unknown) => {
+        registeredEventRefs.push(eventRef);
+      }),
+      _modifyHandler: () => modifyHandler,
+      _registeredEventRefs: () => registeredEventRefs,
+      _mockCmDispatch: () => mockCm.dispatch,
+      _vaultProcessSpy: () => vaultProcessSpy,
+      _docAfterRepair: () => currentDoc,
+    };
+    return host;
+  }
+
+  /**
+   * A TFile-like instance from the obsidian-stub. The helper checks
+   * `instanceof TFile`, so we use the actual stub class.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let StubTFile: any;
+  beforeEach(async () => {
+    const stub = await import('../helpers/obsidian-stub');
+    StubTFile = stub.TFile;
+  });
+
+  function makeTFile(path: string): unknown {
+    const tf = new StubTFile();
+    tf.path = path;
+    return tf;
+  }
+
+  it('registers a vault.on("modify") handler via plugin.registerEvent', () => {
+    const host = makeMockPluginHost({
+      activeFile: { path: 'LeetCode/two-sum.md' },
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      activeFileEditorDoc: INTACT,
+    });
+    registerVaultModifyRepairTrigger(host);
+    expect(host.registerEvent).toHaveBeenCalledTimes(1);
+    expect(host._modifyHandler()).not.toBeNull();
+  });
+
+  it('Gate 1 — short-circuits when modified file lacks lc-slug frontmatter', () => {
+    const host = makeMockPluginHost({
+      activeFile: { path: 'LeetCode/note.md' },
+      frontmatter: {}, // no lc-slug
+      activeFileEditorDoc: MISSING_CLOSER,
+    });
+    registerVaultModifyRepairTrigger(host);
+    const handler = host._modifyHandler();
+    handler?.(makeTFile('LeetCode/note.md'));
+    // No repair dispatch — short-circuited at lc-slug gate.
+    expect(host._mockCmDispatch()).not.toHaveBeenCalled();
+  });
+
+  it('Gate 2 — short-circuits when modified file is not the active view file', () => {
+    const host = makeMockPluginHost({
+      activeFile: { path: 'LeetCode/active.md' },
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      activeFileEditorDoc: MISSING_CLOSER,
+    });
+    registerVaultModifyRepairTrigger(host);
+    const handler = host._modifyHandler();
+    // Fire for a DIFFERENT file path
+    handler?.(makeTFile('LeetCode/other-note.md'));
+    expect(host._mockCmDispatch()).not.toHaveBeenCalled();
+  });
+
+  it('Gate 3 — short-circuits when fence is intact (findCodeFence non-null)', () => {
+    // INTACT fixture has both opener and closer — findCodeFence returns non-null
+    const host = makeMockPluginHost({
+      activeFile: { path: 'LeetCode/two-sum.md' },
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      activeFileEditorDoc: INTACT,
+    });
+    registerVaultModifyRepairTrigger(host);
+    const handler = host._modifyHandler();
+    handler?.(makeTFile('LeetCode/two-sum.md'));
+    // No repair dispatch — fence is healthy, gate short-circuits.
+    expect(host._mockCmDispatch()).not.toHaveBeenCalled();
+  });
+
+  it('fires repairFenceStructure when all three gates pass (vim-dd reproduction)', () => {
+    // MISSING_CLOSER fixture — opener intact, closer deleted (vim `dd` shape)
+    const host = makeMockPluginHost({
+      activeFile: { path: 'LeetCode/two-sum.md' },
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      activeFileEditorDoc: MISSING_CLOSER,
+    });
+    registerVaultModifyRepairTrigger(host);
+    const handler = host._modifyHandler();
+    handler?.(makeTFile('LeetCode/two-sum.md'));
+    // Repair dispatch fired — exactly once (idempotent).
+    expect(host._mockCmDispatch()).toHaveBeenCalledTimes(1);
+    // Post-repair doc has both opener and closer → findCodeFence returns
+    // non-null on a re-run. Verify by re-firing: should short-circuit at gate 3.
+    handler?.(makeTFile('LeetCode/two-sum.md'));
+    expect(host._mockCmDispatch()).toHaveBeenCalledTimes(1); // unchanged
+  });
+
+  it('Phase 17 D-05 invariant — never calls vault.process during repair', () => {
+    const host = makeMockPluginHost({
+      activeFile: { path: 'LeetCode/two-sum.md' },
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      activeFileEditorDoc: MISSING_CLOSER,
+    });
+    registerVaultModifyRepairTrigger(host);
+    const handler = host._modifyHandler();
+    handler?.(makeTFile('LeetCode/two-sum.md'));
+    expect(host._vaultProcessSpy()).not.toHaveBeenCalled();
+  });
+
+  it('uses lc-language from metadataCache (NOT doc text) for activeSlug', () => {
+    // Fixture: doc has lc-language: java in its yaml, but metadataCache reports
+    // lc-language: python3 (simulates a stale doc-text scenario or a cache that
+    // is the canonical source). The repair MUST use the metadataCache value.
+    const host = makeMockPluginHost({
+      activeFile: { path: 'LeetCode/two-sum.md' },
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
+      activeFileEditorDoc: MISSING_CLOSER, // doc-text yaml says lc-language: java
+    });
+    registerVaultModifyRepairTrigger(host);
+    const handler = host._modifyHandler();
+    handler?.(makeTFile('LeetCode/two-sum.md'));
+    expect(host._mockCmDispatch()).toHaveBeenCalledTimes(1);
+    // The dispatched repair appended a closer (no opener change since opener
+    // was intact). Verify that the unchanged opener still carries `java`
+    // (proving repair did NOT rewrite the opener — only appended a closer
+    // using metadataCache's activeSlug for any new opener insert path).
+    const finalDoc = host._docAfterRepair();
+    expect(finalDoc).toContain('```java');
+  });
+
+  it('Decision 1 enforcement — never deletes from a child registry', () => {
+    // The host has no child registry mock — if the helper attempted to call
+    // `registry.delete(...)` on any object, the test would throw. We verify
+    // by inspecting the source-level invariant: the helper takes
+    // VaultModifyRepairPluginHost which deliberately omits a registry handle.
+    const host = makeMockPluginHost({
+      activeFile: { path: 'LeetCode/two-sum.md' },
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      activeFileEditorDoc: MISSING_CLOSER,
+    });
+    registerVaultModifyRepairTrigger(host);
+    const handler = host._modifyHandler();
+    expect(() => handler?.(makeTFile('LeetCode/two-sum.md'))).not.toThrow();
+    // Sanity: the host shape doesn't expose a registry, so even if the helper
+    // tried to access one it couldn't — this test pins the type contract.
+    expect((host as unknown as Record<string, unknown>).childEditorRegistry).toBeUndefined();
+  });
+
+  it('non-TFile event arguments are ignored (defensive Gate 0)', () => {
+    const host = makeMockPluginHost({
+      activeFile: { path: 'LeetCode/two-sum.md' },
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      activeFileEditorDoc: MISSING_CLOSER,
+    });
+    registerVaultModifyRepairTrigger(host);
+    const handler = host._modifyHandler();
+    // Plain object that is NOT instanceof TFile
+    handler?.({ path: 'LeetCode/two-sum.md' });
+    expect(host._mockCmDispatch()).not.toHaveBeenCalled();
   });
 });

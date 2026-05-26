@@ -126,6 +126,7 @@ import { ChildEditorRegistry } from './main/childEditorRegistry';
 import { buildNestedEditorExtension } from './main/nestedEditorExtension';
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
+import { registerVaultModifyRepairTrigger } from './main/childEditorSync';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { PatternClusterEngine } from './graph/PatternClusterEngine';
@@ -922,6 +923,17 @@ export default class LeetCodePlugin extends Plugin {
         this.handleFmChangeForLanguageReactivity(file, cache);
       }),
     );
+
+    // Phase 18 Plan 02 (D-33) — vault.on('modify') runtime repair trigger.
+    // Closes the gap where vim's `dd` Normal-mode keystroke on the fence
+    // closer line edits the doc via Obsidian's vault layer, bypassing the
+    // CM6 transactions that `createParentRepairExtension` observes. Three
+    // short-circuit gates (lc-slug, active-view, findCodeFence === null)
+    // prevent firing during chevron mid-flight (the chevron-blank-on-python3-c
+    // regression that the previous Phase 18 attempt produced). See
+    // `src/main/childEditorSync.ts:registerVaultModifyRepairTrigger` and
+    // `.planning/phases/18-vim-recovery-polish/18-02-PLAN.md`.
+    registerVaultModifyRepairTrigger(this);
 
     // Step 6h — Phase 5.2 D-13 python3 → python language-tag alias for
     // Reading-Mode Prism highlighting. Global application (not gated on
