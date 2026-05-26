@@ -400,22 +400,51 @@ export function createChildEditor(
 
   const view = new EditorView({ state, parent });
 
-  // Phase 18 Plan 01 — Esc capture. When the child is focused and vim is
-  // already in Normal mode, a redundant Esc bubbles up to Obsidian's global
-  // keymap which steals focus to the parent. Capturing Esc and stopping
-  // propagation when already in Normal mode prevents this.
+  // Phase 18 Plan 01 — vim Insert-mode isolation. Obsidian's keymap handler
+  // listens on `document` (bubble phase) and intercepts keystrokes before
+  // the child's vim can use them for character input. CM6 listens on
+  // `.cm-editor` (the view.dom wrapper, bubble phase). We register a
+  // bubble-phase listener on view.dom that stops propagation in Insert mode
+  // — this lets CM6 process the event (its handler fires on the same element
+  // before ours because it was registered first) but prevents the event from
+  // reaching document where Obsidian's keymap would route it to the parent.
   if (vimEnabled && view.contentDOM) {
-    view.contentDOM.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
+    view.dom.addEventListener('keydown', (e) => {
+      // Let Mod combos through to Obsidian (Cmd+S, Cmd+P, etc.)
+      if (e.metaKey || e.ctrlKey) return;
+      // Let Escape through for Insert→Normal transition
+      if (e.key === 'Escape') return;
+      // Only block in Insert mode
       try {
         const { getCM } = require('@replit/codemirror-vim') as
           typeof import('@replit/codemirror-vim');
         const cm = getCM(view);
-        if (cm?.state?.vim?.insertMode) return;
+        if (!cm?.state?.vim?.insertMode) return;
       } catch { return; }
       e.stopPropagation();
-      e.preventDefault();
     });
+
+    // Phase 18: toggle `lc-vim-insert` on the parent container so CSS can
+    // show/hide the correct cursor layer (fat block vs thin pipe). Listens
+    // for keydown on contentDOM and checks vim mode after each keystroke.
+    const syncVimModeClass = (): void => {
+      try {
+        const { getCM } = require('@replit/codemirror-vim') as
+          typeof import('@replit/codemirror-vim');
+        const cm = getCM(view);
+        if (cm?.state?.vim?.insertMode) {
+          parent.classList.add('lc-vim-insert');
+        } else {
+          parent.classList.remove('lc-vim-insert');
+        }
+      } catch { /* ignore */ }
+    };
+    view.contentDOM.addEventListener('keydown', () => {
+      // Defer so vim's state machine has processed the key first
+      requestAnimationFrame(syncVimModeClass);
+    });
+    // Initial sync
+    syncVimModeClass();
   }
 
   return view;
