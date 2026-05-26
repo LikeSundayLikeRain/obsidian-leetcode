@@ -52,9 +52,12 @@ export function makeFileOpenHandler(
     // Phase 18: prefer lc-language from frontmatter over global default so
     // retrofit inserts the correct language's starter (not always the default).
     const lcLang = fm?.['lc-language'];
-    const settingsWithNoteLang = typeof lcLang === 'string' && lcLang.length > 0
-      ? { ...deps.settings, getDefaultLanguage: () => lcLang }
-      : deps.settings;
-    void deps.retrofit(deps.app, file, cached, settingsWithNoteLang).catch(() => undefined);
+    const langSettings = {
+      getDefaultLanguage: () =>
+        typeof lcLang === 'string' && lcLang.length > 0
+          ? lcLang
+          : deps.settings.getDefaultLanguage(),
+    };
+    void deps.retrofit(deps.app, file, cached, langSettings).catch(() => undefined);
   };
 }

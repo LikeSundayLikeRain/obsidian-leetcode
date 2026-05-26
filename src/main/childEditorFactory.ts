@@ -45,7 +45,7 @@ import {
 } from '@codemirror/commands';
 import { closeBracketsKeymap } from '@codemirror/autocomplete';
 // eslint-disable-next-line import/no-extraneous-dependencies -- direct dep added Phase 17 Plan 06 (D-18)
-import { vim } from '@replit/codemirror-vim';
+import { vim, getCM } from '@replit/codemirror-vim';
 import type { App, Scope } from 'obsidian';
 import { languageCompartment, buildLanguageExtensions } from './childEditorLanguage';
 import { createScrollIntoViewExtension } from './childEditorSync';
@@ -337,6 +337,7 @@ export function createChildEditor(
       //     `app` is optional only to keep test fixtures simple — runtime
       //     callers MUST pass plugin.app or COMMENT-01 will silently regress.
       ...(app ? [createCmdSlashScopeExtension(app)] : []),
+      ...(vimEnabled ? [createVimIsolationExtension(parent)] : []),
       // 2b. closeBracketsKeymap — top level, BEFORE main keymap (Pitfall D —
       //    Backspace handler wins over defaultKeymap). Language-agnostic so
       //    it lives outside the Compartment.
@@ -400,52 +401,62 @@ export function createChildEditor(
 
   const view = new EditorView({ state, parent });
 
-  // Phase 18 Plan 01 — vim Insert-mode isolation. Obsidian's keymap handler
-  // listens on `document` (bubble phase) and intercepts keystrokes before
-  // the child's vim can use them for character input. CM6 listens on
-  // `.cm-editor` (the view.dom wrapper, bubble phase). We register a
-  // bubble-phase listener on view.dom that stops propagation in Insert mode
-  // — this lets CM6 process the event (its handler fires on the same element
-  // before ours because it was registered first) but prevents the event from
-  // reaching document where Obsidian's keymap would route it to the parent.
-  if (vimEnabled && view.contentDOM) {
-    view.dom.addEventListener('keydown', (e) => {
-      // Let Mod combos through to Obsidian (Cmd+S, Cmd+P, etc.)
-      if (e.metaKey || e.ctrlKey) return;
-      // Let Escape through for Insert→Normal transition
-      if (e.key === 'Escape') return;
-      // Only block in Insert mode
-      try {
-        const { getCM } = require('@replit/codemirror-vim') as
-          typeof import('@replit/codemirror-vim');
-        const cm = getCM(view);
-        if (!cm?.state?.vim?.insertMode) return;
-      } catch { return; }
-      e.stopPropagation();
-    });
-
-    // Phase 18: toggle `lc-vim-insert` on the parent container so CSS can
-    // show/hide the correct cursor layer (fat block vs thin pipe). Listens
-    // for keydown on contentDOM and checks vim mode after each keystroke.
-    const syncVimModeClass = (): void => {
-      try {
-        const { getCM } = require('@replit/codemirror-vim') as
-          typeof import('@replit/codemirror-vim');
-        const cm = getCM(view);
-        if (cm?.state?.vim?.insertMode) {
-          parent.classList.add('lc-vim-insert');
-        } else {
-          parent.classList.remove('lc-vim-insert');
-        }
-      } catch { /* ignore */ }
-    };
-    view.contentDOM.addEventListener('keydown', () => {
-      // Defer so vim's state machine has processed the key first
-      requestAnimationFrame(syncVimModeClass);
-    });
-    // Initial sync
-    syncVimModeClass();
-  }
-
   return view;
+}
+
+/**
+ * Phase 18 Plan 01 — ViewPlugin that isolates vim keystrokes in the child
+ * editor and manages cursor-mode CSS class. Proper cleanup via destroy().
+ *
+ * Two responsibilities:
+ * 1. Insert-mode isolation: stopPropagation on view.dom keydown in Insert
+ *    mode prevents Obsidian's document-level keymap from routing to parent.
+ * 2. Cursor mode class: toggles `lc-vim-insert` on the parent container so
+ *    CSS can show the correct cursor layer (fat block vs thin pipe).
+ */
+function createVimIsolationExtension(parentContainer: HTMLElement): Extension {
+  return ViewPlugin.define((view): PluginValue => {
+    const syncVimModeClass = (): void => {
+      const cm = getCM(view);
+      if (cm?.state?.vim?.insertMode) {
+        parentContainer.classList.add('lc-vim-insert');
+      } else {
+        parentContainer.classList.remove('lc-vim-insert');
+      }
+    };
+
+    const onDomKeydown = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey) return;
+      if (e.key === 'Escape') return;
+      const cm = getCM(view);
+      if (!cm?.state?.vim?.insertMode) return;
+      e.stopPropagation();
+    };
+
+    const onContentKeydown = (): void => {
+      requestAnimationFrame(syncVimModeClass);
+    };
+
+    const onEscKeydown = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      const cm = getCM(view);
+      if (cm?.state?.vim?.insertMode) return;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+
+    view.dom.addEventListener('keydown', onDomKeydown);
+    view.contentDOM.addEventListener('keydown', onContentKeydown);
+    view.contentDOM.addEventListener('keydown', onEscKeydown);
+    syncVimModeClass();
+
+    return {
+      destroy(): void {
+        view.dom.removeEventListener('keydown', onDomKeydown);
+        view.contentDOM.removeEventListener('keydown', onContentKeydown);
+        view.contentDOM.removeEventListener('keydown', onEscKeydown);
+        parentContainer.classList.remove('lc-vim-insert');
+      },
+    };
+  });
 }

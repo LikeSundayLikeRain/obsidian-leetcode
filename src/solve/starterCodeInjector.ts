@@ -73,8 +73,8 @@ export function injectCodeSection(current: string, opts: InjectOptions): string 
       const m = FENCE_OPENER_CHECK.exec(lines[i] ?? '');
       if (!m) continue;
       const tag = (m[1] ?? '').toLowerCase();
-      if (tag && resolveLangSlug(tag, '__x__') !== '__x__' &&
-          LC_LANG_SLUGS.has(resolveLangSlug(tag, '__x__'))) {
+      const resolved = resolveLangSlug(tag, '__x__');
+      if (tag && resolved !== '__x__' && LC_LANG_SLUGS.has(resolved)) {
         return current;
       }
     }

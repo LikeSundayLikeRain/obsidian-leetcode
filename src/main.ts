@@ -940,6 +940,7 @@ export default class LeetCodePlugin extends Plugin {
     // createParentRepairExtension never gets installed. This file-open hook
     // catches that case: after a short delay (CM6 state needs to hydrate),
     // check if the active note has a damaged fence and repair it directly.
+    const FILE_OPEN_REPAIR_DELAY_MS = 100; // estimated Obsidian file→CM6 hydration time
     this.registerEvent(
       this.app.workspace.on('file-open', (file) => {
         if (!file) return;
@@ -958,7 +959,7 @@ export default class LeetCodePlugin extends Plugin {
           const { repairFenceStructure: repair } = require('./main/childEditorSync') as
             typeof import('./main/childEditorSync');
           repair(cm, slug);
-        }, 100);
+        }, FILE_OPEN_REPAIR_DELAY_MS);
       }),
     );
 
