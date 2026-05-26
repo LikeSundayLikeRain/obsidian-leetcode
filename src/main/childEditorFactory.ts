@@ -313,7 +313,17 @@ export function createChildEditor(
       //     the EditorView.theme block) already covers gutter styling
       //     (transparent background, no right border), so no styling change
       //     is needed when the gutter appears.
-      ...(lineNumbersEnabled ? [lineNumbers(showRelativeLineNumbers ? { formatNumber: relativeFormatter } : {})] : []),
+      ...(lineNumbersEnabled ? [
+        lineNumbers(showRelativeLineNumbers ? { formatNumber: relativeFormatter } : {}),
+        ...(showRelativeLineNumbers ? [EditorView.updateListener.of((update) => {
+          if (!update.selectionSet || update.docChanged) return;
+          const oldLine = update.startState.doc.lineAt(update.startState.selection.main.head).number;
+          const newLine = update.state.doc.lineAt(update.state.selection.main.head).number;
+          if (oldLine !== newLine) {
+            queueMicrotask(() => update.view.dispatch({}));
+          }
+        })] : []),
+      ] : []),
       // 2a. Mod-/ Obsidian Scope intercept — see debug session
       //     `cmd-slash-not-reaching-child.md`. Pushes a Scope on focus to
       //     override `editor:toggle-comments` for this child editor only.
