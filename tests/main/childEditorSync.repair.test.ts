@@ -733,13 +733,13 @@ describe('registerVaultModifyRepairTrigger (Phase 18 Plan 02 / REPAIR-02 vim-dd 
     const handler = host._modifyHandler();
     handler?.(makeTFile('LeetCode/two-sum.md'));
     // Deferred via queueMicrotask — flush before asserting.
-    await new Promise<void>((r) => setTimeout(r, 0));
+    await new Promise<void>((r) => { window.setTimeout(r, 0); });
     // Repair dispatch fired — exactly once (idempotent).
     expect(host._mockCmDispatch()).toHaveBeenCalledTimes(1);
     // Post-repair doc has both opener and closer → findCodeFence returns
     // non-null on a re-run. Verify by re-firing: should short-circuit at gate 3.
     handler?.(makeTFile('LeetCode/two-sum.md'));
-    await new Promise<void>((r) => setTimeout(r, 0));
+    await new Promise<void>((r) => { window.setTimeout(r, 0); });
     expect(host._mockCmDispatch()).toHaveBeenCalledTimes(1); // unchanged
   });
 
@@ -767,7 +767,7 @@ describe('registerVaultModifyRepairTrigger (Phase 18 Plan 02 / REPAIR-02 vim-dd 
     registerVaultModifyRepairTrigger(host);
     const handler = host._modifyHandler();
     handler?.(makeTFile('LeetCode/two-sum.md'));
-    await new Promise<void>((r) => setTimeout(r, 0));
+    await new Promise<void>((r) => { window.setTimeout(r, 0); });
     expect(host._mockCmDispatch()).toHaveBeenCalledTimes(1);
     // The dispatched repair appended a closer (no opener change since opener
     // was intact). Verify that the unchanged opener still carries `java`

@@ -738,7 +738,7 @@ export function registerVaultModifyRepairTrigger(plugin: VaultModifyRepairPlugin
       // setTimeout gives Obsidian's internal file→CM6 sync time to complete
       // before we check for fence damage. Without this, cm.state still
       // shows the old doc and findCodeFence returns non-null.
-      setTimeout(() => {
+      window.setTimeout(() => {
         // Read the active CM6 EditorView. `editor.cm` is the CM6 view per
         // Obsidian's editor-cm convention (used throughout main.ts:2422 etc).
         const cm = (activeView.editor as unknown as { cm: EditorView }).cm;

@@ -190,7 +190,7 @@ function createCmdSlashScopeExtension(app: App): Extension {
       // Register Mod-/ inside our scope. Returning false stops further
       // dispatch (Obsidian's app-level handler doesn't run).
       scope.register(['Mod'], '/', (event) => {
-        if (!isMod(event as KeyboardEvent)) return true;
+        if (!isMod(event)) return true;
         runComment(view);
         return false;
       });
@@ -404,7 +404,7 @@ export function createChildEditor(
   // Ensure clicks on the child editor focus contentDOM.
   if (view.dom) {
     view.dom.addEventListener('mousedown', () => {
-      requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         if (document.activeElement !== view.contentDOM) {
           view.contentDOM.focus();
         }
@@ -445,7 +445,7 @@ function createVimIsolationExtension(parentContainer: HTMLElement): Extension {
     };
 
     const onContentKeydown = (): void => {
-      requestAnimationFrame(syncVimModeClass);
+      window.requestAnimationFrame(syncVimModeClass);
     };
 
     const onEscKeydown = (e: KeyboardEvent): void => {

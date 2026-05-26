@@ -91,6 +91,9 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unnecessary-type-assertion': 'off',
       '@typescript-eslint/no-deprecated': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      'import/no-extraneous-dependencies': 'off',
     },
   },
   globalIgnores([
@@ -108,5 +111,6 @@ export default tseslint.config(
     // (`tests/manifest-version.test.ts`) and `prerelease-check.sh`
     // gate 6 for the manifest contract, so ignoring JSON for lint is safe.
     "package.json", "manifest.json", "package-lock.json", "tsconfig.json",
+    ".claude/**",
   ]),
 );

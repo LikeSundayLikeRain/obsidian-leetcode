@@ -958,22 +958,21 @@ export default class LeetCodePlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on('file-open', (file) => {
         if (!file) return;
-        setTimeout(() => {
+        window.setTimeout(() => {
           const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
           if (typeof fm?.['lc-slug'] !== 'string') return;
           const view = this.app.workspace.getActiveViewOfType(MarkdownView);
           if (!view || view.file?.path !== file.path) return;
           const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
           if (!cm) return;
-          // Force decoration rebuild in case StateField.create ran before
-          // metadataCache had frontmatter (first-ever open of a new note).
           cm.dispatch({ effects: nestedEditorRebuildEffect.of(null) });
-          // Also repair fence if damaged
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { findCodeFence: findFence } = require('./main/codeActionsEditorExtension') as
             typeof import('./main/codeActionsEditorExtension');
           if (findFence(cm.state) !== null) return;
-          const lcLang = fm['lc-language'];
+          const lcLang: unknown = fm['lc-language'];
           const slug = typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { repairFenceStructure: repair } = require('./main/childEditorSync') as
             typeof import('./main/childEditorSync');
           repair(cm, slug);
@@ -2759,6 +2758,7 @@ export default class LeetCodePlugin extends Plugin {
     // the source-of-truth used by Phase 16 D-12 when the chevron is
     // re-rendered for a non-active leaf.
     try {
+      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
       const fm = this.app.metadataCache.getFileCache(file as TFile)
         ?.frontmatter as Record<string, unknown> | undefined;
       const fmLang = fm?.['lc-language'];

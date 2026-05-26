@@ -1,3 +1,4 @@
+/* eslint-disable import/no-extraneous-dependencies */
 /**
  * Phase 17 Plan 10 round-3 (17-UAT.md Test 13 final pass) — emit
  * Obsidian/CM5-compatible semantic class names on syntax tokens so
