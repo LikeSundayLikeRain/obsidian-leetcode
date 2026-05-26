@@ -9,11 +9,13 @@ so practice builds a knowledge graph instead of scattered code files.
 - Browse the LeetCode problem list with search + difficulty/status filters
 - Preview any problem in a read-only tab before committing — single-click previews by default; shift-click still opens the note directly
 - Open any problem as an Obsidian note with locked frontmatter and a `## Problem` statement rendered as Markdown
-- Write solutions in a native fenced code block — no custom editor, no separate editor pane
+- Write solutions in a nested code editor with full language support — syntax highlighting, auto-indent, bracket matching, and comment toggling for all 8 LC languages (Python, Java, C++, C, JavaScript, TypeScript, Go, Rust)
 - Run your code against sample or custom test cases with `LeetCode: Run`
 - Submit to LC's judge with `LeetCode: Submit`; every verdict type (AC, WA, TLE, MLE, CE, RE) is surfaced
 - On Accepted, the plugin updates frontmatter and writes `[[Technique]]` backlinks, turning your vault into a knowledge graph of solving techniques
 - Browse your past LC submissions with `LeetCode: View past submissions`
+- Vim mode support — Normal-mode keys (j/k/dd/yy/etc.) stay in the code editor, not the parent document
+- Optional relative line numbers in the code editor (plugin setting, independent of third-party plugins)
 - Previously fetched problems stay readable offline
 
 ## Install
@@ -42,7 +44,7 @@ so practice builds a knowledge graph instead of scattered code files.
 
    ![Problem note](docs/problem-note.png)
 
-5. Write your solution in the `## Code` fenced block. `Run` and `Submit` buttons appear inline directly below the code block in both Reading mode and Edit mode (Live Preview + Source). The command palette (`LeetCode: Run`, `LeetCode: Submit`) also works.
+5. Write your solution in the `## Code` block. A nested code editor activates automatically with syntax highlighting, auto-indent, and bracket matching for your selected language. `Run` and `Submit` buttons appear inline. The command palette (`LeetCode: Run`, `LeetCode: Submit`) also works.
 6. When you are ready, click `Submit`. The verdict modal shows the result, runtime, memory, and percentile:
 
    ![Verdict — Accepted](docs/verdict-accepted.png)
@@ -163,17 +165,13 @@ For local testing, copy `main.js`, `manifest.json`, and `styles.css` into `<your
 
 ### Bundle size
 
-The production bundle (`main.js`) is gated by a portable Node script, `scripts/check-bundle-size.mjs`, which runs as the last step of `.github/workflows/ci.yml` (after lint, test, and build).
+The production bundle (`main.js`) is gated by CI (`scripts/check-bundle-size.mjs`).
 
-- **Hard ceiling: 1 MB.** PRs that push `main.js` over 1,000,000 bytes fail CI and cannot be merged.
-- **Soft warning: 900 KB.** Builds between 900 KB and 1 MB log a warning but still pass — treat warnings as a signal to investigate before the next release.
-- **Current baseline (v1.1 Phase 07):** the AI Provider runtime (`@ai-sdk/*` family) lands the bundle in the ~800 KB range when `AIClient` is wired into `main.ts:onload`. The 1 MB ceiling was set after measuring the cost of static imports under Obsidian's CJS-no-splitting esbuild profile, which prevents `await import()` from deferring the AI SDK out of the hot path. Mainstream Obsidian AI plugins (Smart Connections, Copilot) ship at comparable sizes.
-- **v1.1 entry baseline (pre-AI-wiring): ~165.0 KB (168,953 bytes)** — preserved here for historical reference; this baseline applied while the AI SDK was tree-shaken because no entry path imported it.
+- **Hard ceiling: 1.8 MB.** PRs that push `main.js` over 1,800,000 bytes fail CI.
+- **Current size (v1.2):** ~1.71 MB raw / ~459 KB gzipped. Language packs for the nested code editor account for the increase from v1.1.
 
 Run the gate locally before pushing:
 
 ```bash
 npm run build && npm run check:bundle-size
 ```
-
-Thresholds are hardcoded constants in the script (no baseline file is committed); CI is the source of truth.
