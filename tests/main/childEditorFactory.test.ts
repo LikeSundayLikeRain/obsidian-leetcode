@@ -499,21 +499,13 @@ describe('Phase 17 Plan 11 — vim panel + cursor visibility (17-UAT Issues 5 + 
     expect(body).toMatch(/(?:font-family|font-size|padding|background|color)/);
   });
 
-  it('styles.css forces .cm-cursor / .cm-fat-cursor visibility under .lc-nested-editor — Issue 5 cursor render', () => {
-    // The fix forces opacity:1 / visibility:visible so vim's late measure-pass
-    // timing cannot leave the Insert-mode caret transparent. Either rule
-    // suffices to address the timing race (the plan's reference uses both).
-    // Match a CSS rule whose selector chain mentions .lc-nested-editor and
-    // either .cm-cursor or .cm-fat-cursor, with opacity:1 OR visibility:visible
-    // in the body. The selector list may include multiple comma-separated
-    // selectors — we tolerate that via a non-greedy character class.
-    expect(stylesSource).toMatch(
-      /\.lc-nested-editor[^{]*\.cm-(?:fat-)?cursor[^{]*\{[^}]*(?:opacity\s*:\s*1|visibility\s*:\s*visible)/,
-    );
-
-    // Both selectors should appear in the visibility-forcing rule (the
-    // reference rule lists them as a comma-separated selector group).
-    expect(stylesSource).toMatch(/\.cm-cursor/);
+  it('styles.css forces cursor layer visibility under .lc-nested-editor — Issue 5 cursor render', () => {
+    // Phase 18: cursor management uses layer-level display:block (not
+    // individual cursor opacity/visibility) plus mode-class toggling.
+    // Verify both cursor layers are forced visible and fat-cursor has
+    // animation control.
+    expect(stylesSource).toMatch(/\.lc-nested-editor[^{]*\.cm-vimCursorLayer[^{]*\{[^}]*display\s*:\s*block/);
+    expect(stylesSource).toMatch(/\.lc-nested-editor[^{]*\.cm-cursorLayer[^{]*\{[^}]*display\s*:\s*block/);
     expect(stylesSource).toMatch(/\.cm-fat-cursor/);
   });
 
