@@ -10,9 +10,9 @@ Every LeetCode problem you solve becomes a first-class note in your Obsidian vau
 
 ## Current State
 
-**v1.1 shipped 2026-05-20.** 19 phases (across 2 milestones), 102 plans, 1,450 tests passing, 1.155 MB production bundle.
+**v1.2 shipped 2026-05-26.** 25 phases (across 3 milestones), 133 plans, 1,713 tests passing, 1.71 MB production bundle.
 
-The plugin ships preview mode, 5-provider AI support (Anthropic, OpenAI, OpenRouter, Ollama, Bedrock), AI debug/review, virtual contest mode, and AI-maintained 22-pattern knowledge graph. Version 1.1.0 in manifest.
+The plugin now includes a nested code editor with full language support (8 languages), vim mode, relative line numbers, fence auto-recovery, and all v1.1 features (preview, AI coaching, contest mode, knowledge graph). Version 1.2.0-alpha.1 pre-released for testing.
 
 ## Requirements
 
@@ -38,21 +38,24 @@ The plugin ships preview mode, 5-provider AI support (Anthropic, OpenAI, OpenRou
 - ✓ AI knowledge-graph maintenance (22-pattern clusters supersede lc-tag Techniques) — v1.1
 - ✓ AI difficulty-progression + cross-cluster Related Variants + look-ahead edges — v1.1
 - ✓ Multi-provider AI support (BYO key + custom base URL + Bedrock) — v1.1
+- ✓ Nested code editor with syntax highlighting for 8 languages — v1.2
+- ✓ Tab/Shift-Tab indent/dedent inside code fence — v1.2
+- ✓ Smart Enter (auto-indent after braces/colon, split matched braces) — v1.2
+- ✓ Bracket auto-close and overtype inside fence (no markdown pairs) — v1.2
+- ✓ Language switching updates indent/bracket/comment rules instantly — v1.2
+- ✓ Cmd-/ comment toggling with correct per-language syntax — v1.2
+- ✓ Bracket match highlighting — v1.2
+- ✓ Vim mode with keystroke isolation in code editor — v1.2
+- ✓ Fence auto-recovery on non-CM6 edits (vim dd, external tools) — v1.2
+- ✓ Optional relative line numbers in code editor — v1.2
 
 ### Active
 
-(Defined in REQUIREMENTS.md for v1.2)
+(Next milestone not yet started — run `/gsd:new-milestone`)
 
-## Current Milestone: v1.2 Code Editor Experience
+## Completed: v1.2 Code Editor Experience (2026-05-26)
 
-**Goal:** Make editing code inside the solution fence feel like a proper code editor — comparable to LeetCode web.
-
-**Target features:**
-- Language-aware auto-indentation (indent after `{`, `:`, `(`, etc.; dedent on `}`, etc.)
-- Code-aware bracket closing (suppress markdown pairs like `*` inside fences)
-- Tab/Shift-Tab → indent/dedent (not markdown list behavior) inside code fence
-- Enter after `{` or `(` → auto-indent next line + closing brace on new line
-- Resolve other markdown-vs-code behavioral conflicts in the fence region
+**Delivered:** Nested CM6 EditorView with full language support, vim mode, fence auto-recovery, and relative line numbers. See MILESTONES.md for full details.
 
 ### Out of Scope
 
