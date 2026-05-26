@@ -722,7 +722,7 @@ describe('registerVaultModifyRepairTrigger (Phase 18 Plan 02 / REPAIR-02 vim-dd 
     expect(host._mockCmDispatch()).not.toHaveBeenCalled();
   });
 
-  it('fires repairFenceStructure when all three gates pass (vim-dd reproduction)', () => {
+  it('fires repairFenceStructure when all three gates pass (vim-dd reproduction)', async () => {
     // MISSING_CLOSER fixture — opener intact, closer deleted (vim `dd` shape)
     const host = makeMockPluginHost({
       activeFile: { path: 'LeetCode/two-sum.md' },
@@ -732,11 +732,14 @@ describe('registerVaultModifyRepairTrigger (Phase 18 Plan 02 / REPAIR-02 vim-dd 
     registerVaultModifyRepairTrigger(host);
     const handler = host._modifyHandler();
     handler?.(makeTFile('LeetCode/two-sum.md'));
+    // Deferred via queueMicrotask — flush before asserting.
+    await new Promise((r) => queueMicrotask(r));
     // Repair dispatch fired — exactly once (idempotent).
     expect(host._mockCmDispatch()).toHaveBeenCalledTimes(1);
     // Post-repair doc has both opener and closer → findCodeFence returns
     // non-null on a re-run. Verify by re-firing: should short-circuit at gate 3.
     handler?.(makeTFile('LeetCode/two-sum.md'));
+    await new Promise((r) => queueMicrotask(r));
     expect(host._mockCmDispatch()).toHaveBeenCalledTimes(1); // unchanged
   });
 
@@ -752,7 +755,7 @@ describe('registerVaultModifyRepairTrigger (Phase 18 Plan 02 / REPAIR-02 vim-dd 
     expect(host._vaultProcessSpy()).not.toHaveBeenCalled();
   });
 
-  it('uses lc-language from metadataCache (NOT doc text) for activeSlug', () => {
+  it('uses lc-language from metadataCache (NOT doc text) for activeSlug', async () => {
     // Fixture: doc has lc-language: java in its yaml, but metadataCache reports
     // lc-language: python3 (simulates a stale doc-text scenario or a cache that
     // is the canonical source). The repair MUST use the metadataCache value.
@@ -764,6 +767,7 @@ describe('registerVaultModifyRepairTrigger (Phase 18 Plan 02 / REPAIR-02 vim-dd 
     registerVaultModifyRepairTrigger(host);
     const handler = host._modifyHandler();
     handler?.(makeTFile('LeetCode/two-sum.md'));
+    await new Promise((r) => queueMicrotask(r));
     expect(host._mockCmDispatch()).toHaveBeenCalledTimes(1);
     // The dispatched repair appended a closer (no opener change since opener
     // was intact). Verify that the unchanged opener still carries `java`

@@ -732,29 +732,38 @@ export function registerVaultModifyRepairTrigger(plugin: VaultModifyRepairPlugin
       const activeView = app.workspace.getActiveViewOfType(MarkdownView);
       if (!activeView || activeView.file?.path !== file.path) return;
 
-      // Read the active CM6 EditorView. `editor.cm` is the CM6 view per
-      // Obsidian's editor-cm convention (used throughout main.ts:2422 etc).
-      const cm = (activeView.editor as unknown as { cm: EditorView }).cm;
-      if (!cm) return;
+      // Defer: vault.on('modify') fires when the file is persisted, but
+      // Obsidian may not have synced the new content to CM6's state yet.
+      // A microtask deferral lets Obsidian's internal file→CM6 sync
+      // complete before we check for fence damage. Without this, cm.state
+      // still shows the old doc and findCodeFence returns non-null.
+      queueMicrotask(() => {
+        // Read the active CM6 EditorView. `editor.cm` is the CM6 view per
+        // Obsidian's editor-cm convention (used throughout main.ts:2422 etc).
+        const cm = (activeView.editor as unknown as { cm: EditorView }).cm;
+        if (!cm) return;
 
-      // Gate 3 (damage gate): only fire when the fence is structurally
-      // broken. Same gate as `createParentRepairExtension`. CRITICAL — this
-      // gate is what prevents the chevron-blank regression: chevron's
-      // atomic CM6 transaction leaves the fence intact at the time the
-      // subsequent `processFrontMatter` write fires `vault.on('modify')`.
-      if (findCodeFence(cm.state) !== null) return;
+        // Gate 3 (damage gate): only fire when the fence is structurally
+        // broken. Same gate as `createParentRepairExtension`. CRITICAL — this
+        // gate is what prevents the chevron-blank regression: chevron's
+        // atomic CM6 transaction leaves the fence intact at the time the
+        // subsequent `processFrontMatter` write fires `vault.on('modify')`.
+        if (findCodeFence(cm.state) !== null) return;
 
-      // Derive activeSlug from metadataCache (NOT from doc text). This
-      // reads the canonical LC slug — `python3` / `c` — never the
-      // D-04-remapped fence opener tag.
-      const lcLang = fm?.['lc-language'];
-      const activeSlug =
-        typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
+        // Derive activeSlug from metadataCache (NOT from doc text). This
+        // reads the canonical LC slug — `python3` / `c` — never the
+        // D-04-remapped fence opener tag.
+        const lcLang = app.metadataCache.getFileCache(file)?.frontmatter?.['lc-language'] as
+          | string
+          | undefined;
+        const activeSlug =
+          typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
 
-      // Phase 17 D-05 canonical write-path pattern: repair flows through
-      // parentView.dispatch (inside repairFenceStructure). Never via
-      // vault.process — that would corrupt CM6 state mid-vault-event.
-      repairFenceStructure(cm, activeSlug);
+        // Phase 17 D-05 canonical write-path pattern: repair flows through
+        // parentView.dispatch (inside repairFenceStructure). Never via
+        // vault.process — that would corrupt CM6 state mid-vault-event.
+        repairFenceStructure(cm, activeSlug);
+      });
     }),
   );
 }
