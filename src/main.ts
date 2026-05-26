@@ -935,6 +935,34 @@ export default class LeetCodePlugin extends Plugin {
     // `.planning/phases/18-vim-recovery-polish/18-02-PLAN.md`.
     registerVaultModifyRepairTrigger(this);
 
+    // Phase 18: file-open repair — when switching to a broken-fence LC note,
+    // the nested editor widget won't mount (findCodeFence returns null), so
+    // createParentRepairExtension never gets installed. This file-open hook
+    // catches that case: after a short delay (CM6 state needs to hydrate),
+    // check if the active note has a damaged fence and repair it directly.
+    this.registerEvent(
+      this.app.workspace.on('file-open', (file) => {
+        if (!file) return;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+        if (typeof fm?.['lc-slug'] !== 'string') return;
+        setTimeout(() => {
+          const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+          if (!view || view.file?.path !== file.path) return;
+          const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
+          if (!cm) return;
+          const { findCodeFence: findFence } = require('./main/codeActionsEditorExtension') as
+            typeof import('./main/codeActionsEditorExtension');
+          if (findFence(cm.state) !== null) return;
+          const lcLang = fm['lc-language'];
+          const slug = typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
+          const { repairFenceStructure: repair } = require('./main/childEditorSync') as
+            typeof import('./main/childEditorSync');
+          console.log('[lc-repair-file-open] fence damaged, repairing with slug:', slug);
+          repair(cm, slug);
+        }, 100);
+      }),
+    );
+
     // Step 6h — Phase 5.2 D-13 python3 → python language-tag alias for
     // Reading-Mode Prism highlighting. Global application (not gated on
     // lc-slug) so any note with a ```python3 fence benefits. Synchronous

@@ -407,7 +407,9 @@ export function createParentRepairExtension(app?: import('obsidian').App): Exten
     // findCodeFence walks the doc looking for the `## Code` section's
     // first `\`\`\`<lang>` opener and matching closer; null means the
     // fence is structurally broken (or the section doesn't exist).
-    if (findCodeFence(update.state) !== null) return;
+    const fenceCheck = findCodeFence(update.state);
+    console.log('[lc-repair-parent-ext] docChanged, fence:', fenceCheck ? 'INTACT (skip)' : 'DAMAGED (repair)');
+    if (fenceCheck !== null) return;
 
     // Phase 18: derive activeSlug from metadataCache (reliable at reload
     // time — cached from previous session). Falls back to doc-text scan.
@@ -735,10 +737,10 @@ export function registerVaultModifyRepairTrigger(plugin: VaultModifyRepairPlugin
 
       // Defer: vault.on('modify') fires when the file is persisted, but
       // Obsidian may not have synced the new content to CM6's state yet.
-      // A microtask deferral lets Obsidian's internal file→CM6 sync
-      // complete before we check for fence damage. Without this, cm.state
-      // still shows the old doc and findCodeFence returns non-null.
-      queueMicrotask(() => {
+      // setTimeout gives Obsidian's internal file→CM6 sync time to complete
+      // before we check for fence damage. Without this, cm.state still
+      // shows the old doc and findCodeFence returns non-null.
+      setTimeout(() => {
         // Read the active CM6 EditorView. `editor.cm` is the CM6 view per
         // Obsidian's editor-cm convention (used throughout main.ts:2422 etc).
         const cm = (activeView.editor as unknown as { cm: EditorView }).cm;
@@ -749,7 +751,9 @@ export function registerVaultModifyRepairTrigger(plugin: VaultModifyRepairPlugin
         // gate is what prevents the chevron-blank regression: chevron's
         // atomic CM6 transaction leaves the fence intact at the time the
         // subsequent `processFrontMatter` write fires `vault.on('modify')`.
-        if (findCodeFence(cm.state) !== null) return;
+        const fence = findCodeFence(cm.state);
+        console.log('[lc-repair-vault-modify] fence check:', fence ? 'INTACT (skip)' : 'DAMAGED (repair)');
+        if (fence !== null) return;
 
         // Derive activeSlug from metadataCache (NOT from doc text). This
         // reads the canonical LC slug — `python3` / `c` — never the

@@ -63,6 +63,21 @@ export function injectCodeSection(current: string, opts: InjectOptions): string 
     if (sectionHasRecognizedFence(lines, codeStart + 1, codeEnd)) {
       return current; // idempotent
     }
+    // Phase 18: if there's a fence opener with a recognized LC language tag
+    // (even without a closer), the section has existing code content — don't
+    // inject a fresh starter. Let repairFenceStructure handle the missing
+    // closer instead. Unrecognized tags (e.g., ```text) are NOT user code
+    // and should still get a fresh starter injected (Pitfall 6).
+    const FENCE_OPENER_CHECK = /^\s*```(\S+)/;
+    for (let i = codeStart + 1; i < codeEnd; i++) {
+      const m = FENCE_OPENER_CHECK.exec(lines[i] ?? '');
+      if (!m) continue;
+      const tag = (m[1] ?? '').toLowerCase();
+      if (tag && resolveLangSlug(tag, '__x__') !== '__x__' &&
+          LC_LANG_SLUGS.has(resolveLangSlug(tag, '__x__'))) {
+        return current;
+      }
+    }
     // Insert starter immediately after heading, preserving the rest of the body.
     const before = lines.slice(0, codeStart + 1);
     const sectionBody = lines.slice(codeStart + 1, codeEnd);
