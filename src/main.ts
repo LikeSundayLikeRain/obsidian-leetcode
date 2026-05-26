@@ -123,7 +123,7 @@ import { buildCodeActionsEditorExtension } from './main/codeActionsEditorExtensi
 import { buildSectionLockExtension } from './main/sectionLockExtension';
 // Phase 13 — nested child EditorView for ## Code fence (Plans 01-03).
 import { ChildEditorRegistry } from './main/childEditorRegistry';
-import { buildNestedEditorExtension } from './main/nestedEditorExtension';
+import { buildNestedEditorExtension, nestedEditorRebuildEffect } from './main/nestedEditorExtension';
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
 import { registerVaultModifyRepairTrigger } from './main/childEditorSync';
@@ -921,6 +921,20 @@ export default class LeetCodePlugin extends Plugin {
     this.registerEvent(
       this.app.metadataCache.on('changed', (file, _data, cache) => {
         this.handleFmChangeForLanguageReactivity(file, cache);
+        // Phase 18: when metadataCache populates lc-slug for the first time
+        // (newly-created note, first open), the parent's nested-editor
+        // StateField needs a transaction to rebuild decorations. Without
+        // this, Gate 2 in buildNestedDecorations short-circuits because
+        // frontmatter wasn't available at initial StateField.create time.
+        if (cache?.frontmatter?.['lc-slug']) {
+          const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+          if (view?.file?.path === file.path) {
+            const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
+            if (cm) {
+              cm.dispatch({ effects: nestedEditorRebuildEffect.of(null) });
+            }
+          }
+        }
       }),
     );
 
@@ -944,13 +958,17 @@ export default class LeetCodePlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on('file-open', (file) => {
         if (!file) return;
-        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-        if (typeof fm?.['lc-slug'] !== 'string') return;
         setTimeout(() => {
+          const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+          if (typeof fm?.['lc-slug'] !== 'string') return;
           const view = this.app.workspace.getActiveViewOfType(MarkdownView);
           if (!view || view.file?.path !== file.path) return;
           const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
           if (!cm) return;
+          // Force decoration rebuild in case StateField.create ran before
+          // metadataCache had frontmatter (first-ever open of a new note).
+          cm.dispatch({ effects: nestedEditorRebuildEffect.of(null) });
+          // Also repair fence if damaged
           const { findCodeFence: findFence } = require('./main/codeActionsEditorExtension') as
             typeof import('./main/codeActionsEditorExtension');
           if (findFence(cm.state) !== null) return;

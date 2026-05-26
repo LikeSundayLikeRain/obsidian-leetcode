@@ -401,6 +401,17 @@ export function createChildEditor(
 
   const view = new EditorView({ state, parent });
 
+  // Ensure clicks on the child editor focus contentDOM.
+  if (view.dom) {
+    view.dom.addEventListener('mousedown', () => {
+      requestAnimationFrame(() => {
+        if (document.activeElement !== view.contentDOM) {
+          view.contentDOM.focus();
+        }
+      });
+    });
+  }
+
   return view;
 }
 
@@ -440,7 +451,10 @@ function createVimIsolationExtension(parentContainer: HTMLElement): Extension {
     const onEscKeydown = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return;
       const cm = getCM(view);
-      if (cm?.state?.vim?.insertMode) return;
+      const vimState = cm?.state?.vim;
+      // Let Esc through when vim needs it (Insert→Normal, Visual→Normal)
+      if (vimState?.insertMode || vimState?.visualMode) return;
+      // Only block Esc in true Normal mode (redundant Esc steals focus)
       e.stopPropagation();
       e.preventDefault();
     };

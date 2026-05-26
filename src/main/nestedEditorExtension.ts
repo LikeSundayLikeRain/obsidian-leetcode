@@ -19,6 +19,7 @@
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   StateField,
+  StateEffect,
   Transaction,
   RangeSetBuilder,
   EditorSelection,
@@ -287,6 +288,14 @@ const ECHO_PRONE_USER_EVENTS = new Set([
  *   - StateField: produces DecorationSet (CSS-hide lines + widget)
  *   - transactionFilter: redirects cursor out of hidden zone → child focus
  */
+/**
+ * Phase 18: dispatched on the parent CM6 when metadataCache populates
+ * frontmatter for the first time (newly-created note, first open). Forces
+ * the nested-editor StateField to rebuild decorations so the child widget
+ * renders even when frontmatter wasn't available at StateField.create time.
+ */
+export const nestedEditorRebuildEffect = StateEffect.define<null>();
+
 export function buildNestedEditorExtension(plugin: PluginHost): Extension {
   const registry = plugin.childEditorRegistry;
 
@@ -304,7 +313,8 @@ export function buildNestedEditorExtension(plugin: PluginHost): Extension {
       //  buildNestedDecorations' three gates (file/slug/fence) and a per-line
       //  RangeSetBuilder.add for the fence span. Reconfigure also triggers
       //  rebuild so re-mounted extensions pick up fresh fence boundaries.
-      if (tr.docChanged || tr.reconfigured) {
+      if (tr.docChanged || tr.reconfigured ||
+          tr.effects.some((e) => e.is(nestedEditorRebuildEffect))) {
         return buildNestedDecorations(tr.state, plugin, registry);
       }
       return old.map(tr.changes);
