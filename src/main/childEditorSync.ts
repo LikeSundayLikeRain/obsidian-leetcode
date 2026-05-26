@@ -411,9 +411,6 @@ export function createParentRepairExtension(app?: import('obsidian').App): Exten
 
     // Phase 18: derive activeSlug from metadataCache (reliable at reload
     // time — cached from previous session). Falls back to doc-text scan.
-    // The metadataCache path also gates on lc-slug presence, preventing
-    // repair from firing on partially-loaded docs or non-LC notes at
-    // reload time (fixes the "inserts python3 fence on reload" bug).
     let activeSlug: string | null = null;
 
     if (app) {
@@ -423,10 +420,14 @@ export function createParentRepairExtension(app?: import('obsidian').App): Exten
           const fm = app.metadataCache.getFileCache(file)?.frontmatter as
             | Record<string, unknown>
             | undefined;
-          if (typeof fm?.['lc-slug'] !== 'string') return;
-          const lcLang = fm['lc-language'];
-          if (typeof lcLang === 'string' && lcLang.length > 0) {
-            activeSlug = lcLang;
+          // Only use metadataCache if lc-slug is present (confirms this is
+          // an LC note with a parsed cache). If cache isn't ready yet, fall
+          // through to doc-text scan rather than returning early.
+          if (typeof fm?.['lc-slug'] === 'string') {
+            const lcLang = fm['lc-language'];
+            if (typeof lcLang === 'string' && lcLang.length > 0) {
+              activeSlug = lcLang;
+            }
           }
         }
       } catch {
