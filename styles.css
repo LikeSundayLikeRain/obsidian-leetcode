@@ -1954,8 +1954,10 @@
 .lc-nested-editor .cm-layer-above.cm-cursorLayer {
   display: block !important;
 }
-/* Normal mode (default): show fat cursor (solid, no blink), hide default pipe */
-.lc-nested-editor:not(.lc-vim-insert) .cm-layer-above.cm-cursorLayer {
+/* Normal mode (default): show fat cursor (solid, no blink), hide default pipe.
+ * :has(.cm-vimCursorLayer) ensures these only fire when vim is active —
+ * without vim, the standard pipe cursor remains visible. */
+.lc-nested-editor:not(.lc-vim-insert):has(.cm-vimCursorLayer) .cm-layer-above.cm-cursorLayer {
   display: none !important;
 }
 .lc-nested-editor:not(.lc-vim-insert) .cm-vimCursorLayer {
