@@ -1137,9 +1137,15 @@ export default class LeetCodePlugin extends Plugin {
       file = await this.contestScratch.createOrUpdate(problem, contentHtml);
     }
 
-    // D-07: Tab idempotency — reuse existing leaf if already open for this scratch file
+    // D-07: Tab idempotency — reuse existing leaf if already open for this scratch file.
+    // Check both view.file (populated after view loads) and leaf state (populated immediately on restore).
     const existingLeaf = this.app.workspace.getLeavesOfType('markdown')
-      .find(l => (l.view as { file?: { path: string } }).file?.path === file.path);
+      .find(l => {
+        const viewFile = (l.view as { file?: { path: string } }).file?.path;
+        if (viewFile === file.path) return true;
+        const stateFile = (l.getViewState()?.state as { file?: string })?.file;
+        return stateFile === file.path;
+      });
     if (existingLeaf) {
       void this.app.workspace.revealLeaf(existingLeaf);
       return;
