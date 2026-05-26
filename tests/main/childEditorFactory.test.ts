@@ -34,6 +34,8 @@ vi.mock('@codemirror/view', () => {
     // array can be asserted by sentinel value (parallel to drawSelection /
     // highlightActiveLine mocks above).
     lineNumbers: vi.fn().mockReturnValue('mock-line-numbers'),
+    gutter: vi.fn().mockReturnValue('mock-gutter'),
+    GutterMarker: class { eq() { return false; } toDOM() { return document.createTextNode(''); } },
     ViewPlugin: {
       define: vi.fn().mockReturnValue('mock-view-plugin'),
       // Phase 17 Plan 10 round-3 — Decoration.mark layer for Obsidian-

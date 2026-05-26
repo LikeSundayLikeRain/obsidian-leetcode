@@ -26,6 +26,8 @@ import {
   drawSelection,
   highlightActiveLine,
   lineNumbers,
+  gutter,
+  GutterMarker,
   ViewPlugin,
   type Command,
   type PluginValue,
@@ -150,10 +152,25 @@ export const customShiftTabCommand: Command = (view) => indentLessLoose(view);
  * Returns the ViewPlugin extension. Pass `app` from the plugin instance via
  * the factory.
  */
-function relativeFormatter(n: number, state: EditorState): string {
-  const cursorLine = state.doc.lineAt(state.selection.main.head).number;
-  if (n === cursorLine) return String(n);
-  return String(Math.abs(n - cursorLine));
+class RelativeLineNumberMarker extends GutterMarker {
+  constructor(readonly text: string) { super(); }
+  eq(other: GutterMarker): boolean { return (other as RelativeLineNumberMarker).text === this.text; }
+  toDOM(): Text { return document.createTextNode(this.text); }
+}
+
+function createRelativeLineNumberGutter(): Extension {
+  return gutter({
+    class: 'cm-lineNumbers',
+    lineMarker(view, line) {
+      const cursorLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+      const lineNo = view.state.doc.lineAt(line.from).number;
+      const text = lineNo === cursorLine ? String(lineNo) : String(Math.abs(lineNo - cursorLine));
+      return new RelativeLineNumberMarker(text);
+    },
+    lineMarkerChange(update) {
+      return update.selectionSet || update.docChanged;
+    },
+  });
 }
 
 function createCmdSlashScopeExtension(app: App): Extension {
@@ -313,17 +330,7 @@ export function createChildEditor(
       //     the EditorView.theme block) already covers gutter styling
       //     (transparent background, no right border), so no styling change
       //     is needed when the gutter appears.
-      ...(lineNumbersEnabled ? [
-        lineNumbers(showRelativeLineNumbers ? { formatNumber: relativeFormatter } : {}),
-        ...(showRelativeLineNumbers ? [EditorView.updateListener.of((update) => {
-          if (!update.selectionSet || update.docChanged) return;
-          const oldLine = update.startState.doc.lineAt(update.startState.selection.main.head).number;
-          const newLine = update.state.doc.lineAt(update.state.selection.main.head).number;
-          if (oldLine !== newLine) {
-            queueMicrotask(() => update.view.dispatch({}));
-          }
-        })] : []),
-      ] : []),
+      ...(lineNumbersEnabled ? [showRelativeLineNumbers ? createRelativeLineNumberGutter() : lineNumbers()] : []),
       // 2a. Mod-/ Obsidian Scope intercept — see debug session
       //     `cmd-slash-not-reaching-child.md`. Pushes a Scope on focus to
       //     override `editor:toggle-comments` for this child editor only.
