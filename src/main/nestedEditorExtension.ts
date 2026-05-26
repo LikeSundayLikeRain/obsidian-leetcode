@@ -131,7 +131,7 @@ export class NestedEditorWidget extends WidgetType {
       if (typeof childView.requestMeasure === 'function') childView.requestMeasure();
     }
     // Wire child→parent sync if not already wired (idempotent)
-    wireSyncIfNeeded(view, childView, this.filePath, this.registry);
+    wireSyncIfNeeded(view, childView, this.filePath, this.registry, this.app);
     return container;
   }
 

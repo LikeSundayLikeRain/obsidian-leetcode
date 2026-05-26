@@ -262,6 +262,7 @@ export function wireSyncIfNeeded(
   childView: EditorView,
   filePath: string,
   registry: ChildEditorRegistry,
+  app?: import('obsidian').App,
 ): void {
   if (SyncWiringState.has(filePath)) return;
 
@@ -272,7 +273,7 @@ export function wireSyncIfNeeded(
   // repaired WITHIN ONE PARENT TRANSACTION without requiring a child
   // dispatch or app reload. See
   // .planning/debug/fence-auto-recovery-regression-round2.md.
-  const parentRepairExt = createParentRepairExtension();
+  const parentRepairExt = createParentRepairExtension(app);
 
   try {
     childView.dispatch({
@@ -382,7 +383,7 @@ export function createScrollIntoViewExtension(): Extension {
  *
  * See .planning/debug/fence-auto-recovery-regression-round2.md.
  */
-export function createParentRepairExtension(): Extension {
+export function createParentRepairExtension(app?: import('obsidian').App): Extension {
   return EditorView.updateListener.of((update) => {
     // Only fire on document changes — selection-only / focus updates can't
     // damage the fence.
@@ -408,10 +409,35 @@ export function createParentRepairExtension(): Extension {
     // fence is structurally broken (or the section doesn't exist).
     if (findCodeFence(update.state) !== null) return;
 
-    // Derive activeSlug from the parent doc's `lc-language` frontmatter
-    // (same convention as createChildSyncExtension's child-side trigger).
-    // Fall back to 'python3' matching nestedEditorExtension.ts:216.
-    const activeSlug = readLcLanguageFromDoc(update.state) ?? 'python3';
+    // Phase 18: derive activeSlug from metadataCache (reliable at reload
+    // time — cached from previous session). Falls back to doc-text scan.
+    // The metadataCache path also gates on lc-slug presence, preventing
+    // repair from firing on partially-loaded docs or non-LC notes at
+    // reload time (fixes the "inserts python3 fence on reload" bug).
+    let activeSlug: string | null = null;
+
+    if (app) {
+      try {
+        const file = update.state.field(editorInfoField)?.file;
+        if (file) {
+          const fm = app.metadataCache.getFileCache(file)?.frontmatter as
+            | Record<string, unknown>
+            | undefined;
+          if (typeof fm?.['lc-slug'] !== 'string') return;
+          const lcLang = fm['lc-language'];
+          if (typeof lcLang === 'string' && lcLang.length > 0) {
+            activeSlug = lcLang;
+          }
+        }
+      } catch {
+        // editorInfoField not available in all contexts (e.g., tests)
+      }
+    }
+
+    if (!activeSlug) {
+      activeSlug = readLcLanguageFromDoc(update.state);
+    }
+    if (!activeSlug) return;
 
     // Fire repair on the parent view — the round-1 fix in
     // repairFenceStructure handles the marker-disambiguation +
