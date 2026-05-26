@@ -398,5 +398,25 @@ export function createChildEditor(
     ],
   });
 
-  return new EditorView({ state, parent });
+  const view = new EditorView({ state, parent });
+
+  // Phase 18 Plan 01 — Esc capture. When the child is focused and vim is
+  // already in Normal mode, a redundant Esc bubbles up to Obsidian's global
+  // keymap which steals focus to the parent. Capturing Esc and stopping
+  // propagation when already in Normal mode prevents this.
+  if (vimEnabled && view.contentDOM) {
+    view.contentDOM.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      try {
+        const { getCM } = require('@replit/codemirror-vim') as
+          typeof import('@replit/codemirror-vim');
+        const cm = getCM(view);
+        if (cm?.state?.vim?.insertMode) return;
+      } catch { return; }
+      e.stopPropagation();
+      e.preventDefault();
+    });
+  }
+
+  return view;
 }
