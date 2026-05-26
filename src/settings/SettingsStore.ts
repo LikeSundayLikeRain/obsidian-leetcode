@@ -67,6 +67,7 @@ export interface PluginData {
    *  missing field, typo, etc.) — mirrors the `previewClickBehavior`
    *  posture (Phase 06 PREVIEW-02). */
   indentSizeOverride: 'auto' | 2 | 4 | 8;
+  showRelativeLineNumbers: boolean;
   problemIndex: ProblemIndex | null;
   /** Compound filter rules from the filter modal. Null = no filter active.
    *  Persisted so filter survives plugin reload / Obsidian restart. */
@@ -244,6 +245,7 @@ const DEFAULT_DATA: PluginData = {
   // always uses '\t' regardless of override (gofmt non-negotiable);
   // exception is enforced by the consumer (childEditorLanguage.ts).
   indentSizeOverride: 'auto',
+  showRelativeLineNumbers: false,
   problemIndex: null,
   filter: null,
   problemDetails: {},
@@ -652,6 +654,9 @@ export class SettingsStore {
                            raw.indentSizeOverride === 8)
         ? raw.indentSizeOverride
         : 'auto',
+      showRelativeLineNumbers: typeof raw.showRelativeLineNumbers === 'boolean'
+        ? raw.showRelativeLineNumbers
+        : false,
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
       filter: isValidCompoundFilter(raw.filter)
         ? sanitizeCompoundFilter(raw.filter)
@@ -799,6 +804,15 @@ export class SettingsStore {
    *  Settings tab "Code editor → Indent size" dropdown. */
   async setIndentSizeOverride(v: 'auto' | 2 | 4 | 8): Promise<void> {
     this.data.indentSizeOverride = v;
+    await this.persist();
+  }
+
+  getShowRelativeLineNumbers(): boolean {
+    return this.data.showRelativeLineNumbers;
+  }
+
+  async setShowRelativeLineNumbers(v: boolean): Promise<void> {
+    this.data.showRelativeLineNumbers = v;
     await this.persist();
   }
 

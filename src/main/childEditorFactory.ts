@@ -150,6 +150,12 @@ export const customShiftTabCommand: Command = (view) => indentLessLoose(view);
  * Returns the ViewPlugin extension. Pass `app` from the plugin instance via
  * the factory.
  */
+function relativeFormatter(n: number, state: EditorState): string {
+  const cursorLine = state.doc.lineAt(state.selection.main.head).number;
+  if (n === cursorLine) return String(n);
+  return String(Math.abs(n - cursorLine));
+}
+
 function createCmdSlashScopeExtension(app: App): Extension {
   return ViewPlugin.define((view): PluginValue => {
     let activeScope: Scope | null = null;
@@ -233,6 +239,7 @@ export function createChildEditor(
   indentOverride: 'auto' | 2 | 4 | 8,
   app?: App,
   syncExtensions?: Extension[],
+  showRelativeLineNumbers: boolean = false,
 ): EditorView {
   // Phase 17 Plan 06 (D-18) — Vim mode conditional. Read Obsidian's global
   // `vimMode` setting ONCE at child mount; if true, prepend the vim() extension
@@ -306,7 +313,7 @@ export function createChildEditor(
       //     the EditorView.theme block) already covers gutter styling
       //     (transparent background, no right border), so no styling change
       //     is needed when the gutter appears.
-      ...(lineNumbersEnabled ? [lineNumbers()] : []),
+      ...(lineNumbersEnabled ? [lineNumbers(showRelativeLineNumbers ? { formatNumber: relativeFormatter } : {})] : []),
       // 2a. Mod-/ Obsidian Scope intercept — see debug session
       //     `cmd-slash-not-reaching-child.md`. Pushes a Scope on focus to
       //     override `editor:toggle-comments` for this child editor only.

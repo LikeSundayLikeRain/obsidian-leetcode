@@ -56,6 +56,7 @@ type PluginHost = Plugin & {
   };
   settings: {
     getIndentSizeOverride(): 'auto' | 2 | 4 | 8;
+    getShowRelativeLineNumbers(): boolean;
   };
 };
 
@@ -84,6 +85,7 @@ export class NestedEditorWidget extends WidgetType {
     readonly initialSlug: string,
     readonly indentOverride: 'auto' | 2 | 4 | 8,
     readonly app?: import('obsidian').App,
+    readonly showRelativeLineNumbers: boolean = false,
   ) {
     super();
   }
@@ -122,6 +124,8 @@ export class NestedEditorWidget extends WidgetType {
         this.initialSlug,
         this.indentOverride,
         this.app,
+        undefined,
+        this.showRelativeLineNumbers,
       );
       this.registry.set(this.filePath, childView);
     } else {
@@ -223,6 +227,7 @@ export function buildNestedDecorations(
   const lcLang = fm?.['lc-language'];
   const initialSlug = typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
   const indentOverride = plugin.settings.getIndentSizeOverride();
+  const showRelativeLineNumbers = plugin.settings.getShowRelativeLineNumbers();
 
   // 1. Opener line-hide
   builder.add(state.doc.line(fence.openerLine).from, state.doc.line(fence.openerLine).from, hideLine);
@@ -230,7 +235,7 @@ export function buildNestedDecorations(
   // 2. Block widget anchored at opener line end (side: 1 = renders after)
   const anchor = state.doc.line(fence.openerLine).to;
   builder.add(anchor, anchor, Decoration.widget({
-    widget: new NestedEditorWidget(file.path, registry, fenceContent, initialSlug, indentOverride, plugin.app),
+    widget: new NestedEditorWidget(file.path, registry, fenceContent, initialSlug, indentOverride, plugin.app, showRelativeLineNumbers),
     block: true,
     side: 1,
   }));

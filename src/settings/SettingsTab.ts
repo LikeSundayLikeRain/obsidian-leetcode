@@ -236,6 +236,17 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         }),
       );
 
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Cmd-E" is a keyboard shortcut reference.
+      .setName('Show relative line numbers in code editor')
+      .setDesc('When enabled, the code editor gutter shows distance from cursor line. Toggle takes effect on next note open or Cmd-E flip.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getShowRelativeLineNumbers())
+        .onChange(async (v) => {
+          await this.plugin.settings.setShowRelativeLineNumbers(v);
+        }),
+      );
+
     // =============================
     //   Preview section (Phase 06 PREVIEW-02)
     // =============================

@@ -302,6 +302,8 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     // default-state dropdown without diverging from any test's expectation.
     getIndentSizeOverride: () => 'auto' as const,
     setIndentSizeOverride: vi.fn(async (_v: 'auto' | 2 | 4 | 8) => undefined),
+    getShowRelativeLineNumbers: () => false,
+    setShowRelativeLineNumbers: vi.fn(async (_v: boolean) => undefined),
     getActiveAIProvider: () => activeProvider,
     setActiveAIProvider: vi.fn(async (p: AIProvider | null) => {
       activeProvider = p;

@@ -126,9 +126,11 @@ function createMockPlugin(opts: {
   }
   const basePlugin = createFakePlugin({ metadataCache });
   // Phase 16: nested editor extension reads plugin.settings.getIndentSizeOverride()
+  // Phase 18: also reads plugin.settings.getShowRelativeLineNumbers()
   const plugin = Object.assign(basePlugin, {
     settings: {
       getIndentSizeOverride: vi.fn(() => opts.indentOverride ?? 'auto'),
+      getShowRelativeLineNumbers: vi.fn(() => false),
     },
   });
   return { plugin, metadataCache };
@@ -354,6 +356,8 @@ describe('NestedEditorWidget', () => {
       'java',
       4,
       undefined,
+      undefined,
+      false,
     );
     expect(registry.set).toHaveBeenCalledWith('path/a.md', mockChildView);
   });
@@ -415,6 +419,8 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       'java',
       'auto',
       expect.anything(),
+      undefined,
+      false,
     );
   });
 
@@ -447,6 +453,8 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       'python3',
       8,
       expect.anything(),
+      undefined,
+      false,
     );
   });
 
@@ -456,7 +464,7 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
     metadataCache.setFrontmatter('LeetCode/0001-two-sum.md', { 'lc-slug': 'two-sum' });
     const basePlugin = createFakePlugin({ metadataCache });
     const plugin = Object.assign(basePlugin, {
-      settings: { getIndentSizeOverride: vi.fn(() => 'auto' as const) },
+      settings: { getIndentSizeOverride: vi.fn(() => 'auto' as const), getShowRelativeLineNumbers: vi.fn(() => false) },
     });
     const state = makeCanonicalState();
     const registry = createMockRegistry();
@@ -485,6 +493,8 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       'python3',
       'auto',
       expect.anything(),
+      undefined,
+      false,
     );
   });
 
@@ -497,7 +507,7 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
     });
     const basePlugin = createFakePlugin({ metadataCache });
     const plugin = Object.assign(basePlugin, {
-      settings: { getIndentSizeOverride: vi.fn(() => 'auto' as const) },
+      settings: { getIndentSizeOverride: vi.fn(() => 'auto' as const), getShowRelativeLineNumbers: vi.fn(() => false) },
     });
     const state = makeCanonicalState();
     const registry = createMockRegistry();
@@ -526,6 +536,8 @@ describe('buildNestedDecorations — Phase 16 language wiring', () => {
       'python3',
       'auto',
       expect.anything(),
+      undefined,
+      false,
     );
   });
 });
@@ -732,6 +744,7 @@ function makePhase17Plugin(opts: { lcLanguage?: string } = {}) {
     childEditorRegistry: registry,
     settings: {
       getIndentSizeOverride: vi.fn(() => 'auto' as const),
+      getShowRelativeLineNumbers: vi.fn(() => false),
     },
   });
 }
