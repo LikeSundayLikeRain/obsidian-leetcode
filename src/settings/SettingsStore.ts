@@ -224,7 +224,7 @@ const DEFAULT_PROVIDER_CONFIGS: Record<AIProvider, ProviderConfig | BedrockProvi
     model: '',
     disclosureAcknowledged: false,
     region: 'us-east-1',
-    modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    modelId: 'us.anthropic.claude-sonnet-4-6',
     authMethod: 'default-chain',
     accessKeyId: '',
     secretAccessKey: '',
