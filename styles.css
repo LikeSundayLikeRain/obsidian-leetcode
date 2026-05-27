@@ -985,47 +985,73 @@
 .cm-editor .leetcode-locked-heading-line .cm-formatting-header-2 {
   display: none;
 }
-.leetcode-code-actions .leetcode-code-action-ai-solution {
-  padding: 2px 14px;
-  min-height: 30px;
-  border-radius: 16px;
-  font-size: 13px;
-  font-weight: 600;
+.leetcode-code-actions button.leetcode-code-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: none;
+  border-radius: 4px;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-muted);
   cursor: pointer;
-  color: #fff;
-  background: linear-gradient(135deg, #7c3aed, #4f46e5);
-  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
-  transition: opacity 150ms ease, box-shadow 150ms ease;
+  transition: color 120ms ease, background 120ms ease;
 }
-.leetcode-code-actions .leetcode-code-action-ai-solution:hover {
-  opacity: 0.9;
-  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.45);
+.leetcode-code-actions button.leetcode-code-action-icon:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover) !important;
+}
+.leetcode-code-actions .leetcode-code-action-ai-solution,
+.leetcode-code-actions .leetcode-code-action-run,
+.leetcode-code-actions .leetcode-code-action-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.leetcode-code-actions .leetcode-code-action-ai-solution:hover,
+.leetcode-code-actions .leetcode-code-action-run:hover,
+.leetcode-code-actions .leetcode-code-action-submit:hover {
+  border-color: var(--text-muted);
+  background: var(--background-secondary);
 }
 .leetcode-code-actions .leetcode-code-action-ai-solution {
   margin-left: auto;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  color: #fff;
+  border-color: transparent;
 }
-/* Phase 5.4 D-12a — inline Run/Submit ported to the .lc-fm__picker neutral
-   button token set (matches RunModal tabs + VerdictModal case tabs).
-   Hover changes border-color only (background stays var(--background-primary))
-   to read as a select-input pill rather than a filled button. */
-.leetcode-code-actions .leetcode-code-action-run,
+.leetcode-code-actions .leetcode-code-action-ai-solution:hover {
+  background: linear-gradient(135deg, #6d28d9, #4338ca);
+  border-color: transparent;
+}
 .leetcode-code-actions .leetcode-code-action-submit {
-  min-height: 30px;
-  padding: 2px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  background: var(--background-primary);
-  color: var(--text-normal);
-  cursor: pointer;
-  border: 1px solid var(--background-modifier-border);
-  transition: border-color 120ms ease;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: transparent;
 }
-.leetcode-code-actions .leetcode-code-action-run:hover,
 .leetcode-code-actions .leetcode-code-action-submit:hover {
-  background: var(--background-primary);
-  border-color: var(--text-muted);
-  color: var(--text-normal);
+  background: var(--interactive-accent-hover);
+  border-color: transparent;
+}
+.leetcode-code-actions .leetcode-code-action-ai-solution svg,
+.leetcode-code-actions .leetcode-code-action-run svg,
+.leetcode-code-actions .leetcode-code-action-submit svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 /* ── Phase 5.3 — Edit-Mode language chevron (D-06..D-10) ───────────── */
@@ -1043,38 +1069,31 @@
   z-index: 9999;
   isolation: isolate;
 }
-/* G-CHEVRON-STYLING (gap-closure 05.3-05) — ported from .lc-fm__picker
-   for cross-feature visual consistency with the browser's filter dropdown. */
-.leetcode-language-chevron {
-  display: inline-grid;
-  grid-template-columns: 14px 1fr 14px;
+button.leetcode-language-chevron {
+  display: inline-flex;
   align-items: center;
-  min-height: 30px;
-  padding: 2px 8px;
-  /* Fixed width sized to the longest label ("JavaScript"/"TypeScript", 10ch)
-     plus chevron icon + gap. Prevents the inline action row from re-flowing
-     when the user switches between short ("C") and long ("JavaScript")
-     language labels (Phase 5.4 UAT 2026-05-13). */
-  width: 14ch;
-  font-size: 13px;
-  background: var(--background-primary);
-  color: var(--text-normal);
+  flex-direction: row-reverse;
+  gap: 2px;
+  min-height: 28px;
+  padding: 2px 6px;
+  font-size: 14px;
+  color: var(--text-muted);
   cursor: pointer;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  transition: border-color 120ms ease;
+  background: transparent !important;
+  border: none;
+  border-radius: 4px;
+  box-shadow: none;
+  transition: color 120ms ease, background 120ms ease;
 }
 .leetcode-language-chevron .leetcode-language-chevron-icon {
-  grid-column: 1;
+  opacity: 0.6;
 }
 .leetcode-language-chevron .leetcode-language-chevron-label {
-  grid-column: 2;
-  text-align: center;
-  /* Phantom right spacer is provided by grid-column 3 (no DOM needed —
-     the third grid column is empty, balancing the icon on column 1). */
+  font-weight: 500;
 }
-.leetcode-language-chevron:hover {
-  border-color: var(--text-muted);
+button.leetcode-language-chevron:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover) !important;
 }
 .leetcode-language-chevron-dropdown {
   /* G-DROPDOWN-CLIPPED — portal pattern. Dropdown is appended to doc.body

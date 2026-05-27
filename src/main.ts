@@ -2148,6 +2148,48 @@ export default class LeetCodePlugin extends Plugin {
     await this.openAISolution(slug);
   }
 
+  async resetFromActive(): Promise<void> {
+    const ctx = this.getActiveProblemContext();
+    if (!ctx) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    await this.resetCode(ctx.file, ctx.slug);
+  }
+
+  async retrieveLastSubmissionFromActive(): Promise<void> {
+    const ctx = this.getActiveProblemContext();
+    if (!ctx) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    try {
+      const rows = await this.submissionHistory.get(ctx.slug);
+      if (!rows || rows.length === 0) {
+        new Notice('No past submissions found for this problem.', 4000);
+        return;
+      }
+      const latest = rows[0]!;
+      const cookies = this.settings.getAuthCookies();
+      if (!cookies) {
+        new Notice('Not logged in.', 4000);
+        return;
+      }
+      const { detailForSubmission } = await import('./graph/submissionHistoryClient');
+      const detail = await detailForSubmission(latest.id, cookies);
+      if (!detail?.code) {
+        new Notice('Could not retrieve submission code.', 4000);
+        return;
+      }
+      const { copyToCode } = await import('./graph/copyToCode');
+      await copyToCode(this.app, ctx.file, detail.code, detail.lang.name);
+      new Notice('Last submission copied to ## Code.', 3000);
+    } catch (err) {
+      new Notice('Failed to retrieve submission.', 4000);
+      console.error('[leetcode] retrieveLastSubmission:', err);
+    }
+  }
+
   private async openAISolution(slug: string): Promise<void> {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view || !view.file) {
