@@ -71,15 +71,18 @@ function buildSinglePreRoot(): HTMLElement {
 }
 
 interface FakePluginOverrides {
+  resetFromActive?: ReturnType<typeof vi.fn>;
+  retrieveLastSubmissionFromActive?: ReturnType<typeof vi.fn>;
   runFromActive?: ReturnType<typeof vi.fn>;
   submitFromActive?: ReturnType<typeof vi.fn>;
-  // Phase 08 Plan 04 (AIDBG-01) — fence-row factory now requires a 3rd
   aiDebugFromActive?: ReturnType<typeof vi.fn>;
   aiSolutionFromActive?: ReturnType<typeof vi.fn>;
 }
 
 function withHostMethods(plugin: ReturnType<typeof createFakePlugin>, overrides: FakePluginOverrides = {}) {
   const host = plugin as unknown as Record<string, unknown>;
+  host.resetFromActive = overrides.resetFromActive ?? vi.fn();
+  host.retrieveLastSubmissionFromActive = overrides.retrieveLastSubmissionFromActive ?? vi.fn();
   host.runFromActive = overrides.runFromActive ?? vi.fn();
   host.submitFromActive = overrides.submitFromActive ?? vi.fn();
   host.aiDebugFromActive = overrides.aiDebugFromActive ?? vi.fn();
@@ -144,10 +147,12 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     const actionsDiv = root.querySelector('.leetcode-code-actions');
     expect(actionsDiv).not.toBeNull();
     const buttons = Array.from(actionsDiv!.querySelectorAll('button'));
-    expect(buttons.length).toBe(3);
-    expect(buttons[0]!.textContent).toBe('AI solution');
-    expect(buttons[1]!.textContent).toBe('Run');
-    expect(buttons[2]!.textContent).toBe('Submit');
+    expect(buttons.length).toBe(5);
+    expect(buttons[0]!.classList.contains('leetcode-code-action-icon')).toBe(true);
+    expect(buttons[1]!.classList.contains('leetcode-code-action-icon')).toBe(true);
+    expect(buttons[2]!.textContent).toBe('AI solution');
+    expect(buttons[3]!.textContent).toBe('Run');
+    expect(buttons[4]!.textContent).toBe('Submit');
   });
 
   it('does NOT append when section is under ## Problem (example code blocks)', async () => {
@@ -228,7 +233,7 @@ describe('codeActionsPostProcessor (Reading Mode)', () => {
     });
     await processor(root, ctx);
 
-    const [, runBtn, submitBtn] = Array.from(
+    const [, , , runBtn, submitBtn] = Array.from(
       root.querySelectorAll('.leetcode-code-actions button'),
     );
 

@@ -88,10 +88,11 @@ function makeState(text: string): EditorState {
 // `CodeActionsWidget(plugin, file, currentSlug)` signature compiles end-to-end.
 // Mirrors analog `withHostMethods` at codeActionsPostProcessor.test.ts lines 78-83.
 type HostOverrides = {
+  resetFromActive?: ReturnType<typeof vi.fn>;
+  retrieveLastSubmissionFromActive?: ReturnType<typeof vi.fn>;
   runFromActive?: ReturnType<typeof vi.fn>;
   submitFromActive?: ReturnType<typeof vi.fn>;
   switchLanguage?: ReturnType<typeof vi.fn>;
-  // Phase 08 Plan 04 (AIDBG-01) — fence-row factory now requires a 3rd
   aiDebugFromActive?: ReturnType<typeof vi.fn>;
   aiSolutionFromActive?: ReturnType<typeof vi.fn>;
   defaultLanguage?: string;
@@ -101,6 +102,8 @@ function withHostMethods(
   overrides: HostOverrides = {},
 ) {
   const host = plugin as unknown as Record<string, unknown>;
+  host.resetFromActive = overrides.resetFromActive ?? vi.fn();
+  host.retrieveLastSubmissionFromActive = overrides.retrieveLastSubmissionFromActive ?? vi.fn();
   host.runFromActive = overrides.runFromActive ?? vi.fn();
   host.submitFromActive = overrides.submitFromActive ?? vi.fn();
   host.switchLanguage = overrides.switchLanguage ?? vi.fn();
@@ -229,8 +232,8 @@ describe('buildDecorations — widget emits .leetcode-code-actions', () => {
     const root = widget.toDOM(fakeView);
 
     expect(root.classList.contains('leetcode-code-actions')).toBe(true);
-    // chevron + AI Solution + Run + Submit = 4 children
-    expect(root.children.length).toBe(4);
+    // chevron + Retrieve + Reset + AI Solution + Run + Submit = 6 children
+    expect(root.children.length).toBe(6);
     expect(
       (root.children[0] as HTMLElement).classList.contains(
         'leetcode-language-chevron-wrapper',
