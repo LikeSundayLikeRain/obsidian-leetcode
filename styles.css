@@ -1175,7 +1175,7 @@
   text-align: center;
 }
 .leetcode-verdict .leetcode-verdict-case-chip--pass {
-  background: color-mix(in srgb, var(--background-modifier-success) 80%, transparent);
+  background: var(--color-green);
   color: var(--text-on-accent);
 }
 .leetcode-verdict .leetcode-verdict-case-chip--fail {
@@ -1239,6 +1239,7 @@
   font-size: 12px;
   white-space: pre-wrap;
   margin: 0;
+  background: transparent;
 }
 
 /* Group 9 — D-12b chevron icon + label spans (DOM shipped in Plan 04 Task 1).
