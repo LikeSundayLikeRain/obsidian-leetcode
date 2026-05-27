@@ -459,9 +459,14 @@ function createVimIsolationExtension(parentContainer: HTMLElement): Extension {
       e.preventDefault();
     };
 
+    const onFocus = (): void => {
+      window.requestAnimationFrame(syncVimModeClass);
+    };
+
     view.dom.addEventListener('keydown', onDomKeydown);
     view.contentDOM.addEventListener('keydown', onContentKeydown);
     view.contentDOM.addEventListener('keydown', onEscKeydown);
+    view.contentDOM.addEventListener('focus', onFocus);
     syncVimModeClass();
 
     return {
@@ -469,6 +474,7 @@ function createVimIsolationExtension(parentContainer: HTMLElement): Extension {
         view.dom.removeEventListener('keydown', onDomKeydown);
         view.contentDOM.removeEventListener('keydown', onContentKeydown);
         view.contentDOM.removeEventListener('keydown', onEscKeydown);
+        view.contentDOM.removeEventListener('focus', onFocus);
         parentContainer.classList.remove('lc-vim-insert');
       },
     };

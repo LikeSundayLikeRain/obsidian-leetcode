@@ -542,7 +542,7 @@ describe('childEditorSync', () => {
       );
       const matches = source.match(/addToHistory\.of\(false\)/g);
       expect(matches).not.toBeNull();
-      expect(matches!.length).toBe(2);
+      expect(matches!.length).toBe(3);
     });
 
     it('child-to-parent sync dispatches still include leetcode.child-sync userEvent', () => {
@@ -569,7 +569,7 @@ describe('childEditorSync', () => {
       const arrayAnnotationPattern = /annotations:\s*\[\s*\n?\s*Transaction\.userEvent\.of\('leetcode\.child-sync'\),\s*\n?\s*Transaction\.addToHistory\.of\(false\)/g;
       const matches = source.match(arrayAnnotationPattern);
       expect(matches).not.toBeNull();
-      expect(matches!.length).toBe(2);
+      expect(matches!.length).toBe(3);
     });
   });
 

@@ -122,6 +122,28 @@ export function createChildSyncExtension(
       return;
     }
 
+    // Divergence guard: verify parent fence body matches the child's pre-change
+    // doc. If they've diverged (e.g., parent vim processed a keystroke independently
+    // after a focus leak), incremental offset mapping would corrupt the parent.
+    // Fall back to a full-replace of the fence body with the child's current doc.
+    const bodyStart = parentView.state.doc.line(fence.openerLine).to + 1;
+    const bodyEnd = parentView.state.doc.line(fence.closerLine).from;
+    const parentBody = parentView.state.doc.sliceString(bodyStart, bodyEnd);
+    const childPrevDoc = update.startState.doc.toString();
+
+    if (parentBody !== childPrevDoc) {
+      try {
+        parentView.dispatch({
+          changes: { from: bodyStart, to: bodyEnd, insert: update.state.doc.toString() },
+          annotations: [
+            Transaction.userEvent.of('leetcode.child-sync'),
+            Transaction.addToHistory.of(false),
+          ],
+        });
+      } catch { /* editor teardown */ }
+      return;
+    }
+
     propagateChildChanges(update, parentView, fence);
   });
 }
