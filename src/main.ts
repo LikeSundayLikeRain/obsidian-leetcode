@@ -2183,6 +2183,7 @@ export default class LeetCodePlugin extends Plugin {
       }
       const { copyToCode } = await import('./graph/copyToCode');
       await copyToCode(this.app, ctx.file, detail.code, detail.lang.name);
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "## Code" is a verbatim section heading.
       new Notice('Last submission copied to ## Code.', 3000);
     } catch (err) {
       new Notice('Failed to retrieve submission.', 4000);

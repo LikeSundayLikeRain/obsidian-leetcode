@@ -46,10 +46,15 @@ export function buildCodeBlockButtonRow(
     row.appendChild(opts.prefix());
   }
 
+  const parseSvg = (svg: string): SVGElement => {
+    const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
+    return parsed.documentElement as unknown as SVGElement;
+  };
+
   const makeIconBtn = (cls: string, tooltip: string, iconSvg: string, handler: () => void | Promise<void>) => {
     const btn = doc.createElement('button');
     btn.className = cls;
-    btn.innerHTML = iconSvg;
+    btn.appendChild(doc.importNode(parseSvg(iconSvg), true));
     btn.title = tooltip;
     btn.addEventListener('mousedown', (e) => { e.preventDefault(); });
     btn.addEventListener('click', (e) => {
@@ -69,7 +74,7 @@ export function buildCodeBlockButtonRow(
   const makeBtn = (cls: string, label: string, iconSvg: string, handler: () => void | Promise<void>) => {
     const btn = doc.createElement('button');
     btn.className = cls;
-    btn.innerHTML = iconSvg;
+    btn.appendChild(doc.importNode(parseSvg(iconSvg), true));
     const span = doc.createElement('span');
     span.textContent = label;
     btn.appendChild(span);
