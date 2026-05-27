@@ -276,6 +276,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     const aiEnabled = active !== null;
 
     new Setting(containerEl).setName('AI coach').setHeading()
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "AI" is a brand/acronym.
       .setDesc('AI-powered debug, review, and pattern classification.')
       .addButton((b) => {
         b.setIcon('refresh-cw')
