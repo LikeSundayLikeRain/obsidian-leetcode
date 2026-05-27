@@ -9,6 +9,7 @@
     "prelint": "npm run check:lc-isolation",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
+    "ci": "npm run lint && npm test && npm run build && npm run check:bundle-size",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "check:lc-isolation": "bash scripts/check-no-obsidianfetch-in-lc.sh && bash scripts/check-no-fetch-in-lc.sh",
     "grep:vault": "./scripts/grep-no-vault-modify.sh",

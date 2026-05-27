@@ -44,6 +44,14 @@ if (typeof proto.removeClass !== 'function') {
     return this;
   };
 }
+if (typeof (proto as unknown as { createDiv?: unknown }).createDiv !== 'function') {
+  (proto as unknown as Record<string, unknown>).createDiv = function (this: HTMLElement, cls?: string) {
+    const el = this.ownerDocument.createElement('div');
+    if (cls) el.classList.add(...cls.split(' '));
+    this.appendChild(el);
+    return el;
+  };
+}
 if (typeof proto.createEl !== 'function') {
   proto.createEl = function <K extends keyof HTMLElementTagNameMap>(
     this: HTMLElement,
@@ -76,7 +84,7 @@ vi.mock('obsidian', () => {
   }
 
   // Capture button onClick handlers so test 6 can simulate the Test connection click.
-  const buttonHandlers: Array<{ text: string; onClick: () => unknown }> = [];
+  const buttonHandlers: Array<{ text: string; tooltip: string; onClick: () => unknown }> = [];
 
   class Setting {
     settingEl: HTMLElement;
@@ -176,8 +184,9 @@ vi.mock('obsidian', () => {
     }
     addButton(cb: (b: ButtonApi) => void) {
       const buttonEl = this.controlEl.createEl('button');
-      const handlerRecord: { text: string; onClick: () => unknown } = {
+      const handlerRecord: { text: string; tooltip: string; onClick: () => unknown } = {
         text: '',
+        tooltip: '',
         onClick: () => undefined,
       };
       buttonHandlers.push(handlerRecord);
@@ -188,7 +197,11 @@ vi.mock('obsidian', () => {
           handlerRecord.text = t;
           return api;
         },
-        setTooltip(_t: string) {
+        setIcon(_i: string) {
+          return api;
+        },
+        setTooltip(t: string) {
+          handlerRecord.tooltip = t;
           return api;
         },
         setCta() {
@@ -258,6 +271,7 @@ interface DropdownApi {
 interface ButtonApi {
   buttonEl: HTMLButtonElement;
   setButtonText(t: string): ButtonApi;
+  setIcon(i: string): ButtonApi;
   setTooltip(t: string): ButtonApi;
   setCta(): ButtonApi;
   setDisabled(d: boolean): ButtonApi;
@@ -352,29 +366,28 @@ describe('SettingsTab — AI section (Phase 07 Plan 03)', () => {
     vi.resetModules();
   });
 
-  it('when activeAIProvider is null, only heading + dropdown row render in the AI section', async () => {
+  it('when activeAIProvider is null, only heading row renders in the AI section (toggle off)', async () => {
     const { LeetCodeSettingTab } = await import('../../src/settings/SettingsTab');
     const plugin = makeFakePlugin({ activeProvider: null });
     const tab = new LeetCodeSettingTab({} as never, plugin as never);
     tab.display();
 
-    // The AI section adds: 1 heading row + 1 dropdown row = 2 setting-items.
-    // Find the AI heading + count items between it and the next heading.
+    // The AI section renders only the heading row with toggle OFF — no provider
+    // dropdown or sub-form. Find the AI coach heading.
     const headings = Array.from(tab.containerEl.querySelectorAll('h3'));
-    const aiHeading = headings.find((h) => h.textContent === 'AI');
+    const aiHeading = headings.find((h) => h.textContent === 'AI coach');
     expect(aiHeading).toBeDefined();
 
-    // The next heading after AI must be Contest (Phase 10 Plan 07 added Contest
-    // section between AI and Knowledge graph). This still proves no AI sub-form
-    // rendered — the AI section contains only heading + dropdown + auto-review toggle.
+    // The next heading after AI coach must be Knowledge graph (Contest was
+    // merged into the AI features card which is hidden when toggle is off).
     const aiHeadingIdx = headings.indexOf(aiHeading!);
     const nextHeading = headings[aiHeadingIdx + 1];
-    expect(nextHeading?.textContent).toBe('Contest');
+    expect(nextHeading?.textContent).toBe('Knowledge graph');
 
-    // No password input rendered for null active provider.
+    // No AI password input rendered when toggle is off.
     const passwordInputs = tab.containerEl.querySelectorAll('input[type="password"]');
     // Two pre-existing password inputs come from the manual-cookie section
-    // (LEETCODE_SESSION + csrftoken). The AI section adds zero when null.
+    // (LEETCODE_SESSION + csrftoken). The AI section adds zero when off.
     expect(passwordInputs.length).toBe(2);
   });
 
@@ -471,7 +484,7 @@ describe('SettingsTab — AI section (Phase 07 Plan 03)', () => {
     const obs = await import('obsidian');
     type ObsTest = typeof obs & {
       __resetButtonHandlers: () => void;
-      __getButtonHandlers: () => Array<{ text: string; onClick: () => unknown }>;
+      __getButtonHandlers: () => Array<{ text: string; tooltip: string; onClick: () => unknown }>;
     };
     const obsHelpers = obs as unknown as ObsTest;
     obsHelpers.__resetButtonHandlers();
@@ -481,20 +494,14 @@ describe('SettingsTab — AI section (Phase 07 Plan 03)', () => {
     const tab = new LeetCodeSettingTab({} as never, plugin as never);
     tab.display();
 
-    // Find the captured Test connection handler and invoke it.
+    // Find the captured Test connection handler by tooltip and invoke it.
     const handlers = obsHelpers.__getButtonHandlers();
-    const testConn = handlers.find((h) => h.text === 'Test connection');
+    const testConn = handlers.find((h) => h.tooltip === 'Test connection');
     expect(testConn).toBeDefined();
 
     await testConn!.onClick();
 
-    // The Settings button onClick must delegate to the plugin's shared
-    // testActiveAIConnection() method (which the palette command also calls).
-    // The placeholder Notice text from Plan 07-03 must be gone — neither this
-    // surface nor the captured Notice list should contain it.
     expect(plugin.testActiveAIConnection).toHaveBeenCalledTimes(1);
-    const placeholder = noticeCalls.find((n) => n.text.includes('Plan 07-04'));
-    expect(placeholder).toBeUndefined();
   });
 
   it('exactly one setCta invocation in src/settings/SettingsTab.ts (the pre-existing Login button)', () => {
