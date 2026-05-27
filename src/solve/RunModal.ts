@@ -148,6 +148,24 @@ export class RunModal extends Modal {
       }
     });
 
+    contentEl.setAttribute('tabindex', '-1');
+
+    contentEl.addEventListener('mousedown', (e: MouseEvent) => {
+      if (e.target !== textarea) {
+        e.preventDefault();
+        contentEl.focus();
+      }
+    });
+
+    contentEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      const isModEnter = (e.metaKey || e.ctrlKey) && e.key === 'Enter';
+      const isEnterOutsideTextarea = e.key === 'Enter' && document.activeElement !== textarea;
+      if (isModEnter || isEnterOutsideTextarea) {
+        e.preventDefault();
+        runBtn.click();
+      }
+    });
+
     // Focus the textarea so typing works immediately. Guarded because
     // happy-dom's textarea.focus can throw in headless mode.
     if (typeof (textarea as unknown as { focus?: () => void }).focus === 'function') {
