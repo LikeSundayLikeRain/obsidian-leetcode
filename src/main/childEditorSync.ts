@@ -130,8 +130,9 @@ export function createChildSyncExtension(
     const bodyEnd = parentView.state.doc.line(fence.closerLine).from;
     const parentBody = parentView.state.doc.sliceString(bodyStart, bodyEnd);
     const childPrevDoc = update.startState.doc.toString();
+    const childPrevNorm = childPrevDoc.endsWith('\n') ? childPrevDoc : childPrevDoc + '\n';
 
-    if (parentBody !== childPrevDoc) {
+    if (parentBody !== childPrevNorm && parentBody !== childPrevDoc) {
       try {
         parentView.dispatch({
           changes: { from: bodyStart, to: bodyEnd, insert: update.state.doc.toString() },

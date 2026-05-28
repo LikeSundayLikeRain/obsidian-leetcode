@@ -1980,27 +1980,22 @@ button.leetcode-language-chevron:hover {
  * Scoped to .lc-nested-editor so the rule applies ONLY to the child
  * editor — Obsidian's parent editor and other CM6 instances elsewhere
  * in the vault are unaffected. */
-/* Phase 18: the child CM6 never gets cm-focused. Force both cursor layers
- * visible. Mode-based toggling (which cursor to show) is handled by JS
- * adding/removing `lc-vim-insert` class on .lc-nested-editor. */
+/* Phase 18: Force both cursor layers visible. The pipe cursor always renders
+ * as a fallback — in Normal mode, vim's fat cursor overlays on top. After
+ * focus-steal events (hotkeys, property editor), the pipe remains visible
+ * even when vim's fat cursor doesn't render. No blink on either layer. */
 .lc-nested-editor .cm-vimCursorLayer {
   display: block !important;
-}
-.lc-nested-editor .cm-layer-above.cm-cursorLayer {
-  display: block !important;
-}
-/* Normal mode (default): show fat cursor (solid, no blink), hide default pipe.
- * :has(.cm-vimCursorLayer) ensures these only fire when vim is active —
- * without vim, the standard pipe cursor remains visible. */
-.lc-nested-editor:not(.lc-vim-insert):has(.cm-vimCursorLayer) .cm-layer-above.cm-cursorLayer {
-  display: none !important;
-}
-.lc-nested-editor:not(.lc-vim-insert) .cm-vimCursorLayer {
   animation: none !important;
 }
-/* Insert mode (.lc-vim-insert): show default pipe, hide fat cursor */
-.lc-nested-editor.lc-vim-insert .cm-vimCursorLayer {
-  display: none !important;
+.lc-nested-editor .cm-editor .cm-cursorLayer,
+.lc-nested-editor .cm-editor:not(.cm-focused) .cm-cursorLayer,
+.lc-nested-editor .cm-layer-above.cm-cursorLayer {
+  display: block !important;
+  animation: none !important;
+}
+.lc-nested-editor .cm-cursor {
+  display: block !important;
 }
 
 /* Phase 17 gap-closure (17-11, 17-UAT.md Issue 6 sibling) — vim mode
