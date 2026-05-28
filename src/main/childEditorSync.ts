@@ -191,6 +191,20 @@ function propagateChildChanges(
         Transaction.addToHistory.of(false),
       ],
     });
+    // Ensure fence body ends with \n so the closer stays on its own line.
+    const postFence = findCodeFence(parentView.state);
+    if (postFence) {
+      const closerFrom = parentView.state.doc.line(postFence.closerLine).from;
+      if (closerFrom > 0 && parentView.state.doc.sliceString(closerFrom - 1, closerFrom) !== '\n') {
+        parentView.dispatch({
+          changes: { from: closerFrom, to: closerFrom, insert: '\n' },
+          annotations: [
+            Transaction.userEvent.of('leetcode.child-sync'),
+            Transaction.addToHistory.of(false),
+          ],
+        });
+      }
+    }
   } catch {
     // Silently ignore — the editor may be in teardown (defensive per project convention)
   }
