@@ -59,10 +59,18 @@ import { computeFenceIndex } from './fenceLocator';
  * Plugin-host shape required by the widget mount factory. Structurally typed
  * so unit tests (which mock @codemirror/* and the v1.2 source modules) can
  * pass plain object literals without spinning up a real LeetCodePlugin.
+ *
+ * Note: `app.vault.getConfig` is an UNDOCUMENTED Obsidian internal that the
+ * real `Vault` type does not declare. Real LeetCodePlugin instances satisfy
+ * this contract at runtime (Obsidian provides it on every Vault instance);
+ * callers that hold a Plugin reference should `as unknown as WidgetMountHost`
+ * cast to bypass the static type mismatch (the same workaround the v1.2 path
+ * uses at `childEditorFactory.ts:270-274`). The type stays optional in the
+ * structural contract so test fixtures can omit it without TS complaining.
  */
 export interface WidgetMountHost {
   app: {
-    vault: { getConfig(key: string): unknown };
+    vault: { getConfig?(key: string): unknown };
     metadataCache: {
       getFileCache(file: { path: string }):
         | { frontmatter?: Record<string, unknown> }
@@ -139,10 +147,13 @@ function buildExtensions(
   readOnly: boolean,
 ): Extension[] {
   const indent = plugin.settings.getIndentSizeOverride();
-  // C-14: read vimMode once at mount time. Cast through unknown because
-  // app.vault.getConfig is typed loosely on the structural host shape.
+  // C-14: read vimMode once at mount time. `getConfig` is an undocumented
+  // Obsidian internal — call it defensively so test fixtures (and any future
+  // host that omits it) don't crash at mount.
+  const getConfig = plugin.app.vault.getConfig;
   const vimEnabled =
-    (plugin.app.vault.getConfig('vimMode') as boolean | undefined) === true;
+    typeof getConfig === 'function' &&
+    (getConfig.call(plugin.app.vault, 'vimMode') as boolean | undefined) === true;
 
   const exts: Extension[] = [
     // 1. Language Compartment (C-12 — 8 packs).

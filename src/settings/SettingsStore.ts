@@ -77,6 +77,21 @@ export interface PluginData {
    *  Shape-guard at load collapses non-boolean raw to true (preserves
    *  current behavior for every existing user). */
   useNestedEditor: boolean;
+  /** Phase 19 D-05 — master toggle for the v1.3 inline widget editor.
+   *  Default false (CONTEXT D-05 hard-gate). When true, onload registers
+   *  registerMarkdownCodeBlockProcessor('leetcode-solve', …) +
+   *  leetCodeFenceViewPlugin and asserts useNestedEditor=false (D-06
+   *  mutual exclusion). Reload-required apply mode mirrors useNestedEditor.
+   *  Shape-guard at load collapses non-boolean raw to false. */
+  useInlineWidget: boolean;
+  /** Phase 19 C-06 — debounced widget writer delay in milliseconds.
+   *  Default 400ms. Configurable via Settings → Experimental: 300/400/500/
+   *  1000/2000ms (CONTEXT D-08). Strict-equality shape-guard at load:
+   *  anything that isn't literally one of those five numbers (string '400',
+   *  null, missing field, typo) collapses to 400. Mirrors indentSizeOverride
+   *  posture at lines 664-668. Plan 19-02 owns the debouncedWriter; Plan
+   *  19-01 only ships the persistence + UI wire-up. */
+  widgetSyncDebounceMs: 300 | 400 | 500 | 1000 | 2000;
   problemIndex: ProblemIndex | null;
   /** Compound filter rules from the filter modal. Null = no filter active.
    *  Persisted so filter survives plugin reload / Obsidian restart. */
@@ -258,6 +273,11 @@ const DEFAULT_DATA: PluginData = {
   // Phase 19 vq4 — default true preserves Phase 13–18 nested-editor behavior
   // for every existing user. Toggle is reload-required.
   useNestedEditor: true,
+  // Phase 19 D-05 — default false hard-gates the v1.3 inline widget path.
+  // Bisection-clean: bug → flip flag → bisect against v1.2 baseline.
+  useInlineWidget: false,
+  // Phase 19 C-06 — default 400ms debounced writer delay (Plan 19-02 wires it).
+  widgetSyncDebounceMs: 400,
   problemIndex: null,
   filter: null,
   problemDetails: {},
@@ -675,6 +695,24 @@ export class SettingsStore {
       useNestedEditor: typeof raw.useNestedEditor === 'boolean'
         ? raw.useNestedEditor
         : DEFAULT_DATA.useNestedEditor,
+      // Phase 19 D-05 — non-boolean raw / missing field / corrupt data.json
+      // all collapse to false (DEFAULT_DATA.useInlineWidget). Hard-gate keeps
+      // bisection clean: any unexpected widget activation must come from the
+      // user explicitly flipping the toggle, never from data.json corruption.
+      useInlineWidget: typeof raw.useInlineWidget === 'boolean'
+        ? raw.useInlineWidget
+        : DEFAULT_DATA.useInlineWidget,
+      // Phase 19 C-06 — strict-equality shape-guard. Only literal numbers
+      // 300/400/500/1000/2000 pass; everything else (string '400', null,
+      // missing field, invalid number 250, the literal string 'auto') collapses
+      // to 400. Mirrors the indentSizeOverride posture at lines 664-668.
+      widgetSyncDebounceMs: (raw.widgetSyncDebounceMs === 300 ||
+                             raw.widgetSyncDebounceMs === 400 ||
+                             raw.widgetSyncDebounceMs === 500 ||
+                             raw.widgetSyncDebounceMs === 1000 ||
+                             raw.widgetSyncDebounceMs === 2000)
+        ? raw.widgetSyncDebounceMs
+        : DEFAULT_DATA.widgetSyncDebounceMs,
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
       filter: isValidCompoundFilter(raw.filter)
         ? sanitizeCompoundFilter(raw.filter)
@@ -843,6 +881,34 @@ export class SettingsStore {
    *  Notice; this setter only persists. */
   async setUseNestedEditor(v: boolean): Promise<void> {
     this.data.useNestedEditor = v;
+    await this.persist();
+  }
+
+  /** Phase 19 D-05 — read the inline widget master toggle. Read once at
+   *  Plugin.onload() time in main.ts; toggling at runtime does NOT live-apply.
+   *  Mutually exclusive with useNestedEditor (D-06 — onload assert + UI). */
+  getUseInlineWidget(): boolean { return this.data.useInlineWidget; }
+
+  /** Phase 19 D-05 — persist the inline widget master toggle. Reload-required:
+   *  the SettingsTab onChange handler shows a `Reload Obsidian to apply`
+   *  Notice and forces useNestedEditor=false (D-06); this setter only
+   *  persists the new value. */
+  async setUseInlineWidget(v: boolean): Promise<void> {
+    this.data.useInlineWidget = v;
+    await this.persist();
+  }
+
+  /** Phase 19 C-06 — read the debounced writer delay (ms). Plan 19-02 owns
+   *  the debouncedWriter that consumes this; Plan 19-01 only ships the
+   *  persistence + UI plumbing. */
+  getWidgetSyncDebounceMs(): 300 | 400 | 500 | 1000 | 2000 {
+    return this.data.widgetSyncDebounceMs;
+  }
+
+  /** Phase 19 C-06 — persist the debounced writer delay. Bound to the
+   *  Settings tab → Experimental → Save delay dropdown (5 options). */
+  async setWidgetSyncDebounceMs(v: 300 | 400 | 500 | 1000 | 2000): Promise<void> {
+    this.data.widgetSyncDebounceMs = v;
     await this.persist();
   }
 

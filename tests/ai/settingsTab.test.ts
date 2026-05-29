@@ -322,6 +322,12 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     // SettingsTab Code-editor section renders the default-on toggle state.
     getUseNestedEditor: () => true,
     setUseNestedEditor: vi.fn(async (_v: boolean) => undefined),
+    // Phase 19 D-05 — useInlineWidget toggle row stub (Experimental section).
+    getUseInlineWidget: () => false,
+    setUseInlineWidget: vi.fn(async (_v: boolean) => undefined),
+    // Phase 19 C-06 — widget sync debounce delay (Experimental → Save delay).
+    getWidgetSyncDebounceMs: () => 400 as const,
+    setWidgetSyncDebounceMs: vi.fn(async (_v: 300 | 400 | 500 | 1000 | 2000) => undefined),
     getActiveAIProvider: () => activeProvider,
     setActiveAIProvider: vi.fn(async (p: AIProvider | null) => {
       activeProvider = p;

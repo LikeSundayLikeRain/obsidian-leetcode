@@ -271,6 +271,68 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         }),
       );
 
+    // =============================
+    //   Experimental section (Phase 19 D-08)
+    // =============================
+    // Cordoned subsection for under-development features. Includes the v1.3
+    // useInlineWidget toggle (D-05 hard-gate) and the Save delay dropdown
+    // (C-06 / 5 options 300/400/500/1000/2000ms). Removed in Phase 22 when
+    // useInlineWidget becomes unconditional (POLISH-01).
+    new Setting(containerEl).setName('Experimental').setHeading();
+
+    const expGroup = containerEl.createDiv('lc-settings-group');
+    // Banner — descriptive paragraph (NOT a Setting). createEl with text option
+    // per CLAUDE.md no-innerHTML rule.
+    expGroup.createEl('p', {
+      text: 'These features are under development and may change between releases.',
+      cls: 'setting-item-description',
+    });
+
+    new Setting(expGroup)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'v1.3 alpha' is a version identifier (proper noun in this domain).
+      .setName('Use inline widget editor (v1.3 alpha)')
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'Obsidian' is the host application brand (proper noun).
+      .setDesc('Renders LC code blocks as a self-contained inline widget with one-way sync. Mutually exclusive with the nested code editor. Reload Obsidian to apply changes.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getUseInlineWidget())
+        .onChange(async (v) => {
+          // D-06 — flipping useInlineWidget=ON forces useNestedEditor=false.
+          if (v && this.plugin.settings.getUseNestedEditor()) {
+            await this.plugin.settings.setUseNestedEditor(false);
+          }
+          await this.plugin.settings.setUseInlineWidget(v);
+          // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'Obsidian' is the host application brand (proper noun).
+          new Notice('Reload Obsidian to apply', 5000);
+          this.display();
+        }),
+      );
+
+    new Setting(expGroup)
+      .setName('Save delay')
+      .setDesc('Time after typing stops before saving to disk. Lower = snappier; higher = fewer file-watcher events.')
+      .addDropdown((d) => d
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- millisecond labels are not sentences.
+        .addOption('300', '300ms')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- millisecond labels are not sentences.
+        .addOption('400', '400ms (default)')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- millisecond labels are not sentences.
+        .addOption('500', '500ms')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- second labels are not sentences.
+        .addOption('1000', '1s')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- second labels are not sentences.
+        .addOption('2000', '2s')
+        .setValue(String(this.plugin.settings.getWidgetSyncDebounceMs()))
+        .onChange(async (v) => {
+          const val: 300 | 400 | 500 | 1000 | 2000 =
+            v === '300' ? 300 :
+            v === '500' ? 500 :
+            v === '1000' ? 1000 :
+            v === '2000' ? 2000 :
+            400;
+          await this.plugin.settings.setWidgetSyncDebounceMs(val);
+        }),
+      );
+
 
     // =============================
     //   AI section (Phase 07 Plan 03 — AIPROV-01 / AIPROV-02)

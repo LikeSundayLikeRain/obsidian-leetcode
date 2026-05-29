@@ -127,6 +127,12 @@ import { buildNestedEditorExtension, nestedEditorRebuildEffect } from './main/ne
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
 import { registerVaultModifyRepairTrigger } from './main/childEditorSync';
+// Phase 19 Plan 01 — v1.3 inline widget primitives. Hard-gated behind
+// useInlineWidget=ON (default OFF) per CONTEXT D-05; v1.2 nested-editor
+// stays the user-facing default through Phase 21.
+import { WidgetRegistry } from './widget/widgetRegistry';
+import { leetCodeBlockProcessor } from './widget/codeBlockProcessor';
+import { leetCodeFenceViewPlugin } from './widget/liveModeViewPlugin';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { PatternClusterEngine } from './graph/PatternClusterEngine';
@@ -255,6 +261,10 @@ export default class LeetCodePlugin extends Plugin {
 
   // Phase 13 — LRU cache for nested child EditorViews (cap=5, per D-12).
   childEditorRegistry!: ChildEditorRegistry;
+  // Phase 19 Plan 01 — instantiated only when useInlineWidget=ON (D-05
+  // hard-gate). Optional field; main.ts onunload uses optional chaining when
+  // calling destroyAll() so the v1.2 baseline path remains unaffected.
+  widgetRegistry?: WidgetRegistry;
 
   /**
    * Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12) — per-child
@@ -827,7 +837,23 @@ export default class LeetCodePlugin extends Plugin {
     this.registerEditorExtension(buildCodeActionsEditorExtension(this));
 
     // Phase 19 vq4 — read once: the nested-editor toggle is reload-apply-only.
-    const useNestedEditor = this.settings.getUseNestedEditor();
+    let useNestedEditor = this.settings.getUseNestedEditor();
+    // Phase 19 Plan 01 — read the v1.3 inline-widget master toggle (CONTEXT D-05).
+    const useInlineWidget = this.settings.getUseInlineWidget();
+
+    // Phase 19 D-06 mutual-exclusion assert — must run BEFORE either
+    // registration path fires (RESEARCH Pitfall 19-G timing). Forces
+    // useNestedEditor=false when useInlineWidget=true so corrupt data.json
+    // (both flags ON) cannot produce two CM6 instances per fence.
+    // Issue 1 of 17-UAT.md style: this assert is the bisection boundary —
+    // any unexpected widget activation must come from the user explicitly
+    // flipping the toggle, never from data.json corruption.
+    if (useInlineWidget && useNestedEditor) {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'useInlineWidget' / 'useNestedEditor' are persistent setting field names (proper nouns in this domain).
+      new Notice('useInlineWidget is ON — disabling useNestedEditor (mutually exclusive)', 5000);
+      await this.settings.setUseNestedEditor(false);
+      useNestedEditor = false;
+    }
 
     // Step 6f-nested — Phase 13: nested child EditorView for ## Code fence.
     // Mounts a block widget containing a child CM6 EditorView with Python
@@ -836,6 +862,23 @@ export default class LeetCodePlugin extends Plugin {
     // transactionFilter processes before section-lock's cursor snap (Pitfall 3).
     if (useNestedEditor) {
       this.registerEditorExtension(buildNestedEditorExtension(this));
+    }
+
+    // Step 6f-widget — Phase 19 Plan 01: v1.3 inline widget mount (hard-gated).
+    // Registers BOTH:
+    //   1. registerMarkdownCodeBlockProcessor('leetcode-solve', …) — Reading mode
+    //   2. registerEditorExtension([leetCodeFenceViewPlugin(this)]) — Live Preview
+    //      with EditorView.atomicRanges Facet contribution (parent-cursor exclusion).
+    // Plan 19-01 does NOT register vault.on('modify') / leaf-change / quit /
+    // beforeunload hooks — those land in Plan 19-02 (debouncedWriter +
+    // selfWriteSuppression).
+    if (useInlineWidget) {
+      this.widgetRegistry = new WidgetRegistry();
+      this.registerMarkdownCodeBlockProcessor(
+        'leetcode-solve',
+        leetCodeBlockProcessor(this),
+      );
+      this.registerEditorExtension([leetCodeFenceViewPlugin(this)]);
     }
 
     // Step 6f-bis — Phase 05.5 (POLISH) section locking for lc-slug notes.
@@ -1048,6 +1091,12 @@ export default class LeetCodePlugin extends Plugin {
 
     // Phase 13 — destroy all child EditorViews (D-12 cleanup).
     this.childEditorRegistry?.destroyAll();
+
+    // Phase 19 Plan 01 — drain in-flight widget writes (no-op stub in 19-01;
+    // Plan 19-02 wires flushNow into debouncedWriter) then destroy each
+    // widget's EditorView and clear the registry.
+    this.widgetRegistry?.flushAll();
+    this.widgetRegistry?.destroyAll();
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
