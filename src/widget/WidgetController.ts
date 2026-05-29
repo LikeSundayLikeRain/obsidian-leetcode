@@ -266,8 +266,14 @@ function buildExtensions(
   const exts: Extension[] = [
     // 1. Language Compartment (C-12 — 8 packs).
     languageCompartment.of(buildLanguageExtensions(slug, indent)),
-    // 2. Conditional vim — only when Obsidian's vim setting is on.
-    ...(vimEnabled ? [vim({ status: true } as Parameters<typeof vim>[0])] : []),
+    // 2. Conditional vim — only when Obsidian's vim setting is on AND the mount
+    //    is editable. Gap-closure rationale (UAT Test 1 BLOCKER 1 / WIDGET-07 /
+    //    CONTEXT C-03): vim()'s internal editable behavior registers an
+    //    editable.of(true) that wins by extension order over our
+    //    EditorView.editable.of(!readOnly) at position 9. Gating vim on
+    //    `!readOnly` is the only correct fix — vim has no "read-only mode" of
+    //    its own; even with editable.of(false) present, vim re-enables typing.
+    ...(vimEnabled && !readOnly ? [vim({ status: true } as Parameters<typeof vim>[0])] : []),
     // 3. Top-level closeBracketsKeymap (Pitfall D from Phase 16 — Backspace
     //    handler must precede defaultKeymap's).
     keymap.of(closeBracketsKeymap),

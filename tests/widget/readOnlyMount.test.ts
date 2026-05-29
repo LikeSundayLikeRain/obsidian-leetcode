@@ -1,8 +1,12 @@
-// Phase 19 Plan 01 — Vim conditional mount unit tests (VIM-01, VIM-04).
+// Phase 19 Plan 05 — Read-only mount behavioral assertions (WIDGET-07 / UAT Test 1 BLOCKER 1).
 //
-// Mirrors the childEditorFactory.test.ts vim-mount conditional block.
-// Verifies app.vault.getConfig('vimMode') gates whether the vim() extension
-// is appended to the EditorState extensions array.
+// Regression guard: when readOnly=true, vim MUST NOT mount (regardless of
+// Obsidian's vimMode setting), and EditorView.editable.of(false) MUST be
+// present in the extensions array. vim()'s internal editable behavior wins by
+// extension order over EditorView.editable.of(!readOnly), so gating vim on
+// `!readOnly` is the only correct fix for read-only mounts.
+//
+// Covers all four cells of the (readOnly x vimMode) matrix.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -93,6 +97,7 @@ vi.mock('obsidian', async () => {
 });
 
 import { EditorState } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
 import { vim } from '@replit/codemirror-vim';
 import { mountLeetCodeWidget } from '../../src/widget/WidgetController';
 
@@ -116,7 +121,7 @@ function makeFakePlugin(vimMode: boolean) {
   };
 }
 
-describe('Vim conditional mount (VIM-01)', () => {
+describe('Read-only mount behavioral assertions (WIDGET-07 / UAT BLOCKER 1)', () => {
   let host: HTMLElement;
 
   beforeEach(() => {
@@ -124,30 +129,41 @@ describe('Vim conditional mount (VIM-01)', () => {
     host = document.createElement('div');
   });
 
-  it('vimMode=true → vim() invoked and vim extension included in extensions array', () => {
+  it('readOnly=true, vimMode=true -> vim() NOT called; editable.of(false) present', () => {
+    mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, makeFakePlugin(true) as never, true);
+    // vim must NOT mount in read-only mode
+    expect(vim).not.toHaveBeenCalled();
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+    expect(createArgs.extensions).not.toContain('mock-vim-extension');
+    // EditorView.editable.of(false) must be present
+    expect(EditorView.editable.of).toHaveBeenCalledWith(false);
+    expect(createArgs.extensions).toContain('mock-editable-false');
+  });
+
+  it('readOnly=true, vimMode=false -> no vim(); editable.of(false) present', () => {
+    mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, makeFakePlugin(false) as never, true);
+    expect(vim).not.toHaveBeenCalled();
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+    expect(createArgs.extensions).not.toContain('mock-vim-extension');
+    expect(EditorView.editable.of).toHaveBeenCalledWith(false);
+    expect(createArgs.extensions).toContain('mock-editable-false');
+  });
+
+  it('readOnly=false, vimMode=true -> vim() IS called; editable.of(true) present', () => {
     mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, makeFakePlugin(true) as never, false);
     expect(vim).toHaveBeenCalled();
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
     expect(createArgs.extensions).toContain('mock-vim-extension');
+    expect(EditorView.editable.of).toHaveBeenCalledWith(true);
+    expect(createArgs.extensions).toContain('mock-editable-true');
   });
 
-  it('vimMode=false → vim() NOT invoked and vim extension absent', () => {
+  it('readOnly=false, vimMode=false -> no vim(); editable.of(true) present', () => {
     mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, makeFakePlugin(false) as never, false);
     expect(vim).not.toHaveBeenCalled();
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
     expect(createArgs.extensions).not.toContain('mock-vim-extension');
-  });
-
-  it('reads vimMode via app.vault.getConfig at mount time (VIM-04 / CONTEXT C-14)', () => {
-    const plugin = makeFakePlugin(true);
-    mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, plugin as never, false);
-    expect(plugin.app.vault.getConfig).toHaveBeenCalledWith('vimMode');
-  });
-
-  it('vimMode=true but readOnly=true -> vim() NOT called (gap-closure UAT BLOCKER 1)', () => {
-    mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, makeFakePlugin(true) as never, true);
-    expect(vim).not.toHaveBeenCalled();
-    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
-    expect(createArgs.extensions).not.toContain('mock-vim-extension');
+    expect(EditorView.editable.of).toHaveBeenCalledWith(true);
+    expect(createArgs.extensions).toContain('mock-editable-true');
   });
 });
