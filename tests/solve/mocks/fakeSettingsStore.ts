@@ -46,6 +46,9 @@ export interface FakeSettings {
   // Phase 18 Plan 03 D-35 — relative line numbers toggle.
   getShowRelativeLineNumbers(): boolean;
   setShowRelativeLineNumbers(v: boolean): Promise<void>;
+  // Phase 19 vq4 — nested-editor master toggle (reload-required).
+  getUseNestedEditor(): boolean;
+  setUseNestedEditor(v: boolean): Promise<void>;
 }
 
 /** Optional seed values for `makeFakeSettingsStore`. Any field left undefined
@@ -165,6 +168,14 @@ export function makeFakeSettingsStore(overrides: FakeSettingsOverrides = {}): Fa
       return false;
     },
     async setShowRelativeLineNumbers(_v: boolean) {
+      // no-op in fake
+    },
+    // Phase 19 vq4 — nested-editor master toggle. Default true mirrors the
+    // production default and keeps existing tests' behavior byte-identical.
+    getUseNestedEditor() {
+      return true;
+    },
+    async setUseNestedEditor(_v: boolean) {
       // no-op in fake
     },
   };

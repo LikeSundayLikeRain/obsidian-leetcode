@@ -260,11 +260,13 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // destroy children. The Notice prompts the user to reload Obsidian.
     new Setting(codeEditorGroup)
       .setName('Use nested code editor')
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- '## Code' is the literal Markdown heading rendered inside locked LC notes (proper noun in this domain); 'Obsidian' is the host application brand.
       .setDesc('When enabled, the ## Code fence renders as an embedded code editor with syntax highlighting. Disable to use Obsidian\'s native markdown editor instead. Reload Obsidian to apply changes.')
       .addToggle((toggle) => toggle
         .setValue(this.plugin.settings.getUseNestedEditor())
         .onChange(async (v) => {
           await this.plugin.settings.setUseNestedEditor(v);
+          // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'Obsidian' is the host application brand (proper noun).
           new Notice('Reload Obsidian to apply', 5000);
         }),
       );

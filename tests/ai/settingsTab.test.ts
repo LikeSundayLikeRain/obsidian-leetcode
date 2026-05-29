@@ -318,6 +318,10 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
     setIndentSizeOverride: vi.fn(async (_v: 'auto' | 2 | 4 | 8) => undefined),
     getShowRelativeLineNumbers: () => false,
     setShowRelativeLineNumbers: vi.fn(async (_v: boolean) => undefined),
+    // Phase 19 vq4 — useNestedEditor toggle row stub. Returns true so the
+    // SettingsTab Code-editor section renders the default-on toggle state.
+    getUseNestedEditor: () => true,
+    setUseNestedEditor: vi.fn(async (_v: boolean) => undefined),
     getActiveAIProvider: () => activeProvider,
     setActiveAIProvider: vi.fn(async (p: AIProvider | null) => {
       activeProvider = p;
