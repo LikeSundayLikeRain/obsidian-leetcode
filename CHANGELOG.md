@@ -4,6 +4,18 @@ All notable changes to **LeetCode for Obsidian** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0-alpha.4] - 2026-05-29
+
+### Added
+- Settings → Code editor → **Use nested code editor** toggle. When OFF, the plugin skips registering the nested CM6 child-editor at onload — Run/Submit/Reset/Retrieve/AI commands still work via the markdown fallback path. Reload Obsidian to apply.
+- AI solution prompt now includes the LeetCode starter code so the generated solution matches the expected class/method signature.
+
+### Fixed
+- Sync corruption when the parent document and child editor diverged (manifested as reversed/interleaved text after focus changes). Added a divergence guard that does a full-replace sync when offsets diverge.
+- Reset code occasionally produced `}````` ``` (fence closer merged with the last brace). All full-replace sync paths now normalize trailing newlines.
+- Fence closer disappearing when deleting trailing empty lines inside the code editor.
+- Cursor visibility on re-focus in non-vim mode after Obsidian's `addProperty` (Cmd+;) hotkey stole focus.
+
 ## [1.2.0-alpha.1] - 2026-05-26
 
 ### Added
