@@ -180,6 +180,26 @@ export class Component {
   }
 }
 
+// Phase 19 — MarkdownRenderChild stub. Used by `LeetCodeWidgetRenderChild`
+// from src/widget/WidgetController.ts. The real Obsidian class extends
+// Component and stores the host element on `containerEl`; tests construct
+// instances via `new` (not `Object.create`), so the constructor body must
+// actually persist the host element. onload/onunload are subclass hooks
+// — base class provides no-op shells.
+export class MarkdownRenderChild extends Component {
+  containerEl: HTMLElement;
+  constructor(containerEl: HTMLElement) {
+    super();
+    this.containerEl = containerEl;
+  }
+  onload(): void {
+    /* override in subclass */
+  }
+  onunload(): void {
+    /* override in subclass */
+  }
+}
+
 export const MarkdownRenderer = {
   // Signature matches Obsidian 1.x: render(app, markdown, el, sourcePath, component)
   async render(

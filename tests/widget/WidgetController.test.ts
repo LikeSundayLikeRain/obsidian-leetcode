@@ -57,6 +57,11 @@ vi.mock('@codemirror/view', () => {
 vi.mock('@codemirror/state', () => ({
   EditorState: { create: vi.fn().mockReturnValue({ doc: 'mock-state' }) },
   Compartment: class { of(ext: unknown) { return ['mock-compartment-of', ext]; } },
+  // tests/helpers/obsidian-stub.ts:208-218 imports StateField from
+  // @codemirror/state to define editorInfoField + editorLivePreviewField.
+  // Provide a minimal stub so mock-resolution doesn't fail at module load.
+  StateField: { define: vi.fn(() => 'mock-state-field') },
+  RangeSetBuilder: class { add(_f: number, _t: number, _v: unknown) { /* no-op */ } finish() { return 'mock-range-set'; } },
 }));
 
 vi.mock('@codemirror/language', () => ({

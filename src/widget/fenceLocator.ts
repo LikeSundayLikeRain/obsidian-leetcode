@@ -1,0 +1,108 @@
+// Phase 19 Plan 01 — Pure fence-locator helpers.
+//
+// Lifts findCodeFence from src/main/codeActionsEditorExtension.ts:177-212
+// (verbatim) and extractFenceBody from src/main/nestedEditorExtension.ts:168-176
+// (verbatim). Adds new computeFenceIndex per RESEARCH §"Specific Findings §2".
+//
+// Phase 22 deletes the original v1.2 modules; this file is the long-term home
+// for these pure helpers. The original tests (tests/main/codeActionsEditorExtension.test.ts)
+// continue to pass against the v1.2 source until Phase 22.
+//
+// Widening note: the same FENCE_RE that the v1.2 source uses (/^\s*```/) is
+// preserved for line detection. After locating the opener line, we inspect its
+// text to tag the result with `kind: 'leetcode-solve' | 'legacy'` so callers
+// can route — Phase 19 widget mounts on `kind === 'leetcode-solve'`,
+// Phase 21 migrator handles `kind === 'legacy'`.
+
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+import type { EditorState } from '@codemirror/state';
+
+export interface FenceLocation {
+  openerLine: number;
+  closerLine: number;
+  kind: 'leetcode-solve' | 'legacy';
+}
+
+/**
+ * Locate the first fenced code block under a `## Code` H2 heading.
+ *
+ * Lifted verbatim from src/main/codeActionsEditorExtension.ts:177-212. Same
+ * FENCE_RE / H2_CODE_RE / H2_ANY_RE; only addition is the post-find tag
+ * inspection that fills in `kind`.
+ */
+export function findCodeFence(state: EditorState): FenceLocation | null {
+  // RESEARCH Pitfall 8: state.doc.line(1) throws on an empty doc.
+  if (state.doc.lines === 0) return null;
+
+  const FENCE_RE = /^\s*```/;
+  const H2_CODE_RE = /^\s*##\s+Code\s*$/;
+  const H2_ANY_RE = /^\s*##\s+.+$/;
+
+  let inCodeSection = false;
+  const total = state.doc.lines;
+
+  for (let i = 1; i <= total; i++) {
+    const text = state.doc.line(i).text;
+
+    if (H2_CODE_RE.test(text)) {
+      inCodeSection = true;
+      continue;
+    }
+    if (H2_ANY_RE.test(text)) {
+      inCodeSection = false;
+      continue;
+    }
+    if (inCodeSection && FENCE_RE.test(text)) {
+      // Determine the fence kind from the opener tag. `^\s*```leetcode-solve\b`
+      // tags this as a v1.3 widget fence; anything else is a v1.2 legacy fence.
+      const kind: 'leetcode-solve' | 'legacy' =
+        /^\s*```leetcode-solve\b/.test(text) ? 'leetcode-solve' : 'legacy';
+      // Found opener — walk forward for matching closer.
+      for (let j = i + 1; j <= total; j++) {
+        if (FENCE_RE.test(state.doc.line(j).text)) {
+          return { openerLine: i, closerLine: j, kind };
+        }
+      }
+      return null; // unterminated fence
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract the body text between fence opener and closer (exclusive of both).
+ * Returns empty string if closerLine - openerLine <= 1 (empty fence).
+ *
+ * Lifted verbatim from src/main/nestedEditorExtension.ts:168-176.
+ */
+export function extractFenceBody(
+  state: EditorState,
+  fence: { openerLine: number; closerLine: number },
+): string {
+  if (fence.closerLine - fence.openerLine <= 1) return '';
+  const from = state.doc.line(fence.openerLine + 1).from;
+  const to = state.doc.line(fence.closerLine - 1).to;
+  return state.doc.sliceString(from, to);
+}
+
+/**
+ * Count the number of `\`\`\`leetcode-solve` openers that appear in `fileText`
+ * BEFORE the line at `fenceLineStart0Based`. Used to compute the per-fence
+ * registry key suffix (CONTEXT D-01: `${file.path}::${fenceIndex}`).
+ *
+ * Pure string scan; CRLF-tolerant via /\r?\n/. Only counts `leetcode-solve`
+ * openers, NOT legacy langslug fences — the registry key must be invariant
+ * under the v1.2→v1.3 fence-tag migration on the SAME note's other fences.
+ */
+export function computeFenceIndex(
+  fileText: string,
+  fenceLineStart0Based: number,
+): number {
+  const lines = fileText.split(/\r?\n/);
+  let count = 0;
+  const limit = Math.min(fenceLineStart0Based, lines.length);
+  for (let i = 0; i < limit; i++) {
+    if (/^\s*```leetcode-solve\b/.test(lines[i] ?? '')) count++;
+  }
+  return count;
+}
