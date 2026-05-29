@@ -4,8 +4,8 @@ milestone: v1.2
 milestone_name: Code Editor Experience
 status: complete
 stopped_at: null
-last_updated: "2026-05-26T20:30:00.000Z"
-last_activity: 2026-05-26 -- v1.2.0-alpha.1 released
+last_updated: "2026-05-29T02:55:00.000Z"
+last_activity: 2026-05-29 -- Completed quick task 260528-vq4: useNestedEditor toggle setting
 progress:
   total_phases: 6
   completed_phases: 6
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-21 — v1.2 milestone started)
 Phase: 18 (vim-recovery-polish) — COMPLETE
 Plans: 4/4 complete
 Status: Alpha released (1.2.0-alpha.1)
-Last activity: 2026-05-26 -- v1.2.0-alpha.1 pre-release published
+Last activity: 2026-05-29 -- Completed quick task 260528-vq4: useNestedEditor toggle setting
 
 Progress: [██████████] 100%
 
@@ -78,6 +78,13 @@ None yet.
 
 - Bundle size: language packs raise ceiling from 1.2 MB to ~1.5 MB — user accepted this tradeoff for better UX
 - Phase 13 spike needed: empirically verify `Decoration.widget` + CSS-hidden approach works in both Source Mode and Live Preview
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260514-k39 | Fix Obsidian plugin store auto-review ESLint errors and warnings | 2026-05-14 | 80a51ca | [260514-k39-fix-obsidian-plugin-store-auto-review-es](./quick/260514-k39-fix-obsidian-plugin-store-auto-review-es/) |
+| 260528-vq4 | Add useNestedEditor toggle setting | 2026-05-29 | 5480c03 | [260528-vq4-add-usenestededitor-toggle-setting](./quick/260528-vq4-add-usenestededitor-toggle-setting/) |
 
 ## Deferred Items
 
