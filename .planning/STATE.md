@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Code Editor Experience
-status: complete
-stopped_at: null
-last_updated: "2026-05-29T02:55:00.000Z"
-last_activity: 2026-05-29 -- Completed quick task 260528-vq4: useNestedEditor toggle setting
+milestone: v1.3
+milestone_name: Inline Widget Architecture
+status: planning
+last_updated: "2026-05-29T03:25:27.818Z"
+last_activity: 2026-05-29
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 17
-  completed_plans: 17
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-05-21 — v1.2 milestone started)
 
 ## Current Position
 
-Phase: 18 (vim-recovery-polish) — COMPLETE
-Plans: 4/4 complete
-Status: Alpha released (1.2.0-alpha.1)
-Last activity: 2026-05-29 -- Completed quick task 260528-vq4: useNestedEditor toggle setting
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-29 — Milestone v1.3 started
 
 ## Performance Metrics
 
