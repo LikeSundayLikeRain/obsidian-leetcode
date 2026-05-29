@@ -116,6 +116,12 @@ describe('DebouncedWriter', () => {
     // Drain remaining 1ms PLUS pending microtasks from the async flush() chain.
     await vi.advanceTimersByTimeAsync(1);
     await vi.runAllTimersAsync();
+    // crypto.subtle.digest returns a real Promise that fake timers don't
+    // synchronize with deterministically — drain remaining microtasks.
+    for (let i = 0; i < 5 && (app.vault.process as ReturnType<typeof vi.fn>).mock.calls.length === 0; i++) {
+      await Promise.resolve();
+      await vi.runAllTimersAsync();
+    }
     expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 
