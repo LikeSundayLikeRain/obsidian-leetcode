@@ -95,14 +95,34 @@ export class LeetCodeFenceWidget extends WidgetType {
    * Tear down the widget's controller via widgetRegistry lookup. The
    * controller's `destroy()` calls `view.destroy()` and the registry entry
    * is removed in the LeetCodeWidgetRenderChild.onunload path. Live-Preview
-   * destroy is symmetric — flush (Plan 19-02) + destroy + unregister.
+   * destroy is symmetric — Plan 19-03 captures state (CONTEXT D-02 belt
+   * fallback for cursor-approach + viewport-scroll unmounts), then flush
+   * (Plan 19-02) + destroy + unregister.
    */
   destroy(_dom: HTMLElement): void {
     const key = `${this.file.path}::${this.fenceIndex}`;
     const ctl = this.plugin.widgetRegistry?.get(key) as
-      | { flushNow(): void; destroy(): void }
+      | {
+          flushNow(): void;
+          destroy(): void;
+          persistenceKey?: string;
+          view?: import('@codemirror/view').EditorView;
+        }
       | undefined;
     if (ctl) {
+      // Plan 19-03 — capture BEFORE flush + destroy so cursor + scroll
+      // (and historyJSON) survive the Live-Preview unmount path. The
+      // mousedown.stopPropagation listener (Plan 19-01) handles cursor-
+      // approach reveal directly; this map handles viewport-scroll, mode-
+      // switch, theme-change, and the case where stopPropagation didn't
+      // fully prevent the reveal (D-02 belt-and-suspenders).
+      if (this.plugin.statePersistence && ctl.persistenceKey && ctl.view) {
+        try {
+          this.plugin.statePersistence.captureState(ctl.persistenceKey, ctl.view);
+        } catch {
+          // Defensive — capture is best-effort; never block destroy.
+        }
+      }
       ctl.flushNow();
       ctl.destroy();
       this.plugin.widgetRegistry?.delete(key);

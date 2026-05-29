@@ -84,10 +84,18 @@ export class StatePersistenceMap {
       // JSON has a `history` slot containing the serialized payload. If the
       // view's state isn't configured with the history extension, the slot
       // is undefined — we coerce to null for serialization stability.
-      const json = view.state.toJSON({ history: historyField } as Record<
-        string,
-        unknown
-      >) as Record<string, unknown> | undefined;
+      //
+      // The `as never` cast bridges a known SemVer split: `historyField` from
+      // @codemirror/commands@6.10.3 is typed `StateField<unknown>` against
+      // its nested @codemirror/state@6.6.0; the workspace's view.state.toJSON
+      // signature comes from @codemirror/state@6.5.0 expecting `StateField<any>`.
+      // The two `StateField` types are structurally identical at runtime —
+      // production esbuild marks both as external and Obsidian's runtime
+      // provides a single shared CM6 instance. RESEARCH Pitfall 19-C
+      // documents this. The cast is type-only; behavior is unchanged.
+      const json = view.state.toJSON({ history: historyField as never }) as
+        | Record<string, unknown>
+        | undefined;
       historyJSON = json?.['history'] ?? null;
     } catch {
       // Defensive — if toJSON throws (e.g., a future CM6 release changes the

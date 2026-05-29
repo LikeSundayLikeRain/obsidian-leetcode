@@ -79,7 +79,9 @@ describe('StatePersistenceMap', () => {
       expect(ok).toBe(true);
       // dispatch was called with a selection object whose anchor is the cursor.
       expect(v2.dispatch).toHaveBeenCalledTimes(1);
-      const dispatchArg = v2.dispatch.mock.calls[0][0] as {
+      const firstCall = v2.dispatch.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      const dispatchArg = (firstCall as unknown[])[0] as {
         selection?: unknown;
       };
       expect(dispatchArg.selection).toBeDefined();
@@ -185,7 +187,9 @@ describe('StatePersistenceMap', () => {
       const v2 = makeFakeView({ cursor: 0, docLength: 50 });
       expect(map.hydrateState('a.md::0', v2 as never)).toBe(true);
       // Inspect dispatched selection — anchor must be ≤ docLength.
-      const dispatchArg = v2.dispatch.mock.calls[0][0] as {
+      const firstCall = v2.dispatch.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      const dispatchArg = (firstCall as unknown[])[0] as {
         selection?: { anchor?: number; head?: number; main?: { head: number } };
       };
       // EditorSelection.cursor returns a SelectionRange-like object with

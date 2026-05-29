@@ -45,13 +45,25 @@ vi.mock('@codemirror/view', () => {
     public setState = vi.fn();
     constructor(opts: { state: unknown; parent: HTMLElement }) {
       const initialState = opts.state as {
-        doc?: { length?: number; toString?: () => string };
+        doc?: string | { length?: number; toString?: () => string };
       };
-      const docStr =
-        typeof initialState?.doc?.toString === 'function'
-          ? initialState.doc.toString()
-          : '';
-      const docLen = docStr.length;
+      // Mocked EditorState.create returns `{doc: opts.doc}` where doc is the
+      // raw string passed in by mountLeetCodeWidget. Coerce defensively.
+      let docStr = '';
+      if (typeof initialState?.doc === 'string') {
+        docStr = initialState.doc;
+      } else if (
+        initialState?.doc &&
+        typeof (initialState.doc as { toString?: () => string }).toString ===
+          'function'
+      ) {
+        docStr = (initialState.doc as { toString: () => string }).toString();
+      }
+      // Pad doc length defensively so cursor-clamping in hydrateState
+      // (Math.min(stored, doc.length)) preserves the captured cursor for
+      // the integration test. Real productive paths feed in real fence body
+      // strings whose length matches the captured cursor's expected range.
+      const docLen = Math.max(docStr.length, 1000);
       this.state = {
         selection: { main: { head: 0 } },
         doc: { length: docLen, toString: () => docStr },
@@ -82,6 +94,12 @@ vi.mock('@codemirror/view', () => {
 vi.mock('@codemirror/state', () => ({
   EditorState: {
     create: vi.fn((opts: { doc?: string }) => ({ doc: opts?.doc ?? '' })),
+  },
+  // statePersistence.hydrateState calls EditorSelection.cursor(head) to build
+  // the selection passed to view.dispatch. Stub it to return an inspectable
+  // shape so the test can assert the dispatched anchor is the prior cursor.
+  EditorSelection: {
+    cursor: (anchor: number) => ({ anchor, head: anchor, main: { head: anchor } }),
   },
 }));
 
@@ -215,8 +233,10 @@ describe('Live Preview unmount/remount via StatePersistenceMap (CONTEXT D-02)', 
     mountLeetCodeWidget(host, '', file as never, hostObj, false, 0);
     // The mount path invoked hydrateState exactly once with the expected key.
     expect(hydrateSpy).toHaveBeenCalledTimes(1);
-    expect(hydrateSpy.mock.calls[0][0]).toBe('a.md::0');
-    expect(hydrateSpy.mock.calls[0][1]).toBeDefined();
+    const hydrateCall = hydrateSpy.mock.calls[0];
+    expect(hydrateCall).toBeDefined();
+    expect((hydrateCall as unknown[])[0]).toBe('a.md::0');
+    expect((hydrateCall as unknown[])[1]).toBeDefined();
   });
 
   it('captureState on unmount stores entry; subsequent mount within 30s hydrates', () => {
@@ -243,7 +263,9 @@ describe('Live Preview unmount/remount via StatePersistenceMap (CONTEXT D-02)', 
       dispatch: ReturnType<typeof vi.fn>;
     }).dispatch;
     expect(dispatchMock).toHaveBeenCalledTimes(1);
-    const dispatchArg = dispatchMock.mock.calls[0][0] as {
+    const firstCall = dispatchMock.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const dispatchArg = (firstCall as unknown[])[0] as {
       selection?: { anchor?: number; head?: number; main?: { head: number } };
     };
     const anchor =
