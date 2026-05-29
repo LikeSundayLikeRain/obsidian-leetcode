@@ -95,7 +95,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 - **Empirical research flag (LOW):** Live Preview raw-source-reveal mitigation via `mousedown.stopPropagation()` is empirically untested; state-persistence map is the fallback regardless. `getSectionInfo` null-paths must be exercised on day one.
 - Pitfalls covered: P1, P3, P4, P6, P12, P14, P15, P17, P18, P22, P23.
 
-**Plans:** 5/4 plans complete
+**Plans:** 5 plans (4 main + 1 gap-closure)
 
 Plans:
 **Wave 1**
@@ -113,6 +113,10 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 19-04-PLAN.md — Embed + stray fence + property-test hardening: dual-signal embed detection, read-only routing for embeds, stray-fence safe fallback, language-fallback Notice, expanded SYNC-06 corpus, WidgetType.eq() content-hash identity
+
+**Wave 5** *(gap closure — UAT Test 1 BLOCKERS 1+2+3)*
+
+- [ ] 19-05-PLAN.md — Reading-mode read-only fix (gate vim on `vimEnabled && !readOnly`) + suppress v1.2 action row when `useInlineWidget=ON` (gate registerCodeBlockActionProcessor + buildCodeActionsEditorExtension on `!useInlineWidget`); UAT re-run for WIDGET-07 / VIM-01 / D-03 / D-05
 
 ---
 
