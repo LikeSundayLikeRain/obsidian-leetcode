@@ -29,6 +29,7 @@ import {
   keymap,
   drawSelection,
   highlightActiveLine,
+  type ViewUpdate,
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { EditorState, type Extension } from '@codemirror/state';
@@ -54,6 +55,8 @@ import {
 import { createThemedHighlight } from '../main/childEditorTheme';
 import { obsidianSemanticClasses } from '../main/childEditorSemanticClasses';
 import { computeFenceIndex } from './fenceLocator';
+import { DebouncedWriter } from './debouncedWriter';
+import type { SelfWriteSuppression } from './selfWriteSuppression';
 
 /**
  * Plugin-host shape required by the widget mount factory. Structurally typed
@@ -70,7 +73,15 @@ import { computeFenceIndex } from './fenceLocator';
  */
 export interface WidgetMountHost {
   app: {
-    vault: { getConfig?(key: string): unknown };
+    vault: {
+      getConfig?(key: string): unknown;
+      // Plan 19-02: DebouncedWriter consumes app.vault.read + app.vault.process.
+      // Optional in the structural contract so test fixtures that exercise
+      // mount-only paths can omit them.
+      read?(file: unknown): Promise<string>;
+      process?(file: unknown, fn: (body: string) => string): Promise<string>;
+      on?(name: string, cb: (...args: unknown[]) => unknown): unknown;
+    };
     metadataCache: {
       getFileCache(file: { path: string }):
         | { frontmatter?: Record<string, unknown> }
@@ -80,6 +91,9 @@ export interface WidgetMountHost {
   settings: {
     getIndentSizeOverride(): 'auto' | 2 | 4 | 8;
     getShowRelativeLineNumbers?(): boolean;
+    /** Plan 19-02 — debounced writer delay. Optional so test fixtures may
+     *  omit it; mount factory falls back to 400 (CONTEXT C-06 default). */
+    getWidgetSyncDebounceMs?(): number;
   };
   widgetRegistry?: {
     get(key: string): unknown;
@@ -87,14 +101,23 @@ export interface WidgetMountHost {
     has(key: string): boolean;
     delete(key: string): void;
   };
+  /** Plan 19-02 — plugin-singleton suppression map. Optional so test fixtures
+   *  for mount-only paths can omit it; mount factory creates a temporary
+   *  no-op suppression when absent (test-mode-only). */
+  selfWriteSuppression?: SelfWriteSuppression;
 }
 
 /**
- * Lightweight controller wrapping the embedded EditorView. Plan 19-01 ships
- * `flushNow` as a no-op stub (the debouncedWriter lands in Plan 19-02).
- * `getDoc` lets callers (debouncedWriter, tests) inspect current widget content.
+ * Lightweight controller wrapping the embedded EditorView. Plan 19-02
+ * binds an optional `writer` (DebouncedWriter) — when present, flushNow
+ * proxies to writer.forceFlush; otherwise it's a no-op (test fixtures /
+ * read-only mounts).
  */
 export class WidgetController {
+  /** Optional — Plan 19-02 mount factory sets this for editable widgets;
+   *  Reading-mode read-only mounts and test fixtures may leave it undefined. */
+  public writer?: DebouncedWriter;
+
   constructor(
     public readonly view: EditorView,
     public readonly container: HTMLElement,
@@ -103,17 +126,23 @@ export class WidgetController {
     public readonly plugin: WidgetMountHost,
   ) {}
 
-  /** Plan 19-01 stub — no-op. Plan 19-02 wires this to debouncedWriter.flush(). */
-  flushNow(): void {
-    /* Plan 19-01: no debouncedWriter yet; leave a no-op. */
+  /** Drain pending writer state. Returns the underlying forceFlush Promise
+   *  when a writer is attached; otherwise resolves immediately. Called from
+   *  WidgetRegistry.flushAll, MarkdownRenderChild.onunload, etc. */
+  flushNow(): Promise<void> {
+    if (this.writer) return this.writer.forceFlush();
+    return Promise.resolve();
   }
 
-  /** Tear down the embedded EditorView. Idempotent. */
+  /** Tear down the embedded EditorView. Cancels any pending writer state
+   *  first (registry callers always flushNow BEFORE destroy, so this is a
+   *  defensive guard against re-entry / shutdown races). Idempotent. */
   destroy(): void {
+    this.writer?.cancel();
     this.view.destroy();
   }
 
-  /** Read the current widget document content (used by debouncedWriter in Plan 19-02). */
+  /** Read the current widget document content (used by debouncedWriter). */
   getDoc(): string {
     return this.view.state.doc.toString();
   }
@@ -145,6 +174,7 @@ function buildExtensions(
   plugin: WidgetMountHost,
   slug: string,
   readOnly: boolean,
+  onDocChanged?: (update: ViewUpdate) => void,
 ): Extension[] {
   const indent = plugin.settings.getIndentSizeOverride();
   // C-14: read vimMode once at mount time. `getConfig` is an undocumented
@@ -197,6 +227,16 @@ function buildExtensions(
     // 10. Line wrapping carry-over.
     EditorView.lineWrapping,
   ];
+  // 11. Plan 19-02 — debouncedWriter binding via updateListener.of. Only
+  //     editable widgets register the listener; read-only widgets skip it
+  //     (no doc changes are possible).
+  if (!readOnly && onDocChanged) {
+    exts.push(
+      EditorView.updateListener.of((update: ViewUpdate) => {
+        if (update.docChanged) onDocChanged(update);
+      }),
+    );
+  }
   return exts;
 }
 
@@ -228,9 +268,17 @@ export function mountLeetCodeWidget(
   host.appendChild(container);
 
   const slug = resolveLanguageSlug(plugin, file);
+
+  // Plan 19-02 — declare controller upfront so the updateListener closure can
+  // call into ctl.writer (which is set after view construction).
+  let ctl: WidgetController;
+  const onDocChanged = readOnly
+    ? undefined
+    : () => { ctl?.writer?.run(); };
+
   const state = EditorState.create({
     doc: source,
-    extensions: buildExtensions(plugin, slug, readOnly),
+    extensions: buildExtensions(plugin, slug, readOnly, onDocChanged),
   });
 
   const view = new EditorView({ state, parent: container });
@@ -251,7 +299,30 @@ export function mountLeetCodeWidget(
     });
   }
 
-  const ctl = new WidgetController(view, container, file, fenceIndex, plugin);
+  ctl = new WidgetController(view, container, file, fenceIndex, plugin);
+
+  // Plan 19-02 — wire the DebouncedWriter for editable widgets when the
+  // plugin host provides the required app.vault.read/process methods AND a
+  // selfWriteSuppression instance. Read-only mounts skip the writer entirely.
+  if (
+    !readOnly &&
+    plugin.app.vault.read &&
+    plugin.app.vault.process &&
+    plugin.selfWriteSuppression
+  ) {
+    const delayMs = plugin.settings.getWidgetSyncDebounceMs?.() ?? 400;
+    ctl.writer = new DebouncedWriter(
+      plugin.app as never,
+      file as never,
+      () => view.state.doc.toString(),
+      // Plan 19-02 — flush-time fenceIndex is stored on the controller and
+      // passed verbatim. Drift detection (Pitfall 19-E) happens INSIDE
+      // DebouncedWriter.flush() by counting openers in fresh disk content.
+      () => ctl.fenceIndex,
+      plugin.selfWriteSuppression,
+      delayMs,
+    );
+  }
 
   // Register in plugin.widgetRegistry if present (set by main.ts onload when
   // useInlineWidget=ON; Plan 19-04 controller cleanup uses this).
@@ -298,7 +369,13 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
   }
 
   onunload(): void {
-    this.controller?.flushNow();
+    // Plan 19-02 — flushNow returns a Promise; fire-and-forget here because
+    // MarkdownRenderChild.onunload is sync-shaped. Race-safe: destroy()
+    // cancels the writer, so the in-flight write either lands or aborts
+    // cleanly. The widgetRegistry.flushAll path (Plugin.onunload) is the
+    // load-bearing one for graceful shutdown — see RESEARCH Pitfall 19-B.
+    const p = this.controller?.flushNow();
+    if (p && typeof p.catch === 'function') p.catch(() => undefined);
     this.controller?.destroy();
     this.plugin.widgetRegistry?.delete(`${this.file.path}::${this.fenceIndex}`);
   }

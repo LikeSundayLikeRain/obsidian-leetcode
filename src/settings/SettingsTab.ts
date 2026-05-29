@@ -330,6 +330,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             v === '2000' ? 2000 :
             400;
           await this.plugin.settings.setWidgetSyncDebounceMs(val);
+          // Phase 19 Plan 02 — live-apply across all live widgets without
+          // note reload (D-08). No-op when no widgets registered.
+          this.plugin.widgetRegistry?.applyDelay(val);
         }),
       );
 

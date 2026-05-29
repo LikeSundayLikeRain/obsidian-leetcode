@@ -1,4 +1,4 @@
-// Phase 19 Plan 01 — Plugin-singleton widget registry (CONTEXT D-01).
+// Phase 19 Plan 01 + Plan 19-02 — Plugin-singleton widget registry (CONTEXT D-01).
 //
 // Map<`${file.path}::${fenceIndex}`, WidgetController> — one entry per mounted
 // widget. Mirrors the v1.2 ChildEditorRegistry shape from
@@ -8,19 +8,31 @@
 //   - sync wiring side effects on delete (Plan 19-01 has no sync; Plan 19-02
 //     wires debouncedWriter teardown through controller.destroy directly)
 //
-// flushAll() is a stub-friendly shape: in Plan 19-01 every controller's
-// flushNow() is a no-op (no debouncedWriter yet). Plan 19-02 makes flushNow()
-// drain pending writes; the registry contract here stays the same.
+// Plan 19-02 extensions:
+//   - flushAll/flushFile return Promise<void> (await each controller's
+//     flushNow which now returns a Promise from DebouncedWriter.forceFlush)
+//   - flushAllSync — best-effort synchronous-issue path used by `beforeunload`
+//     (cancel writers, fire-and-forget flushNow). RESEARCH Pitfall 19-B.
+//   - applyDelay — iterates controllers and calls writer.setDelay for hot
+//     reconfigure of widgetSyncDebounceMs (D-08 Settings live-apply).
 
 /**
  * Minimal contract every WidgetController must satisfy.
- * Plan 19-01: flushNow is a no-op stub; Plan 19-02 makes it drain the
- * debouncedWriter synchronously.
+ * Plan 19-02: flushNow returns a Promise that resolves once the
+ * DebouncedWriter's pending write completes (forceFlush semantics).
  */
 export interface WidgetControllerLike {
-  flushNow(): void;
+  flushNow(): Promise<void> | void;
   destroy(): void;
   file: { path: string };
+  /** Optional — present in production controllers (set by Plan 19-02 mount
+   *  factory). flushAllSync uses it for best-effort cancel; applyDelay uses
+   *  it for hot debounce reconfigure. Both code paths defensively check
+   *  presence so test fixtures may omit it. */
+  writer?: {
+    cancel(): void;
+    setDelay?(ms: number): void;
+  };
 }
 
 export class WidgetRegistry {
@@ -49,12 +61,32 @@ export class WidgetRegistry {
     this.map.delete(key);
   }
 
-  /** Iterate every registered controller and invoke `flushNow()` on each.
-   *  Called from Plugin.onunload, beforeunload, leaf-change, etc. (Plan 19-02
-   *  wires these hooks; Plan 19-01 only ships the contract). */
-  flushAll(): void {
+  /** Iterate every registered controller and invoke `flushNow()` on each
+   *  sequentially. Resolves once every flush completes. Called from
+   *  Plugin.onunload, leaf-change, workspace 'quit', etc. (CONTEXT C-07). */
+  async flushAll(): Promise<void> {
     for (const ctl of this.map.values()) {
-      ctl.flushNow();
+      await ctl.flushNow();
+    }
+  }
+
+  /** Synchronous-issue flush — used ONLY by `beforeunload` where awaiting an
+   *  async Promise is best-effort (RESEARCH Pitfall 19-B). Cancels each
+   *  writer's pending debounce, then fires flushNow without awaiting. The
+   *  renderer process may exit before the writes resolve; this is the
+   *  belt-and-suspenders backup to `workspace.on('quit')` Tasks.add. */
+  flushAllSync(): void {
+    for (const ctl of this.map.values()) {
+      ctl.writer?.cancel();
+      // Fire-and-forget — promise rejections swallowed (best-effort).
+      try {
+        const p = ctl.flushNow();
+        if (p && typeof (p as Promise<void>).catch === 'function') {
+          (p as Promise<void>).catch(() => undefined);
+        }
+      } catch {
+        /* swallow — beforeunload best-effort */
+      }
     }
   }
 
@@ -67,12 +99,21 @@ export class WidgetRegistry {
     this.map.clear();
   }
 
-  /** Iterate every controller whose stored file path matches and flush each.
-   *  Used by `vault.on('rename')` to drain in-flight writes BEFORE the path
-   *  change lands (the Plan 19-02 hook). */
-  flushFile(filePath: string): void {
+  /** Flush every controller whose stored file path matches `filePath`. Used
+   *  by `vault.on('rename')` to drain in-flight writes BEFORE the path
+   *  change lands (Plan 19-02 hook). */
+  async flushFile(filePath: string): Promise<void> {
     for (const ctl of this.map.values()) {
-      if (ctl.file.path === filePath) ctl.flushNow();
+      if (ctl.file.path === filePath) await ctl.flushNow();
+    }
+  }
+
+  /** Hot-reconfigure the debounce delay for every controller's writer.
+   *  Called from SettingsTab 'Save delay' onChange so widgetSyncDebounceMs
+   *  applies live without note reload (D-08). */
+  applyDelay(ms: number): void {
+    for (const ctl of this.map.values()) {
+      ctl.writer?.setDelay?.(ms);
     }
   }
 

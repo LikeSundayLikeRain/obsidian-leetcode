@@ -23,6 +23,7 @@ vi.mock('@codemirror/view', () => {
     static theme = vi.fn().mockReturnValue('mock-theme-extension');
     static editable = { of: vi.fn((b: boolean) => `mock-editable-${b}`) };
     static lineWrapping = 'mock-line-wrapping';
+    static updateListener = { of: vi.fn(() => 'mock-update-listener') };
     opts: { state: unknown; parent: HTMLElement };
     constructor(opts: { state: unknown; parent: HTMLElement }) {
       this.opts = opts;
@@ -106,10 +107,18 @@ vi.mock('obsidian', async () => {
     path: string;
     constructor(path: string) { this.path = path; }
   }
-  return { ...actual, TFile };
+  // Plan 19-02 — DebouncedWriter imports `debounce` from 'obsidian'. Provide
+  // a minimal stub returning a no-op debouncer so mount-time construction
+  // doesn't blow up under the WidgetController unit tests.
+  const debounce = (cb: (...a: unknown[]) => unknown) => {
+    const fn = () => cb();
+    return Object.assign(fn, { run: fn, cancel: () => fn });
+  };
+  return { ...actual, TFile, debounce };
 });
 
 import { EditorState } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
 import { mountLeetCodeWidget } from '../../src/widget/WidgetController';
 
 interface FakePlugin {
@@ -224,5 +233,56 @@ describe('mountLeetCodeWidget', () => {
     const stopProp = vi.spyOn(event, 'stopPropagation');
     ctl.view.dom.dispatchEvent(event);
     expect(stopProp).toHaveBeenCalled();
+  });
+
+  // --- Plan 19-02 — writer wiring ----------------------------------------
+
+  it('Plan 19-02: writer attached when plugin host provides selfWriteSuppression + vault.read/process', () => {
+    const fullPlugin = {
+      ...plugin,
+      app: {
+        ...plugin.app,
+        vault: {
+          ...plugin.app.vault,
+          read: vi.fn(async () => ''),
+          process: vi.fn(async () => ''),
+        },
+      },
+      selfWriteSuppression: { arm: vi.fn(), tryConsume: vi.fn() } as never,
+    };
+    const ctl = mountLeetCodeWidget(host, 'pass', file as never, fullPlugin as never, /*readOnly=*/false);
+    expect(ctl.writer).toBeDefined();
+  });
+
+  it('Plan 19-02: writer NOT attached on read-only mounts (no listener registered)', () => {
+    const fullPlugin = {
+      ...plugin,
+      app: {
+        ...plugin.app,
+        vault: {
+          ...plugin.app.vault,
+          read: vi.fn(async () => ''),
+          process: vi.fn(async () => ''),
+        },
+      },
+      selfWriteSuppression: { arm: vi.fn(), tryConsume: vi.fn() } as never,
+    };
+    const ctl = mountLeetCodeWidget(host, 'pass', file as never, fullPlugin as never, /*readOnly=*/true);
+    expect(ctl.writer).toBeUndefined();
+  });
+
+  it('Plan 19-02: read-only mount does NOT register an updateListener', () => {
+    const ulOf = (EditorView as unknown as { updateListener: { of: ReturnType<typeof vi.fn> } }).updateListener.of;
+    ulOf.mockClear();
+    mountLeetCodeWidget(host, 'pass', file as never, plugin as never, /*readOnly=*/true);
+    expect(ulOf).not.toHaveBeenCalled();
+  });
+
+  it('Plan 19-02: WidgetController.flushNow returns Promise (no writer = resolved Promise)', async () => {
+    const ctl = mountLeetCodeWidget(host, 'pass', file as never, plugin as never, false);
+    // No writer wired (plugin lacks selfWriteSuppression in this fixture).
+    const result = ctl.flushNow();
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).resolves.toBeUndefined();
   });
 });
