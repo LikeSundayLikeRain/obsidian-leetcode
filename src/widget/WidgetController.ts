@@ -263,33 +263,11 @@ function buildExtensions(
     typeof getConfig === 'function' &&
     (getConfig.call(plugin.app.vault, 'vimMode') as boolean | undefined) === true;
 
-  const exts: Extension[] = [
-    // 1. Language Compartment (C-12 — 8 packs).
+  // Shared visual extensions (both editable and read-only).
+  const visual: Extension[] = [
     languageCompartment.of(buildLanguageExtensions(slug, indent)),
-    // 2. Conditional vim — only when Obsidian's vim setting is on AND the mount
-    //    is editable. Gap-closure rationale (UAT Test 1 BLOCKER 1 / WIDGET-07 /
-    //    CONTEXT C-03): vim()'s internal editable behavior registers an
-    //    editable.of(true) that wins by extension order over our
-    //    EditorView.editable.of(!readOnly) at position 9. Gating vim on
-    //    `!readOnly` is the only correct fix — vim has no "read-only mode" of
-    //    its own; even with editable.of(false) present, vim re-enables typing.
-    ...(vimEnabled && !readOnly ? [vim({ status: true } as Parameters<typeof vim>[0])] : []),
-    // 3. Top-level closeBracketsKeymap (Pitfall D from Phase 16 — Backspace
-    //    handler must precede defaultKeymap's).
-    keymap.of(closeBracketsKeymap),
-    // 4. Themed highlight + bracket matching (THEME-01..03 carry-over).
     obsidianSemanticClasses,
     ...createThemedHighlight(),
-    bracketMatching(),
-    // 5. Editing primitives.
-    history(),
-    drawSelection(),
-    highlightActiveLine(),
-    // 6. Main keymap — defaultKeymap + historyKeymap.
-    keymap.of([...defaultKeymap, ...historyKeymap]),
-    // 7. Indent unit per language pack.
-    indentUnit.of('    '),
-    // 8. Theme block lifted verbatim from childEditorFactory.ts:381-395.
     EditorView.theme({
       '&': {
         background: 'var(--code-background, var(--background-secondary))',
@@ -305,11 +283,26 @@ function buildExtensions(
         borderRight: 'none',
       },
     }),
-    // 9. Read-only gate (WIDGET-07): Reading mode passes readOnly=true so
-    //    EditorView.editable.of(false) makes the embedded editor read-only.
     EditorView.editable.of(!readOnly),
-    // 10. Line wrapping carry-over.
     EditorView.lineWrapping,
+  ];
+
+  // Read-only mode: only syntax highlighting + theme — no editing chrome.
+  if (readOnly) return visual;
+
+  // Editable mode: full interactive extensions.
+  const exts: Extension[] = [
+    ...visual,
+    // Conditional vim (BLOCKER 1 fix: gated on !readOnly above).
+    ...(vimEnabled ? [vim({ status: true } as Parameters<typeof vim>[0])] : []),
+    // closeBracketsKeymap before defaultKeymap (Pitfall D from Phase 16).
+    keymap.of(closeBracketsKeymap),
+    bracketMatching(),
+    history(),
+    drawSelection(),
+    highlightActiveLine(),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    indentUnit.of('    '),
   ];
   // 11. Plan 19-02 — debouncedWriter binding via updateListener.of. Only
   //     editable widgets register the listener; read-only widgets skip it

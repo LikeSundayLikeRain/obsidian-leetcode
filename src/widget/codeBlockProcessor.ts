@@ -135,10 +135,12 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
     // embeds — the embed-target is typically the LC note's only fence).
     const renderInfo = info ?? { text: source, lineStart: 0, lineEnd: 0 };
 
-    // Otherwise mount the render child. Embed contexts (whether LC or
-    // non-LC) get readOnly=true; LC notes in their own pipeline + valid
-    // section info get readOnly=false.
-    const readOnly = isEmbed || !hasLcSlug;
+    // WIDGET-07 / CONTEXT C-03: Reading-mode widgets must be read-only.
+    // Obsidian calls registerMarkdownCodeBlockProcessor in BOTH Reading mode
+    // and Live Preview (when the block is preview-rendered). Detect Reading
+    // mode via DOM ancestor — .markdown-reading-view is only present there.
+    const isReadingMode = !!el.closest?.('.markdown-reading-view');
+    const readOnly = isReadingMode || isEmbed || !hasLcSlug;
     const child = new LeetCodeWidgetRenderChild(
       el,
       source,
