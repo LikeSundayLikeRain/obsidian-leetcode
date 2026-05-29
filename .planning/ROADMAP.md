@@ -95,7 +95,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 - **Empirical research flag (LOW):** Live Preview raw-source-reveal mitigation via `mousedown.stopPropagation()` is empirically untested; state-persistence map is the fallback regardless. `getSectionInfo` null-paths must be exercised on day one.
 - Pitfalls covered: P1, P3, P4, P6, P12, P14, P15, P17, P18, P22, P23.
 
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 **Wave 1**
@@ -104,7 +104,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 19-02-PLAN.md — Debounced one-way sync + suppression: vault.process write path, per-path content-hash suppression (2s TTL), per-file rate-limit (1/200ms), six flush-on-transition hooks, post-flush hash diagnostic; empirical probe of vault.on('modify') ordering
+- [x] 19-02-PLAN.md — Debounced one-way sync + suppression: vault.process write path, per-path content-hash suppression (2s TTL), per-file rate-limit (1/200ms), six flush-on-transition hooks, post-flush hash diagnostic; empirical probe of vault.on('modify') ordering
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -238,7 +238,7 @@ Plans:
 | 16. Language Packs & Switching              | v1.2      | 5/5 | Complete    | 2026-05-23 |
 | 17. Polish & Edge Cases                     | v1.2      | 13/13          | Complete    | 2026-05-25 |
 | 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 4/4            | Complete    | 2026-05-26 |
-| 19. Widget Foundation + One-Way Sync        | v1.3      | 1/4 | In Progress|  |
+| 19. Widget Foundation + One-Way Sync        | v1.3      | 2/4 | In Progress|  |
 | 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 0/0       | Not started | -          |
 | 21. v1.2 Migration                          | v1.3      | 0/0            | Not started | -          |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
