@@ -61,7 +61,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 <details open>
 <summary>🚧 v1.3 Inline Widget Architecture (Phases 19–22) — IN PROGRESS</summary>
 
-- [ ] **Phase 19: Widget Foundation + One-Way Sync** — Self-contained inline `leetcode-solve` widget mounted in both Reading and Live Preview, debounced one-way sync to disk, state persistence, hash-based echo suppression
+- [x] **Phase 19: Widget Foundation + One-Way Sync** — Self-contained inline `leetcode-solve` widget mounted in both Reading and Live Preview, debounced one-way sync to disk, state persistence, hash-based echo suppression — completed 2026-05-29
 - [ ] **Phase 20: Reconciliation, UX, Action Row, Section Protection** — External-edit reconciliation + conflict modal, action row inside widget, language switching via metadataCache, narrowed `sectionProtectionExtension`, vim live-reconfigure
 - [ ] **Phase 21: v1.2 Migration** — Lazy-on-open atomic migration of v1.2 fence tags → `leetcode-solve`, backup sidecar with 30-day retention, idempotent detection, CI fixtures across v1.0/v1.1/v1.2 sample notes
 - [ ] **Phase 22: v1.2 Path Removal + Polish** — Hard cutover; delete 5 legacy files (~2,400 LOC net), drop `'leetcode.*'` userEvent convention, theme regression gate, BRAT alpha, plugin-store re-review
@@ -116,7 +116,7 @@ Plans:
 
 **Wave 5** *(gap closure — UAT Test 1 BLOCKERS 1+2+3)*
 
-- [ ] 19-05-PLAN.md — Reading-mode read-only fix (gate vim on `vimEnabled && !readOnly`) + suppress v1.2 action row when `useInlineWidget=ON` (gate registerCodeBlockActionProcessor + buildCodeActionsEditorExtension on `!useInlineWidget`); UAT re-run for WIDGET-07 / VIM-01 / D-03 / D-05
+- [x] 19-05-PLAN.md — Reading-mode read-only fix (gate vim on `vimEnabled && !readOnly`) + suppress v1.2 action row when `useInlineWidget=ON` (gate registerCodeBlockActionProcessor + buildCodeActionsEditorExtension on `!useInlineWidget`); UAT re-run for WIDGET-07 / VIM-01 / D-03 / D-05
 
 ---
 
