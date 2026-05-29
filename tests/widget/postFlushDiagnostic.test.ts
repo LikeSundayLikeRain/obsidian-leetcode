@@ -87,7 +87,7 @@ describe('post-flush hash diagnostic (CONTEXT D-09)', () => {
       new SelfWriteSuppression(), 0,
     );
     await w.forceFlush();
-    const driftWarn = warnSpy.mock.calls.find((args) =>
+    const driftWarn = warnSpy.mock.calls.find((args: unknown[]) =>
       typeof args[0] === 'string' && /post-flush hash drift/i.test(args[0] as string),
     );
     expect(driftWarn).toBeUndefined();
@@ -108,7 +108,7 @@ describe('post-flush hash diagnostic (CONTEXT D-09)', () => {
       new SelfWriteSuppression(), 0,
     );
     await w.forceFlush();
-    const driftWarn = warnSpy.mock.calls.find((args) =>
+    const driftWarn = warnSpy.mock.calls.find((args: unknown[]) =>
       typeof args[0] === 'string' && /post-flush hash drift/i.test(args[0] as string),
     );
     expect(driftWarn).toBeDefined();

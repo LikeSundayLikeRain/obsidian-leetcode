@@ -84,8 +84,8 @@ describe('DebouncedWriter', () => {
   let app: ReturnType<typeof makeFakeApp>;
   let file: FakeFile;
   let suppression: SelfWriteSuppression;
-  let getDoc: ReturnType<typeof vi.fn>;
-  let getFenceIndex: ReturnType<typeof vi.fn>;
+  let getDoc: () => string;
+  let getFenceIndex: () => number;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -97,8 +97,8 @@ describe('DebouncedWriter', () => {
     file = { path: 'a.md' };
     app.files.set(file.path, FENCE_NOTE);
     suppression = new SelfWriteSuppression();
-    getDoc = vi.fn(() => 'newbody');
-    getFenceIndex = vi.fn(() => 0);
+    getDoc = () => 'newbody';
+    getFenceIndex = () => 0;
   });
 
   afterEach(() => {
@@ -164,8 +164,12 @@ describe('DebouncedWriter', () => {
     w.run();
     await vi.advanceTimersByTimeAsync(999);
     expect(app.vault.process).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    await vi.runAllTimersAsync();
+    // Advance the remaining 1ms, then drain pending timers + microtasks.
+    await vi.advanceTimersByTimeAsync(2);
+    for (let i = 0; i < 5; i++) {
+      await vi.runAllTimersAsync();
+      await Promise.resolve();
+    }
     expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 

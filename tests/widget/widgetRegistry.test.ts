@@ -69,21 +69,21 @@ describe('WidgetRegistry', () => {
   });
 
   describe('flushAll()', () => {
-    it('calls flushNow on every registered controller', () => {
+    it('calls flushNow on every registered controller (Plan 19-02: async)', async () => {
       const c1 = makeMockController('a.md');
       const c2 = makeMockController('b.md');
       const c3 = makeMockController('a.md');
       registry.set('a.md::0', c1 as never);
       registry.set('b.md::0', c2 as never);
       registry.set('a.md::1', c3 as never);
-      registry.flushAll();
+      await registry.flushAll();
       expect(c1.flushNow).toHaveBeenCalledTimes(1);
       expect(c2.flushNow).toHaveBeenCalledTimes(1);
       expect(c3.flushNow).toHaveBeenCalledTimes(1);
     });
 
-    it('is a no-op when registry is empty', () => {
-      expect(() => registry.flushAll()).not.toThrow();
+    it('is a no-op when registry is empty', async () => {
+      await expect(registry.flushAll()).resolves.toBeUndefined();
     });
   });
 

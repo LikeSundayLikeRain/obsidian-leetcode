@@ -17,6 +17,7 @@ vi.mock('@codemirror/view', () => {
     static theme = vi.fn().mockReturnValue('mock-theme-extension');
     static editable = { of: vi.fn((b: boolean) => `mock-editable-${b}`) };
     static lineWrapping = 'mock-line-wrapping';
+    static updateListener = { of: vi.fn(() => 'mock-update-listener') };
     opts: { state: unknown; parent: HTMLElement };
     constructor(opts: { state: unknown; parent: HTMLElement }) {
       this.opts = opts;
