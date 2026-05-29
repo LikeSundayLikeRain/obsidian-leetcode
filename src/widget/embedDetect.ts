@@ -1,23 +1,35 @@
-// Phase 19 Plan 01 — Embed-context detection (CONTEXT C-15 / EMBED-03).
+// Phase 19 Plan 01 + Plan 04 — Embed-context detection (CONTEXT C-15 / EMBED-03).
 //
-// Two independent signals — both required, OR'd. Per RESEARCH §"Specific
-// Findings §3":
-//   1. DOM ancestor walk for `.markdown-embed` / `.internal-embed` (catches
-//      the host-DOM case)
-//   2. ctx.sourcePath !== targetFile.path (catches the case where Obsidian
-//      re-renders an embedded fence in a deferred context with a stripped
-//      embed wrapper class)
+// THREE independent signals — any one returns true (RESEARCH §3 + Pitfall 19-D):
+//   1. DOM ancestor walk for `.markdown-embed` / `.internal-embed` (host-DOM).
+//   2. ctx.sourcePath !== targetFile.path (Obsidian re-renders an embedded
+//      fence in a deferred context with a stripped embed wrapper class).
+//   3. Plan 19-04 — `info === null` (Pitfall 19-D treatment): null
+//      MarkdownSectionInformation is the regular state of an embed-rendered
+//      `![[lc-note#Code]]` section transclusion. Treat as embed-likely.
 //
 // Pure boolean — no side effects. Used by codeBlockProcessor to gate
 // editable vs. read-only widget mount.
 
-import type { MarkdownPostProcessorContext, TFile } from 'obsidian';
+import type {
+  MarkdownPostProcessorContext,
+  MarkdownSectionInformation,
+  TFile,
+} from 'obsidian';
 
 export function isEmbedContext(
   el: HTMLElement,
   ctx: MarkdownPostProcessorContext,
   targetFile: TFile,
+  info?: MarkdownSectionInformation | null,
 ): boolean {
+  // Plan 19-04 — Pitfall 19-D treatment: null section info is embed-likely.
+  // The optional fourth argument lets the caller (codeBlockProcessor) thread
+  // its already-resolved `getSectionInfo(el)` result through without
+  // re-fetching. When the argument isn't supplied (legacy three-arg call),
+  // we skip this check (callers may rely on signals 1+2 alone).
+  if (info === null) return true;
+
   // Signal 1: DOM ancestor walk for the embed wrapper classes Obsidian
   // applies to transcluded blocks (`![[note]]`, `![[note#section]]`).
   let node: HTMLElement | null = el;

@@ -132,7 +132,11 @@ describe('leetCodeBlockProcessor', () => {
     expect(code!.textContent).toBe('console.log("foo");');
   });
 
-  it('null getSectionInfo → static fallback (no throw, no addChild)', async () => {
+  it('null getSectionInfo + lc-slug present → readOnly RenderChild (Plan 19-04 / Pitfall 19-D)', async () => {
+    // Plan 19-04 routing: null info is regular in embed contexts (Pitfall
+    // 19-D). With lc-slug present, we route to a readOnly RenderChild so
+    // the embed renders the fence content as a read-only widget rather than
+    // losing the widget treatment to a plain <pre><code>.
     const metadataCache = createFakeMetadataCache();
     metadataCache.setFrontmatter('LeetCode/two-sum.md', { 'lc-slug': 'two-sum' });
     const plugin = createFakePlugin({ metadataCache });
@@ -142,9 +146,8 @@ describe('leetCodeBlockProcessor', () => {
     const ctx = makeCtx('LeetCode/two-sum.md', null);
 
     expect(() => processor('pass', el, ctx as never)).not.toThrow();
-    expect(ctx.addChild).not.toHaveBeenCalled();
-    // Fallback rendered.
-    expect(el.querySelector('pre')).not.toBeNull();
+    // Plan 19-04: lc-slug + null info → embed-likely → readOnly RenderChild.
+    expect(ctx.addChild).toHaveBeenCalledTimes(1);
   });
 
   it('embed context (sourcePath mismatch) → readOnly RenderChild via addChild', async () => {

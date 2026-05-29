@@ -33,6 +33,7 @@ import {
 import { editorInfoField, type Plugin, type TFile } from 'obsidian';
 import { findCodeFence, extractFenceBody, computeFenceIndex } from './fenceLocator';
 import { LeetCodeFenceWidget } from './LeetCodeFenceWidget';
+import { djb2 } from './hash';
 import type { WidgetMountHost } from './WidgetController';
 
 type PluginHost = Plugin & WidgetMountHost;
@@ -73,11 +74,16 @@ function buildLeetCodeFenceRanges(
   const openerLine0 = fence.openerLine - 1;
   const fenceIndex = computeFenceIndex(fileText, openerLine0);
 
+  // Plan 19-04 — synchronous identity hash (Pitfall 19-F). The ViewPlugin
+  // computes djb2(source) once per build; the widget receives the hash
+  // explicitly so eq() comparison stays content-aware. Cross-instance
+  // hash equality means CM6 reuses the existing DOM (no remount thrash).
+  const sourceHash = djb2(source);
   builder.add(
     from,
     to,
     Decoration.replace({
-      widget: new LeetCodeFenceWidget(plugin, file, fenceIndex, source),
+      widget: new LeetCodeFenceWidget(plugin, file, fenceIndex, sourceHash, source),
       // The replace decoration takes over the entire fence range; the parent's
       // cursor-skip behavior is enforced by the atomicRanges Facet (below).
     }),

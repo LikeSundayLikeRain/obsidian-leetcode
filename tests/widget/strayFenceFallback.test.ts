@@ -131,7 +131,11 @@ describe('strayFenceFallback (Plan 19-04 EMBED-04 / CONTEXT D-04)', () => {
     expect(ctx.addChild).toHaveBeenCalledTimes(1);
   });
 
-  it('(c) null getSectionInfo → static fallback; never throws', async () => {
+  it('(c) null getSectionInfo → readOnly RenderChild (Pitfall 19-D); never throws', async () => {
+    // Plan 19-04 routing per RESEARCH Pitfall 19-D: null info is REGULAR
+    // (not exceptional) in embeds. We treat it as embed-likely. With no
+    // lc-slug AND embed-likely, the matrix routes to readOnly RenderChild
+    // (the safer UX — user gets read-only view of the fence content).
     const metadataCache = createFakeMetadataCache();
     const plugin = createFakePlugin({ metadataCache });
     const processor = await getProcessor(plugin);
@@ -140,11 +144,8 @@ describe('strayFenceFallback (Plan 19-04 EMBED-04 / CONTEXT D-04)', () => {
     const ctx = makeCtx('Notes/random.md', null);
 
     expect(() => processor('console.log("x");', el, ctx as never)).not.toThrow();
-    // Plan 19-04 routing: null section info is treated as embed-likely; if no
-    // lc-slug, we still want a safe fallback. The current path renders static
-    // <pre><code>. addChild is NOT called for non-LC + null-info.
-    expect(ctx.addChild).not.toHaveBeenCalled();
-    expect(el.querySelector('pre')).not.toBeNull();
+    // Null info → embed-likely → RenderChild (readOnly) — never crashes.
+    expect(ctx.addChild).toHaveBeenCalledTimes(1);
   });
 
   it('(d) malformed fence (opener present, no closer in section text) → static fallback; never throws', async () => {

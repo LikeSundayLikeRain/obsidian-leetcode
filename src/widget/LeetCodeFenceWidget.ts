@@ -1,4 +1,4 @@
-// Phase 19 Plan 01 — CM6 WidgetType subclass for Live Preview mount.
+// Phase 19 Plan 01 + Plan 04 — CM6 WidgetType subclass for Live Preview mount.
 //
 // `LeetCodeFenceWidget` is wrapped by Decoration.replace and contributed via
 // the leetCodeFenceViewPlugin's ViewPlugin (separate file). The widget's
@@ -7,10 +7,15 @@
 //
 //   eq(other) === true iff (file.path, fenceIndex, sourceHash) all match
 //
-// `sourceHash` is a stable hash of the fence body string. CM6 reuses the DOM
-// across rebuilds when eq() returns true — preventing remount on every
-// keystroke. NEVER include the WidgetController instance in eq() (instances
-// are per-render; eq must be content-based).
+// Plan 19-04 — `sourceHash` is supplied by the caller (Live Preview
+// ViewPlugin) so the hash function used for identity is consistent across
+// rebuilds. The ViewPlugin uses `djb2(source)` from `src/widget/hash.ts`;
+// callers that want hash-of-source semantics can use the convenience
+// `LeetCodeFenceWidget.fromSource(...)` factory below.
+//
+// CM6 reuses the DOM across rebuilds when eq() returns true — preventing
+// remount on every keystroke. NEVER include the WidgetController instance
+// in eq() (instances are per-render; eq must be content-based).
 //
 // `ignoreEvent()` returns true so parent CM6 lets the embedded EditorView
 // consume keyboard/mouse events natively (CONTEXT D-02 + PATTERNS lines 158-163).
@@ -19,35 +24,38 @@
 import { WidgetType, type EditorView } from '@codemirror/view';
 import type { TFile } from 'obsidian';
 import { mountLeetCodeWidget, type WidgetMountHost } from './WidgetController';
-
-/**
- * Compute a small, stable hash of a string. SHA-1-strength is unnecessary
- * for widget identity — we just need a fast, deterministic non-cryptographic
- * hash with low collision rate over typical LC code-fence bodies.
- *
- * Uses djb2 — 32-bit unsigned arithmetic; identical inputs produce identical
- * 8-char hex strings.
- */
-function djb2Hash(s: string): string {
-  let hash = 5381;
-  for (let i = 0; i < s.length; i++) {
-    hash = ((hash << 5) + hash + s.charCodeAt(i)) | 0;
-  }
-  // Convert to unsigned 32-bit hex.
-  return (hash >>> 0).toString(16).padStart(8, '0');
-}
+import { djb2 } from './hash';
 
 export class LeetCodeFenceWidget extends WidgetType {
-  public readonly sourceHash: string;
-
+  /**
+   * Plan 19-04 constructor — explicit sourceHash argument. The Live Preview
+   * ViewPlugin passes `djb2(source)` (synchronous, RESEARCH Pitfall 19-F).
+   * Tests that exercise eq() identity in isolation supply hashes directly
+   * so they can verify content-changed vs. content-unchanged transitions.
+   */
   constructor(
     public readonly plugin: WidgetMountHost,
     public readonly file: TFile,
     public readonly fenceIndex: number,
+    public readonly sourceHash: string,
     public readonly source: string,
   ) {
     super();
-    this.sourceHash = djb2Hash(source);
+  }
+
+  /**
+   * Convenience factory matching the Plan 19-01 four-arg call signature
+   * `(plugin, file, fenceIndex, source)`. Computes `djb2(source)` for the
+   * sourceHash internally — keeps backwards compatibility for callers that
+   * don't already have a hash on hand.
+   */
+  static fromSource(
+    plugin: WidgetMountHost,
+    file: TFile,
+    fenceIndex: number,
+    source: string,
+  ): LeetCodeFenceWidget {
+    return new LeetCodeFenceWidget(plugin, file, fenceIndex, djb2(source), source);
   }
 
   /**
