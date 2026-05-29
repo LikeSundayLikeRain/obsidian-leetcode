@@ -79,6 +79,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 **Requirements:** WIDGET-01, WIDGET-02, WIDGET-03, WIDGET-04, WIDGET-05, WIDGET-06, WIDGET-07, WIDGET-08, SYNC-01, SYNC-02, SYNC-03, SYNC-06, SYNC-07, EMBED-01, EMBED-02, EMBED-03, EMBED-04, VIM-01, VIM-04, THEME-01, THEME-02, THEME-03
 
 **Success criteria (observable behaviors):**
+
 1. User opens an LC note in Reading mode and Live Preview and sees an identical CM6-rendered code editor inside the `leetcode-solve` fence (Reading mode is read-only via `editable.of(false)`).
 2. User types in the widget; within ~400ms the fence body on disk reflects the change exactly (byte-for-byte: triple backticks, `---` lines, trailing whitespace), and the parent CM6 file picker shows the update without spurious "modify" loops or echo cycles.
 3. User force-quits Obsidian (Cmd-Q) within milliseconds of typing — on next open, the most-recent characters are present on disk (flush-on-`beforeunload` + flush-on-unload + flush-on-leaf-change all fire).
@@ -87,6 +88,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 6. With `useInlineWidget=OFF` (default), the v1.2 nested-editor path remains fully operational — no regressions on v1.2 acceptance flows.
 
 **Key risks/notes:**
+
 - **Two-path mount is non-negotiable.** `registerMarkdownCodeBlockProcessor` (Reading) + `registerEditorExtension` ViewPlugin with `Decoration.replace({ widget })` (Live Preview) — verified against Obsidian docs and Dataview source. Shipping only one path breaks half of all user workflows.
 - **Self-write echo suppression must be a per-path content-hash map with 2-second TTL** — boolean flag is provably broken under concurrent multi-file flushes (PITFALLS P1).
 - **`EditorView.atomicRanges` on parent CM6 is load-bearing** — without it, Live Preview unmounts the widget on cursor approach, destroying state (PITFALLS P3).
@@ -96,9 +98,20 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 **Plans:** 4 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 19-01-PLAN.md — Minimal mount: two-path widget, atomicRanges, lc-slug gate, theme/semantic carry-over, conditional vim, Experimental settings, mutual-exclusion assert, property-test corpus seed (no live writes)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 19-02-PLAN.md — Debounced one-way sync + suppression: vault.process write path, per-path content-hash suppression (2s TTL), per-file rate-limit (1/200ms), six flush-on-transition hooks, post-flush hash diagnostic; empirical probe of vault.on('modify') ordering
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 19-03-PLAN.md — State persistence + P3 mitigation: state map keyed by `${file.path}::${fenceIndex}` with 30s TTL, cursor/scroll/undo capture-and-hydrate, CM6 history JSON round-trip
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 19-04-PLAN.md — Embed + stray fence + property-test hardening: dual-signal embed detection, read-only routing for embeds, stray-fence safe fallback, language-fallback Notice, expanded SYNC-06 corpus, WidgetType.eq() content-hash identity
 
 ---
@@ -112,6 +125,7 @@ Plans:
 **Requirements:** SYNC-04, SYNC-05, ACTION-01, ACTION-02, ACTION-03, ACTION-04, ACTION-05, ACTION-06, PROTECT-01, PROTECT-02, VIM-02, THEME-04
 
 **Success criteria (observable behaviors):**
+
 1. External edit arrives (other pane, Obsidian Sync, CLI `git pull`, file-system tool) — widget reloads from disk with cursor preserved; if the edit collides with local in-flight typing, a conflict modal appears with "Keep mine / Keep external / View diff" and the user's choice persists deterministically.
 2. User clicks Run / Submit / AI Debug / Reset / Copy buttons mounted **inside** the widget DOM; each button reads code directly via `widgetInstance.childView.state.doc.toString()` (no disk round-trip) and survives focus save/restore on click; flex-wrap layout reflows cleanly on window resize.
 3. User clicks the language chevron inside the widget; `lc-language` frontmatter flips via `processFrontMatter`, `metadataCache.on('changed')` fires, and `Compartment.reconfigure` swaps language packs, indent, brackets, and comment rules without rebuilding the EditorView.
@@ -120,6 +134,7 @@ Plans:
 6. User switches Obsidian theme (light/dark toggle, custom theme swap) — widget colors retheme live across all 8 language packs, no note reload required.
 
 **Key risks/notes:**
+
 - **Section-protection narrowing is empirical.** The v1.2 `sectionLockExtension.ts` (527 LOC) protected `## Problem` body, fence opener, fence closer, and `## Techniques` heading via a single `EditorState.changeFilter`. Removing fence-opener/closer protection while preserving body/heading protection requires auditing every condition in the filter — risk of removing too much (regression of v1.0 validated requirement) or too little (interferes with non-fence writes). Research flag: MEDIUM.
 - **Multi-pane simplification accepted.** Q4 confirms single-active-per-file in v1.3; full live/mirror promote-on-focus deferred to v1.3.x. Phase 20 ships single-active with a "Take over" affordance if a second pane focuses the same file. (MULTI-01/MULTI-02 are explicitly v1.4+ deferred.)
 - **Vim live-reconfigure is empirically untested in `@replit/codemirror-vim` README.** Plan must include an early dev-vault probe; if it fails, VIM-03 (reload-on-toggle banner) lands in Phase 22 as the pre-accepted fallback.
@@ -141,6 +156,7 @@ Plans:
 **Requirements:** MIGRATE-01, MIGRATE-02, MIGRATE-03, MIGRATE-04, MIGRATE-05, MIGRATE-06, MIGRATE-07, MIGRATE-08, MIGRATE-09, MIGRATE-10
 
 **Success criteria (observable behaviors):**
+
 1. User opens a v1.2-format note (first fence under `## Code` has a v1.2 lang-slug AND `lc-slug` frontmatter present) — within one `vault.process` callback the fence opener becomes ` ```leetcode-solve ` and `lc-language` frontmatter is verified/derived; fence body is byte-identical to before.
 2. Before the first migration in a session, a backup file is written to `.obsidian/plugins/obsidian-leetcode/migration-backup-{timestamp}/{slug}.md` containing the full pre-migration note; backups older than 30 days auto-delete on plugin load.
 3. Re-opening an already-migrated note is a no-op (idempotent detection on `leetcode-solve` opener); plugin load never triggers batch migration regardless of how many v1.2 notes exist in the vault.
@@ -149,6 +165,7 @@ Plans:
 6. CI runs against fixture vaults containing v1.0, v1.1, and v1.2 sample notes — all migrate cleanly on every release candidate; fixture diff vs. expected output is byte-stable.
 
 **Key risks/notes:**
+
 - **Migration is the highest-risk surface in the milestone.** Never call from `Plugin.onload()`. Never regex-replace across the full file. Always gate on `lc-slug` frontmatter to avoid hijacking non-LC code blocks (PITFALLS P7).
 - **Q7 confirmed: migration + first-edit are atomic** — both land in the same `vault.process` callback so disk never observes a half-migrated state.
 - **v1.1 lazy-on-AC Techniques migration is the direct precedent.** Same discipline: never batch-rewrite vault data on plugin load.
@@ -169,6 +186,7 @@ Plans:
 **Requirements:** DELETE-01, DELETE-02, DELETE-03, DELETE-04, DELETE-05, DELETE-06, DELETE-07, DELETE-08, POLISH-01, POLISH-02, POLISH-03, POLISH-04, POLISH-05, POLISH-06, PROTECT-03, VIM-03, THEME-05
 
 **Success criteria (observable behaviors):**
+
 1. With `useInlineWidget=ON` as the default on first 1.3.x release, every LC note opens directly into the v1.3 widget — no `useNestedEditor` fork remains in `src/main.ts`, no v1.2 path is reachable.
 2. The 5 deleted files (`childEditorSync.ts`, `sectionLockExtension.ts`, `nestedEditorExtension.ts`, `childEditorRegistry.ts`, `codeActionsEditorExtension.ts`) and 8 dead test files are gone from `src/main/` and `tests/`; bundle size is measurably smaller than v1.2's 1.71 MB raw / 459 KB gzipped (CI gate flags any regression).
 3. Side-by-side widget screenshots across the top 5 community themes (Minimal, Things, Catppuccin, Anuppuccin, Atom) match the v1.2 baseline — no theme regressions; THEME-05 release gate passes.
@@ -177,6 +195,7 @@ Plans:
 6. BRAT alpha tag ships and runs in real user vaults for at least one feedback cycle; plugin-store re-review submission is filed and accepted.
 
 **Key risks/notes:**
+
 - **Coexistence ends here.** Phases 19-21 ran the v1.3 widget behind `useInlineWidget=OFF`; flipping the default to ON is a hard cutover. After this phase, the v1.2 path is irrecoverable except via `git revert`.
 - **VIM-03 fallback lands here only if Phase 20 live-reconfigure proved empirically unreliable.** If Phase 20 succeeded, VIM-03's "reload to apply vim toggle" banner becomes a no-op success criterion; if it failed, VIM-03 ships the banner UX in this phase.
 - **Plugin-store re-review trigger.** The review checklist must be re-run since the architectural surface changed substantially: confirm `isDesktopOnly`, no `innerHTML` in widget code, no remote eval, no telemetry, manifest version bump (PITFALLS P13, P25).
@@ -235,6 +254,7 @@ Plans:
 **Plans:** 0 plans (promote with /gsd-review-backlog when ready)
 
 **Context:**
+
 - Current behavior (Phase 17 Plan 10 round-3): child editor emits Obsidian/CM5-compatible semantic class names (cm-keyword, cm-type, cm-variable, cm-def, …) so Obsidian's app.css and community-theme HyperMD overrides cascade in. Theme-tracks but doesn't always match the user's mental "VS Code" model.
 - Desired alternative: ship hardcoded `EditorView.theme()` blocks scoped to `.lc-nested-editor` that win via specificity. Add a settings dropdown: "Match Obsidian theme" (default, current behavior) / "One Dark Pro" / "One Light Pro" / "Atom One Dark" / "Dracula".
 - Italic-on-parameters via Lezer `t.local(t.variableName)` binding.
