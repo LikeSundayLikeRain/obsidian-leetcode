@@ -107,6 +107,10 @@ Open Settings → LeetCode. Three sections:
 - **Notes** — choose the vault folder for problem notes (default: `LeetCode`) and the default language (default: `python3`).
 - **Knowledge Graph** — override the technique-notes folder (defaults to `{Problems folder}/Techniques`) and toggle automatic technique backlinks on Accepted submissions.
 
+### Code editor
+
+The plugin renders the `## Code` fence as an embedded code editor with syntax highlighting by default. If you prefer Obsidian's native markdown editor (for custom CodeMirror plugins, accessibility tooling, or any other reason), open Settings → LeetCode → Code editor and turn off **Use nested code editor**, then reload Obsidian. Run / Submit / Reset / Retrieve last submission / AI commands all continue to work on the raw markdown fence.
+
 ## Troubleshooting
 
 - `LeetCode session expired. Log in again.` — your session cookie is no longer valid. Click the `Log in` action on the Notice, or open Settings → LeetCode → `Log in`.

@@ -68,6 +68,15 @@ export interface PluginData {
    *  posture (Phase 06 PREVIEW-02). */
   indentSizeOverride: 'auto' | 2 | 4 | 8;
   showRelativeLineNumbers: boolean;
+  /** Phase 19 vq4 — master toggle for the nested CM6 child-editor stack.
+   *  Default true (existing-user behavior preserved). When false, onload
+   *  skips registerEditorExtension(buildNestedEditorExtension), skips
+   *  registerVaultModifyRepairTrigger, and skips the file-open repair hook.
+   *  Reload-required apply mode — toggling persists immediately but does
+   *  NOT live-destroy children; user is prompted via Notice to reload.
+   *  Shape-guard at load collapses non-boolean raw to true (preserves
+   *  current behavior for every existing user). */
+  useNestedEditor: boolean;
   problemIndex: ProblemIndex | null;
   /** Compound filter rules from the filter modal. Null = no filter active.
    *  Persisted so filter survives plugin reload / Obsidian restart. */
@@ -246,6 +255,9 @@ const DEFAULT_DATA: PluginData = {
   // exception is enforced by the consumer (childEditorLanguage.ts).
   indentSizeOverride: 'auto',
   showRelativeLineNumbers: false,
+  // Phase 19 vq4 — default true preserves Phase 13–18 nested-editor behavior
+  // for every existing user. Toggle is reload-required.
+  useNestedEditor: true,
   problemIndex: null,
   filter: null,
   problemDetails: {},
@@ -657,6 +669,12 @@ export class SettingsStore {
       showRelativeLineNumbers: typeof raw.showRelativeLineNumbers === 'boolean'
         ? raw.showRelativeLineNumbers
         : false,
+      // Phase 19 vq4 — non-boolean raw / missing field / corrupt data.json all
+      // collapse to DEFAULT_DATA.useNestedEditor (= true), which preserves
+      // Phase 13–18 nested-editor behavior for every existing user.
+      useNestedEditor: typeof raw.useNestedEditor === 'boolean'
+        ? raw.useNestedEditor
+        : DEFAULT_DATA.useNestedEditor,
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
       filter: isValidCompoundFilter(raw.filter)
         ? sanitizeCompoundFilter(raw.filter)
@@ -813,6 +831,18 @@ export class SettingsStore {
 
   async setShowRelativeLineNumbers(v: boolean): Promise<void> {
     this.data.showRelativeLineNumbers = v;
+    await this.persist();
+  }
+
+  /** Phase 19 vq4 — read the nested-editor master toggle. Read once at
+   *  onload time in main.ts; toggling at runtime does NOT live-apply. */
+  getUseNestedEditor(): boolean { return this.data.useNestedEditor; }
+
+  /** Phase 19 vq4 — persist the nested-editor master toggle. Reload-required:
+   *  the SettingsTab onChange handler shows a `Reload Obsidian to apply`
+   *  Notice; this setter only persists. */
+  async setUseNestedEditor(v: boolean): Promise<void> {
+    this.data.useNestedEditor = v;
     await this.persist();
   }
 
