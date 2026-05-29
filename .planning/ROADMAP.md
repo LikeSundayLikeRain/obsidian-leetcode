@@ -145,7 +145,24 @@ Plans:
 - **Conflict modal is a novel UX surface for this plugin.** Worth a paper-prototype review before implementation.
 - Pitfalls covered: P2, P8, P9, P10, P11, P16, P19, P20, P21, P24.
 
-**Plans:** TBD
+**Plans:** 4 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 20-01-PLAN.md — Section protection narrowing + vim live-reconfigure (foundation): fork sectionLockExtension → sectionProtectionExtension; mutually-exclusive registration; per-widget vimCompartment + workspace.on('layout-change') dispatcher; v1.0 Phase 5.5 UAT regression rerun
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 20-02-PLAN.md — Action row + language chevron + *FromWidget methods (UX): mount buildCodeBlockButtonRow inside widget DOM; 5 *FromWidget plugin methods + switchLanguageFromWidget + per-widget metadataCache.on('changed') reactivity; Pitfall P2 early-return absorption
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 20-03-PLAN.md — External-edit reconciliation + conflict modal + 3-pane LCS diff (sync): vault.on('modify') decision tree; ConflictModal extends Obsidian.Modal with in-place "View diff" expansion; pure-TS LCS line-diff (~150 LOC); D-conflict-04 second-fire updates External pane in place
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 20-04-PLAN.md — Live theme retheme + multi-pane "Take over" affordance (polish): app.workspace.on('css-change') → cssRetheme via view.requestMeasure; app.workspace.on('active-leaf-change') → setGreyedOut + .lc-takeover-overlay CTA per UI-SPEC §3
 
 **UI hint**: yes
 
@@ -243,7 +260,7 @@ Plans:
 | 17. Polish & Edge Cases                     | v1.2      | 13/13          | Complete    | 2026-05-25 |
 | 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 4/4            | Complete    | 2026-05-26 |
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
-| 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 0/0       | Not started | -          |
+| 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 0/4       | Planned     | -          |
 | 21. v1.2 Migration                          | v1.3      | 0/0            | Not started | -          |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
 
