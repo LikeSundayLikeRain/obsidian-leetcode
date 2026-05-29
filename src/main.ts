@@ -138,6 +138,11 @@ import { leetCodeFenceViewPlugin } from './widget/liveModeViewPlugin';
 import { SelfWriteSuppression } from './widget/selfWriteSuppression';
 import { sha1 } from './widget/debouncedWriter';
 import { extractFenceBody } from './widget/fenceSerialization';
+// Phase 19 Plan 03 — state persistence map (CONTEXT C-09 + D-01 + RESEARCH
+// Pattern 4). Captures cursor + scroll + history JSON on unmount; hydrates on
+// remount within 30s TTL. Belt-and-suspenders companion to Plan 19-01's
+// mousedown.stopPropagation listener (D-02).
+import { StatePersistenceMap } from './widget/statePersistence';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { PatternClusterEngine } from './graph/PatternClusterEngine';
@@ -275,6 +280,13 @@ export default class LeetCodePlugin extends Plugin {
   // Consumed by the vault.on('modify') handler to drop self-write echoes;
   // armed by DebouncedWriter.flush BEFORE vault.process (CONTEXT C-04).
   selfWriteSuppression?: SelfWriteSuppression;
+  // Phase 19 Plan 03 — plugin-singleton state persistence map (CONTEXT C-09
+  // + D-01). Same gating as widgetRegistry (instantiated under
+  // useInlineWidget=ON only). Captures cursor + scroll + history JSON on
+  // mount/unmount; hydrates on remount within 30s TTL. CONTEXT D-02
+  // belt-and-suspenders companion to the Plan 19-01 mousedown.stopPropagation
+  // listener.
+  statePersistence?: StatePersistenceMap;
 
   /**
    * Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12) — per-child
@@ -887,6 +899,18 @@ export default class LeetCodePlugin extends Plugin {
     if (useInlineWidget) {
       this.widgetRegistry = new WidgetRegistry();
       this.selfWriteSuppression = new SelfWriteSuppression();
+      // Phase 19 Plan 03 — state persistence map. Captures cursor + scroll +
+      // history JSON on unmount/destroy; hydrates on remount within 30s TTL.
+      // Sweep stale entries every 60s via registerInterval (auto-cleans on
+      // plugin unload). 60s sweep beats 30s TTL — entries are at most ~90s
+      // stale before the sweep, but a remount past TTL also lazy-evicts.
+      this.statePersistence = new StatePersistenceMap();
+      const persistenceForInterval = this.statePersistence;
+      this.registerInterval(
+        window.setInterval(() => {
+          persistenceForInterval.sweepExpired();
+        }, 60_000),
+      );
       this.registerMarkdownCodeBlockProcessor(
         'leetcode-solve',
         leetCodeBlockProcessor(this),
@@ -930,6 +954,9 @@ export default class LeetCodePlugin extends Plugin {
           if (typeof oldPath === 'string') {
             void this.widgetRegistry?.flushFile(oldPath);
             this.selfWriteSuppression?.clearForPath(oldPath);
+            // Plan 19-03 — drain any persisted state under the old path so
+            // the renamed file's widget doesn't hydrate stale cursor/scroll.
+            this.statePersistence?.clearForPath(oldPath);
           }
         }),
       );
@@ -1200,6 +1227,11 @@ export default class LeetCodePlugin extends Plugin {
     if (flushP && typeof flushP.catch === 'function') flushP.catch(() => undefined);
     this.widgetRegistry?.destroyAll();
     this.selfWriteSuppression?.clear();
+    // Phase 19 Plan 03 — drain the state persistence map. The 60s sweep
+    // interval registered in onload auto-cancels via registerInterval, but
+    // we explicitly clear here so the in-memory map doesn't carry between
+    // plugin reloads in the same Obsidian session.
+    this.statePersistence?.clear();
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.

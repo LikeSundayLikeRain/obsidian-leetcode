@@ -57,6 +57,7 @@ import { obsidianSemanticClasses } from '../main/childEditorSemanticClasses';
 import { computeFenceIndex } from './fenceLocator';
 import { DebouncedWriter } from './debouncedWriter';
 import type { SelfWriteSuppression } from './selfWriteSuppression';
+import type { StatePersistenceMap } from './statePersistence';
 
 /**
  * Plugin-host shape required by the widget mount factory. Structurally typed
@@ -105,6 +106,11 @@ export interface WidgetMountHost {
    *  for mount-only paths can omit it; mount factory creates a temporary
    *  no-op suppression when absent (test-mode-only). */
   selfWriteSuppression?: SelfWriteSuppression;
+  /** Plan 19-03 — plugin-singleton state persistence map (CONTEXT C-09 +
+   *  D-01 + RESEARCH Pattern 4). Optional so test fixtures may omit it;
+   *  mount factory falls through gracefully when absent (no hydrate, no
+   *  capture). Set in main.ts onload behind useInlineWidget=ON. */
+  statePersistence?: StatePersistenceMap;
 }
 
 /**
@@ -118,13 +124,22 @@ export class WidgetController {
    *  Reading-mode read-only mounts and test fixtures may leave it undefined. */
   public writer?: DebouncedWriter;
 
+  /** Plan 19-03 — `${file.path}::${fenceIndex}` key used by both the
+   *  widgetRegistry (Plan 19-01) and statePersistence map (Plan 19-03).
+   *  Computed once at construction; readers (capture-on-unmount in
+   *  LeetCodeWidgetRenderChild.onunload + LeetCodeFenceWidget.destroy) use
+   *  this so they don't have to recompute the key shape. */
+  public readonly persistenceKey: string;
+
   constructor(
     public readonly view: EditorView,
     public readonly container: HTMLElement,
     public readonly file: TFile,
     public readonly fenceIndex: number,
     public readonly plugin: WidgetMountHost,
-  ) {}
+  ) {
+    this.persistenceKey = `${file.path}::${fenceIndex}`;
+  }
 
   /** Drain pending writer state. Returns the underlying forceFlush Promise
    *  when a writer is attached; otherwise resolves immediately. Called from
@@ -134,10 +149,23 @@ export class WidgetController {
     return Promise.resolve();
   }
 
-  /** Tear down the embedded EditorView. Cancels any pending writer state
-   *  first (registry callers always flushNow BEFORE destroy, so this is a
-   *  defensive guard against re-entry / shutdown races). Idempotent. */
+  /** Tear down the embedded EditorView. Plan 19-03 — capture state into the
+   *  plugin-singleton statePersistence map BEFORE destroying the view, so
+   *  callers that bypass the lifecycle wrappers (LeetCodeWidgetRenderChild
+   *  onunload / LeetCodeFenceWidget.destroy(dom)) still get the belt-and-
+   *  suspenders coverage. The wrappers also captureState explicitly — the
+   *  duplicate calls are idempotent (a re-arm with the latest state).
+   *  Cancels any pending writer state (registry callers always flushNow
+   *  BEFORE destroy, so this is a defensive guard against re-entry /
+   *  shutdown races). Idempotent. */
   destroy(): void {
+    if (this.plugin.statePersistence) {
+      try {
+        this.plugin.statePersistence.captureState(this.persistenceKey, this.view);
+      } catch {
+        // Defensive — capture is best-effort.
+      }
+    }
     this.writer?.cancel();
     this.view.destroy();
   }
@@ -301,6 +329,16 @@ export function mountLeetCodeWidget(
 
   ctl = new WidgetController(view, container, file, fenceIndex, plugin);
 
+  // Plan 19-03 — hydrate previously-captured cursor + scroll if the plugin
+  // host provides a statePersistence map AND we're within the 30s TTL window.
+  // Order: AFTER view construction, BEFORE the debouncedWriter is bound and
+  // BEFORE the updateListener fires — so the hydrate dispatch can't trigger
+  // a self-flush. CONTEXT D-02 belt-and-suspenders: this restores state on
+  // every unmount path (cursor approach + viewport scroll + mode switch +
+  // theme change). Hydrate is a no-op when no entry exists OR when the
+  // persistence map is absent (test fixtures).
+  plugin.statePersistence?.hydrateState(ctl.persistenceKey, view);
+
   // Plan 19-02 — wire the DebouncedWriter for editable widgets when the
   // plugin host provides the required app.vault.read/process methods AND a
   // selfWriteSuppression instance. Read-only mounts skip the writer entirely.
@@ -369,6 +407,22 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
   }
 
   onunload(): void {
+    // Plan 19-03 — capture cursor + scroll + history JSON BEFORE flushing
+    // and destroying. The state is preserved in the plugin-singleton
+    // statePersistence map (30s TTL) so a subsequent remount within the
+    // window restores cursor and scroll. CONTEXT D-02 belt-and-suspenders.
+    // Capture even on read-only mounts (legitimate UX: scrolling through
+    // an embed and reopening should restore scroll position).
+    if (this.controller && this.plugin.statePersistence) {
+      try {
+        this.plugin.statePersistence.captureState(
+          this.controller.persistenceKey,
+          this.controller.view,
+        );
+      } catch {
+        // Defensive — capture is best-effort; never block unmount on it.
+      }
+    }
     // Plan 19-02 — flushNow returns a Promise; fire-and-forget here because
     // MarkdownRenderChild.onunload is sync-shaped. Race-safe: destroy()
     // cancels the writer, so the in-flight write either lands or aborts
