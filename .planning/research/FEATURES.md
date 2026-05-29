@@ -1,435 +1,280 @@
-# Feature Research — v1.1 Milestone
+# Feature Research — v1.3 Inline Widget Architecture
 
-**Domain:** Obsidian plugin for LeetCode practice + AI coaching + knowledge graph (v1.1 milestone)
-**Researched:** 2026-05-14
-**Confidence:** MEDIUM-HIGH (HIGH for vscode-leetcode + NeetCode patterns + Obsidian Copilot provider list — verified from source. MEDIUM for contest scoring formula and AI review presentation patterns — corroborated across multiple sources but not single-source canonical.)
+**Domain:** Obsidian plugin — inline editable code-block widget for LeetCode solve flow
+**Researched:** 2026-05-28
+**Confidence:** HIGH for table-stakes patterns (Dataview lp-render evidence, Obsidian docs, CM6 reference); MEDIUM for differentiator framing (synthesis from analogous plugins); MEDIUM-HIGH for migration strategy (Obsidian-side patterns extrapolated from existing v1.x lazy-migration discipline)
 
-> **Note:** This file is the v1.1 milestone feature landscape. The original v1.0 feature research has been superseded — v1.0 features are documented as "Validated" in `.planning/PROJECT.md` and as the "Delivered" capabilities in `.planning/MILESTONES.md`.
+## Scope Note
 
----
+This document maps **what the v1.3 inline-widget UX must look like** and which behaviors are commonly-requested-but-harmful. It is the input to REQUIREMENTS.md categorization and phase boundaries — not a roadmap, and not an architecture spec (those live in ROADMAP.md and ARCHITECTURE.md).
 
-## Scope
-
-This research covers the **v1.1 milestone** features ONLY:
-
-1. **Preview Mode** — read-mode tab rendering ONLY the LC problem statement; "Start Problem" CTA creates the note.
-2. **Virtual Contest** — past contest OR random; 90/100-min virtual timer; 4 problems; verdict tracking; post-contest summary.
-3. **AI Debug** — user-triggered while solving; LLM gets code + problem + last failure; streams suggestions inline.
-4. **AI ACed-Solution Review** — Approach / Efficiency / Code Style on Accepted.
-5. **AI Knowledge-Graph Maintenance** — pattern-cluster hub notes, difficulty-progression edges, cross-cluster Related Variants, look-ahead edges.
-6. **AI Provider Support** — multi-provider, BYO key + custom base URL.
-
----
-
-## Comparable Products Investigated
-
-| Product | What it informs | Confidence |
-|---------|-----------------|------------|
-| **vscode-leetcode** (LeetCode-OpenSource/vscode-leetcode) | Reference for preview UX, problem editor model, NO contest, NO AI | HIGH (README verified via `gh api`) |
-| **LeetHub V2** (QasimWani/LeetHub) | Per-problem README pattern, post-AC capture model | HIGH (`scripts/leetcode.js` inspected) |
-| **NeetCode 150** (`neetcode-gh/leetcode/.problemSiteData.json`) | Canonical pattern names + structure | HIGH (450 entries, 18 patterns extracted from source data) |
-| **Obsidian Copilot** (logancyang/obsidian-copilot) | Multi-provider BYO key UX in Obsidian | HIGH (`src/constants.ts` inspected; 17 providers enumerated) |
-| **Continue.dev** | Multi-provider config schema (apiKey + apiBase + roles) | MEDIUM (overview docs verified) |
-| **LeetCode native virtual contest** | 90 / 100 min duration; per-problem score; ICPC-style penalty | MEDIUM (training-data + community references; live page 403'd to scraper) |
-| **Cursor / GitHub Copilot Chat** | BYO key + user-triggered-AI precedent | LOW (docs page 404'd; relying on training data corroboration) |
+The v1.2 surface that ships into v1.3 is treated as a **constraint**, not a feature: 8-language packs, runtime language switching via `languageCompartment`, vim mode, relative line numbers, indent/bracket/comment rules, action row (Run / Submit / AI Debug / Copy / Reset / Retrieve), and chevron dropdown all already exist in `src/main/childEditorFactory.ts` and `src/main/codeBlockButtonRow.ts`. The v1.3 work re-mounts them inside a code-block-processor widget instead of a fence-overlay nested editor — almost no new feature surface, almost all UX-architecture rework.
 
 ---
 
 ## Feature Landscape
 
-### A. Preview Mode
+### Table Stakes (Users Expect These)
 
-#### Table Stakes (Users Expect These)
+Behaviors users will assume work because they work in v1.2 today, in mature Obsidian inline-widget plugins, or in standard CM6 editors. Missing any of these = the v1.3 widget is a regression vs v1.2 and will be experienced as broken even if architecturally cleaner.
 
-| Feature | Why Expected | Complexity | Notes / Dependencies |
-|---------|--------------|------------|----------------------|
-| Right-click problem → "Preview" without creating a note | vscode-leetcode does exactly this verbatim ("right click the problem in the `LeetCode Explorer` and select `Preview Problem`"). Users coming from vscode-leetcode expect this. | LOW | Renders cached HTML→Markdown content. **Depends on v1.0:** `ProblemBrowser` view, problem-cache layer (`data.json`), turndown HTML→MD pipeline. |
-| Read-mode rendering (formatted, not raw HTML) | Users expect Obsidian-native rendering | LOW | Reuse v1.0 `turndown` + `MarkdownRenderer.render()`. **Depends on v1.0:** existing turndown integration. |
-| "Start Problem" / "Open Problem" CTA toggle (label changes based on whether note exists) | Avoids confusing users who already have the note | LOW | Check vault for `LeetCode/{id}-{slug}.md`; toggle button label. **Depends on v1.0:** note-creation pipeline (Phase 02). |
-| Difficulty + topic-tag chips visible in preview | Decision-support before committing to solving | LOW | Already in cached metadata. |
-| Closeable as a tab (not a blocking modal) | Users want to keep preview open while browsing | LOW | Use `ItemView` not `Modal`. **Depends on v1.0:** ItemView registration pattern. |
+| # | Feature | Why Expected | Complexity | Depends on v1.2 | Notes |
+|---|---------|--------------|------------|-----------------|-------|
+| TS-01 | **Click into widget → caret lands inside → typing edits code immediately** | "Continuous editing feel" — the v1.2 fence-overlay nested editor already provides this; users will not accept a click-to-enter-edit-mode modal step. Same UX as Kanban cards, Tasks task-modal text inputs, native Obsidian table cells in Live Preview. | M | Reuses `childEditorFactory.ts` mount logic | One CM6 `EditorView` per widget. Mount target = `el` from `registerMarkdownCodeBlockProcessor(source, el, ctx)`. Focus on first user click via `view.focus()` inside `mousedown` handler. |
+| TS-02 | **Caret stays inside widget while typing — does not "fall back" to source on every keystroke** | Dataview's lp-render explicitly uses **selection-overlap detection** to *strip* its decoration and reveal raw source when the cursor enters — that is acceptable for a *display* widget, NOT for an *edit* widget. Our widget owns the edit experience; the parent CM6 must NOT see the cursor inside the fence range. | M | n/a (new) | Use `EditorView.atomicRanges` facet on the parent so the parent caret skips over the replaced range entirely. Combine with `WidgetType.ignoreEvent() => false` for a fenced subset of events (mousedown, keydown when widget has focus) so the parent doesn't re-claim selection. Parent caret never enters the fence-body range. |
+| TS-03 | **Cmd-Z inside widget undoes only widget edits (does not affect prose around the widget)** | This is the *direct* fix for the v1.2 "Cmd-Z leaks prior body into adjacent sections" bug class (Phase 16 D-03). Standard CM6 `history()` extension on the child gives a per-widget undo stack — same model Kanban uses (StateManager owns board state, edits don't enter the parent file's CM6 history). | S | Already wired in `childEditorFactory.ts` line ~40 (`history()` from `@codemirror/commands`) | The widget's CM6 `history()` is independent from the parent note's CM6 `history()`. Cmd-Z while focus is in widget = widget undo; Cmd-Z while focus is in surrounding prose = note undo. This is the v1.2 bug-class root cause inverted into a feature. |
+| TS-04 | **Cmd-F inside widget searches widget body; Cmd-F outside searches whole note** | Direct consequence of TS-02 + TS-03 — focus scopes the keyboard. CM6's default search keymap is per-EditorView, so this is automatic if focus is correctly scoped. Same as Live Preview tables, Kanban cards. | S | n/a (default CM6) | Acceptable UX shift from v1.2. Do NOT add a custom global Cmd-F bridge — that re-creates the dual-editor coupling we are deleting. |
+| TS-05 | **Edits persist to disk without explicit save (autosave)** | Excalidraw, Kanban, native Obsidian editor — none require explicit save. Excalidraw uses `autosaveTimer` + 2000ms `PREVENT_RELOAD_TIMEOUT` semaphore for self-write echo. | M | n/a (new — replaces v1.2 cm.dispatch sync) | Debounced `vault.process(file, body => rewriteFenceBody(body, newCode))`. See TS-12 for debounce window. |
+| TS-06 | **Flush-on-blur and flush-on-unload — no in-flight edits lost on close, file-switch, or plugin unload** | Universal expectation. Obsidian's own `TextFileView` (which Kanban inherits) calls `save(true)` before `clear()` in `onUnloadFile`. | S | n/a (new) | Cancel pending debounce + flush sync on: widget DOM detach (`onunload` of post-processor child), file close, plugin `onunload`, app `quit` event (`workspace.on('quit')`). Critical — without this, a user typing then immediately switching files loses 300–500ms of edits. |
+| TS-07 | **External edits (other pane, Obsidian Sync, CLI, vim outside Obsidian) round-trip into the widget without losing user's in-progress edits** | The whole point of v1.3 architecture: file is single source of truth. But naïve `vault.on('modify')` re-render destroys the widget editor's state if the user is mid-typing. | L | n/a (new) | Pattern: (a) On modify event, check `isSelfWrite` window (Excalidraw 2000ms). If yes, ignore. (b) If external, parse new fence body. (c) If widget editor's current doc === pre-edit body (no in-progress local edits), apply external doc to widget. (d) If widget has unsaved local edits, surface conflict (toast + "Reload from disk" / "Keep mine"). Phase 17.x already demonstrated `ECHO_PRONE_USER_EVENTS` is bug-prone — replace with timestamp window. |
+| TS-08 | **Reading mode renders the same code (with same syntax highlight) as Live Preview** | Other plugins that registerMarkdownCodeBlockProcessor get this for free — same processor runs in both modes. | S | n/a (registerMarkdownCodeBlockProcessor pattern) | Reading mode mounts a read-only variant (omit `history()`, omit user-input keymap, set `EditorState.readOnly.of(true)`) but with same theme + language Compartment. Or: in Reading mode, render a static `<pre><code>` with `MarkdownRenderer.render` for the fence body. Decision deferred to architecture phase. |
+| TS-09 | **Action row (Run, Submit, AI Debug, AI Solution, Reset, Retrieve) renders adjacent to widget code, in both modes** | v1.2 shipped 6-button action row; deletion is not on the table. `codeBlockButtonRow.ts` is already reusable — accepts a `Plugin & CodeBlockButtonRowHost` with the 6 method handles. | S | Reuses `codeBlockButtonRow.ts` verbatim | Mount below or above the CM6 widget in the same `el`. Reading mode shows same buttons (per existing `codeActionsPostProcessor.ts` precedent). Buttons must `e.stopPropagation()` so click doesn't bubble to parent CM6 (existing code already does this — line 60–63). |
+| TS-10 | **Language chevron dropdown (Edit-Mode only — Reading-Mode hides it per existing D-09 lock)** | v1.2 shipped this with a strict Edit-Mode-only contract. Re-mount inside the widget edit instance only. | S | Reuses `languageChevronWidget.ts` | Pass via `CodeBlockButtonRowOptions.prefix` — same wiring as v1.2 nested-editor codepath. Chevron triggers `Compartment.reconfigure` on the *widget's* editor (no parent CM6 dispatch — drops the `'leetcode.lang-switch'` userEvent convention entirely). |
+| TS-11 | **Vim mode toggles via Obsidian's vault config (`vault.getConfig('vimMode')`)** | v1.2 shipped this. Standard expectation: one global vim setting controls everything. | M | Reuses vim Compartment pattern from `childEditorFactory.ts` line 48 | **Confidence-correction vs PROJECT.md:** PROJECT.md states "reload-on-vim-toggle accepted." Per CodeMirror 6 docs (HIGH confidence), `vimCompartment.reconfigure(enabled ? vim() : [])` toggles at runtime *without* recreating the EditorView. Recommend: poll `vault.getConfig('vimMode')` on widget focus, dispatch reconfigure if changed. Reload-fallback only if a real-world bug forces it. Flag for roadmapper. |
+| TS-12 | **Debounced disk write — 300–500ms window** | Excalidraw uses ~2000ms (heavyweight drawings); Kanban uses TextFileView's inherited save (no explicit debounce in StateManager). For text-edit cadence, 300–500ms is the sweet spot — above keystroke jitter, below "feels delayed." | S | n/a (new) | Use Obsidian's `debounce()` utility (built-in, takes `(fn, wait, resetTimer)`). Recommend 400ms. Pair with TS-06 flush-on-blur for crash safety. |
+| TS-13 | **Theme tracking (light/dark and Obsidian theme variables) inside widget** | v1.2 ships `childEditorTheme.ts`. The widget must look native in both light and dark. | S | Reuses `childEditorTheme.ts` | Already wired through Obsidian semantic CSS variables; no change needed. |
+| TS-14 | **Bracket auto-close, smart Enter, Cmd-/ comment toggle, Tab/Shift-Tab indent** | All of v1.2's Phase 13–18 keystroke handling. | S | Reuses `childEditorFactory.ts` (closeBracketsKeymap, custom Tab handler, language-Compartment-driven comment binding) | Drop-in. The Phase 16 fix that wired Cmd-/ via `app.keymap` Scope on focus (not DOM listener) carries over verbatim. |
+| TS-15 | **Bracket match highlighting + relative line numbers (when enabled)** | v1.2 features. | S | Reuses `bracketMatching()` + line numbers gutter from `childEditorFactory.ts` | Settings flag for relative line numbers already exists. |
+| TS-16 | **Active line highlighting + Obsidian-native selection drawing** | Standard CM6 polish. v1.2 has it (`drawSelection()`, `highlightActiveLine()` already in factory). | S | Drop-in | n/a |
+| TS-17 | **Reading-mode parity for action buttons (Run / Submit etc. work without entering edit mode)** | v1.2 ships `codeActionsPostProcessor.ts` for this. Users practice on iPad-Obsidian-via-Sync where Live Preview / Reading toggle is common; buttons must work in both. | S | Reuses post-processor | The processor already keys off the fence language tag — same pattern works for the new fence tag. |
+| TS-18 | **Widget renders correctly when fence is the first or last line of file, when adjacent to other fences, and when nested inside callout/blockquote** | Edge cases that broke v1.2 fence-recovery. registerMarkdownCodeBlockProcessor handles these by design (Obsidian parses the markdown tree first, processor runs per-block). | S | n/a (free with the new architecture) | This is one of the bug-class wins of v1.3 — fence-edge cases stop being a custom CM6 problem. |
 
-#### Differentiators (Competitive Advantage)
+### Differentiators (LeetCode-Specific UX Wins)
 
-| Feature | Value Proposition | Complexity | Notes / Dependencies |
-|---------|-------------------|------------|----------------------|
-| Preview shows: "you have N notes already linked to patterns this problem touches" | Decision aid: do I need to solve this for coverage? | MEDIUM | **Depends on:** Feature E (pattern-cluster hubs). Defer to phase that ships pattern hubs. |
-| Preview shows: cached daily-challenge / contest membership badge | "Oh, this is a contest problem — virtual-contest it instead" | LOW | Cross-reference contest list cache. |
-| Preview is the default click target (single-click previews; double-click or "Start" creates note) | Explicit motivation in milestone scope: "no accidental note creation" | MEDIUM | Behavior change vs v1.0; needs settings toggle for users who want v1.0 click-to-create back. **Depends on v1.0:** ProblemBrowser click handler. |
+These are not strict prerequisites for shipping v1.3, but they exploit the inline-widget architecture in ways generic plugins do not, and they reinforce the project's Core Value ("every problem becomes a first-class note"). Each is optional for the v1.3 milestone — flag in roadmap as "ship in v1.3" or "v1.3.x follow-up."
 
-#### Anti-Features (Tempting but Problematic)
+| # | Feature | Value Proposition | Complexity | Depends on v1.2 | Notes |
+|---|---------|-------------------|------------|-----------------|-------|
+| DF-01 | **Fence tag carries language slug** (e.g. ` ```leetcode-solve python ` ) | Self-describing source — opening the .md file in any other markdown viewer (GitHub, VSCode preview) shows correct syntax-highlighted code. Solves a v1.2 problem where language was in frontmatter `lc-language` and out-of-band from the fence. | S | Replaces frontmatter lookup | Parse `info` string in code-block processor: `processor((source, el, ctx) => { const lang = ctx.getSectionInfo(el)?.text.split('\n')[0]; ... })`. Migration: see MIG-01 below. |
+| DF-02 | **Cursor "exits down" the widget moves to the line after the fence (and "exits up" moves above)** | When user reaches end of code with arrow-down, focus naturally returns to the parent note. Same UX as native Obsidian tables. | M | n/a (new) | CM6 keymap on widget: `ArrowDown` at last line + `ArrowUp` at first line dispatch a custom event the post-processor listens for and calls `parentMarkdownView.editor.focus()` + `setCursor` to the line outside the widget. Polish item — defer if Phase 1 timing is tight. |
+| DF-03 | **Visible "edited externally / reload?" toast on conflict (TS-07's UX surface)** | When TS-07 detects external edits + local unsaved widget state, give the user agency. Obsidian's `Notice` API + `Setting.addButton` is the idiomatic surface. | S | Builds on TS-07 | Two buttons: "Reload from disk (discard my edits)" / "Keep my edits (overwrite next save)". Default action = keep mine, with 10s auto-dismiss. |
+| DF-04 | **In-widget verdict badge** (after Submit returns, render Accepted/Wrong-Answer chip inside widget header) | Tighter feedback loop than the v1.2 modal-only verdict. The widget already owns the action row — verdict result lives next to the button that produced it. | S | Reuses Submit verdict types from `solve/` | Optional but high-leverage — exploits the new single-host architecture. Could be deferred to v1.3.x. |
+| DF-05 | **Widget header shows current language slug, problem title link, and difficulty pill** | Single-glance context — user opens the note, sees `[Two Sum] · Easy · python` at top of widget. | S | Reuses problem metadata from frontmatter | Nice-to-have. Defer if scope tight. |
+| DF-06 | **Per-widget AI Debug stays scoped to that widget's code** | When the note has multiple `leetcode-solve` fences (rare but possible — alternate language attempts), AI Debug only sees the fence the button was clicked from. | S | Refactor existing AI Debug to take fence-body as arg | Already mostly there; widget host already isolates per-widget state. |
+| DF-07 | **Code-block "Copy" button copies just the fence body (no markdown fence syntax)** | v1.2 likely already does this; flagged as table-stakes-adjacent. | S | Reuses existing Copy handler | Verify in implementation. |
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Render LC HTML inline via `innerHTML` for fidelity | LC's HTML has nice tables/code blocks | Forbidden by Obsidian plugin guidelines (XSS); will fail community store review | Use existing v1.0 `turndown` + `MarkdownRenderer.render()` — battle-tested |
-| Auto-cache the full problem set on preview-tab open | "Make preview instant for everything" | Already-rejected by v1.0 (3,000 problems × 10–50 KB = 30–150 MB; destroys `data.json`) | On-demand fetch + 7-day cache (existing v1.0 rule) |
-| Inline "Start Problem" actions that pre-pick a language | Saves a click | The default-language setting already handles this | Honor `defaultLanguage` setting — no extra knob |
+### Anti-Features (Commonly Requested, Often Problematic)
 
----
+Things that would seem to make the widget "more like the v1.2 nested-editor experience" or "smarter" but reintroduce the bug class v1.3 is built to delete. **The roadmap must explicitly forbid these in REQUIREMENTS.md.**
 
-### B. Virtual Contest
-
-#### Table Stakes (Users Expect These)
-
-| Feature | Why Expected | Complexity | Notes / Dependencies |
-|---------|--------------|------------|----------------------|
-| 90-min weekly + 100-min biweekly timer (visible, persistent) | LC's native virtual contest does exactly this | LOW | Two static durations: weekly = 5400 s, biweekly = 6000 s. Persist start time to `data.json`. **Depends on v1.0:** `data.json` plugin storage. |
-| 4 problems materialized as notes at contest start | LC contests are always 4 problems (Q1–Q4) | LOW | Reuse v1.0 note-creation pipeline; create all four atomically on Start. **Depends on v1.0:** problems-as-notes pipeline (Phase 02). |
-| Per-problem run/submit during contest (not different from normal flow) | Muscle memory should work | LOW | Already there in v1.0 — route through during contest. **Depends on v1.0:** Run/Submit pipeline (Phase 03). |
-| Verdict tracked per problem with timestamp (first-AC time + WA count) | Required for scoring + penalty | LOW | **Depends on v1.0:** verdict pipeline + `KnowledgeGraphWriter.onAccepted` event hook. |
-| Post-contest summary (solved count, per-problem time, WA count, total score) as a vault note | LC's native contest UI shows this; Codeforces virtual practice shows this | MEDIUM | Generate `LeetCode/contests/{contestSlug}-{date}.md`. Frontmatter: `lc-contest-slug`, `lc-contest-type`, contest score. |
-| Pause/abort contest with confirmation | Users will accidentally hit Stop | LOW | Modal confirmation; persisted state cleared on confirm. |
-| "Surprise me" random past-contest picker | Explicit milestone scope | LOW | Random selection from cached contest list (uniform). |
-
-#### Differentiators (Competitive Advantage)
-
-| Feature | Value Proposition | Complexity | Notes / Dependencies |
-|---------|-------------------|------------|----------------------|
-| Post-contest summary is a **first-class vault note** (graph-citizen, tagged, linkable) | LC's contest-history page disappears when browser closes; in Obsidian it joins the graph forever | LOW | Just write Markdown to `LeetCode/contests/`. **Depends on v1.0:** vault.create + frontmatter pipeline. |
-| Post-contest summary auto-tags missed problems with `#revisit` | Personal-tag union-merge already shipped | LOW | **Depends on v1.0:** personal-tag union-merge (Phase 02). |
-| Post-contest report includes **AI technique-tag inference** for solved problems | AI fills `## Techniques` with cluster-link wikilinks immediately | MEDIUM | **Depends on:** Feature E (AI knowledge-graph). Skippable in early phase. |
-| LC's actual scoring rendered in summary (1+2+3+4 base, with WA-time penalty) | "How would I have ranked?" | MEDIUM | LC contest scoring: each Q has base points (Q1=3, Q2=4, Q3=5, Q4=6 typically; varies per contest); penalty = 5 min × WA count added to first-AC time. **Confidence MEDIUM** — exact base points published per-contest; render LC's published values, don't invent. |
-| Random contest picker with difficulty-weighting ("give me a hard one") | Bias toward weak areas | LOW | UI toggle: hardest-Q1, balanced, hardest-Q4. |
-| Resume in-progress contest on Obsidian restart | Power-user; users hate losing state | MEDIUM | Persist `ContestSession` state in `data.json` + heartbeat; on plugin load, prompt "Resume contest started X minutes ago?" |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **Live contest participation** | Users will ask | Already explicitly out-of-scope in PROJECT.md: real-time leaderboards, simultaneous-submission throttling, contest-day rankings — plugin store will scrutinize | Virtual past contests only. Document in README. |
-| **Leaderboard scraping** | "Compare to people who did it live" | Massive scope creep; LC may rate-limit; scraping ethics | Show user's score against contest's published rank cutoffs (1500/1700/2000) — static metadata. |
-| **Auto-submit on timer expiry** | "Don't waste my code that I almost finished" | Users hate auto-submit (lose chance to review); pollutes submission history with broken code | Show "Time's up — Submit when ready / End contest" modal. Submit only on explicit click. |
-| **Hard-mode timer (block editor when time is up)** | Simulates real contest pressure | Annoying; users will close timer to keep coding; fights Obsidian's open-editor model | Soft timer: red "OVERTIME +N:NN" badge; do not block edits. |
-| **Built-in rank prediction with LC API integration** | Curiosity feature | Requires post-contest API not exposed for arbitrary virtual; rate limits | Show static cutoffs only. |
+| # | Anti-Feature | Why Requested | Why Problematic | Alternative |
+|---|--------------|---------------|-----------------|-------------|
+| AF-01 | **Bidirectional sync — parent CM6 edits inside the fence range mirror to widget** | "What if the user edits the file via vim outside Obsidian, then comes back?" | This *is* the v1.2 architecture. It is the entire reason v1.3 exists. The "external edit reconciles into widget" path (TS-07) is one-way *file → widget*; the parent CM6 never participates. | TS-07: vault.on('modify') with self-write suppression window. Parent CM6 does not own the fence body. |
+| AF-02 | **Auto-rewrite all v1.2 notes on plugin load** | "Migration should be automatic and complete." | Same risk class as v1.0→v1.1 Techniques rewrite that PROJECT.md "Out of Scope" already forbids. Rewriting hundreds of notes on plugin load (a) blocks startup, (b) creates a single mass-modification commit in user's vault history, (c) breaks if the plugin crashes mid-loop, (d) cannot be undone safely. | MIG-01 below: **lazy-on-open with dual-render fallback**. |
+| AF-03 | **Section locking inside the widget body** | v1.2 has section-lock for `## Code` heading + fence opener; users might think they need it. | The widget body IS the entire writable surface — there is no plugin-owned region inside it to lock. Locking inside the widget recreates `sectionLockExtension.ts` which v1.3 PROJECT.md explicitly deletes. | The widget *boundary* is the lock — parent CM6's `atomicRanges` facet (TS-02) is the only lock needed. |
+| AF-04 | **A `'leetcode.*'` userEvent annotation convention for plugin dispatches into the widget** | v1.2 codebase has the convention; existing plugin developers (and Claude!) will reach for it reflexively. | The widget has its own EditorView and its own changeFilter (or none). Plugin writes go through `vault.process` (which propagates back through TS-07's normal path). No userEvent bypass channel. | Plugin dispatches into widget (e.g. Reset child) call `widget.cm.dispatch({ changes: ..., annotations: addToHistory.of(true) })` directly; no userEvent signaling needed because no changeFilter exists. |
+| AF-05 | **Render widget identically in source mode (raw markdown view)** | "Consistency across all 3 modes." | Source mode IS raw markdown by definition — a widget there hides the fence syntax the user explicitly opened source mode to see. Dataview lp-render correctly bails when not in `editorLivePreviewField`. | Source mode shows raw fence (no widget). Live Preview + Reading mode show the widget. Three-mode parity is wrong; two-mode parity is correct. |
+| AF-06 | **Render two widgets side-by-side for old `## Code` block + new fence during migration** | "Make it visible to the user that we're migrating." | Confusing UI — user can't tell which one is canonical, double action rows fight for clicks, scrolls awkwardly. | MIG-01: detect old format, render widget as-if migrated (read old code into widget), but defer the actual file rewrite until first edit. |
+| AF-07 | **Auto-debounce the language switch** | "Don't reconfigure on every chevron flicker." | The chevron dispatches one event per click — no flicker. Debouncing it adds latency for no benefit. | Direct `Compartment.reconfigure` on click (existing v1.2 pattern). |
+| AF-08 | **In-widget Cmd-S "save now" button** | "Users want manual save control." | Autosave + flush-on-blur (TS-05, TS-06) cover every case where a manual save would matter. A button creates a learned habit users don't need. Excalidraw, Kanban, every other autosave plugin omits this. | None. Just don't ship it. |
+| AF-09 | **Visible loading skeleton inside widget on file open** | "Async mount feels janky without a placeholder." | The CM6 mount is synchronous (sub-frame). A skeleton flashes for one tick and feels worse than nothing. | Mount synchronously in the post-processor callback; skip the skeleton. |
+| AF-10 | **Persist widget editor scroll position to frontmatter or data.json** | "If the code is long, restore where I was." | Long code in a LeetCode solution is rare; persistence adds a write per scroll; recovery on file reopen is undefined when language changed. | Don't persist. Fresh mount = top of code. |
+| AF-11 | **Multi-cursor support across widget + parent prose** | "Power users want to edit code and surrounding prose simultaneously." | The two CM6 instances are independent — there is no shared selection model. Pretending otherwise rebuilds the v1.2 sync layer. | Standard single-editor multi-cursor inside whichever editor has focus. Cross-editor multi-cursor is out of scope. |
 
 ---
 
-### C. AI Debug (User-Triggered)
+## Migration Strategy (v1.2 → v1.3 Notes)
 
-#### Table Stakes
+This is the highest-risk surface in v1.3 — botching it corrupts user vaults. Recommendation grounded in the v1.0→v1.1 Techniques migration precedent (lazy-on-AC, never batch-rewrite) listed in PROJECT.md Key Decisions, plus general Obsidian plugin community practice.
 
-| Feature | Why Expected | Complexity | Notes / Dependencies |
-|---------|--------------|------------|----------------------|
-| User-triggered (button), NOT automatic | Cursor / Copilot Chat / Continue.dev all use explicit-trigger; auto-AI is universally hated | LOW | Action button under `## Code` action row. **Depends on v1.0:** `CodeActionsWidget` (Phase 05.2). |
-| Include problem statement + current code + last failure verdict in prompt | Without these, LLM can't help | LOW | Pull from frontmatter (`lc-id`), `## Code` fence content, last `VerdictModal` event. **Depends on v1.0:** verdict pipeline + section-aware fence extraction. |
-| Stream tokens (don't block on full response) | Users abandon non-streaming AI | MEDIUM | **CRITICAL:** `requestUrl` returns full body (no streaming). Must use native `fetch` for AI providers. (CORS isn't a problem for AI providers — they all set `Access-Control-Allow-Origin: *`.) v1.0 `requestUrl`-everywhere convention is **LeetCode-specific**, not universal. |
-| Inline rendering in the note (not in a side panel) | Obsidian's value-prop is everything-in-the-note | MEDIUM | Append under `## AI Debug` OR transient widget under action row. **Decision needed in design phase.** Section-lock-aware (extend `sectionLockExtension.ts`). |
-| Cancel / abort mid-stream | LLM can hang 30+ seconds | LOW | `AbortController` on fetch. |
-| Per-call cost transparency | BYO-key users care; Continue.dev shows; Copilot does not | LOW | Compute from input/output tokens × provider price table. |
+### MIG-01: Lazy-on-Open with Dual-Render Fallback (RECOMMENDED)
 
-#### Differentiators
+**Trigger:** Plugin load — does *nothing* to existing files. Migration triggers per-file when the file is opened in Obsidian after the v1.3 plugin update.
 
-| Feature | Value Proposition | Complexity | Notes / Dependencies |
-|---------|-------------------|------------|----------------------|
-| Auto-include the **failing test case** in prompt | v1.0 already extracts it ("Copy failing testcase" button in VerdictModal) | LOW | **Depends on v1.0:** Phase 05.4 VerdictModal failing-testcase extraction. |
-| Auto-include the user's **`## Notes` section** as context (opt-in checkbox) | "I think it's an off-by-one" — let user steer LLM | LOW | Checkbox in AI Debug button menu. |
-| Suggestions include **Apply Patch** affordance like Cursor / Copilot Chat | Differentiated; users will copy-paste otherwise | HIGH | Diff parsing + safe apply within `## Code` fence. v1.0 section-lock applies — would need `'leetcode.ai-apply'` userEvent annotation per CLAUDE.md convention. **Defer to v1.2.** |
-| Stop mid-stream with `Esc` keystroke | Power users want this | LOW | Keybinding bound only when stream active. |
+**Detection:**
+- v1.2 format: `## Code\n\n` followed by a code fence with no special tag (just `python` or `java`), and frontmatter has `lc-language` field.
+- v1.3 format: `## Code\n\n` followed by a code fence with the `leetcode-solve` tag (e.g. ` ```leetcode-solve python `).
 
-#### Anti-Features
+**Render path:**
+- v1.3 fence found → register the new code-block processor; widget renders.
+- v1.2 fence found → register a *transitional* code-block processor for the bare-language fence inside a `## Code` section. The v1.2 fence renders the widget in **read-mostly** mode; on the first user keystroke (or first action button click that mutates code, e.g. Reset, Retrieve), the widget calls `vault.process` to:
+  1. Rewrite the fence opener: ` ```python ` → ` ```leetcode-solve python `.
+  2. Optionally remove the now-redundant `lc-language` frontmatter key (or leave it for backwards compatibility — recommend leave; cost is one frontmatter line).
+- Then the file is in v1.3 format and the v1.3 processor takes over on next render.
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **AI auto-debug whenever a Run or Submit fails** | "Save the user a click" | Universally hated; burns API budget without user consent | Always user-triggered. Optionally: dismissible toast suggesting AI Debug after WA — opt-in setting. |
-| **Send full vault to LLM as context** | "Maximum context" | Privacy nightmare; token cost; mostly irrelevant; plugin-store red flag | Send: problem statement, current code, last verdict, failing test case, optionally `## Notes`. Nothing else. |
-| **Pre-submit "would this be accepted?" oracle** | "Skip the LC round trip" | LLMs wrong about correctness ~30% of the time; users submit broken code on the LLM's say-so | LC's actual judge is free + authoritative; just submit. |
-| **AI generates full solution from scratch when triggered with no code** | "I'm stuck, write it" | (a) Defeats practice purpose. (b) "Homework cheat tool" framing → plugin-store risk | Require non-empty `## Code` fence. Show "Write something first" if empty. |
+**Why this works:**
+- Plugin load is unchanged — no startup blocking, no mass-write commit.
+- User who opens a v1.2 note and reads it without editing pays no migration cost.
+- User who opens and edits gets atomic per-file migration triggered by their own action — they implicitly consent.
+- A user opening a v1.2 note before the rewrite trigger sees the widget (read-mostly; same buttons; same code) — they cannot tell the file is unmigrated. This satisfies the PROJECT.md constraint "existing v1.2 notes must remain readable/editable."
+- A plugin crash during rewrite is bounded to one file; `vault.process` is atomic.
 
----
+**Edge case — heading-detection:** v1.2 fence inside `## Code` is the migration target. A bare `python` fence elsewhere in a non-LeetCode note must NOT be hijacked. Disambiguation: only run the transitional processor when the surrounding section is `## Code` AND the file has `leetcode-id` (or equivalent canonical LC frontmatter) in frontmatter. Both checks are cheap and `MarkdownPostProcessorContext.frontmatter` exposes the second directly.
 
-### D. AI ACed-Solution Review (3 Dimensions)
+### MIG-02: Manual Migration Command (FALLBACK)
 
-#### Table Stakes
+Add a command palette entry: `LeetCode: Migrate this note to v1.3 format`. Operates only on the active file. For users who want explicit control, or for notes that the dual-render somehow misidentifies. Low complexity (re-uses MIG-01's rewrite logic).
 
-| Feature | Why Expected | Complexity | Notes / Dependencies |
-|---------|--------------|------------|----------------------|
-| Triggered on Accepted verdict (not on every run) | Submitting AC is when user is ready to learn | LOW | **Depends on v1.0:** `KnowledgeGraphWriter.onAccepted` hook (Phase 04). |
-| Three sections: Approach (Current vs Suggested + Key Idea + Consider) / Efficiency (Current O / Suggested O) / Code Style | Milestone scope spelled this out; matches Cursor "Improvements" + Sourcegraph Cody "Code Smell" | MEDIUM | Single LLM call, structured output → `## AI Review` section. |
-| Review **lives inline in the note** (not separate file, not sidebar) | Obsidian's value-prop = everything-in-the-note | LOW | Append `## AI Review` after `## Notes`. **Depends on v1.0:** section-aware writes via `vault.process` (CLAUDE.md convention). |
-| Idempotent (re-AC'ing overwrites cleanly, doesn't append) | Users re-solve; multiple stale reviews would clutter | LOW | Replace existing `## AI Review` block. **Depends on v1.0:** section replace helpers. |
-| Skippable / disable-able in settings | BYO-key cost / privacy | LOW | Toggle: "Auto-review on Accepted". **Default OFF** (privacy-first per plugin-store guidance). |
+### Migration Anti-Patterns (forbidden — see AF-02, AF-06)
 
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes / Dependencies |
-|---------|-------------------|------------|----------------------|
-| Review is **non-streaming** (sync request) | Different from Debug. Users have shipped; want a complete report not real-time stream. Matches "GitHub PR review" model. | LOW | Single-shot fetch; "Reviewing..." toast; fill section when done. |
-| **Suggested code** in a separate fence — preserves user's original code untouched | Side-by-side comparison; never overwrite user code | LOW | Two fences in `## AI Review`. |
-| Time/space complexity comparison rendered as Markdown table | Easier to scan than prose | LOW | Current / Suggested rows. |
-| Review references the **pattern-cluster** the AI assigned (deep-link) | Connects review to graph; user can click through | MEDIUM | **Depends on:** Feature E (pattern-cluster work). |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **Auto-apply suggested code on AC** | "Save my best code automatically" | Catastrophic. (a) Users hate AI rewriting their code without consent. (b) User's code AC'd — by definition it's correct; AI's "improvement" might be slower/buggier. (c) Re-AC creates a loop. | Display in `## AI Review` only. User copies if they want. |
-| **Re-use whatever provider streamed Debug seconds ago, even if user's default differs** | "Use whatever's connected" | Users may have specifically switched (cheap-Ollama-debug → Anthropic-review) | Always use the user's currently-configured provider per call. |
-| **Comparative leaderboard ("you're top 50%")** | Gamification | Requires LC's percentile API on every AC; rate-limited; v1.0 explicitly dropped runtime/memory frontmatter (PROJECT.md: "no production reader; staleness risk"). Don't reintroduce in disguise. | Show LC runtime/memory percentile fresh from GraphQL only when user opens the submission detail modal. AI review focuses on approach not percentile. |
-| **Review every Run (including failures)** | "More feedback" | Burns budget; "feedback" on broken code is noise | AC-only trigger. Failed runs use AI Debug. |
-| **Open the review in a separate split or modal** | "Preserve the note" | Users close modals + forget; loses graph value | Inline `## AI Review` section, period. |
-
----
-
-### E. AI Knowledge-Graph Maintenance
-
-This is the **most differentiated feature** in the milestone. v1.0 already has lc-tag-based Techniques (`[[Two Pointers]]` from LC topic slug). v1.1 supersedes with AI-named pattern clusters + difficulty progression + cross-cluster variants + look-ahead edges.
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes / Dependencies |
-|---------|--------------|------------|----------------------|
-| Pattern cluster names match community conventions | Users come pre-trained on NeetCode 150 / Blind 75 names | MEDIUM | **Constrain LLM to fixed taxonomy.** NeetCode's canonical 18 patterns (extracted from `.problemSiteData.json`, 450 entries): `Arrays & Hashing`, `Two Pointers`, `Sliding Window`, `Stack`, `Binary Search`, `Linked List`, `Trees`, `Tries`, `Heap / Priority Queue`, `Backtracking`, `Graphs`, `Advanced Graphs`, `1-D Dynamic Programming`, `2-D Dynamic Programming`, `Greedy`, `Intervals`, `Math & Geometry`, `Bit Manipulation`. Add: `Prefix Sum`, `Monotonic Stack`, `Topological Sort`, `Union-Find`. **LLM picks from list — cannot invent free-form names.** |
-| Each cluster gets a **hub note** in the vault | Single navigation point for the cluster | LOW | Auto-create on first AC mapping to cluster; idempotent. **Depends on v1.0:** technique-stub creation pipeline (Phase 04). |
-| Hub note auto-lists problems in the cluster (sorted by difficulty) | "I have 12 sliding-window problems — here they are" | LOW | Use Obsidian Bases query (matches v1.0 `LeetCode.base`). **Depends on v1.0:** Bases integration. |
-| Difficulty-progression edges: Easy → Medium → Hard within cluster | Learning path | MEDIUM | "Next" link in hub OR `## Progression` section. AI determines order based on conceptual scaffolding. |
-| `## Related Variants` section lists **cross-cluster structural twins ONLY** | Avoids redundancy with same-cluster siblings | MEDIUM | AI prompt constraint: "list only problems in OTHER clusters". |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes / Dependencies |
-|---------|-------------------|------------|----------------------|
-| **Look-ahead edges to UNSOLVED problems** when AI judges them load-bearing | **UNIQUE.** No comparable product has this. NeetCode shows static roadmap; LeetHub captures only solved; Obsidian Copilot semantic-searches existing notes. Look-ahead is the v1.1 USP. | HIGH | Materialize as: dangling wikilinks `[[1234-skyline-problem]]` in `## Related Variants`. Click → v1.1 Preview tab → "Open Problem (creates note)". Obsidian shows dangling links lighter in graph view → "unexplored next-steps" visible. **Depends on:** Feature A (Preview tab). |
-| Look-ahead edge target stub gets `#suggested` + `#unsolved` tags | Filterable in graph view | LOW | When user previews a dangling link, stub note (created on first preview/Start) gets these tags. |
-| **Pattern hubs supersede `[[Two Pointers]]` v1.0 lc-tag links** | AI-named clusters are higher quality than LC's noisy topic tags (LC tags everything "Array") | MEDIUM | See **Migration** section below. |
-| Hub notes get a 1-paragraph AI-written summary | Users learn the pattern when they open the hub | LOW | One-shot LLM call per hub on first creation. Cache in note body. |
-| Pattern-cluster names visible in graph view as cluster-color-coded nodes | Obsidian graph view supports node color via group filters → pattern hubs become visual cluster centers | LOW | Document recommended graph-view filter in README; don't bake in. |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **AI invents free-form pattern names** ("Sliding Optimization Window") | Sounds creative | Fragments graph; users searching "Sliding Window" find nothing; conflicts with NeetCode terminology users are pre-trained on | Constrained taxonomy (18 NeetCode + ~4 additions). LLM picks from list; cannot invent. |
-| **Same-cluster Related Variants** (Sliding Window problem links to other Sliding Window problems in `## Related Variants`) | "Show everything related" | Redundant — they're already siblings in the hub. Bloats graph. | `## Related Variants` is **cross-cluster ONLY** (per milestone spec). |
-| **Auto-rewrite all v1.0 notes on plugin update** | "Make my whole vault consistent" | (a) Massive LLM cost (1 call × N solved). (b) Network user didn't authorize. (c) Plugin-store red flag. (d) User horror when personal `## Notes` are touched. | See **Migration** strategy below. |
-| **AI rewrites user's `## Notes` with "improvements"** | Open-ended graph-curation | Users hate that. `## Notes` is the user's voice. | Clear write-zones: AI owns `## Techniques`, `## Related Variants`, `## AI Review`. User owns `## Notes`. v1.0 section-lock enforces. |
-| **Look-ahead edges as TODO checkboxes inside the current note** | "Make it actionable" | Pollutes note; users check off without solving; turns practice file into task tracker | Look-ahead = wikilinks under `## Related Variants` — same model as solved variants, distinguished by Obsidian's dangling-link styling + `#unsolved` tag on stub. |
-| **Forward-edge spamming** (every problem points to 5+ unsolved next-problems) | "Maximum guidance" | Bloats note; AI confidence on "what's next" is genuinely low; users get analysis paralysis | Cap: at most 2 look-ahead edges per problem note. AI prompt constraint. |
-
-#### Migration Strategy for v1.0 Notes (Required by Quality Gate)
-
-v1.0 shipped `## Techniques` with wikilinks generated from LC's topic slugs (`[[Two Pointers]]`, `[[Hash Table]]`). v1.1 changes to AI-named cluster hubs. **Three options analyzed:**
-
-| Strategy | Pros | Cons | Recommendation |
-|----------|------|------|----------------|
-| **Eager batch on plugin update** | Vault consistent immediately. | (a) Surprising — N LLM calls fire on Obsidian launch. (b) Cost: ~$0.01/note × 200 = $2 just to upgrade. (c) Plugin-store red flag (mass network on load). (d) No undo. (e) `## Notes` at risk if pipeline buggy. | **REJECT.** Anti-feature. |
-| **Lazy migrate on note open** | Distributed cost; only what user opens. | (a) Surprise on every old-note open. (b) Inconsistent vault state during transition. (c) Still costs LLM calls. | **REJECT.** Surprise on normal navigation. |
-| **Opt-in batch with preview** (Settings UI: "Migrate v1.0 notes" — count + estimated cost + preview of changes + explicit Run + per-note skip) | (a) User-driven. (b) Cost-transparent. (c) Reversible. (d) Plugin-store-safe. | More UI work. | **RECOMMEND.** |
-| **Never migrate, only new ACs use clusters** | Zero risk. Zero migration cost. | Vault has dual conventions. Pattern-hub names overlap with NeetCode/lc-tag names. | **FALLBACK.** Ship if opt-in batch can't make v1.1. Document dual-convention coexistence in README. |
-
-**Recommendation:** **Default = no automatic rewrite.** Opt-in batch with preview is the GOAL; if it slips, ship the "never migrate, new ACs use clusters" fallback.
-
-**Naming-collision insight:** v1.0 generates `[[Two Pointers]]` from LC topic. v1.1 may generate `[[Two Pointers]]` for the AI cluster. Same wikilink → resolves to same note. **Migration only needed where AI cluster ≠ LC topic** (e.g., LC tagged `[[Array]]`, AI clusters `[[Sliding Window]]`). Reduces the migration surface significantly.
-
-**REQ candidate:** "Migration of v1.0 notes is opt-in; default = no automatic rewrite."
-
----
-
-### F. Multi-Provider AI (BYO Key + Custom Base URL)
-
-Sourced from Obsidian Copilot's `src/constants.ts` (verified 17 providers via `gh api`) and Continue.dev overview docs (40+ providers).
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes / Dependencies |
-|---------|--------------|------------|----------------------|
-| Anthropic + OpenAI + OpenRouter + Ollama out-of-the-box | These four cover ~90% of users (Anthropic = best Claude; OpenAI = GPT default; OpenRouter = aggregator BYO; Ollama = local privacy) | MEDIUM | Each ≈ 1 hand-rolled fetch wrapper. Avoid bundling Anthropic/OpenAI native SDKs (heavy). |
-| Bedrock support (per milestone spec) | User explicitly listed Bedrock | HIGH | Bedrock auth = SigV4 signing — significantly more complex. May want to defer to v1.1.x or use a wrapper. |
-| Custom base URL field per provider | OpenRouter / LiteLLM / Azure OpenAI / Anthropic-compatible proxies need this. Continue.dev exposes `apiBase`. Obsidian Copilot has `OPENAI_FORMAT = "3rd party (openai-format)"` provider. | LOW | Settings field per provider; validate scheme = https. |
-| API key stored in `data.json` (plain text) | Per v1.0 convention (session cookie also lives in `data.json`); per Obsidian community norm | LOW | Plain text. Document in README. **NEVER log it.** **Depends on v1.0:** plugin-data save/load. |
-| Settings show: provider dropdown, model name, base URL, API key (masked), test-connection button | Standard pattern across Continue / Copilot | LOW | One section per active provider; "+ Add Provider" button. |
-| Switch active provider per call type (Debug = Ollama local, Review = Anthropic) | Power users want this; saves money on Debug | MEDIUM | Setting: 3 dropdowns (Debug / Review / KG). Default = same for all. Continue.dev calls these "roles". |
-| README discloses external API calls | Plugin-store requirement (PROJECT.md: "Network use disclosed in README") | LOW | Add: "v1.1 sends prompts to your configured AI provider when you trigger AI Debug or on Accepted submission (if enabled). Your API key is stored locally in `data.json` and is never transmitted anywhere except your chosen provider." |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Per-feature provider routing (Debug / Review / KG separately configurable) | Continue.dev ships `roles: [chat, edit, apply]` | MEDIUM | 3 dropdowns. |
-| Token / cost telemetry **shown locally only**, never transmitted | Privacy-first BYO is a differentiator (Copilot Plus uploads telemetry — free does not) | LOW | Track in `data.json`. Optional sidebar "AI usage this month". |
-| Sane defaults (model dropdowns pre-populated per provider; user doesn't need to know model names) | Continue.dev requires user to type model names; Copilot pre-populates | LOW | Hardcode current model list per provider; allow override. |
-| Connection test (1-token call) before saving | Saves debugging when key is wrong | LOW | "Test" button per provider; ✓ / ✗ feedback. |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **Plugin-hosted proxy / shared API key** | "Make it free for users" | Already explicitly out-of-scope in PROJECT.md: telemetry surface, hosting cost, plugin-store risk | BYO-key only. |
-| **OS keychain integration** | "Encrypted at rest" | Adds Electron native dependency (keytar bindings); cross-platform pain; not in v1.0 stack; minimal security gain | Plain text in `data.json`. Document in README. |
-| **Auto-fallback to different provider if primary fails** | "Resilience" | Surprising; user might not want prompt sent to OpenAI when Anthropic fails (privacy/cost) | Show error; let user retry or switch manually. |
-| **Telemetry: anonymized usage stats** | "Help us help you" | Plugin-store explicit denial. v1.0's "no telemetry" is a feature. | None — no telemetry at all. |
-| **Built-in "smart routing"** | "Magic" | Requires usage telemetry; opaque cost; users don't trust black boxes for billable resources | User picks per feature. |
-| **Streaming via `requestUrl`** | "Use the v1.0 HTTP convention everywhere" | `requestUrl` returns full body — no progressive streaming | Use native `fetch` for AI providers (CORS not an issue — providers all set `*`). v1.0's `requestUrl` convention applies to **leetcode.com** specifically. |
+- **AF-02:** Eager batch rewrite on plugin load — forbidden.
+- **AF-06:** Side-by-side dual-widget — forbidden.
+- **Format-version frontmatter key** (e.g. `lc-format-version: 1.3`) — *not* needed; the fence syntax itself is self-identifying. Adding the frontmatter key adds a write surface for no detection benefit.
 
 ---
 
 ## Feature Dependencies
 
 ```
-[F: Multi-Provider AI Settings]
-    └──required by──> [C: AI Debug]
-    └──required by──> [D: AI ACed Review]
-    └──required by──> [E: AI Knowledge-Graph]
+TS-02 (caret stays in widget — atomicRanges)
+    └──enables──> TS-03 (Cmd-Z scoped to widget)
+    └──enables──> TS-04 (Cmd-F scoped to widget)
+    └──enables──> AF-01 prevention (no parent-CM6 sync of fence body)
 
-[E: AI Knowledge-Graph (pattern hubs)]
-    └──enhances──> [B: Virtual Contest summary] (auto-tag missed problems by cluster)
-    └──enhances──> [A: Preview Mode] (show "you have N notes in this cluster")
-    └──enhances──> [D: AI Review] (deep-link to cluster from review)
+TS-05 (autosave debounce)
+    └──requires──> TS-12 (debounce window 300–500ms)
+    └──requires──> TS-06 (flush-on-blur/unload — closes the data-loss window)
 
-[A: Preview Mode]
-    └──enhances──> [B: Virtual Contest] (preview a contest problem before starting)
-    └──required by──> [E.4: Look-ahead edges] (click dangling link → preview before commit)
+TS-07 (external edit reconciliation)
+    └──requires──> self-write suppression flag (Excalidraw 2000ms semaphore pattern)
+    └──requires──> TS-05 + TS-12 (need to know "did we just write this")
+    └──enhances──> DF-03 (conflict toast)
 
-[B: Virtual Contest]
-    └──independent──> (works without AI; AI auto-tagging is bonus enhancement)
+TS-08 (Live Preview + Reading mode parity)
+    └──requires──> registerMarkdownCodeBlockProcessor (registers for both)
+    └──conflicts──> AF-05 (3-mode parity is wrong)
 
-[D: AI Review] ──conflicts──> [Auto-apply suggested code] — explicit anti-feature
+TS-11 (vim mode toggle)
+    └──enabled-by──> CM6 Compartment pattern (already in childEditorFactory.ts)
+    └──contradicts──> PROJECT.md "reload-on-vim-toggle accepted"
+        (Compartment.reconfigure is sufficient; reload not needed)
 
-[E: KG migration] ──conflicts──> [auto-rewrite-on-load] — explicit anti-feature
+TS-09, TS-10 (action row + chevron)
+    └──reuses──> codeBlockButtonRow.ts (existing)
+    └──reuses──> languageChevronWidget.ts (existing)
 
-[v1.0: KnowledgeGraphWriter.onAccepted] ──hooks──> [D: AI Review trigger] + [E: cluster assignment trigger]
+DF-01 (fence tag carries language)
+    └──enables──> MIG-01 (detection logic)
+    └──conflicts──> v1.2 lc-language frontmatter key (recommend leave-alone, ignore)
 
-[v1.0: CodeActionsWidget action row] ──hosts──> [C: AI Debug button]
-
-[v1.0: section-lock + 'leetcode.*' userEvent] ──governs──> [C inline render] + [D: ## AI Review writes]
-
-[v1.0: data.json plugin storage] ──hosts──> [F: API keys] + [B: contest session state]
-
-[v1.0: turndown HTML→MD pipeline] ──used by──> [A: Preview rendering]
-
-[v1.0: ProblemBrowser ItemView] ──hosts──> [A: right-click → Preview action]
+MIG-01 (lazy-on-open migration)
+    └──conflicts──> AF-02 (eager batch)
+    └──conflicts──> AF-06 (dual-widget side-by-side)
 ```
 
-### Critical Dependency Notes
+### Dependency Notes
 
-- **C/D/E all require F.** F (provider settings) must ship first or in same phase as any AI feature. **F is foundational.**
-- **A is independent.** Can ship in parallel with anything; only depends on v1.0 cache + browser. Decoupled from AI.
-- **B is independent of AI.** Ships without AI; AI auto-tagging is v1.1.x enhancement.
-- **E.4 (look-ahead) blocks on A.** Look-ahead edges materialize as dangling wikilinks; clicking one needs the Preview tab to land on something useful.
-- **D section-lock interaction.** `## AI Review` must be added to `sectionLockExtension.ts` lock-list. Plugin writes via `app.vault.process(...)` (vault-layer, bypasses lock by design — same pattern as v1.0 `copyToCode.ts`).
-- **C streaming transport.** AI Debug needs streaming; v1.0 `requestUrl` cannot stream. Adds `fetch` for AI providers ONLY. **STACK addition required.**
+- **TS-02 is the load-bearing facet** — atomicRanges is what stops the widget from behaving like Dataview's lp-render (cursor enters → strip widget → fall back to source). Without it, every other table-stakes item breaks.
+- **TS-06 is the reason TS-05 is safe** — debounced autosave alone is a data-loss bug. Flush-on-blur/unload turns it into "saves frequently and on every transition."
+- **TS-11 (vim) needs a confidence-correction relative to PROJECT.md** — see "Open Questions for Roadmap" below.
+- **MIG-01's edge-case disambiguation** (require `## Code` section + LC frontmatter) is the single most important detail to carry forward to REQUIREMENTS.md. Get it wrong → hijack non-LC code blocks across the whole vault.
 
 ---
 
-## MVP Definition (for v1.1 milestone)
+## MVP Definition
 
-### Launch With (v1.1 ship — P1)
+### Launch With (v1.3.0)
 
-Minimum viable for the milestone — what's needed to validate the v1.1 thesis ("AI coaching + contest practice + curated graph make solving compound").
+**Required for v1.3 to be a non-regression vs v1.2.** Failing any one of these means users will roll back.
 
-- [ ] **F1: Multi-provider settings UI** (Anthropic + OpenAI + OpenRouter + Ollama; custom base URL per provider; key in `data.json`; test-connection button) — Foundation for all AI.
-- [ ] **F2: Single active provider per AI feature type** (one Debug provider, one Review provider, one KG provider — defaults to same).
-- [ ] **A1: Preview tab** (right-click → preview; CTA toggle Start/Open) — Decoupled; ships independently.
-- [ ] **B1: Virtual contest core** (past contest picker + Surprise me + 90/100-min timer + 4 notes + verdict tracking + post-contest summary note) — Decoupled.
-- [ ] **C1: AI Debug button** (under `## Code` action row; problem + code + last failure + failing test in prompt; streamed inline render) — Requires F.
-- [ ] **D1: AI ACed Review** (3-section review on Accepted; settings toggle default OFF; inline `## AI Review` section; non-streaming) — Requires F.
-- [ ] **E1: Pattern-cluster hubs** (constrained 22-pattern taxonomy: 18 NeetCode + ~4 additions; auto-create hubs on AC; replace `## Techniques` with cluster wikilinks for **NEW ACs only**; v1.0 lc-tag links untouched by default) — Requires F.
-- [ ] **E2: Difficulty-progression edges** (within a cluster) — Requires E1.
-- [ ] **E3: Cross-cluster `## Related Variants` (structural twins only)** — Requires E1.
-- [ ] **E4: Look-ahead edges to unsolved problems** (capped at 2 per note; surface as dangling wikilinks; preview on click) — Requires E1 + A1.
-- [ ] **README disclosure update** (AI provider network calls, key storage location).
+- [ ] TS-01 through TS-18 (every table stakes item)
+- [ ] MIG-01 (lazy-on-open migration with dual-render of v1.2 notes as widgets)
+- [ ] All AF-* explicitly NOT shipped (REQUIREMENTS.md anti-feature list)
 
-### Add After Validation (v1.1.x patches — P2)
+### Add After Validation (v1.3.x patch series)
 
-- [ ] **E5: Opt-in migration UI** for v1.0 notes — preview, cost estimate, run button.
-- [ ] **B2: Contest summary AI-pattern auto-tagging** (after E1).
-- [ ] **F3: Cost telemetry sidebar** (local-only token/cost tracker).
-- [ ] **C2: AI Debug "include `## Notes`" checkbox**.
-- [ ] **A2: Preview shows pattern-cluster coverage** (after E1).
+Differentiators that exploit the new architecture but are not strictly required to claim feature parity.
 
-### Future Consideration (v1.2+ — P3)
+- [ ] DF-02 — Arrow-down/up exits widget (UX polish)
+- [ ] DF-03 — External-edit conflict toast (only if real-world conflicts surface in field)
+- [ ] DF-04 — In-widget verdict badge
+- [ ] DF-05 — Widget header (title + difficulty pill)
+- [ ] DF-06 — Per-widget AI Debug scope (refactor of existing)
 
-- [ ] **C3: AI Debug Apply-Patch** (Cursor-style diff apply) — HIGH complexity, section-lock-aware diff merge.
-- [ ] **F4: Bedrock SigV4 support** — complex auth.
-- [ ] **F5: GitHub Copilot / Azure OpenAI providers** — enterprise nice-to-have.
-- [ ] **B3: Resume in-progress contest after Obsidian restart** — needs reliable persistence.
-- [ ] **E6: Pattern-cluster summaries auto-regenerate when N new problems join** — graph-curation polish.
-- [ ] **E7: Manual cluster override** (user disagrees with AI assignment) — defer; surface as known limitation.
+### Future Consideration (v1.4+)
+
+- [ ] DF-07 if not already covered by v1.2 Copy
+- [ ] Multi-language widgets per note (multiple `leetcode-solve` fences with separate language tags) — only if user demand surfaces
+- [ ] MIG-02 manual migration command — only if MIG-01's heuristic misclassifies in the wild
 
 ---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority | Depends On |
-|---------|------------|---------------------|----------|------------|
-| F1 Provider settings (4 providers) | HIGH | MEDIUM | P1 | — |
-| F2 Per-feature provider routing | MEDIUM | LOW | P1 | F1 |
-| A1 Preview tab | HIGH | LOW | P1 | v1.0 cache + ProblemBrowser |
-| B1 Virtual contest core | HIGH | MEDIUM | P1 | v1.0 note pipeline + verdict pipeline |
-| C1 AI Debug | HIGH | MEDIUM | P1 | F1 + v1.0 CodeActionsWidget |
-| D1 AI ACed Review | HIGH | MEDIUM | P1 | F1 + v1.0 onAccepted hook |
-| E1 Pattern-cluster hubs | HIGH | MEDIUM | P1 | F1 |
-| E2 Difficulty-progression | MEDIUM | LOW | P1 | E1 |
-| E3 Cross-cluster Variants | MEDIUM | MEDIUM | P1 | E1 |
-| E4 Look-ahead edges | HIGH (USP) | MEDIUM | P1 | E1 + A1 |
-| E5 Opt-in migration UI | MEDIUM | MEDIUM | P2 | E1 |
-| B2 Contest AI auto-tag | MEDIUM | LOW | P2 | E1 |
-| F3 Cost telemetry | MEDIUM | LOW | P2 | F1 |
-| C3 AI Debug Apply-Patch | LOW (nice) | HIGH | P3 | C1 |
-| F4 Bedrock SigV4 | LOW (niche) | HIGH | P3 | F1 |
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| TS-01 click→focus→type | HIGH | MEDIUM | P1 |
+| TS-02 atomicRanges (caret stays in widget) | HIGH | MEDIUM | P1 |
+| TS-03 Cmd-Z scoped to widget | HIGH | LOW (default CM6) | P1 |
+| TS-05 autosave debounce | HIGH | MEDIUM | P1 |
+| TS-06 flush-on-blur/unload | HIGH (data safety) | LOW | P1 |
+| TS-07 external edit reconciliation | HIGH | HIGH | P1 |
+| TS-08 Live Preview + Reading parity | HIGH | LOW (free with processor) | P1 |
+| TS-09 action row | HIGH (regression risk) | LOW (reuse) | P1 |
+| TS-11 vim mode toggle | MEDIUM | LOW (Compartment) | P1 |
+| TS-12 debounce window 300–500ms | HIGH | LOW | P1 |
+| TS-13 through TS-18 (theme, brackets, etc.) | HIGH (regression risk) | LOW (reuse) | P1 |
+| MIG-01 lazy-on-open migration | HIGH (vault safety) | MEDIUM | P1 |
+| DF-01 fence tag carries language | MEDIUM | LOW | P1 (needed for MIG-01 detection) |
+| DF-02 arrow-exit widget | MEDIUM | MEDIUM | P2 |
+| DF-03 conflict toast | MEDIUM | LOW | P2 |
+| DF-04 verdict badge | MEDIUM | LOW | P2 |
+| DF-05 widget header | LOW | LOW | P3 |
+| MIG-02 manual command | LOW | LOW | P3 |
 
 ---
 
-## Competitor Feature Analysis
+## Reference Plugins / Comparator Analysis
 
-| Feature | vscode-leetcode | LeetHub V2 | NeetCode 150 | Obsidian Copilot | Continue.dev | Our Approach (v1.1) |
-|---------|-----------------|------------|--------------|------------------|--------------|---------------------|
-| Problem preview before opening | YES (right-click) | N/A | N/A | N/A | N/A | YES — default click target. |
-| Virtual contest mode | NO | NO | NO | N/A | N/A | YES — past + Surprise me + summary note. |
-| AI debug | NO | NO | NO | YES (chat — vault-context, not problem-aware) | YES (chat + edit) | YES — problem-aware, user-triggered, streaming. |
-| AI code review | NO | NO | NO | YES (manual) | YES (PR checks) | YES — auto on AC, 3 dimensions, inline. |
-| Pattern-cluster knowledge graph | NO | NO (filenames only) | YES (static 18 patterns) | NO (semantic search instead) | NO | YES — AI-curated within NeetCode taxonomy + look-ahead. |
-| Multi-provider BYO key | N/A | N/A | N/A | YES (17 providers) | YES (40+) | YES (4 launch + custom base URL). |
-| Custom base URL | N/A | N/A | N/A | YES (`OPENAI_FORMAT`) | YES (`apiBase`) | YES per provider. |
-| Per-feature provider routing | N/A | N/A | N/A | NO | YES (`roles`) | YES (Debug / Review / KG). |
-| Per-problem README + metadata | NO (just code file) | YES (README + code) | N/A | N/A | N/A | YES (v1.0 already structured note). |
-| Look-ahead "you should try X next" | NO | NO | NO (static, not personalized) | NO (semantic, not progression-aware) | NO | YES — AI-judged, capped 2/note, dangling-link UX. |
+| Behavior | Dataview lp-render (display widget) | Kanban (full view replacement) | Excalidraw (full view replacement) | Tasks (post-processor + LP extension) | Our v1.3 widget (target) |
+|----------|-------------------------------------|--------------------------------|-------------------------------------|---------------------------------------|--------------------------|
+| Inline in note? | YES (inline-code) | NO (replaces view) | NO (replaces view) | YES for `tasks` queries (read-only) | YES (fence widget) |
+| Editable inline? | NO — strips on cursor entry, falls back to source | N/A (own UI) | N/A (own UI) | NO — opens modal for edits | **YES** (this is the differentiator) |
+| Live Preview + Reading parity? | YES | N/A | N/A | YES (separate paths but same output) | YES (one processor) |
+| Cursor handling | Selection-overlap → strip widget → reveal source | n/a (custom view) | n/a (custom view) | Read-only widget — cursor doesn't enter | atomicRanges → caret skips fence range; widget owns its own selection |
+| Persistence | n/a (read-only) | StateManager + `vault.modify` (no explicit debounce in StateManager — TextFileView inherits save) | autosaveTimer + `PREVENT_RELOAD_TIMEOUT = 2000ms` | Modal commits via vault | Debounced 400ms `vault.process` + flush-on-blur |
+| External edit handling | Re-renders on metadataCache events | Reparse with `shouldSave: false` flag | 2000ms self-write suppression semaphore | Cache-driven; reactive | Self-write suppression window + conflict toast (DF-03) |
+| Undo scope | n/a (read-only) | StateManager owns model | Excalidraw owns model | Modal owns transient state | Per-widget CM6 history; parent note CM6 history independent |
+| Vim mode | n/a | n/a | n/a | n/a | Compartment.reconfigure on focus |
 
-**Key insight:** **No comparable product has the AI-curated personalized look-ahead edge to unsolved problems.** NeetCode shows a static roadmap; Obsidian Copilot semantic-searches existing notes; LeetHub captures only past. **Look-ahead edges are the v1.1 differentiator.**
+**Direct lessons:**
+1. **Dataview's inline pattern is the wrong model for us** — they explicitly fall back to source; we explicitly do not (we are an *edit* widget, not a *display* widget). Knowing this maps the architecture: Dataview *omits* atomicRanges; we *require* atomicRanges.
+2. **Excalidraw's 2000ms self-write semaphore is the canonical pattern** for external-edit reconciliation (TS-07). Adopt it.
+3. **Kanban's reparse-with-`shouldSave: false`** is the canonical pattern for breaking the write-modify-write echo loop. Adopt it.
+4. **Tasks' approach (read-only widget + edit-modal)** is the *anti-pattern* to avoid. Modal-edit destroys the "code lives in the note" UX promise.
+
+---
+
+## Open Questions for Roadmap
+
+These are flagged for the roadmapper / synthesizer because they need a phase-level decision, not a research answer.
+
+1. **Reading-mode widget: live CM6 (read-only) or static `<pre><code>`?** TS-08 — both work. Live CM6 keeps theme + language switching working identically; static is simpler. Recommend live CM6 (single code path) but flag as architecture decision.
+
+2. **Vim-toggle: live `Compartment.reconfigure` or reload-fallback?** TS-11 — PROJECT.md accepts reload, but evidence (CM6 docs HIGH confidence + existing `languageCompartment` pattern in codebase MEDIUM-HIGH confidence) suggests Compartment is sufficient. Roadmap should select live-reconfigure as P1 with reload as P3 fallback if a real bug surfaces.
+
+3. **Migration MIG-01 edge case — what about notes with multiple LeetCode `## Code` blocks?** Rare but possible (alternate language attempts). Two approaches: (a) migrate all fences in the file in a single `vault.process` (atomic), or (b) migrate per-fence on first edit-of-that-fence. Recommend (a) — atomic per-file is consistent.
+
+4. **Action-row layout in Reading mode — same as Live Preview, or simplified?** v1.2 currently shows full action row in both modes. Continue or simplify in Reading mode? Recommend continue — users practice in Reading mode and need Run/Submit there.
+
+5. **First-edit autosave write — should the v1.2-format fence rewrite (MIG-01) and the user's first character both land in the same `vault.process` callback, or in two separate writes?** One write is cleaner but couples migration to typing. Recommend one write — atomic, and the write was going to happen anyway.
+
+6. **`onunload` flush window** — TS-06 requires a sync-ish flush, but Obsidian's `onunload` is async-tolerant. Worst case: user force-quits Obsidian. Is the 400ms window of risk acceptable? Recommend yes, with the workspace `quit` event as belt-and-suspenders.
 
 ---
 
 ## Sources
 
-| Source | Confidence | Used For |
-|--------|------------|----------|
-| `LeetCode-OpenSource/vscode-leetcode` README (verified via `gh api`) | HIGH | Preview UX precedent, "no AI / no contest" gap analysis |
-| `QasimWani/LeetHub` `scripts/leetcode.js` (verified via `gh api`) | HIGH | Per-problem README capture model, post-AC trigger |
-| `neetcode-gh/leetcode/.problemSiteData.json` (450 entries, verified via curl + grep) | HIGH | Canonical 18-pattern taxonomy |
-| `logancyang/obsidian-copilot/src/constants.ts` (verified via `gh api`) | HIGH | Multi-provider enum: OPENROUTERAI, OPENAI, OPENAI_FORMAT, ANTHROPIC, GOOGLE, XAI, AMAZON_BEDROCK, AZURE_OPENAI, GROQ, OLLAMA, LM_STUDIO, COPILOT_PLUS, MISTRAL, DEEPSEEK, COHEREAI, SILICONFLOW, GITHUB_COPILOT |
-| `logancyang/obsidian-copilot` README (verified via `gh api`) | HIGH | Set-Keys flow, OpenRouter recommended-default pattern |
-| Continue.dev `docs.continue.dev/customize/model-providers/overview` (WebFetch) | MEDIUM | YAML config schema with `apiKey` + roles `[chat, edit, apply]`; 40+ provider list |
-| LeetCode native virtual contest UI behavior | MEDIUM | 90-min weekly / 100-min biweekly; ICPC-style penalty pattern (training data + community wiki references; live page 403'd) |
-| Project's `CLAUDE.md` Conventions section | HIGH | `'leetcode.*'` userEvent annotation requirement for plugin CM6 dispatches into locked ranges |
-| Project's `PROJECT.md` Out-of-Scope + Constraints | HIGH | "BYO key only", "no telemetry", "leetcode.com only", "isDesktopOnly" — non-negotiable boundaries |
-| Project's `MILESTONES.md` v1.0 Delivered | HIGH | What v1.1 can build on (CodeActionsWidget, KnowledgeGraphWriter.onAccepted, section-lock, ProblemBrowser, turndown, etc.) |
-| Cursor / Copilot Chat (training data; docs URL 404'd) | LOW | "User-triggered AI universally preferred over auto-AI" pattern recognition |
+| Source | Confidence | Notes |
+|--------|-----------|-------|
+| Obsidian developer docs (`Plugins/Vault`, `Plugins/Editor/Decorations`, `Plugins/Editor/Markdown post processing`) — fetched via Context7 `/websites/obsidian_md_plugins` 2026-05-28 | HIGH | Confirms `Vault.process` preferred over `Vault.modify`; confirms `registerMarkdownCodeBlockProcessor` works in both Live Preview and Reading. |
+| `blacksmithgu/obsidian-dataview/src/ui/lp-render.ts` — fetched via gh raw 2026-05-28 | HIGH | Direct source: cursor-overlap → strip-decoration pattern (the *wrong* pattern for us — see comparator). Confirms `editorLivePreviewField`-gated rendering. |
+| `mgmeyers/obsidian-kanban/src/main.ts` + `src/StateManager.ts` + `src/KanbanView.tsx` | MEDIUM-HIGH | Reparse-with-`shouldSave: false` pattern (echo-loop break) confirmed. Debounce window not visible in StateManager (delegated to TextFileView's inherited `requestSave`). |
+| `zsviczian/obsidian-excalidraw-plugin/src/view/ExcalidrawView.ts` | MEDIUM | First 1000 lines fetched; `PREVENT_RELOAD_TIMEOUT = 2000ms` semaphore confirmed by symbol presence; full handler logic not directly read. |
+| CodeMirror 6 reference docs — `Decoration.replace`, `EditorView.atomicRanges`, `WidgetType.ignoreEvent`, `Compartment` — codemirror.net 2026-05-28 | HIGH | Authoritative; confirms atomicRanges + ignoreEvent semantics, confirms Compartment.reconfigure for runtime vim toggling. |
+| `@replit/codemirror-vim` README | MEDIUM | Confirms vim() returns standard CM6 extension wrappable in Compartment. README does not document toggling but CM6 Compartment pattern is universal. |
+| v1.2 codebase: `src/main/childEditorFactory.ts`, `src/main/codeBlockButtonRow.ts`, `src/main/childEditorLanguage.ts`, `src/main.ts` | HIGH | Verified existing v1.2 features that v1.3 must re-mount: 8 languages via Compartment, vim, action row, chevron, indent/bracket/comment rules, theme tracking. |
+| PROJECT.md (current state, key decisions, out-of-scope) | HIGH | Source of truth for v1.3 milestone goal, deletion targets, and prior-version migration discipline (lazy-on-AC v1.0→v1.1 Techniques precedent). |
+
+### Confidence Caveats
+
+- **Dataview lp-render** is read directly — HIGH confidence on the cursor-fallback pattern.
+- **Kanban debounce window** is *not* directly visible in fetched files — Kanban inherits `TextFileView.requestSave` whose internal debounce was not retrievable. Treat the "no explicit debounce" claim as MEDIUM.
+- **Excalidraw 2000ms** is inferred from constant name + semaphore field presence; full handler logic not read end-to-end. The 2000ms value is HIGH confidence; the *exact* echo-suppression logic is MEDIUM.
+- **`@replit/codemirror-vim` Compartment toggle** is HIGH confidence based on CM6 Compartment semantics + the fact that vim() returns a standard extension; not directly verified on a running editor with this exact library version, but no plausible reason it would fail.
 
 ---
 
-## Confidence Summary
-
-| Domain | Confidence | Why |
-|--------|------------|-----|
-| Pattern-cluster taxonomy (18 NeetCode patterns) | HIGH | Source data file verified; 450 entries enumerated |
-| Multi-provider settings UX pattern | HIGH | 17-provider enum + Set-Keys flow extracted from Obsidian Copilot source |
-| Preview UX (right-click / preview-before-create) | HIGH | vscode-leetcode README explicit |
-| Inline-vs-sidebar AI rendering decision | MEDIUM | Obsidian Copilot uses both; choice for our case driven by Obsidian-native graph philosophy from PROJECT.md, not single canonical source |
-| Contest scoring formula (LC virtual) | MEDIUM | Penalty pattern (5 min/wrong) corroborated across LC + Codeforces ICPC; exact base points vary per contest — recommendation is "render LC's published values, don't invent" |
-| Look-ahead edges UX | LOW | No direct precedent in any comparable product; recommendation is novel synthesis. **Validation needed during v1.1 dogfood.** |
-| Migration strategy | MEDIUM | Three-option analysis is structured; recommendation is conservative (opt-in default); real-world validation requires v1.1 dogfood |
-
----
-
-## Gaps and Open Questions for Roadmap
-
-1. **Streaming HTTP transport for AI providers.** v1.0 uses `requestUrl` for LC. AI streaming requires `fetch` (since `requestUrl` returns full body). Crosses v1.0 convention. **Likely a STACK addition, not a FEATURE concern.**
-2. **Section-lock extension for `## AI Review`.** Need to extend `sectionLockExtension.ts` to lock the new section. Per CLAUDE.md, plugin writes via `vault.process` bypass the lock — same pattern as `copyToCode.ts`. Document up front.
-3. **Look-ahead edge target stub generation.** When AI references `[[1234-skyline-problem]]` and user clicks, what fires? Preview tab? Auto-create stub? Recommendation: preview-first, stub-on-explicit-Start. Confirm in design phase.
-4. **Cost-disclosure threshold.** Per-call estimate in toast? Settings-tab summary? Sidebar widget? Recommendation: settings-tab summary + per-call toast — defer details.
-5. **Pattern-cluster hub note format.** Bases query? Dataview-style code block? Static auto-updated list? Likely Bases (matches v1.0 `LeetCode.base`); confirm in design phase.
-6. **AI cluster disagreement handling.** "Wrong, this isn't sliding window, it's prefix sum." Manual override mechanism? Recommendation: defer to v1.2; surface as known limitation in v1.1 README.
-
----
-
-*Feature research for: Obsidian LeetCode v1.1 (Contest, AI Coach, Preview).*
-*Researched: 2026-05-14*
+*Feature research for: Obsidian LeetCode v1.3 inline-widget architecture*
+*Researched: 2026-05-28*
+*Author: gsd-project-researcher*
