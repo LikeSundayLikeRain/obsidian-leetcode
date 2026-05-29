@@ -133,6 +133,11 @@ import { registerVaultModifyRepairTrigger } from './main/childEditorSync';
 import { WidgetRegistry } from './widget/widgetRegistry';
 import { leetCodeBlockProcessor } from './widget/codeBlockProcessor';
 import { leetCodeFenceViewPlugin } from './widget/liveModeViewPlugin';
+// Phase 19 Plan 02 — selfWriteSuppression + sha1 helper for the modify-event
+// consumer. extractFenceBody for hashing observed disk fence body.
+import { SelfWriteSuppression } from './widget/selfWriteSuppression';
+import { sha1 } from './widget/debouncedWriter';
+import { extractFenceBody } from './widget/fenceSerialization';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { PatternClusterEngine } from './graph/PatternClusterEngine';
@@ -265,6 +270,11 @@ export default class LeetCodePlugin extends Plugin {
   // hard-gate). Optional field; main.ts onunload uses optional chaining when
   // calling destroyAll() so the v1.2 baseline path remains unaffected.
   widgetRegistry?: WidgetRegistry;
+  // Phase 19 Plan 02 — plugin-singleton self-write suppression map. Same
+  // gating as widgetRegistry (instantiated under useInlineWidget=ON only).
+  // Consumed by the vault.on('modify') handler to drop self-write echoes;
+  // armed by DebouncedWriter.flush BEFORE vault.process (CONTEXT C-04).
+  selfWriteSuppression?: SelfWriteSuppression;
 
   /**
    * Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12) — per-child
@@ -864,21 +874,109 @@ export default class LeetCodePlugin extends Plugin {
       this.registerEditorExtension(buildNestedEditorExtension(this));
     }
 
-    // Step 6f-widget — Phase 19 Plan 01: v1.3 inline widget mount (hard-gated).
-    // Registers BOTH:
+    // Step 6f-widget — Phase 19 Plan 01+02: v1.3 inline widget mount (hard-gated).
+    // Plan 19-01 registered:
     //   1. registerMarkdownCodeBlockProcessor('leetcode-solve', …) — Reading mode
     //   2. registerEditorExtension([leetCodeFenceViewPlugin(this)]) — Live Preview
-    //      with EditorView.atomicRanges Facet contribution (parent-cursor exclusion).
-    // Plan 19-01 does NOT register vault.on('modify') / leaf-change / quit /
-    // beforeunload hooks — those land in Plan 19-02 (debouncedWriter +
-    // selfWriteSuppression).
+    //      with EditorView.atomicRanges Facet contribution.
+    // Plan 19-02 adds:
+    //   3. selfWriteSuppression instance for echo suppression.
+    //   4. Six flush-on-transition hooks (CONTEXT C-07; RESEARCH Pattern 5).
+    //   5. vault.on('modify') consumer that drops self-writes via the
+    //      suppression map; external writes log a Plan 20 reload-TBD message.
     if (useInlineWidget) {
       this.widgetRegistry = new WidgetRegistry();
+      this.selfWriteSuppression = new SelfWriteSuppression();
       this.registerMarkdownCodeBlockProcessor(
         'leetcode-solve',
         leetCodeBlockProcessor(this),
       );
       this.registerEditorExtension([leetCodeFenceViewPlugin(this)]);
+
+      // Plan 19-02 — six flush-on-transition hooks (CONTEXT C-07).
+
+      // Hook 1: leaf change (file/leaf switch). Flush all live widgets.
+      this.registerEvent(
+        this.app.workspace.on('active-leaf-change', () => {
+          void this.widgetRegistry?.flushAll();
+        }),
+      );
+
+      // Hook 2: workspace 'quit' — primary graceful-shutdown path. The
+      // tasks.add(promise) shape lets us delay Obsidian's quit until the
+      // flush resolves. Verified obsidian.d.ts:7195 (since 1.4.4). RESEARCH
+      // Open Question A8 — `Tasks` shape introspection: console.log once
+      // on first invocation to confirm; if shape differs, fall back to
+      // beforeunload only.
+      let quitTasksLogged = false;
+      this.registerEvent(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- workspace 'quit' Tasks shape unverified at type level
+        this.app.workspace.on('quit' as never, ((tasks: { add?: (p: Promise<unknown>) => void }) => {
+          if (!quitTasksLogged) {
+            quitTasksLogged = true;
+            try { logger.debug('LC widget: quit tasks shape', tasks); } catch { /* ignore */ }
+          }
+          if (typeof tasks?.add === 'function') {
+            tasks.add(this.widgetRegistry?.flushAll() ?? Promise.resolve());
+          }
+        }) as never),
+      );
+
+      // Hook 3: file rename — flush widgets keyed under the OLD path before
+      // the rename lands. Plan 19-04+ may also clearForPath the suppression
+      // map; Plan 19-02 ships only the flush.
+      this.registerEvent(
+        this.app.vault.on('rename', (_file, oldPath) => {
+          if (typeof oldPath === 'string') {
+            void this.widgetRegistry?.flushFile(oldPath);
+            this.selfWriteSuppression?.clearForPath(oldPath);
+          }
+        }),
+      );
+
+      // Hook 4: beforeunload — synchronous-issue best-effort flush
+      // (RESEARCH Pitfall 19-B). Belt-and-suspenders to workspace.on('quit').
+      this.registerDomEvent(window, 'beforeunload', () => {
+        this.widgetRegistry?.flushAllSync();
+      });
+
+      // Hook 5: MarkdownRenderChild.onunload (Reading mode) — owned by
+      // LeetCodeWidgetRenderChild.onunload in src/widget/WidgetController.ts.
+      // No registration needed here.
+
+      // Hook 6: Plugin.onunload — extends below in onunload() with flushAll
+      // followed by destroyAll + selfWriteSuppression.clear.
+
+      // Plan 19-02 — vault.on('modify') self-write echo consumer (RESEARCH
+      // Specific Findings §4 gated body — useInlineWidget can be flipped
+      // mid-session; gate at fire time, not registration time).
+      this.registerEvent(
+        this.app.vault.on('modify', async (file) => {
+          if (!this.settings.getUseInlineWidget()) return;
+          if (!(file instanceof TFile)) return;
+          if (!this.selfWriteSuppression) return;
+          try {
+            const disk = await this.app.vault.read(file);
+            // Plan 19-02 default: consume by file path with the fence body
+            // of fenceIndex 0 (single-fence common case). Multi-fence
+            // tracking lands in Plan 19-04+ / v1.4 deferred.
+            const body = extractFenceBody(disk, 0) ?? '';
+            const observedHash = await sha1(body);
+            const result = this.selfWriteSuppression.tryConsume(file.path, observedHash);
+            if (result === 'consumed') return; // self-write echo — drop
+            if (result === 'stale' || result === 'miss') {
+              // External edit (or stale entry — defensive): Plan 20 owns the
+              // cursor-preserving reload (SYNC-04, SYNC-05); Plan 19-02 just
+              // logs for observability.
+              logger.debug(
+                `[LC widget] external modify observed for ${file.path} — Plan 20 reload TBD`,
+              );
+            }
+          } catch {
+            /* swallow — modify is best-effort observability */
+          }
+        }),
+      );
     }
 
     // Step 6f-bis — Phase 05.5 (POLISH) section locking for lc-slug notes.
@@ -1092,11 +1190,16 @@ export default class LeetCodePlugin extends Plugin {
     // Phase 13 — destroy all child EditorViews (D-12 cleanup).
     this.childEditorRegistry?.destroyAll();
 
-    // Phase 19 Plan 01 — drain in-flight widget writes (no-op stub in 19-01;
-    // Plan 19-02 wires flushNow into debouncedWriter) then destroy each
-    // widget's EditorView and clear the registry.
-    this.widgetRegistry?.flushAll();
+    // Phase 19 Plan 01+02 — drain in-flight widget writes via debouncedWriter
+    // (Plan 19-02 makes flushAll await each writer.forceFlush). Plugin.onunload
+    // is sync-shaped; fire-and-forget the Promise — beforeunload + workspace
+    // 'quit' Tasks.add are the load-bearing graceful-shutdown paths
+    // (RESEARCH Pitfall 19-B). The destroy below cancels any pending writer
+    // timers regardless.
+    const flushP = this.widgetRegistry?.flushAll();
+    if (flushP && typeof flushP.catch === 'function') flushP.catch(() => undefined);
     this.widgetRegistry?.destroyAll();
+    this.selfWriteSuppression?.clear();
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
