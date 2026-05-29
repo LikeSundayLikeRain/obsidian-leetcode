@@ -840,23 +840,35 @@ export default class LeetCodePlugin extends Plugin {
     // Step 6d — settings tab.
     this.addSettingTab(new LeetCodeSettingTab(this.app, this));
 
-    // Step 6e — Phase 5 Plan 05 (D-11) reading-mode Run/Submit buttons.
-    // Registers a MarkdownPostProcessor that appends neutral Run + Submit
-    // buttons below each <pre><code> inside notes with `lc-slug` frontmatter.
-    // Click handlers dispatch `${manifest.id}:run` / `:submit` via
-    // executeCommandById (Pitfall 14); idempotent per Pitfall 3.
-    registerCodeBlockActionProcessor(this);
+    // Phase 19 gap-closure (UAT Test 1 BLOCKER 2 / CONTEXT D-03 + D-05):
+    // The v1.2 codeActionsPostProcessor and codeActionsEditorExtension are
+    // FENCE-TAG-AGNOSTIC — they match `lc-slug + first <pre> under ## Code`
+    // and `lc-slug + first ``` fence under ## Code` respectively. With
+    // useInlineWidget=ON, both happily fire on the new `leetcode-solve` fence
+    // and render Run/Submit/AI Debug buttons under the widget — but Phase 19
+    // D-03 explicitly excludes the action row (Phase 20 territory). Hard-gate
+    // them off when the widget is active. When useInlineWidget=OFF, BOTH must
+    // fire (D-05 — v1.2 path unchanged). useInlineWidget is read at onload
+    // only (reload-apply-only per CONTEXT D-05 hard-gate).
+    if (!this.settings.getUseInlineWidget()) {
+      // Step 6e — Phase 5 Plan 05 (D-11) reading-mode Run/Submit buttons.
+      // Registers a MarkdownPostProcessor that appends neutral Run + Submit
+      // buttons below each <pre><code> inside notes with `lc-slug` frontmatter.
+      // Click handlers dispatch `${manifest.id}:run` / `:submit` via
+      // executeCommandById (Pitfall 14); idempotent per Pitfall 3.
+      registerCodeBlockActionProcessor(this);
+
+      // Step 6f — Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) edit-mode Run/Submit buttons.
+      // Registers a CM6 StateField<DecorationSet> that paints an inline widget below
+      // the `## Code` fence in Live Preview + Source Mode. Gated on `lc-slug`
+      // frontmatter (D-06). WidgetType.eq() guards idempotency (RESEARCH Pitfall 2).
+      // Click handlers call plugin.runFromActive() / submitFromActive() directly
+      // (D-05 — avoids editorCheckCallback gate regression from 05-05 live smoke).
+      this.registerEditorExtension(buildCodeActionsEditorExtension(this));
+    }
 
     // Phase 13 — child editor registry (must exist before extensions fire).
     this.childEditorRegistry = new ChildEditorRegistry(5);
-
-    // Step 6f — Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) edit-mode Run/Submit buttons.
-    // Registers a CM6 StateField<DecorationSet> that paints an inline widget below
-    // the `## Code` fence in Live Preview + Source Mode. Gated on `lc-slug`
-    // frontmatter (D-06). WidgetType.eq() guards idempotency (RESEARCH Pitfall 2).
-    // Click handlers call plugin.runFromActive() / submitFromActive() directly
-    // (D-05 — avoids editorCheckCallback gate regression from 05-05 live smoke).
-    this.registerEditorExtension(buildCodeActionsEditorExtension(this));
 
     // Phase 19 vq4 — read once: the nested-editor toggle is reload-apply-only.
     let useNestedEditor = this.settings.getUseNestedEditor();
