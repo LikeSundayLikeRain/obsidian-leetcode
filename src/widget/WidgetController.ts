@@ -44,6 +44,7 @@ import { closeBracketsKeymap } from '@codemirror/autocomplete';
 import { vim } from '@replit/codemirror-vim';
 import {
   MarkdownRenderChild,
+  Notice,
   type MarkdownPostProcessorContext,
   type MarkdownSectionInformation,
   type TFile,
@@ -177,15 +178,64 @@ export class WidgetController {
 }
 
 /**
- * Resolve the lc-language frontmatter slug, falling back to 'python' (Plan 19-01).
- * Plan 19-04 adds the Notice + observable fallback (WIDGET-06).
+ * Plan 19-04 — KNOWN_SLUGS allowlist for `lc-language` frontmatter
+ * (WIDGET-06). Mirrors the slugs handled by `buildLanguageExtensions` in
+ * `src/main/childEditorLanguage.ts:90-114`. Anything outside this list
+ * triggers the Notice + Python fallback.
+ *
+ * NOTE: The list keeps the original v1.2 chevron slugs (`python3`, `golang`,
+ * etc.) as canonical entries. Common synonyms (`python`, `js`, `ts`, `go`)
+ * are also accepted because users hand-author frontmatter and these aliases
+ * are intuitive — Plan 19-04 PLAN's KNOWN_SLUGS list explicitly includes them.
+ */
+const KNOWN_SLUGS: ReadonlyArray<string> = [
+  'python',
+  'python3',
+  'java',
+  'cpp',
+  'c',
+  'javascript',
+  'js',
+  'typescript',
+  'ts',
+  'golang',
+  'go',
+  'rust',
+];
+
+/**
+ * Resolve the lc-language frontmatter slug for a file. Plan 19-04 (WIDGET-06):
+ * unknown / missing → Python fallback + Notice exactly once per mount call.
+ *
+ * Per VALIDATION row 19-04-03 the Notice fires PER MOUNT — there is no
+ * cross-mount deduplication. Re-mounting the same widget DOES fire a fresh
+ * Notice; that's the contract.
  */
 function resolveLanguageSlug(plugin: WidgetMountHost, file: TFile): string {
   const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter as
     | Record<string, unknown>
     | undefined;
   const raw = fm?.['lc-language'];
-  return typeof raw === 'string' && raw.length > 0 ? raw : 'python';
+
+  if (typeof raw === 'string' && raw.length > 0) {
+    const lower = raw.toLowerCase();
+    if (KNOWN_SLUGS.includes(lower)) {
+      return lower;
+    }
+    // Plan 19-04 — unknown lc-language → Python + Notice.
+    new Notice(
+      `LeetCode widget: lc-language '${raw}' not supported; falling back to Python.`,
+      5000,
+    );
+    return 'python';
+  }
+
+  // Plan 19-04 — missing lc-language → Python + Notice.
+  new Notice(
+    'LeetCode widget: lc-language frontmatter missing; falling back to Python.',
+    5000,
+  );
+  return 'python';
 }
 
 /**

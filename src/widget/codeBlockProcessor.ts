@@ -99,26 +99,45 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
     const lcSlug = fm?.['lc-slug'];
     const hasLcSlug = typeof lcSlug === 'string' && lcSlug.length > 0;
 
-    // Pitfall 19-D: getSectionInfo(el) returns null in many embed contexts
-    // and other "deferred re-render" paths. Treat null as a graceful fallback
-    // signal — render static <pre><code>, NEVER throw.
+    // Pitfall 19-D: getSectionInfo(el) returns null in many embed contexts.
+    // Plan 19-04 — pass `info` (which may be null) to isEmbedContext as the
+    // third signal. The branching matrix:
+    //
+    //   ┌──────────┬─────────────┬────────┬──────────────────────────────────┐
+    //   │ lc-slug  │ info        │ embed? │ Result                            │
+    //   ├──────────┼─────────────┼────────┼──────────────────────────────────┤
+    //   │ NO       │ —           │ NO     │ static <pre><code> fallback       │
+    //   │ NO       │ —           │ YES    │ readOnly RenderChild (EMBED-04)   │
+    //   │ YES      │ null        │ —      │ readOnly RenderChild (Pitfall D)  │
+    //   │ YES      │ present     │ NO     │ editable RenderChild (LC primary) │
+    //   │ YES      │ present     │ YES    │ readOnly RenderChild (EMBED-01..3)│
+    //   │ —        │ null + !slug│ NO     │ static <pre><code> fallback       │
+    //   │ no TFile │ —           │ —      │ static <pre><code> fallback       │
+    //   └──────────┴─────────────┴────────┴──────────────────────────────────┘
+    //
+    // RESEARCH Pitfall 19-D: null info is REGULAR (not exceptional) in embeds;
+    // routing it through isEmbedContext promotes it to embed-likely instead of
+    // treating it as a degenerate fallback that loses the read-only widget.
     const info = ctx.getSectionInfo(el);
-    if (!info) {
-      renderStaticFallback(el, source);
-      return;
-    }
+    const isEmbed = isEmbedContext(el, ctx, file, info);
 
-    const isEmbed = isEmbedContext(el, ctx, file);
-
-    // Stray fence in non-LC note (no lc-slug) AND not embed → static fallback.
+    // No lc-slug AND not embed → stray fence in non-LC note (static fallback).
+    // No lc-slug AND embed → readOnly RenderChild (still useful for visual).
     if (!hasLcSlug && !isEmbed) {
       renderStaticFallback(el, source);
       return;
     }
 
+    // We need a non-null info object to construct the RenderChild because
+    // computeFenceIndex consults info.text + info.lineStart. When info is
+    // null but we're in an embed context, fabricate a minimal info object
+    // so the RenderChild can mount with fenceIndex=0 (the dominant case for
+    // embeds — the embed-target is typically the LC note's only fence).
+    const renderInfo = info ?? { text: source, lineStart: 0, lineEnd: 0 };
+
     // Otherwise mount the render child. Embed contexts (whether LC or
-    // non-LC) get readOnly=true; LC notes in their own pipeline get
-    // readOnly=false.
+    // non-LC) get readOnly=true; LC notes in their own pipeline + valid
+    // section info get readOnly=false.
     const readOnly = isEmbed || !hasLcSlug;
     const child = new LeetCodeWidgetRenderChild(
       el,
@@ -126,7 +145,7 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
       ctx,
       plugin,
       file,
-      info,
+      renderInfo,
       readOnly,
     );
     ctx.addChild(child);

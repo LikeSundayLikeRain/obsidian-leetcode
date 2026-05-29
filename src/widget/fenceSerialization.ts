@@ -1,4 +1,4 @@
-// Phase 19 Plan 01 — Pure string-only fence body extract / rewrite.
+// Phase 19 Plan 01 + Plan 04 — Pure string-only fence body extract / rewrite.
 //
 // Used inside the `vault.process(file, fn)` callback path where the input is
 // a raw string buffer (Phase 19-02 owns that wiring; Phase 19-01 ships the
@@ -7,9 +7,26 @@
 // Round-trip invariant (verified in tests/widget/fenceSerialization.property.test.ts):
 //   rewriteFenceBody(s, i, extractFenceBody(s, i) ?? '') === s
 //
-// CRLF preservation: line endings (LF vs CRLF) are reconstructed from the
-// originals via captured-trailing-CR detection (PITFALLS P5). DO NOT normalize
+// CRLF preservation (RESEARCH §5): line endings (LF vs CRLF) are reconstructed
+// from the originals via captured-trailing-CR detection. DO NOT normalize
 // line endings — the round-trip invariant requires byte-for-byte equality.
+// Mixed Windows/Unix line endings within the same file are preserved per-line
+// via the splitPreservingEols tokenizer (Plan 19-04 corpus expansion).
+//
+// Plan 19-04 closer-resolution rule: walk forward from the leetcode-solve
+// opener; the section terminates at the FIRST of (a) the next `## ` H2
+// heading line, or (b) the next NON-leetcode-solve TAGGED fence opener
+// (`\`\`\`<tag>` where <tag> is non-empty AND not `leetcode-solve`), or (c)
+// EOF. The closer is the LAST bare-or-tagged `\`\`\``-prefixed line BEFORE
+// that section terminator.
+//
+// Why: the v1.2 first-`\`\`\``-after-opener rule misreads nested triple
+// backtick bodies (corpus body `\`\`\`\nnested\n\`\`\`` would terminate after
+// the inner `\`\`\``); the Plan 19-01 LAST-in-section rule misreads bodies
+// followed by non-LC fences without `## ` separator (the next fence's closer
+// gets picked as ours). Bounding the walk at the next TAGGED opener fixes
+// both — nested bare-`\`\`\`` lines stay inside the section while subsequent
+// `\`\`\`python` etc. correctly cap it.
 //
 // Empty body / single-line / mid-byte / unicode handled by the test corpus.
 // rewriteFenceBody is a no-op when fenceIndex is out of range (matches
@@ -18,6 +35,11 @@
 const LC_OPENER_RE = /^\s*```leetcode-solve\b/;
 const FENCE_BOUNDARY_RE = /^\s*```/;
 const H2_HEADING_RE = /^\s*##\s+\S/;
+/** Tagged fence opener that is NOT our `leetcode-solve` opener. Matches
+ *  `\`\`\`python`, `\`\`\`bash`, `\`\`\`ts`, etc. Bare `\`\`\`` lines are NOT
+ *  tagged and therefore do NOT terminate the section walk (they may be content
+ *  inside the body — see nested-triple-backticks case in the corpus). */
+const TAGGED_NON_LC_OPENER_RE = /^\s*```([A-Za-z0-9_-]+)\b/;
 
 interface FenceBounds {
   openerLineIdx: number;
@@ -49,15 +71,24 @@ function locateFenceByIndex(lines: string[], fenceIndex: number): FenceBounds | 
   for (let i = 0; i < lines.length; i++) {
     if (!LC_OPENER_RE.test(lines[i] ?? '')) continue;
     if (count === fenceIndex) {
-      // Walk forward to the next H2 heading (or EOF) — that bounds the
-      // fence's enclosing section. The closer is the LAST `\`\`\``-prefixed
-      // line BEFORE the section boundary.
-      let sectionEnd = lines.length;
+      // Plan 19-04 closer-resolution: walk forward; section terminates at the
+      // FIRST of (a) next H2 heading, (b) next non-leetcode-solve TAGGED
+      // fence opener (`\`\`\`python`, `\`\`\`bash`, etc.), or (c) EOF. Closer
+      // is the LAST bare-or-tagged `\`\`\``-prefixed line BEFORE the boundary.
+      //
+      // Bounding at the next TAGGED opener correctly skips subsequent non-LC
+      // fences while still accepting nested bare-`\`\`\`` lines as body content.
       let lastFenceLine = -1;
       for (let j = i + 1; j < lines.length; j++) {
         const text = lines[j] ?? '';
         if (H2_HEADING_RE.test(text)) {
-          sectionEnd = j;
+          break;
+        }
+        // Tagged non-LC opener — terminates the search BEFORE this line.
+        // (We use the tagged-opener match BEFORE the boundary match because
+        // every tagged opener is also a fence boundary.)
+        const taggedMatch = TAGGED_NON_LC_OPENER_RE.exec(text);
+        if (taggedMatch && taggedMatch[1] !== 'leetcode-solve') {
           break;
         }
         if (FENCE_BOUNDARY_RE.test(text)) {
@@ -65,9 +96,6 @@ function locateFenceByIndex(lines: string[], fenceIndex: number): FenceBounds | 
         }
       }
       if (lastFenceLine === -1) return null; // unterminated
-      // Defensive: lastFenceLine must be inside the section (it always is per
-      // the inner loop's break-on-heading).
-      void sectionEnd;
       return { openerLineIdx: i, closerLineIdx: lastFenceLine };
     }
     count++;
