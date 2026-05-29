@@ -89,11 +89,17 @@ function makeFakeApp(initialContent: string) {
 }
 
 describe('DebouncedWriter fenceIndex recompute (Pitfall 19-E)', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     noticeSpy.mockClear();
+    // Suppress D-09 post-flush diagnostic noise — this test exercises paths
+    // where the diagnostic legitimately fires (fence missing → rewrite no-op),
+    // and stderr noise breaks --reporter=dot expected line counts.
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
+    warnSpy.mockRestore();
     vi.clearAllMocks();
   });
 

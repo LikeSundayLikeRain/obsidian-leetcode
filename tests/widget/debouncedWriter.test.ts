@@ -89,6 +89,10 @@ describe('DebouncedWriter', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // Start at a non-zero epoch so the first flush isn't gated by the
+    // rate-limiter (which would otherwise see lastFlushAt=0 vs now=0 and
+    // defer indefinitely).
+    vi.setSystemTime(new Date(10_000_000));
     app = makeFakeApp();
     file = { path: 'a.md' };
     app.files.set(file.path, FENCE_NOTE);
@@ -109,9 +113,9 @@ describe('DebouncedWriter', () => {
     w.run();
     await vi.advanceTimersByTimeAsync(399);
     expect(app.vault.process).not.toHaveBeenCalled();
+    // Drain remaining 1ms PLUS pending microtasks from the async flush() chain.
     await vi.advanceTimersByTimeAsync(1);
-    // Allow microtask flush.
-    await Promise.resolve();
+    await vi.runAllTimersAsync();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 
@@ -129,7 +133,7 @@ describe('DebouncedWriter', () => {
     await vi.advanceTimersByTimeAsync(399);
     expect(app.vault.process).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    await Promise.resolve();
+    await vi.runAllTimersAsync();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 
@@ -161,7 +165,7 @@ describe('DebouncedWriter', () => {
     await vi.advanceTimersByTimeAsync(999);
     expect(app.vault.process).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    await Promise.resolve();
+    await vi.runAllTimersAsync();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 

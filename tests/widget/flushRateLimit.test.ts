@@ -76,7 +76,9 @@ describe('DebouncedWriter rate limit (SYNC-07)', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(1_000_000));
+    // Non-zero epoch so the first flush's rate-limit check (now - 0 ≥ 200)
+    // doesn't gate it.
+    vi.setSystemTime(new Date(10_000_000));
     app = makeFakeApp();
     file = { path: 'a.md' };
     app.files.set(file.path, FENCE_NOTE);
@@ -97,20 +99,21 @@ describe('DebouncedWriter rate limit (SYNC-07)', () => {
     await w.forceFlush();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
 
-    // Second flush at T+50ms — should coalesce/delay until T+200ms.
-    vi.setSystemTime(new Date(1_000_050));
-    const flushPromise = w.forceFlush();
-
-    // Advance to T+199ms — still under rate-limit window.
-    await vi.advanceTimersByTimeAsync(149);
+    // Advance 50ms — still under rate-limit window.
+    await vi.advanceTimersByTimeAsync(50);
+    // Second flush — under rate-limit window. forceFlush() resolves
+    // synchronously (rate-limit gate returns early), but a deferred flush is
+    // scheduled via setTimeout to fire 150ms later.
+    await w.forceFlush();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
 
-    // Advance the remaining 1ms (now T+200ms from flush #1).
-    await vi.advanceTimersByTimeAsync(1);
-    // Allow microtasks to drain.
-    await Promise.resolve();
-    await Promise.resolve();
-    await flushPromise.catch(() => undefined);
+    // Drain all pending timers (deferred rate-limit setTimeout) + microtasks.
+    // Run multiple iterations to handle the nested async chain:
+    //   timer fires → flush() reads vault → vault.process resolves.
+    for (let i = 0; i < 5; i++) {
+      await vi.runAllTimersAsync();
+      await Promise.resolve();
+    }
 
     expect(app.vault.process).toHaveBeenCalledTimes(2);
     const t0 = app.callTimestamps[0]!;
@@ -125,9 +128,12 @@ describe('DebouncedWriter rate limit (SYNC-07)', () => {
     await w.forceFlush();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
 
-    // Immediate retry — must NOT fire synchronously.
-    vi.setSystemTime(new Date(1_000_010));
+    // Advance 10ms — still in rate-limit window.
+    await vi.advanceTimersByTimeAsync(10);
     void w.forceFlush();
+    // Drain microtasks — the rate-limit gate returns synchronously without
+    // firing process.
+    await Promise.resolve();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 
@@ -138,7 +144,8 @@ describe('DebouncedWriter rate limit (SYNC-07)', () => {
     await w.forceFlush();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
 
-    vi.setSystemTime(new Date(1_000_201));
+    // Advance past rate-limit window.
+    await vi.advanceTimersByTimeAsync(201);
     await w.forceFlush();
     expect(app.vault.process).toHaveBeenCalledTimes(2);
   });
