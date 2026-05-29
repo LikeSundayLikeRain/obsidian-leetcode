@@ -93,7 +93,13 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 - **Empirical research flag (LOW):** Live Preview raw-source-reveal mitigation via `mousedown.stopPropagation()` is empirically untested; state-persistence map is the fallback regardless. `getSectionInfo` null-paths must be exercised on day one.
 - Pitfalls covered: P1, P3, P4, P6, P12, P14, P15, P17, P18, P22, P23.
 
-**Plans:** TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 19-01-PLAN.md — Minimal mount: two-path widget, atomicRanges, lc-slug gate, theme/semantic carry-over, conditional vim, Experimental settings, mutual-exclusion assert, property-test corpus seed (no live writes)
+- [ ] 19-02-PLAN.md — Debounced one-way sync + suppression: vault.process write path, per-path content-hash suppression (2s TTL), per-file rate-limit (1/200ms), six flush-on-transition hooks, post-flush hash diagnostic; empirical probe of vault.on('modify') ordering
+- [ ] 19-03-PLAN.md — State persistence + P3 mitigation: state map keyed by `${file.path}::${fenceIndex}` with 30s TTL, cursor/scroll/undo capture-and-hydrate, CM6 history JSON round-trip
+- [ ] 19-04-PLAN.md — Embed + stray fence + property-test hardening: dual-signal embed detection, read-only routing for embeds, stray-fence safe fallback, language-fallback Notice, expanded SYNC-06 corpus, WidgetType.eq() content-hash identity
 
 ---
 
