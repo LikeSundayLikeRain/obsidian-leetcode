@@ -2220,8 +2220,10 @@ export default class LeetCodePlugin extends Plugin {
     }
     const problemMd = htmlToMarkdown(problemHtml);
     const language = (fm?.['lc-language'] as string) ?? this.settings.getDefaultLanguage() ?? 'python3';
+    const starterCode = cached?.codeSnippets?.find(s => s.langSlug === language)?.code ?? '';
+    const starterSection = starterCode ? `\n\n## Starter Code\n\n\`\`\`${language}\n${starterCode}\n\`\`\`\n\nYour solution MUST use the exact same class/method signature as the starter code above.` : '';
 
-    const prompt = `You are a LeetCode expert. Given the problem below, provide:\n\n1. **Approach** — Explain the optimal algorithm and data structures to use. Include time and space complexity.\n2. **Solution** — Write a clean, well-commented solution in ${language}.\n\n## Problem\n\n${problemMd}\n\nRespond with the approach explanation first, then the complete solution code in a fenced code block.`;
+    const prompt = `You are a LeetCode expert. Given the problem below, provide:\n\n1. **Approach** — Explain the optimal algorithm and data structures to use. Include time and space complexity.\n2. **Solution** — Write a clean, well-commented solution in ${language}.${starterSection}\n\n## Problem\n\n${problemMd}\n\nRespond with the approach explanation first, then the complete solution code in a fenced code block.`;
 
     const provider = this.settings.getActiveAIProvider();
     if (provider === null) {

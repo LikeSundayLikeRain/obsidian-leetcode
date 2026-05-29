@@ -111,8 +111,9 @@ export function createChildSyncExtension(
       const bodyEnd = parentView.state.doc.line(fenceRetry.closerLine).from;
       if (bodyStart > bodyEnd) return;
       try {
+        const body = update.view.state.doc.toString();
         parentView.dispatch({
-          changes: { from: bodyStart, to: bodyEnd, insert: update.view.state.doc.toString() },
+          changes: { from: bodyStart, to: bodyEnd, insert: body.endsWith('\n') ? body : body + '\n' },
           annotations: [
             Transaction.userEvent.of('leetcode.child-sync'),
             Transaction.addToHistory.of(false),
@@ -134,8 +135,9 @@ export function createChildSyncExtension(
 
     if (parentBody !== childPrevNorm && parentBody !== childPrevDoc) {
       try {
+        const body = update.state.doc.toString();
         parentView.dispatch({
-          changes: { from: bodyStart, to: bodyEnd, insert: update.state.doc.toString() },
+          changes: { from: bodyStart, to: bodyEnd, insert: body.endsWith('\n') ? body : body + '\n' },
           annotations: [
             Transaction.userEvent.of('leetcode.child-sync'),
             Transaction.addToHistory.of(false),
