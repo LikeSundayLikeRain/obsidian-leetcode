@@ -180,7 +180,7 @@
 | PROTECT-01 | Phase 20 | Pending |
 | PROTECT-02 | Phase 20 | Pending |
 | PROTECT-03 | Phase 22 | Pending |
-| VIM-01 | Phase 20 | Pending |
+| VIM-01 | Phase 19 | Pending |
 | VIM-02 | Phase 20 | Pending |
 | VIM-03 | Phase 22 | Pending |
 | VIM-04 | Phase 19 | Pending |
@@ -214,8 +214,8 @@
 - Mapped to phases: 56
 - Unmapped: 0 ✓
 
-*Note: Phase numbers above are provisional placeholders. Final phase boundaries are set by the gsd-roadmapper agent in the next workflow step.*
+**Phase boundaries finalized by gsd-roadmapper on 2026-05-29.** Provisional placeholder mappings from initial requirements definition were retained without modification — phase boundary judgment confirmed all 56 mappings.
 
 ---
 *Requirements defined: 2026-05-29*
-*Last updated: 2026-05-29 after initial definition*
+*Last updated: 2026-05-29 — phase boundaries finalized by gsd-roadmapper*
