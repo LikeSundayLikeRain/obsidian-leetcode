@@ -145,6 +145,11 @@ import { SelfWriteSuppression } from './widget/selfWriteSuppression';
 import { sha1 } from './widget/debouncedWriter';
 import { extractFenceBody } from './widget/fenceSerialization';
 import type { WidgetController } from './widget/WidgetController';
+// Phase 20 Plan 20-03 (SYNC-04 / SYNC-05) — conflict modal opens when an
+// external edit lands during local in-flight typing. The plugin holds a
+// single `activeConflictModal` reference; the modal's constructor callback
+// resets it inside onClose() (BLOCKER fix; D-conflict-04 in-place update).
+import { ConflictModal } from './widget/ConflictModal';
 // Phase 19 Plan 03 — state persistence map (CONTEXT C-09 + D-01 + RESEARCH
 // Pattern 4). Captures cursor + scroll + history JSON on unmount; hydrates on
 // remount within 30s TTL. Belt-and-suspenders companion to Plan 19-01's
@@ -294,6 +299,16 @@ export default class LeetCodePlugin extends Plugin {
   // belt-and-suspenders companion to the Plan 19-01 mousedown.stopPropagation
   // listener.
   statePersistence?: StatePersistenceMap;
+
+  // Phase 20 Plan 20-03 (SYNC-05 + D-conflict-04) — single global reference
+  // to the currently-open ConflictModal, if any. Set when the vault.on('modify')
+  // handler decides to open the modal (in-flight typing path); reset to null
+  // by the modal's constructor callback fired inside `onClose()` (BLOCKER fix
+  // — guaranteed-fired exactly once across every close trigger). The
+  // D-conflict-04 second-modify path checks `activeConflictModal?.isOpen` to
+  // decide between updating the External pane in place vs. constructing a
+  // fresh modal. NEVER stack two modals.
+  activeConflictModal: ConflictModal | null = null;
 
   /**
    * Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12) — per-child
@@ -1018,72 +1033,117 @@ export default class LeetCodePlugin extends Plugin {
       // Hook 6: Plugin.onunload — extends below in onunload() with flushAll
       // followed by destroyAll + selfWriteSuppression.clear.
 
-      // Plan 19-02 — vault.on('modify') self-write echo consumer (RESEARCH
-      // Specific Findings §4 gated body — useInlineWidget can be flipped
-      // mid-session; gate at fire time, not registration time).
+      // Plan 19-02 + Phase 20 Plan 20-03 — vault.on('modify') decision tree
+      // (SYNC-04 / SYNC-05). RESEARCH Specific Findings §4 gated body —
+      // useInlineWidget can be flipped mid-session; gate at fire time, not
+      // registration time.
       //
-      // Phase 20 Plan 20-02 (Pitfall P2 absorption + Plan 20-03 setup):
-      // BEFORE the selfWriteSuppression.tryConsume call, check whether the
-      // observed fence-body hash matches the widget's `currentDocHash`. If
-      // it does, the modify event is a frontmatter-only echo (e.g., from
-      // chevron switch's processFrontMatter) — return early without
-      // invoking suppression so the widget never reloads on these writes.
-      // Plan 20-03 RELOCATES this check into step (b) of the full handler
-      // structure; this plan ships it as a pre-suppression early-return
-      // that Plan 20-03 will refactor.
+      // Decision tree (Plan 20-03 — RELOCATES the Plan 20-02 Pitfall P2
+      // early-return into step (b) of the full structure; selfWrite consume
+      // moves to step (c); branches on hasPending() in step (d)):
+      //   (a) gating: useInlineWidget on; file is TFile; matching widget
+      //       found in registry. If no match → no-op.
+      //   (b) Pitfall P2 early-return — fence body unchanged: if
+      //       observedFenceHash === widget.currentDocHash, the modify event
+      //       is a frontmatter-only echo (canonical case: chevron-switch's
+      //       processFrontMatter via switchLanguageFromWidget). Return
+      //       without invoking suppression. RELOCATED from Plan 20-02 (was
+      //       a pre-suppression check; same logic — different anchor in
+      //       the tree).
+      //   (c) selfWriteSuppression.tryConsume(path, observedFenceHash):
+      //       'consumed' → self-write echo, drop silently.
+      //       'stale' | 'miss' → fall through to (d).
+      //   (d) hasPending() branch:
+      //       false → widget.reloadFromDisk('silent') (line/col cursor clamp
+      //               per D-conflict-03; addToHistory.of(false) annotation).
+      //       true  → if activeConflictModal?.isOpen, fire
+      //               updateExternalContent(observedBody) (D-conflict-04 —
+      //               in-place update, NEVER stack a second modal).
+      //               Otherwise construct a new ConflictModal with the
+      //               constructor-callback approach (WARNING #6 fix —
+      //               cleanup via callback fired inside onClose).
       this.registerEvent(
         this.app.vault.on('modify', async (file) => {
           if (!this.settings.getUseInlineWidget()) return;
           if (!(file instanceof TFile)) return;
           if (!this.selfWriteSuppression) return;
           try {
-            const disk = await this.app.vault.read(file);
-            // Plan 19-02 default: consume by file path with the fence body
-            // of fenceIndex 0 (single-fence common case). Multi-fence
-            // tracking lands in Plan 19-04+ / v1.4 deferred.
-            const body = extractFenceBody(disk, 0) ?? '';
-            const observedHash = await sha1(body);
-
-            // Phase 20 Plan 20-02 (Pitfall P2) — fence-body-unchanged
-            // early-return. If a widget for this file exists AND its
-            // currentDocHash matches what we just observed on disk, the
-            // file changed but the FENCE BODY did not (frontmatter-only
-            // write — the canonical case is the chevron-switch's
-            // processFrontMatter call from `switchLanguageFromWidget`).
-            // No reload needed; consult per-widget hash by walking the
-            // registry. We compare against EVERY widget on this file so
-            // multi-fence cases are handled when Plan 19-04+ tracking
-            // lands. If the widget has not yet captured a doc hash
-            // (currentDocHash empty at very first mount / before any
-            // edit), we do NOT short-circuit — fall through to suppression.
+            // (a) gate — find any widget matching this file's path. We walk
+            // the registry rather than a getByFilePath accessor (single-
+            // fence common case is fenceIndex 0; multi-fence tracking is
+            // Plan 19-04+/v1.4 deferred). For multi-pane same-file
+            // (CONTEXT L10 single-active baseline + Plan 20-04 "Take over"
+            // CTA), only ONE widget actively types — others get silent
+            // reload. We pick the FIRST matching widget here; multi-pane
+            // fan-out is owned by Plan 20-04.
+            let matchingWidget: WidgetController | null = null;
             if (this.widgetRegistry) {
               for (const ctl of this.widgetRegistry.values()) {
-                const widgetCtl = ctl as unknown as { file: { path: string }; currentDocHash?: string };
-                if (
-                  widgetCtl.file.path === file.path &&
-                  typeof widgetCtl.currentDocHash === 'string' &&
-                  widgetCtl.currentDocHash.length > 0 &&
-                  widgetCtl.currentDocHash === observedHash
-                ) {
-                  // Frontmatter-only write — fence body unchanged.
-                  // No reload, no suppression consumption.
-                  return;
+                const candidate = ctl as unknown as WidgetController & { file: { path: string } };
+                if (candidate.file.path === file.path) {
+                  matchingWidget = candidate;
+                  break;
                 }
               }
             }
+            if (!matchingWidget) return;
 
-            const result = this.selfWriteSuppression.tryConsume(file.path, observedHash);
-            if (result === 'consumed') return; // self-write echo — drop
-            if (result === 'stale' || result === 'miss') {
-              // External edit (or stale entry — defensive): Plan 20-03 owns
-              // the cursor-preserving reload (SYNC-04, SYNC-05) and the
-              // conflict-modal-or-silent-reload decision tree; Plan 19-02
-              // logs for observability and Plan 20-02 ships only the
-              // currentDocHash early-return above.
-              logger.debug(
-                `[LC widget] external modify observed for ${file.path} — Plan 20-03 reload TBD`,
-              );
+            const disk = await this.app.vault.read(file);
+            const observedBody = extractFenceBody(disk, matchingWidget.fenceIndex) ?? '';
+            const observedHash = await sha1(observedBody);
+
+            // (b) Pitfall P2 early-return — fence body unchanged. If the
+            // widget's currentDocHash matches what we just observed on
+            // disk, the file changed but the FENCE BODY did not
+            // (frontmatter-only write — chevron-switch path). Return
+            // without invoking suppression. The currentDocHash is empty
+            // briefly at very-first-mount before any edit; we DO NOT
+            // short-circuit in that case (falls through to suppression —
+            // safe default).
+            if (
+              typeof matchingWidget.currentDocHash === 'string' &&
+              matchingWidget.currentDocHash.length > 0 &&
+              matchingWidget.currentDocHash === observedHash
+            ) {
+              return;
             }
+
+            // (c) Suppression consume.
+            const result = this.selfWriteSuppression.tryConsume(file.path, observedHash);
+            if (result === 'consumed') return;
+
+            // (d) Stale or miss → branch on hasPending().
+            const hasPending = matchingWidget.writer?.hasPending() === true;
+            if (!hasPending) {
+              // Idle widget — silent reload with line/col cursor clamp.
+              await matchingWidget.reloadFromDisk('silent');
+              return;
+            }
+
+            // In-flight typing — open OR update the conflict modal.
+            // D-conflict-04: a second modify while modal open updates
+            // the External pane in place; NEVER stack a second modal.
+            if (this.activeConflictModal && this.activeConflictModal.isOpen) {
+              this.activeConflictModal.updateExternalContent(observedBody);
+              return;
+            }
+
+            // Construct a fresh modal with the constructor-callback
+            // approach (WARNING #6 — cleanup is a callback fired inside
+            // onClose; the locked single shape so Modal Test 8 has one
+            // behavior to assert). The callback resets activeConflictModal
+            // exactly once across every close trigger.
+            const modal = new ConflictModal(
+              this.app,
+              matchingWidget,
+              matchingWidget.view.state.doc.toString(),
+              observedBody,
+              () => {
+                this.activeConflictModal = null;
+              },
+            );
+            this.activeConflictModal = modal;
+            modal.open();
           } catch {
             /* swallow — modify is best-effort observability */
           }

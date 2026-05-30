@@ -2013,3 +2013,75 @@ button.leetcode-language-chevron:hover {
   color: var(--text-muted);
   border-top: 1px solid var(--background-modifier-border);
 }
+
+/* Phase 20 Plan 20-03 — ConflictModal 3-pane diff layout (D-conflict-02) +
+ * UI-SPEC §Color diff color contract.
+ *
+ * No raw hex values — Obsidian CSS variables only (the platform-mandated
+ * palette for community plugins). The diff colors blend the column
+ * background (`--background-secondary`) with the verdict color tokens
+ * (`--color-green` / `--color-red` / `--color-yellow`) via `color-mix` so
+ * the highlight is visible against any theme.
+ *
+ * The reduced-motion-gated `--updated` flash signals D-conflict-04 second
+ * external edits (UI-SPEC §"Visual Layout Contracts §2"). Default theme
+ * users see a 200ms outline flash; users with `prefers-reduced-motion`
+ * see the External pane update silently.
+ *
+ * Mobile / narrow-pane fallback: at <600px the 3-column grid collapses to
+ * a single column so each pane gets full width with its own scroll.
+ */
+.lc-conflict-diff {
+  margin-top: 16px;
+}
+.lc-conflict-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+.lc-conflict-mine,
+.lc-conflict-external,
+.lc-conflict-merged {
+  background: var(--background-secondary);
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-normal);
+  border-radius: 4px;
+}
+.lc-diff-same {
+  color: var(--text-normal);
+}
+.lc-diff-mine-only {
+  color: var(--color-green);
+  background: color-mix(
+    in srgb,
+    var(--background-secondary) 85%,
+    var(--color-green) 15%
+  );
+}
+.lc-diff-external-only {
+  color: var(--color-red);
+  background: color-mix(
+    in srgb,
+    var(--background-secondary) 85%,
+    var(--color-red) 15%
+  );
+}
+.lc-diff-changed {
+  color: var(--color-yellow);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lc-conflict-external--updated {
+    outline: 1px solid var(--text-muted);
+    transition: outline-color 200ms ease;
+  }
+}
+@media (max-width: 600px) {
+  .lc-conflict-cols {
+    grid-template-columns: 1fr;
+  }
+}

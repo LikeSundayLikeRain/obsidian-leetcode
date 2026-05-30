@@ -32,7 +32,13 @@ import {
   type ViewUpdate,
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
+import {
+  Compartment,
+  EditorSelection,
+  EditorState,
+  Transaction,
+  type Extension,
+} from '@codemirror/state';
 import { bracketMatching, indentUnit } from '@codemirror/language';
 import {
   history,
@@ -57,6 +63,7 @@ import { createThemedHighlight } from '../main/childEditorTheme';
 import { obsidianSemanticClasses } from '../main/childEditorSemanticClasses';
 import { computeFenceIndex } from './fenceLocator';
 import { DebouncedWriter, sha1 } from './debouncedWriter';
+import { extractFenceBody } from './fenceSerialization';
 import type { SelfWriteSuppression } from './selfWriteSuppression';
 import type { StatePersistenceMap } from './statePersistence';
 import { readVimModeFromVault } from './vimMode';
@@ -264,6 +271,123 @@ export class WidgetController {
   /** Read the current widget document content (used by debouncedWriter). */
   getDoc(): string {
     return this.view.state.doc.toString();
+  }
+
+  /**
+   * Phase 20 Plan 20-03 (SYNC-04 / D-conflict-03) — replace the widget doc
+   * with the current disk content via a single CM6 transaction that
+   * preserves cursor + scroll. Two reasons (informational only — both paths
+   * use the same line/col clamp mechanic):
+   *
+   *   - 'silent'        — vault.on('modify') fired with no in-flight typing;
+   *                       reload silently. The user sees their cursor land
+   *                       on the same logical line:col (clamped to new doc
+   *                       bounds if line/col shrunk).
+   *   - 'keep-external' — user picked "Keep external" in the ConflictModal;
+   *                       reload + close modal. SAME line/col clamp.
+   *
+   * Cursor preservation algorithm (CONTEXT D-conflict-03):
+   *   1. Capture (line, col) from `view.state.selection.main.head` BEFORE
+   *      the dispatch.
+   *   2. Read fresh disk via `app.vault.read(file)`; extract the fence body
+   *      for this widget's `fenceIndex` via `extractFenceBody`.
+   *   3. If newBody === current widget doc → no-op (guards against
+   *      unnecessary history pollution and selection jitter).
+   *   4. Compute targetLine = min(originalLine, newLineCount); walk to its
+   *      `from` index; clamp col to that line's length; compute restoredHead.
+   *   5. Dispatch a SINGLE transaction with full-doc replacement +
+   *      EditorSelection.cursor(restoredHead) + Transaction.addToHistory.of
+   *      (false) annotation (so reload doesn't pollute the undo stack).
+   *   6. Restore `view.scrollDOM.scrollTop`.
+   *
+   * L8 LIMITATION (post-resolution undo continuity, documented per CONTEXT):
+   *   The 'keep-external' path replaces the doc but the widget's history
+   *   StateField (and the captured Phase 19 historyJSON) reference doc
+   *   states that no longer exist after the dispatch. Pressing Cmd-Z after
+   *   a "Keep external" resolution does nothing useful — accepted tradeoff.
+   *   Phase 19's historyJSON capture is reserved for richer undo strategies
+   *   in v1.4+; Plan 20-03 ships best-effort with the addToHistory.of(false)
+   *   annotation as the documented MVP.
+   *
+   * The `reason` parameter is currently informational only; both reasons
+   * follow the same line/col clamp body. Future variants (e.g., "force-
+   * preserve-cursor-near-edit") may diverge — the parameter shape exists so
+   * call sites declare intent at the type level.
+   */
+  async reloadFromDisk(reason: 'silent' | 'keep-external'): Promise<void> {
+    void reason; // informational only — see JSDoc above
+
+    // (1) Capture cursor + scroll BEFORE any await; line/col is more stable
+    // than absolute offset across content edits.
+    const head = this.view.state.selection.main.head;
+    const line = this.view.state.doc.lineAt(head);
+    const col = head - line.from;
+    const lineNumber = line.number;
+    const scrollTop = this.view.scrollDOM?.scrollTop ?? 0;
+
+    // (2) Read fresh disk; extract fence body for this widget's index.
+    // The plugin-host shape declares `read` as optional; production
+    // LeetCodePlugin satisfies the contract, but we defensively guard to
+    // keep test fixtures (which may omit read) from crashing.
+    const readFn = this.plugin.app.vault.read;
+    if (typeof readFn !== 'function') return;
+    let newDisk: string;
+    try {
+      newDisk = await readFn.call(this.plugin.app.vault, this.file as never);
+    } catch {
+      // I/O failure (file deleted, etc.) — abort silently.
+      return;
+    }
+    const newBody = extractFenceBody(newDisk, this.fenceIndex) ?? '';
+
+    // (3) No-op when the disk fence body matches the widget doc — happens
+    // when an external write touched OTHER fences in the same file but
+    // not this widget's, or when the modify event is racing a self-write.
+    if (newBody === this.view.state.doc.toString()) return;
+
+    // (4) Compute the clamped restoredHead via line/col clamp.
+    const newDocLength = newBody.length;
+    const newLineCount = newBody === '' ? 1 : (newBody.match(/\n/g)?.length ?? 0) + 1;
+    const targetLine = Math.min(lineNumber, newLineCount);
+    let targetLineFrom = 0;
+    for (let i = 1; i < targetLine; i++) {
+      const idx = newBody.indexOf('\n', targetLineFrom);
+      if (idx < 0) break;
+      targetLineFrom = idx + 1;
+    }
+    const targetLineEndIdx = newBody.indexOf('\n', targetLineFrom);
+    const targetLineLength =
+      (targetLineEndIdx < 0 ? newBody.length : targetLineEndIdx) - targetLineFrom;
+    const targetCol = Math.min(col, targetLineLength);
+    const restoredHead = Math.min(targetLineFrom + targetCol, newDocLength);
+
+    // (5) Single transaction: full-doc replacement + restored cursor +
+    // addToHistory.of(false) so reload doesn't pollute the undo stack
+    // (T-20-03-03 mitigation surface — Cmd-Z after Keep external is a no-op).
+    try {
+      this.view.dispatch({
+        changes: { from: 0, to: this.view.state.doc.length, insert: newBody },
+        selection: EditorSelection.cursor(restoredHead),
+        annotations: [Transaction.addToHistory.of(false)],
+      });
+    } catch {
+      // Defensive — view may be in teardown.
+      return;
+    }
+
+    // (6) Restore scroll. jsdom doesn't compute layout but assignment to
+    // scrollTop is observable; production CM6 will preserve the view
+    // position on the next frame.
+    if (this.view.scrollDOM) {
+      this.view.scrollDOM.scrollTop = scrollTop;
+    }
+
+    // Phase 20 Plan 20-03 — refresh currentDocHash so the modify-handler
+    // early-return correctly absorbs the trailing modify event for THIS
+    // reload (production app.vault.read may fire its own modify echo).
+    void sha1(newBody).then((hash) => {
+      this.currentDocHash = hash;
+    });
   }
 
   /**
