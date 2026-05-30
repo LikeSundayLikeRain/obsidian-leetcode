@@ -30,41 +30,70 @@ export interface FenceLocation {
  * FENCE_RE / H2_CODE_RE / H2_ANY_RE; only addition is the post-find tag
  * inspection that fills in `kind`.
  */
-export function findCodeFence(state: EditorState): FenceLocation | null {
+export function findCodeFence(
+  state: EditorState,
+  opts: { preferLeetCodeSolve?: boolean } = {},
+): FenceLocation | null {
   // RESEARCH Pitfall 8: state.doc.line(1) throws on an empty doc.
   if (state.doc.lines === 0) return null;
 
   const FENCE_RE = /^\s*```/;
+  const LC_OPENER_RE = /^\s*```leetcode-solve\b/;
   const H2_CODE_RE = /^\s*##\s+Code\s*$/;
   const H2_ANY_RE = /^\s*##\s+.+$/;
 
   let inCodeSection = false;
   const total = state.doc.lines;
 
-  for (let i = 1; i <= total; i++) {
+  // Phase 20 Plan 20-09 — when `preferLeetCodeSolve` is true, the loop
+  // SKIPS legacy (non-leetcode-solve) opener fences in the same ## Code
+  // section and keeps scanning for a leetcode-solve fence. This handles
+  // notes where a stray ```text/```javascript fence (e.g., from
+  // recovery/repair tooling) sits before the leetcode-solve fence under
+  // ## Code. The default (false) preserves the original first-fence
+  // behavior for sectionProtectionExtension.
+  let i = 1;
+  while (i <= total) {
     const text = state.doc.line(i).text;
 
     if (H2_CODE_RE.test(text)) {
       inCodeSection = true;
+      i++;
       continue;
     }
     if (H2_ANY_RE.test(text)) {
       inCodeSection = false;
+      i++;
       continue;
     }
     if (inCodeSection && FENCE_RE.test(text)) {
       // Determine the fence kind from the opener tag. `^\s*```leetcode-solve\b`
       // tags this as a v1.3 widget fence; anything else is a v1.2 legacy fence.
-      const kind: 'leetcode-solve' | 'legacy' =
-        /^\s*```leetcode-solve\b/.test(text) ? 'leetcode-solve' : 'legacy';
-      // Found opener — walk forward for matching closer.
+      const kind: 'leetcode-solve' | 'legacy' = LC_OPENER_RE.test(text)
+        ? 'leetcode-solve'
+        : 'legacy';
+
+      // Walk forward for matching closer.
+      let closerLine = -1;
       for (let j = i + 1; j <= total; j++) {
         if (FENCE_RE.test(state.doc.line(j).text)) {
-          return { openerLine: i, closerLine: j, kind };
+          closerLine = j;
+          break;
         }
       }
-      return null; // unterminated fence
+      if (closerLine < 0) return null; // unterminated fence
+
+      // Phase 20 Plan 20-09 — skip legacy fences when caller asked for
+      // a leetcode-solve fence specifically. Continue scanning AFTER
+      // the closer line (so we don't re-match nested fence content).
+      if (opts.preferLeetCodeSolve && kind === 'legacy') {
+        i = closerLine + 1;
+        continue;
+      }
+
+      return { openerLine: i, closerLine, kind };
     }
+    i++;
   }
   return null;
 }

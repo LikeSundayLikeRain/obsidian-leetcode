@@ -140,6 +140,15 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
     // and Live Preview (when the block is preview-rendered). Detect Reading
     // mode via DOM ancestor — .markdown-reading-view is only present there.
     const isReadingMode = !!el.closest?.('.markdown-reading-view');
+
+    // Phase 20 Plan 20-09 — RenderChild path renders in BOTH reading
+    // mode and Live Preview (Obsidian fires registerMarkdownCodeBlock-
+    // Processor in both). Read-only when reading mode / embed / no
+    // lc-slug. Editable in Live Preview WITH lc-slug — and the
+    // child→parent sync extension installs only when we can resolve
+    // the parent EditorView from the host element (the .cm-editor
+    // ancestor). LeetCodeWidgetRenderChild.onload is responsible for
+    // resolving it.
     const readOnly = isReadingMode || isEmbed || !hasLcSlug;
     const child = new LeetCodeWidgetRenderChild(
       el,

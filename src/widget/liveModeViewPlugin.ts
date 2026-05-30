@@ -69,7 +69,11 @@ function buildLeetCodeFenceRanges(
     return builder.finish();
   }
 
-  const fence = findCodeFence(view.state);
+  // Phase 20 Plan 20-09 — preferLeetCodeSolve skips stray legacy fences
+  // (e.g., ```text/```javascript blocks added by recovery/repair tooling)
+  // and finds the actual leetcode-solve fence even when it isn't the
+  // first fence under ## Code.
+  const fence = findCodeFence(view.state, { preferLeetCodeSolve: true });
   if (!fence || fence.kind !== 'leetcode-solve') {
     return builder.finish();
   }
@@ -93,17 +97,14 @@ function buildLeetCodeFenceRanges(
     to,
     Decoration.replace({
       widget: new LeetCodeFenceWidget(plugin, file, fenceIndex, sourceHash, source),
-      // Phase 20 Plan 20-07 originally added `block: true` for vertical-
-      // motion containment, but it caused parent-CM6 layout to blur the
-      // widget's contentDOM on every docChange (UAT focus-loss bug).
-      // Removed: snap-target widening in sectionProtectionExtension.ts
-      // (Plan 20-07 Task 1) is sufficient to keep the cursor outside the
-      // widget range; vertical motion is handled by atomicRanges + the
-      // widened snap target.
+      // Phase 20 Plan 20-09 — `block: true` removed because RenderChild
+      // (registerMarkdownCodeBlockProcessor) renders the visible widget
+      // in Live Preview; the ViewPlugin's Decoration.replace conflicted
+      // with RenderChild's render and caused an empty gap.
       //
-      // The replace decoration takes over the entire fence range; the
-      // parent's cursor-skip behavior is enforced by the atomicRanges
-      // Facet (below).
+      // The ViewPlugin still contributes the SAME RangeSet to
+      // EditorView.atomicRanges so the parent cursor cannot enter the
+      // fence range — that's WIDGET-02 / C-05's load-bearing invariant.
     }),
   );
 
@@ -120,7 +121,16 @@ class LeetCodeLiveViewPlugin {
   ranges: DecorationSet;
 
   constructor(view: EditorView, private readonly plugin: PluginHost) {
+    // eslint-disable-next-line no-console
+    console.debug('[lc-uat] viewplugin.construct', {
+      docLength: view.state.doc.length,
+    });
     const set = buildLeetCodeFenceRanges(view, plugin);
+    // eslint-disable-next-line no-console
+    console.debug('[lc-uat] viewplugin.constructed', {
+      hasRanges: set !== Decoration.none,
+      rangeSize: set.size,
+    });
     this.decorations = set;
     this.ranges = set;
   }
@@ -150,6 +160,11 @@ class LeetCodeLiveViewPlugin {
     const isChildSync = update.transactions.some(
       (tr) => tr.annotation(Transaction.userEvent) === 'leetcode.child-sync',
     );
+    // eslint-disable-next-line no-console
+    console.debug('[lc-uat] parent->child decide', {
+      isChildSync,
+      userEvents: update.transactions.map((tr) => tr.annotation(Transaction.userEvent)),
+    });
     if (isChildSync) return;
     pushParentToChild(update.view, this.plugin);
   }
@@ -167,7 +182,7 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
     | null
     | undefined;
   if (!file) return;
-  const fence = findCodeFence(view.state);
+  const fence = findCodeFence(view.state, { preferLeetCodeSolve: true });
   if (!fence || fence.kind !== 'leetcode-solve') return;
   const newBody = extractFenceBody(view.state, fence);
 

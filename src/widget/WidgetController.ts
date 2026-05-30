@@ -852,11 +852,21 @@ function buildExtensions(
   //     mounts and for mounts that don't have a parent EditorView
   //     reference (test fixtures pass undefined).
   if (!readOnly && parentView) {
+    // eslint-disable-next-line no-console
+    console.debug('[lc-uat] sync.wiring.installed', {
+      parentDocLength: parentView.state.doc.length,
+    });
     exts.push(
       createChildParentSyncExtension(parentView, () =>
-        findCodeFence(parentView.state),
+        findCodeFence(parentView.state, { preferLeetCodeSolve: true }),
       ),
     );
+  } else {
+    // eslint-disable-next-line no-console
+    console.debug('[lc-uat] sync.wiring.skipped', {
+      readOnly,
+      hasParentView: !!parentView,
+    });
   }
   return exts;
 }
@@ -901,6 +911,14 @@ export function mountLeetCodeWidget(
   host.appendChild(container);
 
   const slug = resolveLanguageSlug(plugin, file);
+
+  // eslint-disable-next-line no-console
+  console.debug('[lc-uat] mountLeetCodeWidget.start', {
+    file: file.path,
+    readOnly,
+    fenceIndex,
+    hasParentView: !!parentView,
+  });
 
   // Phase 20 Plan 20-05 — resolve a stable per-pane leafId AND compose the
   // per-pane registry key BEFORE constructing the controller. Two panes
@@ -1174,6 +1192,33 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
   }
 
   onload(): void {
+    // Phase 20 Plan 20-09 — resolve parent EditorView for editable mounts
+    // in Live Preview so the child→parent sync extension can install.
+    // Reading-mode + embed mounts are read-only and don't need parentView.
+    let parentView: EditorView | undefined;
+    if (!this.readOnly) {
+      try {
+        const app = (
+          this.plugin as unknown as {
+            app?: {
+              workspace?: {
+                getActiveViewOfType?(type: unknown): { editor?: { cm?: EditorView } } | null;
+              };
+            };
+          }
+        ).app;
+        // Use Obsidian's MarkdownView via require-time import (already
+        // imported at module top).
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { MarkdownView } = require('obsidian') as { MarkdownView: unknown };
+        const av = app?.workspace?.getActiveViewOfType?.(MarkdownView);
+        const cm = av?.editor?.cm;
+        if (cm) parentView = cm;
+      } catch {
+        // Defensive — Obsidian's runtime API may differ across versions.
+      }
+    }
+
     this.controller = mountLeetCodeWidget(
       this.containerEl,
       this.source,
@@ -1181,6 +1226,7 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
       this.plugin,
       this.readOnly,
       this.fenceIndex,
+      parentView,
     );
     // Phase 20 Plan 20-05 (Blocker #5 mitigation) — pair registry insertion
     // (which happens INSIDE mountLeetCodeWidget) with the field assignment

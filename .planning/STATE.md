@@ -1,16 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.3
-milestone_name: Inline Widget Architecture
+milestone_name: architecture overview, migration docs, sync interaction notes, and Cmd-Z/Cmd-F scoping behavior.
 status: executing
-last_updated: "2026-05-30T04:18:37.773Z"
+stopped_at: context exhaustion at 75% (2026-05-30)
+last_updated: "2026-05-30T23:49:21.732Z"
 last_activity: 2026-05-30 -- Phase 20 execution started
 progress:
-  total_phases: 1
+  total_phases: 6
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
-  percent: 100
+  total_plans: 14
+  completed_plans: 14
+  percent: 17
 ---
 
 # Project State
@@ -117,7 +118,7 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-05-29T19:50:00.000Z
-Stopped at: Phase 20 context gathered
-Resume file: .planning/phases/20-reconciliation-ux-action-row-section-protection/20-CONTEXT.md
+Last session: 2026-05-30T23:49:21.716Z
+Stopped at: context exhaustion at 75% (2026-05-30)
+Resume file: None
 Next action: `/gsd-plan-phase 20`

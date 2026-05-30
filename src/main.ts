@@ -1311,16 +1311,27 @@ export default class LeetCodePlugin extends Plugin {
     // via `isValidSlug` before calling `retrofit(...)`. retrofit is idempotent
     // (RESEARCH Pitfall 5) and silent-on-failure (D-09), so double-fire with
     // the existing row-click retrofit in NoteWriter is safe.
-    this.registerEvent(
-      this.app.workspace.on(
-        'file-open',
-        makeFileOpenHandler({
-          app: this.app,
-          settings: this.settings,
-          retrofit: retrofitStarterCode,
-        }),
-      ),
-    );
+    //
+    // Phase 20 Plan 20-09 — DISABLED when useInlineWidget=true. The
+    // pre-v1.3 retrofit path uses injectCodeSection which doesn't know
+    // about `leetcode-solve` fences (it scans for recognized-langSlug
+    // fences only); on a v1.3 LC note that already has a leetcode-solve
+    // fence, retrofit sees no recognized fence and injects a duplicate
+    // ```javascript fence — corrupting the note structure on every
+    // file-open.  The v1.3 NoteWriter path creates leetcode-solve fences
+    // directly so the retrofit is unnecessary in v1.3 mode.
+    if (!useInlineWidget) {
+      this.registerEvent(
+        this.app.workspace.on(
+          'file-open',
+          makeFileOpenHandler({
+            app: this.app,
+            settings: this.settings,
+            retrofit: retrofitStarterCode,
+          }),
+        ),
+      );
+    }
 
     // Step 6g.5 — Phase 17 Plan 04 (D-13/D-14, Wave 2) — external `lc-language`
     // frontmatter reactivity. When a user (or another plugin) writes a
@@ -2903,7 +2914,7 @@ export default class LeetCodePlugin extends Plugin {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view || view.file !== file) return;
     const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
-    const fence = findLcCodeFence(cm.state);
+    const fence = findLcCodeFence(cm.state, { preferLeetCodeSolve: true });
     if (!fence || fence.kind !== 'leetcode-solve') return;
 
     // Step (e) — parent CM6 dispatch on the fence body range. Body span:

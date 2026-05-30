@@ -73,6 +73,13 @@ export function createChildParentSyncExtension(
   getFence: () => FenceLocation | null,
 ): Extension {
   return EditorView.updateListener.of((update) => {
+    // UAT diagnostic — observe every child docChange reaching the
+    // sync extension. Remove after auto-save lands.
+    // eslint-disable-next-line no-console
+    console.debug('[lc-uat] child.update', {
+      docChanged: update.docChanged,
+      transactionCount: update.transactions.length,
+    });
     // Only fire on document changes.
     if (!update.docChanged) return;
 
@@ -152,12 +159,23 @@ export function createChildParentSyncExtension(
     // editor's own history Compartment still services in-widget Cmd-Z
     // for the user (separate undo stack inside the child).
     try {
+      // eslint-disable-next-line no-console
+      console.debug('[lc-uat] child.dispatch->parent', {
+        changes: parentChanges.length,
+        bodyStart,
+        bodyEnd,
+      });
       parentView.dispatch({
         changes: parentChanges,
         annotations: [Transaction.userEvent.of('leetcode.child-sync')],
       });
-    } catch {
-      // Defensive — parent view may be in teardown mid-update.
+      // eslint-disable-next-line no-console
+      console.debug('[lc-uat] child.dispatch.success', {
+        parentLength: parentView.state.doc.length,
+      });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.debug('[lc-uat] child.dispatch.error', e);
     }
   });
 }
