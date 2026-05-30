@@ -305,6 +305,18 @@ export default class LeetCodePlugin extends Plugin {
   // listener.
   statePersistence?: StatePersistenceMap;
 
+  // Phase 20 Plan 20-05 — gap-closure for widget-thrash-on-type. Hook 1
+  // flushAll fires only on cross-file leaf transitions; same-leaf focus
+  // reaffirmations (mousedown inside widget → contentDOM.focus →
+  // active-leaf-change refire) are no-ops because each flush produces a
+  // vault.process echo on the parent CM6 that rebuilds the ViewPlugin's
+  // DecorationSet (sourceHash changes) and remounts the widget — destroying
+  // focus/cursor/vim state on every keystroke. See
+  // .planning/debug/widget-thrash-on-type.md for full trace.
+  // Initially undefined; first active-leaf-change populates it. Reset on
+  // plugin onunload.
+  private lastActiveLeafFilePath: string | null | undefined = undefined;
+
   // Phase 20 Plan 20-03 (SYNC-05 + D-conflict-04) — single global reference
   // to the currently-open ConflictModal, if any. Set when the vault.on('modify')
   // handler decides to open the modal (in-flight typing path); reset to null
@@ -959,8 +971,28 @@ export default class LeetCodePlugin extends Plugin {
       // Plan 19-02 — six flush-on-transition hooks (CONTEXT C-07).
 
       // Hook 1: leaf change (file/leaf switch). Flush all live widgets.
+      // Phase 20 Plan 20-05 — gate flushAll on actual file-path transition.
+      // Same-leaf focus reaffirmations (mousedown inside widget →
+      // contentDOM.focus → active-leaf-change refire) MUST NOT trigger
+      // flushAll, because each flush produces a vault.process echo on the
+      // parent CM6 that rebuilds the ViewPlugin's DecorationSet (sourceHash
+      // changes) and remounts the widget — destroying focus/cursor/vim
+      // state on every keystroke. See
+      // .planning/debug/widget-thrash-on-type.md for full trace.
       this.registerEvent(
         this.app.workspace.on('active-leaf-change', () => {
+          let currentPath: string | null = null;
+          try {
+            const av = this.app.workspace.getActiveViewOfType(MarkdownView);
+            currentPath = av?.file?.path ?? null;
+          } catch {
+            currentPath = null;
+          }
+          if (this.lastActiveLeafFilePath === currentPath) {
+            // Same file (including null === null transitions) — no flush needed.
+            return;
+          }
+          this.lastActiveLeafFilePath = currentPath;
           void this.widgetRegistry?.flushAll();
         }),
       );
@@ -1427,6 +1459,9 @@ export default class LeetCodePlugin extends Plugin {
     // we explicitly clear here so the in-memory map doesn't carry between
     // plugin reloads in the same Obsidian session.
     this.statePersistence?.clear();
+    // Phase 20 Plan 20-05 — reset the Hook 1 file-path tracker so a fresh
+    // onload populates from scratch.
+    this.lastActiveLeafFilePath = undefined;
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
