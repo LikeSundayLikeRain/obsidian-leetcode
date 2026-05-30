@@ -121,6 +121,9 @@ import { buildCodeActionsEditorExtension } from './main/codeActionsEditorExtensi
 // Phase 05.5 (POLISH) — section locking for lc-slug notes. Hard read-only
 // enforcement on plugin-owned regions via CM6 EditorState.changeFilter.
 import { buildSectionLockExtension } from './main/sectionLockExtension';
+// Phase 20 Plan 01 — narrowed v1.3 protection extension. Mutually exclusive
+// with sectionLockExtension via the useInlineWidget gate (D-protect-03).
+import { buildSectionProtectionExtension } from './main/sectionProtectionExtension';
 // Phase 13 — nested child EditorView for ## Code fence (Plans 01-03).
 import { ChildEditorRegistry } from './main/childEditorRegistry';
 import { buildNestedEditorExtension, nestedEditorRebuildEffect } from './main/nestedEditorExtension';
@@ -1018,15 +1021,32 @@ export default class LeetCodePlugin extends Plugin {
       );
     }
 
-    // Step 6f-bis — Phase 05.5 (POLISH) section locking for lc-slug notes.
-    // Hard read-only enforcement via CM6 EditorState.changeFilter; gated on
-    // lc-slug frontmatter (D-06) + Edit Mode (D-07). Locks `## Problem`
-    // entirely; `## Code` heading + fence opener + closing fence;
-    // `## Techniques` heading; `## Notes` heading. `## Code` body and
-    // `## Techniques`/`## Notes` bodies stay editable. Plugin-side dispatches
-    // with userEvent='leetcode.*' bypass the lock so chevron switch keeps
-    // working (RESEARCH Pitfall 5).
-    this.registerEditorExtension(buildSectionLockExtension(this));
+    // Step 6f-bis — Section protection / lock for lc-slug notes.
+    //
+    // Phase 20 D-protect-03: mutually-exclusive registration based on the
+    // useInlineWidget master toggle. Both extensions register the same CM6
+    // EditorState.changeFilter shape; only ONE is ever active on the parent
+    // CM6, so the `'leetcode.*'` userEvent bypass and atomicRanges contract
+    // never run twice.
+    //
+    //   useInlineWidget=ON  → buildSectionProtectionExtension (v1.3 narrow:
+    //                         ## Problem body + ## Code heading + blank-line
+    //                         pocket + ## Techniques heading; fence body +
+    //                         closer owned by the widget via atomicRanges).
+    //   useInlineWidget=OFF → buildSectionLockExtension (v1.2 unchanged:
+    //                         ## Code heading + opener + closer + body
+    //                         locked; v1.2 nested-editor or codeAction path
+    //                         operates on the locked range via the
+    //                         `'leetcode.*'` userEvent bypass).
+    //
+    // Both honor the `'leetcode.*'` userEvent bypass verbatim per L6 /
+    // D-protect-02. PROTECT-03 (Phase 22) deletes the bypass + the v1.2
+    // path together. `useInlineWidget` is read once at onload (line ~876).
+    if (useInlineWidget) {
+      this.registerEditorExtension(buildSectionProtectionExtension(this));
+    } else {
+      this.registerEditorExtension(buildSectionLockExtension(this));
+    }
 
     // Step 6g-pre — Phase 12 Plan 04 (D-12) — wikilink-to-preview interception.
     // When a user clicks a [[slug]] wikilink to a problem that has no local note,
