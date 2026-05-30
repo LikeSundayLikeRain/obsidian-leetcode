@@ -28,6 +28,16 @@ import { djb2 } from './hash';
 
 export class LeetCodeFenceWidget extends WidgetType {
   /**
+   * Phase 20 Plan 20-05 — registry key for the controller this widget mounted.
+   * Set in `toDOM` from the returned WidgetController's `registryKey` so
+   * `destroy(_dom)` can delete only its own entry without recomputing a
+   * (now lossy) `${file.path}::${fenceIndex}` content key. Null when toDOM
+   * has not run yet (impossible in practice — destroy never fires before
+   * toDOM).
+   */
+  private mountedCtlKey: string | null = null;
+
+  /**
    * Plan 19-04 constructor — explicit sourceHash argument. The Live Preview
    * ViewPlugin passes `djb2(source)` (synchronous, RESEARCH Pitfall 19-F).
    * Tests that exercise eq() identity in isolation supply hashes directly
@@ -85,10 +95,15 @@ export class LeetCodeFenceWidget extends WidgetType {
    * Mount the embedded EditorView via the shared factory. The `_view`
    * argument is the parent CM6 EditorView (not used here; mountLeetCodeWidget
    * works against the host element directly).
+   *
+   * Phase 20 Plan 20-05 — capture the controller's per-pane registryKey so
+   * destroy() can delete only its own entry. Without this, the v1.3 destroy
+   * path reverse-resolved via `${file.path}::${fenceIndex}` and could delete
+   * a sibling pane's controller in a multi-pane scenario.
    */
   toDOM(_view: EditorView): HTMLElement {
     const host = document.createElement('div');
-    mountLeetCodeWidget(
+    const ctl = mountLeetCodeWidget(
       host,
       this.source,
       this.file,
@@ -96,6 +111,7 @@ export class LeetCodeFenceWidget extends WidgetType {
       /*readOnly=*/false,
       this.fenceIndex,
     );
+    this.mountedCtlKey = ctl.registryKey;
     return host;
   }
 
@@ -106,9 +122,15 @@ export class LeetCodeFenceWidget extends WidgetType {
    * destroy is symmetric — Plan 19-03 captures state (CONTEXT D-02 belt
    * fallback for cursor-approach + viewport-scroll unmounts), then flush
    * (Plan 19-02) + destroy + unregister.
+   *
+   * Phase 20 Plan 20-05 — looks up by the per-pane key stored on this widget
+   * instance (`mountedCtlKey`), NOT a recomputed `${file.path}::${fenceIndex}`
+   * content key. In a two-pane scenario, destroying widget A leaves widget B's
+   * registry entry intact.
    */
   destroy(_dom: HTMLElement): void {
-    const key = `${this.file.path}::${this.fenceIndex}`;
+    const key = this.mountedCtlKey;
+    if (!key) return; // Defensive — toDOM never ran (impossible in practice).
     const ctl = this.plugin.widgetRegistry?.get(key) as
       | {
           flushNow(): void;
@@ -135,5 +157,6 @@ export class LeetCodeFenceWidget extends WidgetType {
       ctl.destroy();
       this.plugin.widgetRegistry?.delete(key);
     }
+    this.mountedCtlKey = null;
   }
 }
