@@ -2085,3 +2085,57 @@ button.leetcode-language-chevron:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/*
+ * Phase 20 Plan 20-04 — Multi-pane "Take over" affordance (UI-SPEC §3).
+ *
+ * The container's `data-pane-state` attribute is the visual state machine:
+ *   - "active" (default): no overlay; widget is editable
+ *   - "peer":             overlay + "Click to take over" CTA covers the
+ *                         widget at 55% opacity; pointer-events: auto on
+ *                         the overlay captures clicks BEFORE they reach the
+ *                         underlying CM6 editor (T-20-04-01 mitigation —
+ *                         keystrokes cannot reach a peer widget's view).
+ *
+ * `position: relative` on the container is ALSO declared by Phase 19's
+ * cm-editor host rules at line 1934, but we re-declare here so the
+ * absolute-positioned overlay is anchored even when the lc-nested-editor
+ * lives outside a `.cm-editor` ancestor (Reading-mode mount).
+ *
+ * Tokens are Obsidian CSS variables only — no raw hex (UI-SPEC §Color).
+ */
+.lc-nested-editor[data-pane-state] {
+  position: relative;
+}
+.lc-nested-editor[data-pane-state="active"] > .lc-takeover-overlay {
+  display: none;
+}
+.lc-nested-editor[data-pane-state="peer"] > .lc-takeover-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--background-secondary);
+  opacity: 0.55;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  pointer-events: auto;
+  z-index: 5;
+}
+.lc-nested-editor[data-pane-state="peer"] > .lc-takeover-overlay:hover {
+  border: 1px solid var(--interactive-accent);
+}
+.lc-takeover-cta {
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.lc-takeover-cta:hover {
+  border-color: var(--interactive-accent);
+}

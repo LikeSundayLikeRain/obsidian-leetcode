@@ -176,6 +176,28 @@ export class WidgetController {
    *  Plan 20-04 retheme + multi-pane affordance to walk widget DOM. */
   public actionRow?: HTMLDivElement;
 
+  /** Phase 20 Plan 20-04 (multi-pane "Take over" affordance) — embed-context
+   *  flag captured at mount time. Embed widgets (`![[note#Code]]` transclusion
+   *  per Phase 19 EMBED-01..04) are read-only display surfaces; the multi-pane
+   *  coordinator MUST skip them so a peer-detected embed doesn't gain a
+   *  "Click to take over" CTA the user can never act on (the embedding host
+   *  doesn't own the file). Set by `mountLeetCodeWidget` from the existing
+   *  `isEmbedContext` probe right before action-row mount. Defaults to `false`
+   *  for safety so test fixtures that bypass the probe still drive coordinator
+   *  paths. */
+  public isEmbed: boolean = false;
+
+  /** Phase 20 Plan 20-04 — overlay div mounted as a sibling of `.cm-editor`
+   *  when this widget is in `peer` pane state. Click on overlay promotes the
+   *  pane via `app.workspace.setActiveLeaf(<this widget's leaf>)`. Tracked on
+   *  the controller so `setPaneState('active')` can remove it cleanly. */
+  public takeoverOverlay?: HTMLDivElement;
+
+  /** Phase 20 Plan 20-04 — current pane affordance state. Default `'active'`
+   *  matches the v1.3 baseline (single widget per file == always active);
+   *  multi-pane peer flips it to `'peer'` which mounts the overlay + CTA. */
+  public paneState: 'active' | 'peer' = 'active';
+
   /** Phase 20 Plan 20-02 (Pitfall P2 absorption + carry-forward to Plan 20-03).
    *  Hash of the current widget doc body — used by the modify-handler
    *  early-return so frontmatter-only writes (e.g., chevron switch via
@@ -264,6 +286,18 @@ export class WidgetController {
         // Defensive — offref may throw if the ref is stale.
       }
       this.metadataChangedRef = undefined;
+    }
+    // Phase 20 Plan 20-04 — drop the multi-pane overlay if mounted. The
+    // overlay's event listeners are anchored to the overlay element itself,
+    // so removing the element from the DOM is sufficient (browsers GC the
+    // listeners with the element).
+    if (this.takeoverOverlay) {
+      try {
+        this.takeoverOverlay.remove();
+      } catch {
+        /* swallow — already detached */
+      }
+      this.takeoverOverlay = undefined;
     }
     this.view.destroy();
   }
@@ -451,6 +485,152 @@ export class WidgetController {
       /* swallow — defensive against teardown race */
     }
   }
+
+  /**
+   * Phase 20 Plan 20-04 (multi-pane "Take over" affordance) — flip the widget
+   * between `'active'` (editable, no overlay) and `'peer'` (greyed-out
+   * overlay + "Click to take over" CTA per UI-SPEC §3).
+   *
+   * `'active'`:
+   *   - Sets `data-pane-state="active"` on the container.
+   *   - Removes `takeoverOverlay` if mounted.
+   *
+   * `'peer'`:
+   *   - Sets `data-pane-state="peer"` on the container.
+   *   - Mounts a `.lc-takeover-overlay` div with a `.lc-takeover-cta` button
+   *     ("Click to take over") if not already present.
+   *   - Click handler calls `app.workspace.setActiveLeaf(<this widget's leaf>)`
+   *     which fires `active-leaf-change` synchronously; the coordinator's
+   *     listener then flips peer→active in the same animation frame
+   *     (UI-SPEC §3 "race window ≈16ms").
+   *
+   * SECURITY (T-20-04-03 mitigation):
+   *   - Overlay text is created via `createEl({ text })` / `setText` — NEVER
+   *     `innerHTML`. CTA copy is hardcoded "Click to take over" — not user-
+   *     controlled (CLAUDE.md no-innerHTML rule).
+   *
+   * EMBED GATE (Phase 19 EMBED-01..04):
+   *   - Embed widgets (`isEmbed === true`) are read-only display surfaces;
+   *     a "Click to take over" CTA inside an embed would mislead the user
+   *     (the embedding host doesn't own the file). Early-return for embed
+   *     widgets — they always remain visually `'active'` regardless of pane
+   *     focus. The coordinator's iterator filter is the primary gate; this
+   *     is belt-and-suspenders.
+   *
+   * Idempotent — calling with the same state is a no-op (early-return on
+   * matching `paneState`). The DOM mutation cost is bounded.
+   */
+  setPaneState(state: 'active' | 'peer'): void {
+    // Embed gate — never apply peer affordance to embed widgets.
+    if (this.isEmbed) {
+      this.paneState = 'active';
+      try {
+        this.container.setAttribute('data-pane-state', 'active');
+      } catch {
+        /* swallow — defensive against teardown */
+      }
+      return;
+    }
+
+    // Idempotent guard — no-op when state already matches.
+    if (this.paneState === state) return;
+    this.paneState = state;
+
+    try {
+      this.container.setAttribute('data-pane-state', state);
+    } catch {
+      // Defensive — container may be in teardown.
+      return;
+    }
+
+    if (state === 'peer') {
+      // Mount overlay if not already present.
+      if (!this.takeoverOverlay) {
+        const doc = this.container.ownerDocument ?? document;
+        const overlay = doc.createElement('div');
+        overlay.className = 'lc-takeover-overlay';
+        overlay.setAttribute('role', 'button');
+        overlay.setAttribute('tabindex', '0');
+
+        const cta = doc.createElement('button');
+        cta.className = 'lc-takeover-cta';
+        cta.textContent = 'Click to take over';
+        cta.setAttribute(
+          'title',
+          'This file is being edited in another pane. Click to take over and edit here.',
+        );
+        overlay.appendChild(cta);
+
+        // Click handler — promote this pane via setActiveLeaf. The
+        // workspace's active-leaf-change event fires synchronously; the
+        // coordinator's listener flips peer→active in the same animation
+        // frame (UI-SPEC §3 race window ≈16ms).
+        const onClick = (e: Event): void => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.promoteThisPane();
+        };
+        overlay.addEventListener('click', onClick);
+        // Keyboard activation (role="button" + tabindex="0" affordance).
+        overlay.addEventListener('keydown', (e: Event) => {
+          const kev = e as KeyboardEvent;
+          if (kev.key === 'Enter' || kev.key === ' ') {
+            onClick(e);
+          }
+        });
+
+        this.container.appendChild(overlay);
+        this.takeoverOverlay = overlay;
+      }
+    } else {
+      // active — remove overlay if present.
+      if (this.takeoverOverlay) {
+        try {
+          this.takeoverOverlay.remove();
+        } catch {
+          /* swallow — already detached */
+        }
+        this.takeoverOverlay = undefined;
+      }
+    }
+  }
+
+  /**
+   * Phase 20 Plan 20-04 — internal helper for the overlay click handler.
+   * Walks `app.workspace.getLeavesOfType('markdown')` to find the leaf whose
+   * `containerEl` ancestor-contains this widget's container, then calls
+   * `app.workspace.setActiveLeaf(leaf)`. The setActiveLeaf side effect fires
+   * `active-leaf-change` synchronously, which the coordinator's listener
+   * then catches to flip pane state.
+   *
+   * Defensive — the `getLeavesOfType` and `setActiveLeaf` accessors are not
+   * declared in the structural plugin-host contract (WidgetMountHost) so we
+   * cast through `unknown`. Production LeetCodePlugin satisfies the runtime
+   * shape via the real Obsidian Workspace.
+   */
+  private promoteThisPane(): void {
+    try {
+      const ws = this.plugin.app as unknown as {
+        workspace?: {
+          getLeavesOfType?(type: string): Array<{
+            containerEl?: HTMLElement;
+            view?: { file?: { path: string } | null };
+          }>;
+          setActiveLeaf?(leaf: unknown, params?: { focus?: boolean }): void;
+        };
+      };
+      const leaves = ws.workspace?.getLeavesOfType?.('markdown') ?? [];
+      for (const leaf of leaves) {
+        const el = leaf.containerEl;
+        if (el && el.contains(this.container)) {
+          ws.workspace?.setActiveLeaf?.(leaf, { focus: true });
+          return;
+        }
+      }
+    } catch {
+      // Defensive — focus race or teardown. The user can simply click again.
+    }
+  }
 }
 
 /**
@@ -623,6 +803,12 @@ export function mountLeetCodeWidget(
   // lc-leetcode-solve so Phase 22 polish can target widgets specifically.
   const container = document.createElement('div');
   container.className = 'lc-nested-editor HyperMD-codeblock lc-leetcode-solve';
+  // Phase 20 Plan 20-04 — initial pane state is `active`. The CSS rule
+  // `.lc-nested-editor[data-pane-state="peer"] > .lc-takeover-overlay`
+  // gates overlay visibility on this attribute; the multi-pane coordinator
+  // (`registerMultiPaneCoordinator`) flips it via `WidgetController.setPaneState`
+  // when active-leaf-change detects a peer widget for the same file path.
+  container.setAttribute('data-pane-state', 'active');
   host.appendChild(container);
 
   const slug = resolveLanguageSlug(plugin, file);
@@ -812,6 +998,10 @@ export function mountLeetCodeWidget(
       typeof isEmbedContext
     >[1];
     const isEmbed = isEmbedContext(host, fakeCtx, file);
+    // Phase 20 Plan 20-04 — record the embed flag on the controller so the
+    // multi-pane coordinator can skip embed widgets (they should never grow
+    // a "Click to take over" CTA — the embedding host doesn't own the file).
+    ctl.isEmbed = isEmbed;
     if (!isEmbed) {
       try {
         ctl.actionRow = mountActionRow(

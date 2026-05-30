@@ -139,6 +139,10 @@ import { leetCodeBlockProcessor } from './widget/codeBlockProcessor';
 // `app.vault.getConfig('vimMode')` boolean. Single cast site.
 import { readVimModeFromVault } from './widget/vimMode';
 import { registerThemeListener } from './widget/themeListener';
+// Phase 20 Plan 20-04 (multi-pane "Take over" affordance) — single global
+// active-leaf-change + layout-change listener that walks widgetRegistry.values()
+// and flips each widget's pane state ('active' vs 'peer'). UI-SPEC §3 contract.
+import { registerMultiPaneCoordinator } from './widget/multiPaneCoordinator';
 import { leetCodeFenceViewPlugin } from './widget/liveModeViewPlugin';
 // Phase 19 Plan 02 — selfWriteSuppression + sha1 helper for the modify-event
 // consumer. extractFenceBody for hashing observed disk fence body.
@@ -1014,6 +1018,21 @@ export default class LeetCodePlugin extends Plugin {
       // apply. MutationObserver fallback documented in 20-RESEARCH §"Pattern
       // 7" but NOT shipped (event verified to exist).
       registerThemeListener(this);
+
+      // Phase 20 Plan 20-04 (multi-pane "Take over" affordance) — single
+      // global `app.workspace.on('active-leaf-change')` + `layout-change`
+      // listener walks widgetRegistry.values() on every focus transition.
+      // For widgets matching the focused note's file path: same-leaf →
+      // setPaneState('active'), other-leaf → setPaneState('peer'). Peer
+      // widgets get a `.lc-takeover-overlay` + "Click to take over" CTA per
+      // UI-SPEC §3; clicking it calls app.workspace.setActiveLeaf which
+      // synchronously fires active-leaf-change so the listener flips state
+      // in the same animation frame (~16ms race window). Embed widgets
+      // (Phase 19 EMBED-01..04) skip the affordance via the controller's
+      // `isEmbed` flag (defense-in-depth: coordinator filter + setPaneState
+      // gate). L10 single-active-per-file invariant preserved — peer panes
+      // show CTA only, do NOT live-mirror typing (MULTI-01/02 v1.4+ deferred).
+      registerMultiPaneCoordinator(this);
 
       // Phase 20 Plan 20-01 (VIM-02) — vim live-reconfigure dispatcher.
       // Obsidian fires no documented event for the Settings → Editor →
