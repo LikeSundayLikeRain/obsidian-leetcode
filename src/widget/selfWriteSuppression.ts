@@ -23,6 +23,14 @@ interface SuppressionEntry {
   expiresAt: number;
 }
 
+// Phase 20 Plan 20-06 — this map is now consumed by TWO observers:
+//   - vault.on('modify') handler: tryConsume() — consumes entries on
+//     match; the modify-handler's decision tree branches on the result.
+//   - liveModeViewPlugin.update(): peekExpectedHash() — read-only peek
+//     so the parent-CM6 transaction stream can detect self-write echoes
+//     and skip the ViewPlugin rebuild that would otherwise destroy+remount
+//     the widget's DOM (root cause of self-write-remount-cycle gap,
+//     UAT Test 6 / .planning/debug/self-write-remount-cycle.md).
 export class SelfWriteSuppression {
   private readonly map = new Map<string, SuppressionEntry>();
   private readonly TTL_MS = 2000;
@@ -56,6 +64,21 @@ export class SelfWriteSuppression {
     // external (RESEARCH Pattern 2 lines 232-237).
     this.map.delete(path);
     return 'miss';
+  }
+
+  /** Phase 20 Plan 20-06 — read-only peek for the CM6 ViewPlugin
+   *  provenance check (`liveModeViewPlugin.ts`). Returns the armed
+   *  expected hash for `path` if an entry exists and has not expired;
+   *  returns `null` otherwise. Does NOT mutate the map — neither
+   *  consume nor lazy-evict on stale. The ViewPlugin's `update()` runs
+   *  on every parent CM6 transaction and must NOT race the
+   *  vault.on('modify') consume — peek leaves the entry intact for the
+   *  modify handler to consume on its own schedule. */
+  peekExpectedHash(path: string): string | null {
+    const entry = this.map.get(path);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) return null; // Stale — not consumed; tryConsume will lazy-evict.
+    return entry.expectedHash;
   }
 
   /** Drain the map. Called by Plugin.onunload. */
