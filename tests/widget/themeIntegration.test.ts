@@ -45,6 +45,7 @@ vi.mock('@codemirror/view', () => {
 });
 
 vi.mock('@codemirror/state', () => ({
+  Annotation: { define: () => ({ of: (v: unknown) => ({ value: v }) }) },
   EditorState: { create: vi.fn().mockReturnValue({ doc: 'mock-state' }) },
   Compartment: class { of(ext: unknown) { return ['mock-compartment-of', ext]; } },
   StateField: { define: vi.fn(() => 'mock-state-field') },

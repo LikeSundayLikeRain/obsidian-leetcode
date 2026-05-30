@@ -64,6 +64,7 @@ vi.mock('@codemirror/view', () => {
 });
 
 vi.mock('@codemirror/state', () => ({
+  Annotation: { define: () => ({ of: (v: unknown) => ({ value: v }) }) },
   EditorSelection: { cursor: vi.fn((n: number) => ({ head: n })) },
   EditorState: {
     create: vi.fn((opts: { extensions: unknown }) => ({

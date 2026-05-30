@@ -92,6 +92,7 @@ vi.mock('@codemirror/view', () => {
 });
 
 vi.mock('@codemirror/state', () => ({
+  Annotation: { define: () => ({ of: (v: unknown) => ({ value: v }) }) },
   EditorState: {
     create: vi.fn((opts: { doc?: string }) => ({ doc: opts?.doc ?? '' })),
   },

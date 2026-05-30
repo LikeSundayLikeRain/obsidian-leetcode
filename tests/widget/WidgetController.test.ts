@@ -56,6 +56,7 @@ vi.mock('@codemirror/view', () => {
 });
 
 vi.mock('@codemirror/state', () => ({
+  Annotation: { define: () => ({ of: (v: unknown) => ({ value: v }) }) },
   EditorState: { create: vi.fn().mockReturnValue({ doc: 'mock-state' }) },
   Compartment: class { of(ext: unknown) { return ['mock-compartment-of', ext]; } },
   // tests/helpers/obsidian-stub.ts:208-218 imports StateField from
@@ -235,9 +236,15 @@ describe('mountLeetCodeWidget', () => {
     expect(stopProp).toHaveBeenCalled();
   });
 
-  // --- Plan 19-02 — writer wiring ----------------------------------------
+  // --- Plan 19-02 / 20-09 — writer wiring -------------------------------
 
-  it('Plan 19-02: writer attached when plugin host provides selfWriteSuppression + vault.read/process', () => {
+  it('Plan 20-09: writer NOT attached even when plugin host provides vault.read/process — typing path uses real-time child→parent sync now', () => {
+    // Plan 20-09 retired DebouncedWriter from the typing path. The widget's
+    // child→parent sync extension dispatches range-remapped changes onto the
+    // parent CM6 in real time; Obsidian's built-in editor auto-save persists
+    // to disk. ctl.writer remains optional on the controller but is never
+    // populated in the editable Live-Preview mount path. flushNow() returns
+    // Promise.resolve() when writer is absent.
     const fullPlugin = {
       ...plugin,
       app: {
@@ -251,7 +258,7 @@ describe('mountLeetCodeWidget', () => {
       selfWriteSuppression: { arm: vi.fn(), tryConsume: vi.fn() } as never,
     };
     const ctl = mountLeetCodeWidget(host, 'pass', file as never, fullPlugin as never, /*readOnly=*/false);
-    expect(ctl.writer).toBeDefined();
+    expect(ctl.writer).toBeUndefined();
   });
 
   it('Plan 19-02: writer NOT attached on read-only mounts (no listener registered)', () => {

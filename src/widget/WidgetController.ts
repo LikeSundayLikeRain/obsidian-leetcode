@@ -61,10 +61,11 @@ import {
 } from '../main/childEditorLanguage';
 import { createThemedHighlight } from '../main/childEditorTheme';
 import { obsidianSemanticClasses } from '../main/childEditorSemanticClasses';
-import { computeFenceIndex } from './fenceLocator';
+import { computeFenceIndex, findCodeFence } from './fenceLocator';
 import { DebouncedWriter, sha1 } from './debouncedWriter';
 import { extractFenceBody } from './fenceSerialization';
 import type { SelfWriteSuppression } from './selfWriteSuppression';
+import { createChildParentSyncExtension } from './childParentSync';
 import type { StatePersistenceMap } from './statePersistence';
 import { readVimModeFromVault } from './vimMode';
 import { isEmbedContext } from './embedDetect';
@@ -775,6 +776,12 @@ function buildExtensions(
   vimCompartment: Compartment,
   vimEnabled: boolean,
   onDocChanged?: (update: ViewUpdate) => void,
+  /** Phase 20 Plan 20-09 — when present, an additional updateListener
+   *  is appended that dispatches range-remapped child changes onto the
+   *  parent CM6 in real time. Editable Live-Preview mounts pass this in.
+   *  Read-only mounts and editable mounts without a parent reference
+   *  (test fixtures) skip the sync extension. */
+  parentView?: EditorView,
 ): Extension[] {
   const indent = plugin.settings.getIndentSizeOverride();
 
@@ -824,14 +831,31 @@ function buildExtensions(
     keymap.of([...defaultKeymap, ...historyKeymap]),
     indentUnit.of('    '),
   ];
-  // 11. Plan 19-02 — debouncedWriter binding via updateListener.of. Only
-  //     editable widgets register the listener; read-only widgets skip it
-  //     (no doc changes are possible).
+  // 11. Plan 19-02 / 20-09 — currentDocHash refresh listener. Editable
+  //     widgets call onDocChanged on every doc change to keep the
+  //     widget's currentDocHash in sync (used by main.ts modify-handler
+  //     Pitfall P2 early-return). Read-only widgets skip this — no doc
+  //     changes are possible.
   if (!readOnly && onDocChanged) {
     exts.push(
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (update.docChanged) onDocChanged(update);
       }),
+    );
+  }
+  // 12. Phase 20 Plan 20-09 — child→parent CM6 sync. Each child
+  //     docChange dispatches range-remapped changes onto the parent
+  //     CM6 in real time. Disk persistence is handled by Obsidian's
+  //     standard editor auto-save on the parent — we never call
+  //     vault.process from the typing path → no parent reload-from-disk
+  //     → no widget DOM detach → focus stays. Skipped for read-only
+  //     mounts and for mounts that don't have a parent EditorView
+  //     reference (test fixtures pass undefined).
+  if (!readOnly && parentView) {
+    exts.push(
+      createChildParentSyncExtension(parentView, () =>
+        findCodeFence(parentView.state),
+      ),
     );
   }
   return exts;
@@ -856,6 +880,12 @@ export function mountLeetCodeWidget(
   plugin: WidgetMountHost,
   readOnly: boolean,
   fenceIndex = 0,
+  /** Phase 20 Plan 20-09 — parent EditorView reference for the
+   *  child→parent sync extension. Required for editable Live-Preview
+   *  mounts (LeetCodeFenceWidget.toDOM passes this in). Optional for
+   *  Reading-mode mounts (LeetCodeWidgetRenderChild.onload — readOnly
+   *  is true there, so no sync needed; the listener is never installed). */
+  parentView?: EditorView,
 ): WidgetController {
   // CONTEXT C-13 + PATTERNS line 1101 — three classes, two carry-over
   // (lc-nested-editor + HyperMD-codeblock) plus the v1.3-specific
@@ -880,27 +910,25 @@ export function mountLeetCodeWidget(
   const leafId = resolveLeafId(host);
   const registryKey = `${file.path}::${fenceIndex}::${leafId}`;
 
-  // Plan 19-02 — declare controller upfront so the updateListener closure can
-  // call into ctl.writer (which is set after view construction).
+  // Phase 20 Plan 20-09 — child→parent CM6 sync via createChildParentSyncExtension
+  // (see src/widget/childParentSync.ts). The extension dispatches range-remapped
+  // changes onto the parent CM6 in real time, eliminating the prior
+  // debouncedWriter→vault.process pipeline that caused widget DOM detach
+  // → focus loss.
   //
-  // Phase 20 Plan 20-02 (Pitfall P2 absorption + carry-forward to Plan 20-03):
-  // The onDocChanged callback ALSO refreshes `ctl.currentDocHash` so the
-  // modify-handler early-return at src/main.ts compares against the latest
-  // committed widget body. The hash refresh is fire-and-forget — the modify
-  // event always reads the disk hash AFTER the writer flushes, so a slight
-  // race between user keystroke + sha1 promise + modify event is fine
-  // (the modify event will simply see a slightly-stale hash and route to
-  // the suppression path, which is the safe default).
+  // currentDocHash refresh remains: the modify-handler at src/main.ts uses it
+  // for the Pitfall P2 frontmatter-only-write early-return. The hash is
+  // computed asynchronously (sha1) so a brief window after each keystroke
+  // sees a stale hash; the modify-handler defaults to the suppression path
+  // in that case, which is safe (it will not silently reload).
   let ctl: WidgetController;
   const onDocChanged = readOnly
     ? undefined
     : () => {
-        ctl?.writer?.run();
         // Refresh currentDocHash for Pitfall P2 absorption.
         if (ctl) {
           const body = ctl.view.state.doc.toString();
           void sha1(body).then((hash) => {
-            // Guard against late-arriving promises after destroy.
             if (ctl) ctl.currentDocHash = hash;
           });
         }
@@ -917,7 +945,15 @@ export function mountLeetCodeWidget(
 
   const state = EditorState.create({
     doc: source,
-    extensions: buildExtensions(plugin, slug, readOnly, vimCompartment, vimEnabled, onDocChanged),
+    extensions: buildExtensions(
+      plugin,
+      slug,
+      readOnly,
+      vimCompartment,
+      vimEnabled,
+      onDocChanged,
+      parentView,
+    ),
   });
 
   const view = new EditorView({ state, parent: container });
@@ -969,28 +1005,18 @@ export function mountLeetCodeWidget(
   // persistence map is absent (test fixtures).
   plugin.statePersistence?.hydrateState(ctl.persistenceKey, view);
 
-  // Plan 19-02 — wire the DebouncedWriter for editable widgets when the
-  // plugin host provides the required app.vault.read/process methods AND a
-  // selfWriteSuppression instance. Read-only mounts skip the writer entirely.
-  if (
-    !readOnly &&
-    plugin.app.vault.read &&
-    plugin.app.vault.process &&
-    plugin.selfWriteSuppression
-  ) {
-    const delayMs = plugin.settings.getWidgetSyncDebounceMs?.() ?? 400;
-    ctl.writer = new DebouncedWriter(
-      plugin.app as never,
-      file as never,
-      () => view.state.doc.toString(),
-      // Plan 19-02 — flush-time fenceIndex is stored on the controller and
-      // passed verbatim. Drift detection (Pitfall 19-E) happens INSIDE
-      // DebouncedWriter.flush() by counting openers in fresh disk content.
-      () => ctl.fenceIndex,
-      plugin.selfWriteSuppression,
-      delayMs,
-    );
-  }
+  // Phase 20 Plan 20-09 — DebouncedWriter retired from the typing path.
+  // Real-time child→parent CM6 sync (createChildParentSyncExtension)
+  // keeps the parent doc in sync with every keystroke; Obsidian's
+  // built-in editor auto-save persists to disk. We never call
+  // vault.process from typing, which removes the parent reload-from-disk
+  // step that was forcing widget DOM detach + focus loss.
+  //
+  // ctl.writer remains optional on the controller for backward
+  // compatibility (Reading-mode mounts, test fixtures); flushNow()
+  // returns Promise.resolve() when writer is absent. flushAll callers
+  // (Plugin.onunload, vault.on('rename')) still work correctly because
+  // a missing writer is a no-op flush — there's nothing pending.
 
   // Register in plugin.widgetRegistry if present (set by main.ts onload when
   // useInlineWidget=ON; Plan 19-04 controller cleanup uses this).
