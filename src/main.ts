@@ -2819,93 +2819,39 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /**
-   * Phase 20 Plan 20-02 — Chevron-driven language switch from the v1.3 widget.
-   *
-   * UAT bug-fix (post-orchestrator review): user expected v1.2 behavior where
-   * switching language ALSO swaps the fence body to the new language's
-   * starter code. The original v1.3 design only flipped frontmatter and
-   * relied on `languageCompartment.reconfigure` for the parser swap — the
-   * fence body stayed unchanged, which made the switch indistinguishable
-   * from a no-op visually (the syntax-highlighted body still showed the
-   * old language's identifiers).
-   *
-   * Sequence:
-   *   (a) flushNow — pending characters land under OLD slug.
-   *   (b) Read lc-slug from frontmatter (silent no-op if missing — chevron
-   *       was rendered on a non-LC note via a race).
-   *   (c) Fetch starter code via existing client.getProblemDetail (cached;
-   *       7-day TTL via SettingsStore). On rejection: Notice, abort.
-   *   (d) Route through copyToCode(app, file, snippet, newSlug). copyToCode
-   *       does BOTH: vault.process body rewrite + processFrontMatter
-   *       lc-language sync (G-COPY-TO-CODE-LANG-DRIFT). The widget reacts
-   *       via the per-widget metadataCache 'changed' subscription:
-   *       Compartment.reconfigure swaps the parser; actionRowRefresh
-   *       updates the chevron label + .is-current marker.
-   *   (e) Self-write echo on the parent CM6 is suppressed by the Plan 20-06
-   *       provenance gate — the debouncedWriter is NOT involved here, but
-   *       since copyToCode arms the suppression map indirectly through the
-   *       eventual modify event, we don't need additional plumbing. The
-   *       widget's own ViewPlugin sees docChanged and rebuilds; the new
-   *       sourceHash is the new starter code (different from the OLD body),
-   *       so eq() returns false and CM6 remounts the widget DOM. THIS IS
-   *       INTENTIONAL — a body swap of this magnitude is a content change,
-   *       not an echo, and a fresh mount with the new starter code is the
-   *       correct UX.
-   *
-   * Empty starter code (rare — LC API returns {} for some langs on certain
-   * problems): copyToCode still runs and forceInjectCodeSection writes an
-   * empty fence body. The user can then type their own implementation.
+   * Phase 20 Plan 20-02 — Chevron-driven language switch from the v1.3
+   * widget. Frontmatter-only path (intermediate state — Plan 20-09 Task 6
+   * replaces this with a parent CM6 dispatch + processFrontMatter pair so
+   * the fence body also swaps to the new language's starter code).
    */
   async switchLanguageFromWidget(
     widget: WidgetController,
     file: TFile,
     newSlug: string,
   ): Promise<void> {
-    // Step (a) — flush widget BEFORE the body swap so any pending edits
-    // land under the OLD slug first (Pattern F + Pitfall 5 carry-over).
+    // Step (a) — flush widget BEFORE frontmatter write.
     await widget.flushNow();
 
-    // Step (b) — read lc-slug. Silent no-op if missing (chevron rendered
-    // on a non-LC note via a race — same behavior as switchFenceLanguage).
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
-      | Record<string, unknown>
-      | undefined;
-    const lcSlugRaw = fm?.['lc-slug'];
-    if (typeof lcSlugRaw !== 'string' || lcSlugRaw.length === 0) return;
-    const lcSlug = lcSlugRaw;
-    const newLabel = LC_LANG_DISPLAY_LABELS[newSlug] ?? newSlug;
-
-    // Step (c) — fetch starter code. Existing client path uses requestUrl
-    // + throttle + 7-day cache via SettingsStore.getProblemDetail. On
-    // rejection: locked Notice copy from UI-SPEC §Copywriting.
-    let snippet: string;
+    // Step (b) — atomic frontmatter rewrite. Wrapped in try/catch so a
+    // malformed frontmatter doesn't blow up the chevron click silently.
     try {
-      const detail = await this.client.getProblemDetail(lcSlug);
-      snippet = detail?.codeSnippets?.find((s) => s.langSlug === newSlug)?.code ?? '';
-    } catch {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- locked Notice copy
-      new Notice(`Couldn't fetch starter code for ${newLabel}.`, 6000);
-      return;
-    }
-
-    // Step (d) — body swap + frontmatter sync via the existing copyToCode
-    // primitive (src/graph/copyToCode.ts). copyToCode handles BOTH halves:
-    //   1. vault.process rewrite of the ## Code fence body via
-    //      forceInjectCodeSection (replaces the existing fence body with
-    //      `snippet`, fence tag stays `leetcode-solve` per Phase 19 C-01).
-    //   2. processFrontMatter sync of `lc-language` to newSlug
-    //      (G-COPY-TO-CODE-LANG-DRIFT) — this is what the per-widget
-    //      metadataCache subscription listens for; on fire, it
-    //      Compartment.reconfigure's the parser AND calls
-    //      actionRowRefresh to update the chevron label + .is-current.
-    try {
-      const { copyToCode } = await import('./graph/copyToCode');
-      await copyToCode(this.app, file, snippet, newSlug);
+      await this.app.fileManager.processFrontMatter(
+        file,
+        (fm: Record<string, unknown>) => {
+          fm['lc-language'] = newSlug;
+        },
+      );
     } catch (err) {
       new Notice("Failed to switch language. The note's frontmatter may be malformed.", 5000);
-      logger.debug('switchLanguageFromWidget: copyToCode failed', err);
+      logger.debug('switchLanguageFromWidget: processFrontMatter failed', err);
       return;
     }
+
+    // Step (c) — NO parent CM6 dispatch here. v1.3 widget reacts via
+    // per-widget metadataCache subscription (Compartment.reconfigure +
+    // actionRowRefresh). Plan 20-09 Task 6 replaces this with a body-swap
+    // dispatch so the chevron click also writes the new language's
+    // starter code into the leetcode-solve fence body.
   }
 
   private async openAISolution(slug: string): Promise<void> {

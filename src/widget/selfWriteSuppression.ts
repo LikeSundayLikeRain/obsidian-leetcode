@@ -45,8 +45,20 @@ interface SuppressionEntry {
 //     and skip the ViewPlugin rebuild that would otherwise destroy+remount
 //     the widget's DOM (root cause of self-write-remount-cycle gap,
 //     UAT Test 6 / .planning/debug/self-write-remount-cycle.md).
+interface PeekEntry {
+  expectedDjb2: string;
+  expiresAt: number;
+}
+
 export class SelfWriteSuppression {
   private readonly map = new Map<string, SuppressionEntry>();
+  /** Phase 20 Plan 20-06 (UAT bug-fix) — peek-only djb2 entries for the
+   *  CM6 ViewPlugin provenance gate. SEPARATE from `map` because
+   *  `tryConsume` deletes from `map` synchronously inside the
+   *  vault.on('modify') handler, which runs BEFORE the parent CM6's
+   *  ViewPlugin update(). If peek shared the consume map, every echo
+   *  would find a null peek and rebuild — the gate would never fire. */
+  private readonly peekMap = new Map<string, PeekEntry>();
   private readonly TTL_MS = 2000;
 
   /** Arm a per-path entry. Subsequent tryConsume calls with the matching
@@ -63,11 +75,12 @@ export class SelfWriteSuppression {
    *  with test fixtures that don't exercise the ViewPlugin peek path. New
    *  production callers (debouncedWriter.flush) MUST pass both. */
   arm(path: string, expectedHash: string, expectedDjb2: string = expectedHash): void {
-    this.map.set(path, {
-      expectedHash,
-      expectedDjb2,
-      expiresAt: Date.now() + this.TTL_MS,
-    });
+    const expiresAt = Date.now() + this.TTL_MS;
+    this.map.set(path, { expectedHash, expectedDjb2, expiresAt });
+    // Phase 20 Plan 20-06 (UAT bug-fix) — populate peekMap in lockstep so
+    // the ViewPlugin gate can peek even AFTER `tryConsume` deletes the
+    // primary entry. peekMap is TTL-only (lazy-evicted in peekExpectedHash).
+    this.peekMap.set(path, { expectedDjb2, expiresAt });
   }
 
   /** Attempt to consume a suppression entry. Always deletes the entry on
@@ -94,32 +107,44 @@ export class SelfWriteSuppression {
   /** Phase 20 Plan 20-06 — read-only peek for the CM6 ViewPlugin
    *  provenance check (`liveModeViewPlugin.ts`). Returns the armed
    *  expected djb2 hash for `path` if an entry exists and has not expired;
-   *  returns `null` otherwise. Does NOT mutate the map — neither consume
-   *  nor lazy-evict on stale. The ViewPlugin's `update()` runs on every
-   *  parent CM6 transaction and must NOT race the vault.on('modify')
-   *  consume — peek leaves the entry intact for the modify handler to
-   *  consume on its own schedule.
+   *  returns `null` otherwise.
    *
-   *  Returns the djb2 (NOT sha1) hash because the ViewPlugin computes
-   *  djb2 synchronously via hash.ts:33 — see hash.ts header for why the
-   *  two algorithms are intentionally different (sha1 cryptographic for
+   *  IMPORTANT (UAT bug-fix): the peek path is BACKED BY A SEPARATE MAP
+   *  (`peekMap`) that is NOT consumed by `tryConsume`. The vault.on('modify')
+   *  handler ALWAYS fires BEFORE the parent-CM6 ViewPlugin's `update()` for
+   *  a self-write echo (modify is dispatched synchronously after
+   *  vault.process resolves; the parent CM6's docChange transaction is
+   *  queued for the next microtask). So if peek shared the consume-and-
+   *  delete map, the entry would already be gone by the time
+   *  `liveModeViewPlugin.update()` runs. The peek map is TTL-only — entries
+   *  are lazy-evicted past expiry, never consumed.
+   *
+   *  Returns the djb2 (NOT sha1) hash because the ViewPlugin computes djb2
+   *  synchronously via hash.ts:33 — see hash.ts header for why the two
+   *  algorithms are intentionally different (sha1 cryptographic for
    *  vault-layer collision safety; djb2 sync for ViewPlugin update()). */
   peekExpectedHash(path: string): string | null {
-    const entry = this.map.get(path);
+    const entry = this.peekMap.get(path);
     if (!entry) return null;
-    if (Date.now() > entry.expiresAt) return null; // Stale — not consumed; tryConsume will lazy-evict.
+    if (Date.now() > entry.expiresAt) {
+      // Stale — lazy-evict so the peek map doesn't accumulate dead entries.
+      this.peekMap.delete(path);
+      return null;
+    }
     return entry.expectedDjb2;
   }
 
-  /** Drain the map. Called by Plugin.onunload. */
+  /** Drain both maps. Called by Plugin.onunload. */
   clear(): void {
     this.map.clear();
+    this.peekMap.clear();
   }
 
-  /** Remove a specific path's entry. Called by vault.on('rename') re-keying
-   *  and recovery scenarios. */
+  /** Remove a specific path's entry from both maps. Called by
+   *  vault.on('rename') re-keying and recovery scenarios. */
   clearForPath(path: string): void {
     this.map.delete(path);
+    this.peekMap.delete(path);
   }
 
   /** Test-only / debugging — current entry count. */

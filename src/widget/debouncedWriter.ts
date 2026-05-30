@@ -198,6 +198,7 @@ export class DebouncedWriter {
         return postWriteText;
       });
 
+
       // CONTEXT D-09 post-flush hash diagnostic: ALWAYS-ON in Phase 19.
       // Re-extract observed body from postWriteText; warn if it doesn't match
       // the widget doc.
