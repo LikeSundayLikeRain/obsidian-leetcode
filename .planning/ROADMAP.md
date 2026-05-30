@@ -62,7 +62,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 <summary>🚧 v1.3 Inline Widget Architecture (Phases 19–22) — IN PROGRESS</summary>
 
 - [x] **Phase 19: Widget Foundation + One-Way Sync** — Self-contained inline `leetcode-solve` widget mounted in both Reading and Live Preview, debounced one-way sync to disk, state persistence, hash-based echo suppression — completed 2026-05-29
-- [ ] **Phase 20: Reconciliation, UX, Action Row, Section Protection** — External-edit reconciliation + conflict modal, action row inside widget, language switching via metadataCache, narrowed `sectionProtectionExtension`, vim live-reconfigure
+- [x] **Phase 20: Reconciliation, UX, Action Row, Section Protection** — External-edit reconciliation + conflict modal, action row inside widget, language switching via metadataCache, narrowed `sectionProtectionExtension`, vim live-reconfigure (completed 2026-05-30)
 - [ ] **Phase 21: v1.2 Migration** — Lazy-on-open atomic migration of v1.2 fence tags → `leetcode-solve`, backup sidecar with 30-day retention, idempotent detection, CI fixtures across v1.0/v1.1/v1.2 sample notes
 - [ ] **Phase 22: v1.2 Path Removal + Polish** — Hard cutover; delete 5 legacy files (~2,400 LOC net), drop `'leetcode.*'` userEvent convention, theme regression gate, BRAT alpha, plugin-store re-review
 
@@ -145,7 +145,7 @@ Plans:
 - **Conflict modal is a novel UX surface for this plugin.** Worth a paper-prototype review before implementation.
 - Pitfalls covered: P2, P8, P9, P10, P11, P16, P19, P20, P21, P24.
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 **Wave 1**
@@ -162,7 +162,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 20-04-PLAN.md — Live theme retheme + multi-pane "Take over" affordance (polish): app.workspace.on('css-change') → cssRetheme via view.requestMeasure; app.workspace.on('active-leaf-change') → setGreyedOut + .lc-takeover-overlay CTA per UI-SPEC §3
+- [x] 20-04-PLAN.md — Live theme retheme + multi-pane "Take over" affordance (polish): app.workspace.on('css-change') → cssRetheme via view.requestMeasure; app.workspace.on('active-leaf-change') → setGreyedOut + .lc-takeover-overlay CTA per UI-SPEC §3
 
 **UI hint**: yes
 
@@ -260,7 +260,7 @@ Plans:
 | 17. Polish & Edge Cases                     | v1.2      | 13/13          | Complete    | 2026-05-25 |
 | 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 4/4            | Complete    | 2026-05-26 |
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
-| 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 3/4 | In Progress|  |
+| 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 4/4 | Complete   | 2026-05-30 |
 | 21. v1.2 Migration                          | v1.3      | 0/0            | Not started | -          |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
 
