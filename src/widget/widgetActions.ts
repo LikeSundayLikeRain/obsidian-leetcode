@@ -26,6 +26,7 @@ import {
 import {
   buildLanguageChevron,
   type LanguageChevronHost,
+  type LanguageChevronHandle,
 } from '../main/languageChevronWidget';
 
 /**
@@ -40,6 +41,12 @@ export interface WidgetActionRowCtl {
   container: HTMLElement;
   file: TFile;
   fenceIndex: number;
+  /** Phase 20 Plan 20-08 — populated by mountLeetCodeWidget after
+   *  mountActionRow returns; the metadataCache 'changed' listener calls
+   *  it after Compartment.reconfigure to update the chevron's visible
+   *  state without remounting. Optional — undefined when the action row
+   *  was skipped (embed widgets, mount-only test fixtures). */
+  actionRowRefresh?: (newSlug: string) => void;
   plugin: Plugin & {
     runFromWidget(widget: WidgetActionRowCtl): void | Promise<void>;
     submitFromWidget(widget: WidgetActionRowCtl): void | Promise<void>;
@@ -54,6 +61,16 @@ export interface WidgetActionRowCtl {
       newSlug: string,
     ): void | Promise<void>;
   };
+}
+
+/**
+ * Phase 20 Plan 20-08 — return shape from `mountActionRow`. Splits the row
+ * element from the refresh closure so callers can store each on the
+ * WidgetController separately.
+ */
+export interface MountedActionRow {
+  row: HTMLDivElement;
+  refresh: (newSlug: string) => void;
 }
 
 /**
@@ -77,7 +94,7 @@ export function mountActionRow(
   file: TFile,
   currentSlug: string,
   doc: Document,
-): HTMLDivElement {
+): MountedActionRow {
   // Adapter object satisfying BOTH CodeBlockButtonRowHost and
   // LanguageChevronHost structurally. `aiDebugFromActive` is a no-op per
   // D-action-03 — AI Debug is NOT in the widget row.
@@ -106,11 +123,25 @@ export function mountActionRow(
     host,
   ) as Plugin & CodeBlockButtonRowHost & LanguageChevronHost;
 
+  // Phase 20 Plan 20-08 — capture the chevron handle from the prefix factory
+  // so refresh can flow back through the action-row's return struct. The
+  // factory may not run in hostile test envs that swap `prefix` semantics,
+  // so chevronHandle stays nullable; refresh degrades to a no-op when
+  // unset.
+  let chevronHandle: LanguageChevronHandle | null = null;
   const row = buildCodeBlockButtonRow(doc, hostWithPlugin, {
-    prefix: () =>
-      buildLanguageChevron(doc, hostWithPlugin, file, currentSlug),
+    prefix: () => {
+      chevronHandle = buildLanguageChevron(doc, hostWithPlugin, file, currentSlug);
+      return chevronHandle.wrapper;
+    },
   });
 
+  // Phase 20 Plan 20-08 — refresh closure proxies to the chevron's refresh.
+  // Defensive — chevronHandle is null when the prefix factory wasn't invoked.
+  const refresh = (newSlug: string): void => {
+    chevronHandle?.refresh(newSlug);
+  };
+
   ctl.container.appendChild(row);
-  return row;
+  return { row, refresh };
 }

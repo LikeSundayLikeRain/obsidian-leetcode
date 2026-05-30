@@ -65,7 +65,7 @@ describe('mountActionRow — DOM shape (D-action-03 lock + UI-SPEC §1)', () => 
   it('returns a row with class leetcode-code-actions containing exactly 6 children in locked order', () => {
     const ctl = makeFakeCtl();
     const file = { path: 'LeetCode/two-sum.md' } as never;
-    const row = mountActionRow(ctl as never, file, 'python3', document);
+    const { row } = mountActionRow(ctl as never, file, 'python3', document);
 
     expect(row.classList.contains('leetcode-code-actions')).toBe(true);
     expect(row.children.length).toBe(6);
@@ -88,7 +88,7 @@ describe('mountActionRow — DOM shape (D-action-03 lock + UI-SPEC §1)', () => 
   it('mountActionRow appends the row to ctl.container (sibling of .cm-editor, NOT a CM6 child)', () => {
     const ctl = makeFakeCtl();
     const file = { path: 'LeetCode/two-sum.md' } as never;
-    const row = mountActionRow(ctl as never, file, 'python3', document);
+    const { row } = mountActionRow(ctl as never, file, 'python3', document);
 
     expect(ctl.container.contains(row)).toBe(true);
     expect(ctl.container.lastElementChild).toBe(row);
@@ -103,7 +103,7 @@ describe('mountActionRow — adapter routing (*FromActive → *FromWidget per D-
   it('Run button click invokes ctl.plugin.runFromWidget(ctl)', () => {
     const ctl = makeFakeCtl();
     const file = { path: 'LeetCode/two-sum.md' } as never;
-    const row = mountActionRow(ctl as never, file, 'python3', document);
+    const { row } = mountActionRow(ctl as never, file, 'python3', document);
 
     const runBtn = row.querySelector<HTMLButtonElement>('button.leetcode-code-action-run');
     expect(runBtn).not.toBeNull();
@@ -116,7 +116,7 @@ describe('mountActionRow — adapter routing (*FromActive → *FromWidget per D-
 
   it('Submit button click invokes ctl.plugin.submitFromWidget(ctl)', () => {
     const ctl = makeFakeCtl();
-    const row = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
+    const { row } = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
 
     row.querySelector<HTMLButtonElement>('button.leetcode-code-action-submit')!.click();
     expect(ctl.plugin.submitFromWidget).toHaveBeenCalledTimes(1);
@@ -125,7 +125,7 @@ describe('mountActionRow — adapter routing (*FromActive → *FromWidget per D-
 
   it('AI Solution button click invokes ctl.plugin.aiSolutionFromWidget(ctl)', () => {
     const ctl = makeFakeCtl();
-    const row = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
+    const { row } = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
 
     row.querySelector<HTMLButtonElement>('button.leetcode-code-action-ai-solution')!.click();
     expect(ctl.plugin.aiSolutionFromWidget).toHaveBeenCalledTimes(1);
@@ -134,7 +134,7 @@ describe('mountActionRow — adapter routing (*FromActive → *FromWidget per D-
 
   it('Reset icon button click invokes ctl.plugin.resetFromWidget(ctl)', () => {
     const ctl = makeFakeCtl();
-    const row = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
+    const { row } = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
 
     const resetBtn = Array.from(row.querySelectorAll<HTMLButtonElement>('button.leetcode-code-action-icon'))
       .find((b) => b.title === 'Reset to starter code');
@@ -146,7 +146,7 @@ describe('mountActionRow — adapter routing (*FromActive → *FromWidget per D-
 
   it('Retrieve icon button click invokes ctl.plugin.retrieveLastSubmissionFromWidget(ctl)', () => {
     const ctl = makeFakeCtl();
-    const row = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
+    const { row } = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
 
     const retrieveBtn = Array.from(row.querySelectorAll<HTMLButtonElement>('button.leetcode-code-action-icon'))
       .find((b) => b.title === 'Retrieve last submission');
@@ -158,7 +158,7 @@ describe('mountActionRow — adapter routing (*FromActive → *FromWidget per D-
 
   it('mousedown.preventDefault retained on Run button (focus retention from codeBlockButtonRow.ts:59)', () => {
     const ctl = makeFakeCtl();
-    const row = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
+    const { row } = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
 
     const runBtn = row.querySelector<HTMLButtonElement>('button.leetcode-code-action-run')!;
     const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
@@ -181,7 +181,7 @@ describe('mountActionRow — chevron prefix integration', () => {
 
   it('chevron prefix wrapper exists and is positioned BEFORE Retrieve/Reset icon buttons', () => {
     const ctl = makeFakeCtl();
-    const row = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
+    const { row } = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
 
     const chevronWrapper = row.querySelector('.leetcode-language-chevron-wrapper');
     expect(chevronWrapper).not.toBeNull();
@@ -200,7 +200,7 @@ describe('mountActionRow — chevron prefix integration', () => {
   it('chevron item click on different language calls ctl.plugin.switchLanguageFromWidget(ctl, file, slug)', () => {
     const ctl = makeFakeCtl();
     const file = { path: 'LeetCode/two-sum.md' } as never;
-    const row = mountActionRow(ctl as never, file, 'python3', document);
+    const { row } = mountActionRow(ctl as never, file, 'python3', document);
 
     // Open the dropdown by clicking the chevron button.
     const chevronBtn = row.querySelector<HTMLButtonElement>('button.leetcode-language-chevron')!;
@@ -229,7 +229,7 @@ describe('mountActionRow — chevron prefix integration', () => {
   it('chevron item click on SAME language is a no-op (does not call switchLanguageFromWidget)', () => {
     const ctl = makeFakeCtl();
     const file = { path: 'LeetCode/two-sum.md' } as never;
-    const row = mountActionRow(ctl as never, file, 'python3', document);
+    const { row } = mountActionRow(ctl as never, file, 'python3', document);
 
     const chevronBtn = row.querySelector<HTMLButtonElement>('button.leetcode-language-chevron')!;
     chevronBtn.click();
@@ -253,7 +253,7 @@ describe('mountActionRow — chevron prefix integration', () => {
 describe('mountActionRow — D-action-03 lock: AI Debug NOT in widget row', () => {
   it('row contains no AI Debug button (D-action-03 — AI Debug stays in failed verdict modal only)', () => {
     const ctl = makeFakeCtl();
-    const row = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
+    const { row } = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
 
     // No button with class containing 'ai-debug'.
     const aiDebugBtn = row.querySelector('[class*="ai-debug"]');
@@ -262,7 +262,7 @@ describe('mountActionRow — D-action-03 lock: AI Debug NOT in widget row', () =
 
   it('row contains no Copy button (deferred per CONTEXT "Deferred Ideas")', () => {
     const ctl = makeFakeCtl();
-    const row = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
+    const { row } = mountActionRow(ctl as never, { path: 'p' } as never, 'python3', document);
 
     // No button with class containing 'copy'.
     const copyBtn = row.querySelector('[class*="copy"]');
