@@ -221,9 +221,14 @@ describe('Phase 20 Plan 20-09 Task 2 — childParentSync', () => {
     expect(dispatch.changes[0]!.from).toBe(27);
     expect(dispatch.changes[0]!.to).toBe(27);
     expect(dispatch.changes[0]!.insert).toBe('X');
-    // userEvent + addToHistory annotations attached.
+    // Only userEvent annotation attached. Plan 20-09 UAT bug-fix:
+    // addToHistory.of(false) removed because it blocked Obsidian's
+    // auto-save (the parent's history integration drives auto-save's
+    // dirty signal). The Tasks plugin's canonical pattern dispatches
+    // without ANY annotations; we keep userEvent for the
+    // 'leetcode.*' bypass + ViewPlugin echo detection.
     expect(dispatch.annotations).toBeDefined();
-    expect(dispatch.annotations!.length).toBe(2);
+    expect(dispatch.annotations!.length).toBe(1);
   });
 
   it('Test 2: multi-character insertion remaps correctly', () => {

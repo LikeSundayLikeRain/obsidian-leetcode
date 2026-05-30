@@ -137,16 +137,24 @@ export function createChildParentSyncExtension(
     //   - userEvent 'leetcode.child-sync': allows the section-protection
     //     transactionFilter and the ViewPlugin to identify this as an
     //     internal sync (Phase 17 D-05 + CLAUDE.md `'leetcode.*'` bypass).
-    //   - addToHistory.of(false): the child has its own undo history; this
-    //     dispatch must NOT pollute the parent's undo stack so Cmd-Z in
-    //     the parent doesn't reverse the child's edits.
+    //
+    // NOTE (Plan 20-09 UAT bug-fix): we INTENTIONALLY do NOT carry
+    // `Transaction.addToHistory.of(false)` here. Obsidian's auto-save
+    // heuristic is tied to the parent CM6's history integration —
+    // bypassing history with addToHistory.of(false) prevents auto-save
+    // from firing, which means the child's typed edits never reach
+    // disk. The Tasks plugin's canonical pattern (LivePreviewExtension.ts)
+    // dispatches without ANY annotations and auto-save fires correctly
+    // ~250 ms later. Under v1.3's "parent CM6 = in-memory editing
+    // surface" architecture (Plan 20-09 amendment), the parent's undo
+    // stack IS the canonical record for fence-body edits, so Cmd-Z on
+    // the parent legitimately reverses the child's typing. The child
+    // editor's own history Compartment still services in-widget Cmd-Z
+    // for the user (separate undo stack inside the child).
     try {
       parentView.dispatch({
         changes: parentChanges,
-        annotations: [
-          Transaction.userEvent.of('leetcode.child-sync'),
-          Transaction.addToHistory.of(false),
-        ],
+        annotations: [Transaction.userEvent.of('leetcode.child-sync')],
       });
     } catch {
       // Defensive — parent view may be in teardown mid-update.
