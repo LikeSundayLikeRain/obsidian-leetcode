@@ -1073,32 +1073,37 @@ if (useInlineWidget) {
 
 **If this table is empty:** No empirical claims remain — every primitive is verified. (This table is NOT empty for Phase 20; the empirical risks are bounded but real.)
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does `app.fileManager.processFrontMatter` fire `vault.on('modify')` for the file it touches?**
    - **What we know:** It's an atomic write. Obsidian's metadataCache pipeline updates after the write completes. The `metadataCache.on('changed')` event ALWAYS fires.
    - **What's unclear:** Whether the `vault.on('modify')` event ALSO fires (independent of metadataCache). If it does, the widget's modify listener will trigger reload UNLESS the early-return for "fence body unchanged" is in place.
    - **Recommendation:** Plan 20-02 must include a probe (write a test that fires `processFrontMatter` and observes whether `vault.on('modify')` fires for the same file in the next tick). If yes, ship the early-return; if no, the early-return is dead code but harmless.
+   - **RESOLVED — see Plan 20-02 Step 5 (early-return wired regardless of empirical answer)**
 
 2. **Does `@replit/codemirror-vim@6.3.0` support runtime Compartment.reconfigure cleanly?**
    - **What we know:** The library exposes `vim()` as a standard CM6 Extension. CM6's Compartment.reconfigure is a documented general primitive. Phase 16 successfully uses Compartment.reconfigure for languageCompartment.
    - **What's unclear:** Whether the vim extension's internal state survives Compartment.reconfigure cleanly. The library's internal state may include the current vim mode (normal/insert/visual), the vim command buffer, etc. Wholesale replace of `vim()` with `[]` may leak references.
    - **Recommendation:** Plan 20-01 dev-vault probe (§"Probe Procedure"). Pre-accepted VIM-03 banner fallback if it fails.
+   - **RESOLVED — see Plan 20-01 Task 2 dev-vault probe; VIM-03 banner pre-accepted as Phase 22 fallback per CONTEXT L4**
 
 3. **Does `app.workspace.on('layout-change')` fire when a user toggles vim mode in Obsidian Settings?**
    - **What we know:** `'layout-change'` exists at `obsidian.d.ts:7119`. v1.2 code already subscribes to it (`src/solve/ephemeralTabStore.ts:line 1`).
    - **What's unclear:** Whether THIS specific Obsidian setting (Settings → Editor → Vim mode) fires it. Settings persistence may use a different event.
    - **Recommendation:** Plan 20-01 probe — toggle vim mode and observe whether `layout-change` fires. Fallback is `setInterval` poll on 5s; UX is laggy but works.
+   - **RESOLVED — see Plan 20-01 Task 2 Step 4 (layout-change listener with no-op gate)**
 
 4. **What's the right "click to take over" UX flow for greyed-out pane in multi-pane?**
    - **What we know:** Single-active-per-file is the v1.3 baseline (CONTEXT L10). Pane A active, pane B greyed.
    - **What's unclear:** When user clicks pane B's CTA, does pane A immediately render greyed-out? Or does it wait for pane B to gain focus? Race window is small but visible.
    - **Recommendation:** Plan 20-04 designer + planner pick the flow; CONTEXT discretion mentions three options. Recommendation: synchronous "click → both panes update at the same animation frame" via shared state in `multiPaneCoordinator.ts`.
+   - **RESOLVED — see Plan 20-04 Task 2 (synchronous animation-frame swap on click)**
 
 5. **Should the conflict modal "Keep mine" debounce semantics be immediate flush or queued?**
    - **What we know:** The user just made a deliberate decision.
    - **What's unclear:** Whether immediate flush could ever conflict with another concurrent flush (e.g., another widget on the same file in another pane).
    - **Recommendation:** Immediate flush per CONTEXT discretion. If a race surfaces in dev testing, fall back to queued (the user's "Keep mine" choice persists in `selfWriteSuppression` even if delayed).
+   - **RESOLVED — see Plan 20-03 (immediate forceFlush on Keep mine)**
 
 ## Environment Availability
 

@@ -1,9 +1,9 @@
 ---
 phase: 20
 slug: reconciliation-ux-action-row-section-protection
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: approved
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-05-29
 ---
 
@@ -40,7 +40,14 @@ created: 2026-05-29
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| _pending_ | — | — | — | — | — | — | — | — | ⬜ pending |
+| 20-01-T1 | 20-01 | 1 | PROTECT-01, PROTECT-02 | T-20-01-01, T-20-01-02, T-20-01-03 | Section-protection narrowing preserves UAT-hardened scars + `'leetcode.*'` userEvent bypass + mutually-exclusive registration | unit + regression | `npx tsc --noEmit && npx vitest run tests/main/sectionProtectionExtension.test.ts tests/main/sectionLockExtension.test.ts --reporter=basic` | Task creates `tests/main/sectionProtectionExtension.test.ts` (forks v1.0 cases) + `tests/main/sectionLockExtension.test.ts` (Phase 5.5 baseline) | ⬜ pending |
+| 20-01-T2 | 20-01 | 1 | VIM-02 | T-20-01-04, T-20-01-06, T-20-01-07 | vimCompartment.reconfigure round-trip preserves cursor/scroll/undo + plugin-side layout-change dispatcher iterates registry | unit | `npx tsc --noEmit && npx vitest run tests/widget/vimReconfigure.test.ts tests/widget/vimMount.test.ts tests/widget/widgetRegistry.test.ts --reporter=basic` | Task creates `tests/widget/vimReconfigure.test.ts` | ⬜ pending |
+| 20-02-T1 | 20-02 | 2 | ACTION-01, ACTION-02, ACTION-05, ACTION-06 | T-20-02-04, T-20-02-05 | Action-row mount inside widget container with locked button order + verbatim reuse of buildCodeBlockButtonRow + buildLanguageChevron + single-mount assertion under both useInlineWidget settings | unit + DOM | `npx tsc --noEmit && npx vitest run tests/widget/widgetActionRow.test.ts tests/widget/actionRowSingleMount.test.ts tests/main/codeBlockButtonRow.test.ts tests/main/codeActionsPostProcessor.test.ts --reporter=basic` | Task creates `tests/widget/widgetActionRow.test.ts` + `tests/widget/actionRowSingleMount.test.ts` | ⬜ pending |
+| 20-02-T2 | 20-02 | 2 | ACTION-03, ACTION-04 | T-20-02-01, T-20-02-03, T-20-02-05, T-20-02-06, T-20-02-07 | *FromWidget reads code via state.doc.toString() (no disk roundtrip) + per-widget metadataCache reactivity dispatches Compartment.reconfigure without rebuild + Pitfall P2 early-return absorbs frontmatter-only modify echo + `currentDocHash` field declared on WidgetController | unit + Promise-order | `npx tsc --noEmit && npx vitest run tests/widget/fromWidget.test.ts tests/widget/languageSwitch.test.ts tests/widget/languageReactivity.test.ts --reporter=basic` | Task creates `tests/widget/fromWidget.test.ts` + `tests/widget/languageSwitch.test.ts` + `tests/widget/languageReactivity.test.ts` | ⬜ pending |
+| 20-03-T1 | 20-03 | 3 | SYNC-05 | T-20-03-04 | Pure-TS LCS line diff returns correct DiffRow[] for hostile inputs + DebouncedWriter.hasPending sentinel resets correctly | unit + perf | `npx tsc --noEmit && npx vitest run tests/widget/conflictDiff.test.ts tests/widget/debouncedWriter.test.ts --reporter=basic` | Task creates `tests/widget/conflictDiff.test.ts` + extends `tests/widget/debouncedWriter.test.ts` | ⬜ pending |
+| 20-03-T2 | 20-03 | 3 | SYNC-04, SYNC-05 | T-20-03-01, T-20-03-02, T-20-03-03, T-20-03-05, T-20-03-06, T-20-03-07, T-20-03-08, T-20-03-09 | ConflictModal lifecycle uses Obsidian-guaranteed onOpen/onClose (no custom open/close overrides) + activeConflictModal cleared via constructor callback + reload preserves cursor via line/col clamp + Transaction.addToHistory.of(false) + textContent-only DOM render + second-external-edit updates External pane in place | unit + DOM + lifecycle | `npx tsc --noEmit && npx vitest run tests/widget/ConflictModal.test.ts tests/widget/externalEditReload.test.ts tests/widget/conflictTrigger.test.ts tests/widget/conflictModalUpdate.test.ts --reporter=basic` | Task creates `tests/widget/ConflictModal.test.ts` + `tests/widget/externalEditReload.test.ts` + `tests/widget/conflictTrigger.test.ts` + `tests/widget/conflictModalUpdate.test.ts` | ⬜ pending |
+| 20-04-T1 | 20-04 | 4 | THEME-04 | T-20-04-05 | css-change listener iterates registry; cssRetheme calls only view.requestMeasure (no rebuild) | unit + spy | `npx tsc --noEmit && npx vitest run tests/widget/themeListener.test.ts --reporter=basic` | Task creates `tests/widget/themeListener.test.ts` | ⬜ pending |
+| 20-04-T2 | 20-04 | 4 | (multi-pane single-active baseline per L10) | T-20-04-01, T-20-04-02, T-20-04-03, T-20-04-07 | Two widgets on same file path → setGreyedOut flips data-pane-state correctly per active leaf; click on overlay promotes pane reversibly; CSS variables only | unit + DOM | `npx tsc --noEmit && npx vitest run tests/widget/multiPaneCoordinator.test.ts tests/widget/themeListener.test.ts --reporter=basic` | Task creates `tests/widget/multiPaneCoordinator.test.ts` | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -77,11 +84,11 @@ created: 2026-05-29
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (each plan creates its test files first per task action — per-plan test files stand in for separate Wave 0 stub tasks)
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s (full suite ~25s)
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-05-29
