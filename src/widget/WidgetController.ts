@@ -132,6 +132,43 @@ export interface WidgetMountHost {
 }
 
 /**
+ * Phase 20 Plan 20-05 — resolve a stable per-pane id for the host element.
+ *
+ * Walks up to the closest `.workspace-leaf` ancestor (production Obsidian
+ * renders every pane inside one) and either reads its existing
+ * `data-lc-leaf-id` or assigns a fresh one. Two distinct leaves return
+ * distinct ids; the same leaf returns the same id across calls.
+ *
+ * When the host is detached (test fixtures, popout edges), falls back to a
+ * per-mount UUID so two such mounts still produce distinct keys (no clobber).
+ *
+ * Exported so the regression test in `tests/widget/registryKeyPerPane.test.ts`
+ * can exercise it directly without spinning up a full mountLeetCodeWidget call.
+ */
+export function resolveLeafId(host: HTMLElement | null | undefined): string {
+  try {
+    const leafEl = host?.closest?.('.workspace-leaf') as HTMLElement | null;
+    if (leafEl) {
+      const existing = leafEl.getAttribute('data-lc-leaf-id');
+      if (existing) return existing;
+      const id = generateLeafId();
+      leafEl.setAttribute('data-lc-leaf-id', id);
+      return id;
+    }
+  } catch {
+    // Fall through to UUID fallback.
+  }
+  return generateLeafId();
+}
+
+function generateLeafId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  // happy-dom fallback — sufficient uniqueness for test envs.
+  return `lc-leaf-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
+/**
  * Lightweight controller wrapping the embedded EditorView. Plan 19-02
  * binds an optional `writer` (DebouncedWriter) — when present, flushNow
  * proxies to writer.forceFlush; otherwise it's a no-op (test fixtures /
@@ -148,12 +185,21 @@ export class WidgetController {
    *  Reading-mode read-only mounts and test fixtures may leave it undefined. */
   public writer?: DebouncedWriter;
 
-  /** Plan 19-03 — `${file.path}::${fenceIndex}` key used by both the
-   *  widgetRegistry (Plan 19-01) and statePersistence map (Plan 19-03).
-   *  Computed once at construction; readers (capture-on-unmount in
-   *  LeetCodeWidgetRenderChild.onunload + LeetCodeFenceWidget.destroy) use
-   *  this so they don't have to recompute the key shape. */
+  /** Plan 19-03 — `${file.path}::${fenceIndex}` key used by the
+   *  statePersistence map (Plan 19-03). Computed once at construction.
+   *
+   *  IMPORTANT: This key is INTENTIONALLY pane-blind — state hydration is
+   *  per-fence-content, not per-pane. A remount in the same logical pane
+   *  should still hydrate from the captured cursor regardless of which
+   *  workspace-leaf hosts it. Phase 20 Plan 20-05 split the registry key
+   *  (pane-aware) from the persistence key (pane-blind) for this reason. */
   public readonly persistenceKey: string;
+
+  /** Phase 20 Plan 20-05 — per-pane registry key
+   *  `${file.path}::${fenceIndex}::${leafId}` used by the widgetRegistry.
+   *  Distinct from `persistenceKey` so two panes on the same file co-exist
+   *  in the registry (multi-pane CTA symmetry + no destroy clobber). */
+  public readonly registryKey: string;
 
   /** Phase 20 Plan 20-01 — per-widget Compartment for the vim() extension.
    *  Owned by the controller (NOT module-singleton like languageCompartment)
@@ -221,8 +267,13 @@ export class WidgetController {
     public readonly plugin: WidgetMountHost,
     vimCompartment: Compartment,
     mountedVimMode: boolean,
+    registryKey?: string,
   ) {
     this.persistenceKey = `${file.path}::${fenceIndex}`;
+    // Phase 20 Plan 20-05 — registryKey defaults to persistenceKey when
+    // omitted (test fixtures may construct without a leafId). Production
+    // mountLeetCodeWidget always passes the per-pane key explicitly.
+    this.registryKey = registryKey ?? this.persistenceKey;
     this.vimCompartment = vimCompartment;
     this.mountedVimMode = mountedVimMode;
   }
@@ -813,6 +864,14 @@ export function mountLeetCodeWidget(
 
   const slug = resolveLanguageSlug(plugin, file);
 
+  // Phase 20 Plan 20-05 — resolve a stable per-pane leafId AND compose the
+  // per-pane registry key BEFORE constructing the controller. Two panes
+  // showing the same `(file.path, fenceIndex)` produce DIFFERENT registry
+  // keys so neither clobbers the other on Map.set. Pane-blind state
+  // hydration (`persistenceKey`) is preserved separately on the controller.
+  const leafId = resolveLeafId(host);
+  const registryKey = `${file.path}::${fenceIndex}::${leafId}`;
+
   // Plan 19-02 — declare controller upfront so the updateListener closure can
   // call into ctl.writer (which is set after view construction).
   //
@@ -871,7 +930,16 @@ export function mountLeetCodeWidget(
     });
   }
 
-  ctl = new WidgetController(view, container, file, fenceIndex, plugin, vimCompartment, vimEnabled);
+  ctl = new WidgetController(
+    view,
+    container,
+    file,
+    fenceIndex,
+    plugin,
+    vimCompartment,
+    vimEnabled,
+    registryKey,
+  );
 
   // Phase 20 Plan 20-02 — initialize `currentDocHash` from the initial
   // doc body. Fire-and-forget — the modify-handler early-return tolerates
@@ -918,8 +986,10 @@ export function mountLeetCodeWidget(
 
   // Register in plugin.widgetRegistry if present (set by main.ts onload when
   // useInlineWidget=ON; Plan 19-04 controller cleanup uses this).
+  // Phase 20 Plan 20-05 — key is the per-pane registryKey so two panes on
+  // the same file co-exist without clobber.
   if (plugin.widgetRegistry) {
-    plugin.widgetRegistry.set(`${file.path}::${fenceIndex}`, ctl);
+    plugin.widgetRegistry.set(ctl.registryKey, ctl);
   }
 
   // Phase 20 Plan 20-02 (ACTION-03) — per-widget metadataCache subscription.
@@ -1028,6 +1098,12 @@ export function mountLeetCodeWidget(
  */
 export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
   private controller?: WidgetController;
+  /** Phase 20 Plan 20-05 — registry key stored on the render child at the
+   *  same moment the registry entry is created (inside mountLeetCodeWidget).
+   *  Onunload deletes unconditionally via this field — never depends on
+   *  `this.controller` being set, so the registry can never leak even if a
+   *  future code path nulls out `this.controller` before `onunload` runs. */
+  private mountedRegistryKey?: string;
   public readonly fenceIndex: number;
 
   constructor(
@@ -1054,6 +1130,13 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
       this.readOnly,
       this.fenceIndex,
     );
+    // Phase 20 Plan 20-05 (Blocker #5 mitigation) — pair registry insertion
+    // (which happens INSIDE mountLeetCodeWidget) with the field assignment
+    // here in the SAME synchronous block. Onunload deletes via this field,
+    // never via `this.controller?.registryKey`, so the registry can NEVER
+    // leak — even on a hypothetical race where `this.controller` becomes
+    // null before unload.
+    this.mountedRegistryKey = this.controller.registryKey;
   }
 
   onunload(): void {
@@ -1081,6 +1164,14 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
     const p = this.controller?.flushNow();
     if (p && typeof p.catch === 'function') p.catch(() => undefined);
     this.controller?.destroy();
-    this.plugin.widgetRegistry?.delete(`${this.file.path}::${this.fenceIndex}`);
+    // Phase 20 Plan 20-05 (Blocker #5) — delete unconditionally via the stored
+    // registryKey (not `this.controller?.registryKey`). The field was set in
+    // onload at the same moment as the registry insertion, so this path can
+    // NEVER leak a registry entry — even on a hypothetical race where
+    // `this.controller` becomes null before unload.
+    if (this.mountedRegistryKey) {
+      this.plugin.widgetRegistry?.delete(this.mountedRegistryKey);
+      this.mountedRegistryKey = undefined;
+    }
   }
 }

@@ -1,7 +1,12 @@
 // Phase 19 Plan 01 + Plan 19-02 — Plugin-singleton widget registry (CONTEXT D-01).
 //
-// Map<`${file.path}::${fenceIndex}`, WidgetController> — one entry per mounted
-// widget. Mirrors the v1.2 ChildEditorRegistry shape from
+// Phase 20 Plan 20-05: Map<`${file.path}::${fenceIndex}::${leafId}`,
+// WidgetController> — one entry per mounted widget per pane. The key shape
+// gained the `::${leafId}` segment so two panes on the same file co-exist in
+// the registry (multi-pane CTA symmetry + no destroy clobber). The pane-blind
+// `${file.path}::${fenceIndex}` shape lives on the controller's
+// `persistenceKey` for state hydration. Mirrors the v1.2 ChildEditorRegistry
+// shape from
 // src/main/childEditorRegistry.ts:19-114, but drops:
 //   - LRU eviction (Plan 19-01 has no cache pressure ceiling — the state
 //     persistence map handles bound; widget unmount eagerly deletes here)
@@ -56,7 +61,8 @@ export interface WidgetControllerLike {
 export class WidgetRegistry {
   private readonly map = new Map<string, WidgetControllerLike>();
 
-  /** Retrieve a controller by `${path}::${fenceIndex}` key. */
+  /** Retrieve a controller by `${path}::${fenceIndex}::${leafId}` key
+   *  (Phase 20 Plan 20-05 added the leafId segment for per-pane disambiguation). */
   get(key: string): WidgetControllerLike | undefined {
     return this.map.get(key);
   }
