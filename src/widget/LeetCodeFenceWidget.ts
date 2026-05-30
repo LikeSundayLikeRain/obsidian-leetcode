@@ -73,42 +73,24 @@ export class LeetCodeFenceWidget extends WidgetType {
    * widgets render the same fence body for the same file + index — letting
    * CM6 reuse the existing DOM instead of remounting on every keystroke.
    *
-   * Phase 20 Plan 20-06 — when the strict sourceHash compare fails (two
-   * widgets differ ONLY by sourceHash), peek the suppression map. If the
-   * armed expected hash matches EITHER widget's sourceHash, treat as equal
-   * so CM6 reuses the existing DOM. This is the primary mechanism for
-   * next-build DOM reuse after a self-write echo: the ViewPlugin's gate
-   * keeps `this.decorations` stable for the echo transaction itself; this
-   * eq() clause keeps the DOM stable on the SUBSEQUENT genuine-keystroke
-   * rebuild while the suppression entry is still armed (5s TTL).
+   * Phase 20 Plan 20-09 — collapsed back to strict 4-tuple compare. The
+   * Plan 20-06 suppression-map clause was load-bearing only because the
+   * vault.process self-write produced an echo with a different sourceHash
+   * than the on-screen widget. With Plan 20-09's real-time child→parent
+   * dispatch, the parent doc never sees a "post-flush" body it didn't
+   * already know — every parent docChange that touches the fence body
+   * is either (a) the child's own dispatch (parent now matches child),
+   * or (b) an external edit (different content; remount is correct).
+   * No suppression peek needed.
    */
   eq(other: WidgetType): boolean {
-    if (!(other instanceof LeetCodeFenceWidget)) return false;
-    if (other.plugin !== this.plugin) return false;
-    if (other.file !== this.file) return false;
-    if (other.fenceIndex !== this.fenceIndex) return false;
-    if (other.sourceHash === this.sourceHash) return true;
-
-    // Phase 20 Plan 20-06 — suppression-map peek. When mid-self-write
-    // echo, the on-screen widget's hash is the pre-flush value AND the
-    // candidate widget's hash is the post-flush value; peek matches one
-    // of them (the armed expected hash equals the post-flush content).
-    // See .planning/debug/self-write-remount-cycle.md.
-    try {
-      const sup = this.plugin.selfWriteSuppression;
-      if (sup) {
-        const peeked = sup.peekExpectedHash(this.file.path);
-        if (
-          peeked !== null &&
-          (peeked === this.sourceHash || peeked === other.sourceHash)
-        ) {
-          return true;
-        }
-      }
-    } catch {
-      // Defensive — peek must never throw; if it does, fall through to false.
-    }
-    return false;
+    return (
+      other instanceof LeetCodeFenceWidget &&
+      other.plugin === this.plugin &&
+      other.file === this.file &&
+      other.fenceIndex === this.fenceIndex &&
+      other.sourceHash === this.sourceHash
+    );
   }
 
   /**
@@ -129,8 +111,13 @@ export class LeetCodeFenceWidget extends WidgetType {
    * path reverse-resolved via `${file.path}::${fenceIndex}` and could delete
    * a sibling pane's controller in a multi-pane scenario.
    */
-  toDOM(_view: EditorView): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const host = document.createElement('div');
+    // Phase 20 Plan 20-09 — pass the parent EditorView into the mount
+    // factory so the child's createChildParentSyncExtension can dispatch
+    // range-remapped changes onto the parent in real time. This replaces
+    // the prior debouncedWriter→vault.process pipeline that caused
+    // widget DOM detach + focus loss.
     const ctl = mountLeetCodeWidget(
       host,
       this.source,
@@ -138,6 +125,7 @@ export class LeetCodeFenceWidget extends WidgetType {
       this.plugin,
       /*readOnly=*/false,
       this.fenceIndex,
+      view,
     );
     this.mountedCtlKey = ctl.registryKey;
     return host;
