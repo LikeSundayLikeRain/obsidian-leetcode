@@ -84,8 +84,18 @@ function buildLeetCodeFenceRanges(
     to,
     Decoration.replace({
       widget: new LeetCodeFenceWidget(plugin, file, fenceIndex, sourceHash, source),
-      // The replace decoration takes over the entire fence range; the parent's
-      // cursor-skip behavior is enforced by the atomicRanges Facet (below).
+      // Phase 20 Plan 20-07 — `block: true` makes CM6 treat the multi-line
+      // widget as a single visual block. Vertical motion via coordsAtPos
+      // (cursorLineUp/Down) skips the widget as a unit instead of landing
+      // mid-range; atomicRanges does not consistently govern screen-
+      // coordinate-based vertical motion through a multi-line inline
+      // replace. Same primitive used by `src/main/codeActionsEditorExtension.ts:294`
+      // for the v1.2 action-row block widget.
+      // See .planning/debug/atomicranges-cursor-edge-cases.md.
+      block: true,
+      // The replace decoration takes over the entire fence range; the
+      // parent's cursor-skip behavior is enforced by the atomicRanges
+      // Facet (below).
     }),
   );
 
