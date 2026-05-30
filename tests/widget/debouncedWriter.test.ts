@@ -206,4 +206,54 @@ describe('DebouncedWriter', () => {
     const expected = rewriteFenceBody(FENCE_NOTE, 0, 'newbody');
     expect(app.files.get('a.md')).toBe(expected);
   });
+
+  // Phase 20 Plan 20-03 Task 1 — hasPending() accessor (SYNC-05).
+  // Sentinel boolean reset on flush completion / cancel; set on run().
+  describe('hasPending()', () => {
+    it('returns false immediately after construction', () => {
+      const w = new DebouncedWriter(
+        app as never, file as never, getDoc, getFenceIndex, suppression, 400,
+      );
+      expect(w.hasPending()).toBe(false);
+    });
+
+    it('returns true after run() schedules a debounced flush', () => {
+      const w = new DebouncedWriter(
+        app as never, file as never, getDoc, getFenceIndex, suppression, 400,
+      );
+      w.run();
+      expect(w.hasPending()).toBe(true);
+    });
+
+    it('returns false after forceFlush() resolves', async () => {
+      const w = new DebouncedWriter(
+        app as never, file as never, getDoc, getFenceIndex, suppression, 400,
+      );
+      w.run();
+      expect(w.hasPending()).toBe(true);
+      await w.forceFlush();
+      expect(w.hasPending()).toBe(false);
+    });
+
+    it('returns false after cancel()', () => {
+      const w = new DebouncedWriter(
+        app as never, file as never, getDoc, getFenceIndex, suppression, 400,
+      );
+      w.run();
+      expect(w.hasPending()).toBe(true);
+      w.cancel();
+      expect(w.hasPending()).toBe(false);
+    });
+
+    it('two consecutive run() calls keep hasPending() === true until flush completes', async () => {
+      const w = new DebouncedWriter(
+        app as never, file as never, getDoc, getFenceIndex, suppression, 400,
+      );
+      w.run();
+      w.run();
+      expect(w.hasPending()).toBe(true);
+      await w.forceFlush();
+      expect(w.hasPending()).toBe(false);
+    });
+  });
 });
