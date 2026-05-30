@@ -57,7 +57,14 @@ import {
   PROBLEM_HEADING_LINE,
   TECHNIQUES_HEADING_LINE,
 } from '../notes/NoteTemplate';
-import { findCodeFence } from './codeActionsEditorExtension';
+// Phase 20 Plan 20-07 — switched to the kind-aware findCodeFence from
+// fenceLocator.ts so the `## Code` lock branch can route on
+// `fence.kind === 'leetcode-solve'` (widget-mounted fence) vs. 'legacy'
+// (any other ```lang``` block in the note). Both functions share
+// (openerLine, closerLine) shape; fenceLocator widens the return with
+// `kind`, which is what we need to widen the snap target only for
+// widget-mounted fences without regressing legacy fence behavior.
+import { findCodeFence } from '../widget/fenceLocator';
 
 /**
  * Re-export of the SSoT tuple from `src/notes/NoteTemplate.ts` (Phase 2 D-03
@@ -152,19 +159,59 @@ export function computeLockedRanges(
           : state.doc.line(total).to;
       out.push(headFrom, bodyTo);
     } else if (cur.kind === 'code') {
-      // Phase 20 D-protect-01 surgical narrowing: KEEP heading + blank-line
-      // pocket + opener-line lock (cosmetic — defends pre-mount Source Mode);
-      // DELETE the closer-line + post-closer-pocket lock (the v1.3 widget
-      // owns the fence range entirely via `atomicRanges` from
-      // `liveModeViewPlugin.ts:135-139`). Malformed-fence path preserved.
+      // Phase 20 Plan 20-07 — gap-closure for atomicRanges cursor-edge cases
+      // (UAT Test 2, .planning/debug/atomicranges-cursor-edge-cases.md).
+      //
+      // SUPERSEDES the original D-protect-01 narrowing decision for
+      // `leetcode-solve` fences. D-protect-01 originally narrowed the
+      // `## Code` lock to the heading + blank-line pocket + opener line
+      // ONLY, on the rationale that "the v1.3 widget owns the fence range
+      // via atomicRanges." That rationale was empirically wrong: the
+      // transactionFilter snap target lands at `lockTo`, which under the
+      // narrow lock equals the FIRST CHARACTER OF FENCE BODY LINE 1 —
+      // INSIDE the widget's Decoration.replace([openerLine.from,
+      // closerLine.to]) range. atomicRanges governs cursor motion via
+      // CM6's intrinsic mechanics but is BYPASSED by the
+      // transactionFilter's authoritative SelectionRange rewrite (the
+      // filter sets the head directly; atomicRanges does not get a vote
+      // on the rewritten transaction). Live Preview's selection-overlap
+      // detector then strips the widget and reveals raw source.
+      //
+      // PLAN 20-07 RESOLUTION: for `leetcode-solve` fences specifically,
+      // widen the lock upper bound to PAST the closer line so the snap
+      // target is GUARANTEED to land outside the widget's replace range.
+      // For non-leetcode-solve fences (any other ```lang``` block in the
+      // note — possible when the user authors extra code blocks), keep
+      // the narrow D-protect-01 lock so the cursor can land at body line 1
+      // (those fences are NOT widget-mounted, so no overlap concern).
+      //
+      // Malformed-fence path preserved verbatim from D-protect-04.
       const fence = findCodeFence(state);
       if (fence) {
-        const opener = state.doc.line(fence.openerLine);
-        const openerTo =
-          fence.openerLine < total
-            ? state.doc.line(fence.openerLine + 1).from
-            : opener.to;
-        out.push(headFrom, openerTo);
+        if (fence.kind === 'leetcode-solve') {
+          // Widen to past-closer-line (or end-of-doc when closer is the
+          // last line — defensive, mid-edit case). Lock spans:
+          //   headFrom .. closerNextFrom
+          // where closerNextFrom is the start of the line AFTER the closer.
+          // The transactionFilter snaps a forward-cursor to this position
+          // which is GUARANTEED to be outside the widget's
+          // [openerLine.from, closerLine.to] replace range.
+          const closer = state.doc.line(fence.closerLine);
+          const closerNextFrom =
+            fence.closerLine < total
+              ? state.doc.line(fence.closerLine + 1).from
+              : closer.to;
+          out.push(headFrom, closerNextFrom);
+        } else {
+          // Non-leetcode-solve fence — keep narrow lock (v1.2 / D-protect-01
+          // behavior).
+          const opener = state.doc.line(fence.openerLine);
+          const openerTo =
+            fence.openerLine < total
+              ? state.doc.line(fence.openerLine + 1).from
+              : opener.to;
+          out.push(headFrom, openerTo);
+        }
       } else {
         // Malformed fence — only heading locked.
         out.push(headFrom, headTo);
