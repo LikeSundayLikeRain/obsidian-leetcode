@@ -21,7 +21,7 @@
 // `update.docChanged || update.viewportChanged`.
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
-import { RangeSetBuilder, type Extension } from '@codemirror/state';
+import { RangeSetBuilder, Transaction, type Extension } from '@codemirror/state';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   Decoration,
@@ -35,6 +35,7 @@ import { findCodeFence, extractFenceBody, computeFenceIndex } from './fenceLocat
 import { LeetCodeFenceWidget } from './LeetCodeFenceWidget';
 import { djb2 } from './hash';
 import type { WidgetMountHost } from './WidgetController';
+import { syncAnnotation } from './childParentSync';
 
 type PluginHost = Plugin & WidgetMountHost;
 
@@ -129,6 +130,77 @@ class LeetCodeLiveViewPlugin {
       const set = buildLeetCodeFenceRanges(update.view, this.plugin);
       this.decorations = set;
       this.ranges = set;
+    }
+
+    // Phase 20 Plan 20-09 Task 7 — parent → child sync push.
+    //
+    // When the parent CM6 receives a docChange that is NOT a child→parent
+    // echo (i.e., not carrying our own `'leetcode.child-sync'` userEvent),
+    // the change came from somewhere else — external Obsidian Sync, manual
+    // edit in source mode, the language-switch dispatch (Task 6), the
+    // ConflictModal "Keep external" path, etc. The child editor inside the
+    // widget needs to receive that change so its in-memory state matches
+    // what the parent now holds.
+    //
+    // We push the new fence body into the child via a single dispatch
+    // annotated with `syncAnnotation.of(true)` so the child's
+    // updateListener (createChildParentSyncExtension) treats this as a
+    // parent→child echo and skips re-propagation back to the parent.
+    if (!update.docChanged) return;
+    const isChildSync = update.transactions.some(
+      (tr) => tr.annotation(Transaction.userEvent) === 'leetcode.child-sync',
+    );
+    if (isChildSync) return;
+    pushParentToChild(update.view, this.plugin);
+  }
+}
+
+/**
+ * Phase 20 Plan 20-09 Task 7 — push the current parent fence body into
+ * the matching child editor (resolved via plugin.widgetRegistry by file
+ * path). Aborts silently when no widget for this file is registered, when
+ * the body matches the child already, or when the fence is missing/legacy.
+ */
+function pushParentToChild(view: EditorView, plugin: PluginHost): void {
+  const file = view.state.field(editorInfoField, false)?.file as
+    | TFile
+    | null
+    | undefined;
+  if (!file) return;
+  const fence = findCodeFence(view.state);
+  if (!fence || fence.kind !== 'leetcode-solve') return;
+  const newBody = extractFenceBody(view.state, fence);
+
+  const registry = plugin.widgetRegistry as unknown as
+    | { values(): Iterable<unknown> }
+    | undefined;
+  if (!registry || typeof registry.values !== 'function') return;
+
+  for (const ctl of registry.values()) {
+    const candidate = ctl as unknown as {
+      file?: { path?: string };
+      view?: EditorView;
+    };
+    if (candidate.file?.path !== file.path) continue;
+    const childView = candidate.view;
+    if (!childView) continue;
+
+    // No-op when child already matches parent (avoids unnecessary
+    // dispatches that pollute the child's history).
+    const childDoc = childView.state.doc.toString();
+    if (childDoc === newBody) continue;
+
+    try {
+      childView.dispatch({
+        changes: { from: 0, to: childView.state.doc.length, insert: newBody },
+        annotations: [
+          syncAnnotation.of(true),
+          Transaction.userEvent.of('leetcode.parent-sync'),
+          Transaction.addToHistory.of(false),
+        ],
+      });
+    } catch {
+      // Defensive — child view may be in teardown.
     }
   }
 }
