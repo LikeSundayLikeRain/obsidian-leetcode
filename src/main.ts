@@ -1165,11 +1165,7 @@ export default class LeetCodePlugin extends Plugin {
             // (b) Pitfall P2 early-return — fence body unchanged. If the
             // widget's currentDocHash matches what we just observed on
             // disk, the file changed but the FENCE BODY did not
-            // (frontmatter-only write — chevron-switch path). Return
-            // without invoking suppression. The currentDocHash is empty
-            // briefly at very-first-mount before any edit; we DO NOT
-            // short-circuit in that case (falls through to suppression —
-            // safe default).
+            // (frontmatter-only write — chevron-switch path).
             if (
               typeof matchingWidget.currentDocHash === 'string' &&
               matchingWidget.currentDocHash.length > 0 &&
@@ -1178,11 +1174,29 @@ export default class LeetCodePlugin extends Plugin {
               return;
             }
 
-            // (c) Suppression consume.
-            const result = this.selfWriteSuppression.tryConsume(file.path, observedHash);
-            if (result === 'consumed') return;
+            // (c) Plan 20-09 — self-write detection. Under real-time
+            // child→parent sync (Plan 20-09 Tasks 2-3), the parent CM6
+            // always reflects the child's typed content; Obsidian's
+            // built-in editor auto-save then writes disk. When the
+            // observed disk body equals the child's current doc, the
+            // modify event is the auto-save echo of our own typing →
+            // silent no-op.
+            const childDoc = matchingWidget.view.state.doc.toString();
+            if (observedBody === childDoc) return;
 
-            // (d) Stale or miss → branch on hasPending().
+            // (d) Disk diverges from child = external write (Sync from
+            // another device, manual edit in source mode, etc.). Default
+            // to silent reload — the parent→child push in the ViewPlugin
+            // update path (Plan 20-09 Task 7) ALSO handles this when the
+            // parent doc updates, so this path is the modify-event
+            // backup. The conflict modal opens only if the user
+            // explicitly wants to compare both versions before
+            // resolution. Under Plan 20-09, "in-flight typing" is
+            // always real-time-mirrored to the parent, so there is no
+            // separate writer.hasPending() signal — we route the modal
+            // open on every divergence. The legacy hasPending() gate
+            // is collapsed into "always show modal" because the user
+            // typing IS the parent doc state.
             const hasPending = matchingWidget.writer?.hasPending() === true;
             if (!hasPending) {
               // Idle widget — silent reload with line/col cursor clamp.
