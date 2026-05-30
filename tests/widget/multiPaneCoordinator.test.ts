@@ -28,7 +28,7 @@ import {
   registerMultiPaneCoordinator,
   reconcileFocus,
 } from '../../src/widget/multiPaneCoordinator';
-import { WidgetController } from '../../src/widget/WidgetController';
+import { WidgetController, resolveLeafId } from '../../src/widget/WidgetController';
 import { WidgetRegistry } from '../../src/widget/widgetRegistry';
 import { MarkdownView } from '../helpers/obsidian-stub';
 
@@ -166,8 +166,10 @@ describe('Phase 20 Plan 20-04 — registerMultiPaneCoordinator (multi-pane affor
   it('two widgets same file, different leaves — active leaf A → A active, B peer', () => {
     const a = makeFakeCtl('foo.md');
     const b = makeFakeCtl('foo.md');
-    plugin.widgetRegistry.set('foo.md::0:a', a.ctl as never);
-    plugin.widgetRegistry.set('foo.md::0:b', b.ctl as never);
+    // Phase 20 Plan 20-05 — production-shape per-pane keys; size === 2 invariant.
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(a.leafEl)}`, a.ctl as never);
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(b.leafEl)}`, b.ctl as never);
+    expect(plugin.widgetRegistry.size).toBe(2);
 
     // Active view's leaf == a's leaf.
     const activeView = makeFakeView('foo.md');
@@ -193,7 +195,7 @@ describe('Phase 20 Plan 20-04 — registerMultiPaneCoordinator (multi-pane affor
   // Coord Test 3 — single widget on file → always active.
   it('single widget on file — always active (no peer)', () => {
     const a = makeFakeCtl('foo.md');
-    plugin.widgetRegistry.set('foo.md::0', a.ctl as never);
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(a.leafEl)}`, a.ctl as never);
 
     const activeView = makeFakeView('foo.md');
     a.leafEl.appendChild(activeView.containerEl);
@@ -211,8 +213,8 @@ describe('Phase 20 Plan 20-04 — registerMultiPaneCoordinator (multi-pane affor
   it('active view on a different file — every widget back to active', () => {
     const a = makeFakeCtl('foo.md');
     const b = makeFakeCtl('foo.md');
-    plugin.widgetRegistry.set('foo.md::0:a', a.ctl as never);
-    plugin.widgetRegistry.set('foo.md::0:b', b.ctl as never);
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(a.leafEl)}`, a.ctl as never);
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(b.leafEl)}`, b.ctl as never);
 
     const activeView = makeFakeView('OTHER.md');
     plugin.__activeView = activeView;
@@ -229,8 +231,8 @@ describe('Phase 20 Plan 20-04 — registerMultiPaneCoordinator (multi-pane affor
   it('no active markdown view — every widget back to active', () => {
     const a = makeFakeCtl('foo.md');
     const b = makeFakeCtl('foo.md');
-    plugin.widgetRegistry.set('foo.md::0:a', a.ctl as never);
-    plugin.widgetRegistry.set('foo.md::0:b', b.ctl as never);
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(a.leafEl)}`, a.ctl as never);
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(b.leafEl)}`, b.ctl as never);
     plugin.__activeView = null;
 
     registerMultiPaneCoordinator(plugin as never);
@@ -275,8 +277,8 @@ describe('Phase 20 Plan 20-04 — registerMultiPaneCoordinator (multi-pane affor
   it('embed widgets always remain active (defense-in-depth gate)', () => {
     const a = makeFakeCtl('foo.md', { isEmbed: true });
     const b = makeFakeCtl('foo.md');
-    plugin.widgetRegistry.set('foo.md::0:embed', a.ctl as never);
-    plugin.widgetRegistry.set('foo.md::0:real', b.ctl as never);
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(a.leafEl)}`, a.ctl as never);
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(b.leafEl)}`, b.ctl as never);
 
     const activeView = makeFakeView('foo.md');
     // Active leaf == B's leaf (so A would become 'peer' if not gated).
@@ -326,7 +328,7 @@ describe('Phase 20 Plan 20-04 — registerMultiPaneCoordinator (multi-pane affor
   // active-leaf-change subscription wrapper.
   it('reconcileFocus is a pure function over the registry (callable without registering)', () => {
     const a = makeFakeCtl('foo.md');
-    plugin.widgetRegistry.set('foo.md::0', a.ctl as never);
+    plugin.widgetRegistry.set(`foo.md::0::${resolveLeafId(a.leafEl)}`, a.ctl as never);
     const activeView = makeFakeView('foo.md');
     a.leafEl.appendChild(activeView.containerEl);
     reconcileFocus(activeView as never, plugin as never);
