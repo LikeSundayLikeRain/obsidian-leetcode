@@ -137,8 +137,14 @@ export class CodeActionsWidget extends WidgetType {
     return buildCodeBlockButtonRow(doc, this.plugin, {
       // D-09 — Edit-Mode only. The Reading-Mode call site
       // (codeActionsPostProcessor.ts) MUST NOT pass opts.prefix.
+      // Phase 20 Plan 20-08 — buildLanguageChevron now returns
+      // { wrapper, labelSpan, items, refresh }. The v1.2 path needs only
+      // the HTMLElement (`.wrapper`); Decoration.widget rebuilds the
+      // entire chevron DOM via WidgetType.eq() (line 145-155) when
+      // currentSlug flips, so no live refresh handle is needed here.
       prefix: () =>
-        buildLanguageChevron(doc, this.plugin, this.file, this.currentSlug),
+        buildLanguageChevron(doc, this.plugin, this.file, this.currentSlug)
+          .wrapper,
     });
   }
 
