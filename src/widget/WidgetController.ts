@@ -222,6 +222,14 @@ export class WidgetController {
    *  Plan 20-04 retheme + multi-pane affordance to walk widget DOM. */
   public actionRow?: HTMLDivElement;
 
+  /** Phase 20 Plan 20-08 (gap-closure for language-switch-not-wired) —
+   *  refresh closure returned by `mountActionRow` that updates the chevron's
+   *  label text and `.is-current` marker without remounting. Called by the
+   *  per-widget metadataCache 'changed' listener AFTER the existing
+   *  `languageCompartment.reconfigure` dispatch. Optional — undefined when
+   *  the action row mount was skipped (embed widgets, test fixtures). */
+  public actionRowRefresh?: (newSlug: string) => void;
+
   /** Phase 20 Plan 20-04 (multi-pane "Take over" affordance) — embed-context
    *  flag captured at mount time. Embed widgets (`![[note#Code]]` transclusion
    *  per Phase 19 EMBED-01..04) are read-only display surfaces; the multi-pane
@@ -1024,6 +1032,19 @@ export function mountLeetCodeWidget(
           } catch {
             // Defensive — view may be in teardown.
           }
+          // Phase 20 Plan 20-08 — gap-closure for language-switch-not-wired.
+          // After the parser reconfigure, refresh the action-row chevron's
+          // visible state (label + .is-current marker). Without this call,
+          // the chevron stays frozen at mount-time slug forever — UAT
+          // Test 3 blocker, see
+          // .planning/debug/language-switch-not-wired.md.
+          try {
+            ctl.actionRowRefresh?.(newSlug);
+          } catch {
+            // Defensive — chevron refresh must never block the listener;
+            // the outer Compartment.reconfigure dispatch is the
+            // load-bearing path.
+          }
         },
       );
     } catch {
@@ -1074,12 +1095,17 @@ export function mountLeetCodeWidget(
     ctl.isEmbed = isEmbed;
     if (!isEmbed) {
       try {
-        ctl.actionRow = mountActionRow(
+        const mounted = mountActionRow(
           ctl as unknown as WidgetActionRowCtl,
           file,
           ctl.currentSlug,
           ownerDoc,
         );
+        ctl.actionRow = mounted.row;
+        // Phase 20 Plan 20-08 — store the chevron refresh closure so the
+        // metadataCache 'changed' listener can update label text +
+        // .is-current marker after each languageCompartment.reconfigure.
+        ctl.actionRowRefresh = mounted.refresh;
       } catch {
         // Defensive — chevron / button-row construction may throw under
         // hostile test envs without `setIcon`. Action row mount is a UX
