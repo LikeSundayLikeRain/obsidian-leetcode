@@ -95,6 +95,10 @@ vi.mock('@codemirror/state', () => ({
   EditorState: {
     create: vi.fn((opts: { doc?: string }) => ({ doc: opts?.doc ?? '' })),
   },
+  // Phase 20 Plan 20-01 — vimCompartment is per-widget; the mock returns a
+  // shape with `of` and `reconfigure` so mountLeetCodeWidget can construct
+  // it and `reconfigureVim` can dispatch effects without crashing.
+  Compartment: class { of(ext: unknown) { return ['mock-compartment-of', ext]; } reconfigure(ext: unknown) { return { __reconfigureEffect: true, ext }; } },
   // statePersistence.hydrateState calls EditorSelection.cursor(head) to build
   // the selection passed to view.dispatch. Stub it to return an inspectable
   // shape so the test can assert the dispatched anchor is the prior cursor.

@@ -135,6 +135,9 @@ import { registerVaultModifyRepairTrigger } from './main/childEditorSync';
 // stays the user-facing default through Phase 21.
 import { WidgetRegistry } from './widget/widgetRegistry';
 import { leetCodeBlockProcessor } from './widget/codeBlockProcessor';
+// Phase 20 Plan 20-01 (VIM-02) — canonical reader for the undocumented
+// `app.vault.getConfig('vimMode')` boolean. Single cast site.
+import { readVimModeFromVault } from './widget/vimMode';
 import { leetCodeFenceViewPlugin } from './widget/liveModeViewPlugin';
 // Phase 19 Plan 02 — selfWriteSuppression + sha1 helper for the modify-event
 // consumer. extractFenceBody for hashing observed disk fence body.
@@ -981,6 +984,31 @@ export default class LeetCodePlugin extends Plugin {
       this.registerDomEvent(window, 'beforeunload', () => {
         this.widgetRegistry?.flushAllSync();
       });
+
+      // Phase 20 Plan 20-01 (VIM-02) — vim live-reconfigure dispatcher.
+      // Obsidian fires no documented event for the Settings → Editor →
+      // Vim key bindings toggle, but `workspace.on('layout-change')`
+      // fires when settings save (verified existence at obsidian.d.ts:7119,
+      // since 0.9.20). On every layout-change we re-read the current
+      // `vimMode` value via the canonical `readVimModeFromVault` helper
+      // and fan out to every registered widget; each controller's
+      // `reconfigureVim` early-returns when the cached value matches
+      // (so the dispatcher is cheap on every other layout change). When
+      // the value flipped, the controller dispatches
+      // `vimCompartment.reconfigure(vim() ↔ [])` which preserves cursor +
+      // scroll + undo state (Phase 16 Pitfall C analog). The dev-vault
+      // probe outcome (Plan 20-01 SUMMARY §"Probe Outcome") confirms or
+      // pre-accepts the VIM-03 banner fallback at Phase 22 (CONTEXT L4).
+      this.registerEvent(
+        this.app.workspace.on('layout-change', () => {
+          const newVim = readVimModeFromVault(this);
+          if (this.widgetRegistry) {
+            for (const ctl of this.widgetRegistry.values()) {
+              ctl.reconfigureVim?.(newVim);
+            }
+          }
+        }),
+      );
 
       // Hook 5: MarkdownRenderChild.onunload (Reading mode) — owned by
       // LeetCodeWidgetRenderChild.onunload in src/widget/WidgetController.ts.

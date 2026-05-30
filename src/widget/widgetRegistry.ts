@@ -33,6 +33,11 @@ export interface WidgetControllerLike {
     cancel(): void;
     setDelay?(ms: number): void;
   };
+  /** Phase 20 Plan 20-01 (VIM-02) — production WidgetController exposes
+   *  this; the plugin-side `workspace.on('layout-change')` listener calls
+   *  it when `vimMode` changes. Optional in the structural contract so test
+   *  fixtures (which don't drive vim toggles) can omit it. */
+  reconfigureVim?: (enabled: boolean) => void;
 }
 
 export class WidgetRegistry {
@@ -115,6 +120,16 @@ export class WidgetRegistry {
     for (const ctl of this.map.values()) {
       ctl.writer?.setDelay?.(ms);
     }
+  }
+
+  /** Phase 20 Plan 20-01 — iterator over every registered controller. Used by
+   *  the plugin-side `workspace.on('layout-change')` vim dispatcher (Plan
+   *  20-01) and by Plan 20-04 multi-pane affordance / theme dispatcher.
+   *  Yields the same WidgetControllerLike values as `flushAll` walks; the
+   *  underlying `Map.values()` iterator is forward-compatible if any caller
+   *  needs `Array.from(registry.values())`. */
+  *values(): IterableIterator<WidgetControllerLike> {
+    yield* this.map.values();
   }
 
   /** Current entry count. Used by tests; not part of the public hot path. */

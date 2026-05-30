@@ -32,7 +32,7 @@ import {
   type ViewUpdate,
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
-import { EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { bracketMatching, indentUnit } from '@codemirror/language';
 import {
   history,
@@ -59,6 +59,7 @@ import { computeFenceIndex } from './fenceLocator';
 import { DebouncedWriter } from './debouncedWriter';
 import type { SelfWriteSuppression } from './selfWriteSuppression';
 import type { StatePersistenceMap } from './statePersistence';
+import { readVimModeFromVault } from './vimMode';
 
 /**
  * Plugin-host shape required by the widget mount factory. Structurally typed
@@ -119,6 +120,12 @@ export interface WidgetMountHost {
  * binds an optional `writer` (DebouncedWriter) — when present, flushNow
  * proxies to writer.forceFlush; otherwise it's a no-op (test fixtures /
  * read-only mounts).
+ *
+ * Phase 20 Plan 20-01 (VIM-02) — owns a per-widget `vimCompartment` and the
+ * mount-time `mountedVimMode` boolean. `reconfigureVim(enabled)` swaps
+ * `vim() ↔ []` via `Compartment.reconfigure` so the user can toggle vim
+ * mode in Obsidian Settings and have widgets pick up the change without
+ * note reload (preserves cursor + scroll + undo).
  */
 export class WidgetController {
   /** Optional — Plan 19-02 mount factory sets this for editable widgets;
@@ -132,14 +139,33 @@ export class WidgetController {
    *  this so they don't have to recompute the key shape. */
   public readonly persistenceKey: string;
 
+  /** Phase 20 Plan 20-01 — per-widget Compartment for the vim() extension.
+   *  Owned by the controller (NOT module-singleton like languageCompartment)
+   *  because each widget has its own EditorView and Compartments are
+   *  identity-keyed; module-singleton would dispatch to all widgets at once
+   *  which is correct for languageCompartment but unnecessary for vim
+   *  because the plugin-side `workspace.on('layout-change')` listener
+   *  iterates `widgetRegistry.values()` and is the single fan-out. */
+  public readonly vimCompartment: Compartment;
+
+  /** Phase 20 Plan 20-01 — last vim mode value applied to the widget.
+   *  Mutated by `reconfigureVim` for the early-return no-op gate (so
+   *  layout-change events that don't actually flip vim mode don't dispatch
+   *  redundant Compartment.reconfigure to every widget). */
+  public mountedVimMode: boolean;
+
   constructor(
     public readonly view: EditorView,
     public readonly container: HTMLElement,
     public readonly file: TFile,
     public readonly fenceIndex: number,
     public readonly plugin: WidgetMountHost,
+    vimCompartment: Compartment,
+    mountedVimMode: boolean,
   ) {
     this.persistenceKey = `${file.path}::${fenceIndex}`;
+    this.vimCompartment = vimCompartment;
+    this.mountedVimMode = mountedVimMode;
   }
 
   /** Drain pending writer state. Returns the underlying forceFlush Promise
@@ -174,6 +200,32 @@ export class WidgetController {
   /** Read the current widget document content (used by debouncedWriter). */
   getDoc(): string {
     return this.view.state.doc.toString();
+  }
+
+  /**
+   * Phase 20 Plan 20-01 (VIM-02) — live reconfigure of the vim Compartment
+   * payload. Early-returns when the requested value matches the cached
+   * `mountedVimMode` (no-op gate; the plugin-side layout-change listener
+   * fires on EVERY layout change, not just vim-mode flips, so the gate is
+   * load-bearing — see Step 3 of 20-01-PLAN). Otherwise mutates the cached
+   * value FIRST then dispatches `vimCompartment.reconfigure(...)`.
+   *
+   * No `userEvent` annotation needed — the widget's own EditorView has no
+   * section-protection extension installed; only the parent does.
+   *
+   * Compartment.reconfigure preserves cursor + scroll + undo (Phase 16
+   * Pitfall C; verified analog to languageCompartment.reconfigure). The
+   * Phase 20 Plan 20-01 dev-vault probe (Step 5) confirms vim-specific
+   * behavior — pre-accepted VIM-03 banner fallback at Phase 22 if it fails.
+   */
+  reconfigureVim(enabled: boolean): void {
+    if (this.mountedVimMode === enabled) return;
+    this.mountedVimMode = enabled;
+    this.view.dispatch({
+      effects: this.vimCompartment.reconfigure(
+        enabled ? vim({ status: true } as Parameters<typeof vim>[0]) : [],
+      ),
+    });
   }
 }
 
@@ -245,23 +297,23 @@ function resolveLanguageSlug(plugin: WidgetMountHost, file: TFile): string {
  *   - createScrollIntoViewExtension (lives in soon-deleted childEditorSync.ts)
  *   - syncExtensions parameter (Plan 19-02 will wire updateListener inline)
  *
- * NOTE: The conditional vim() injection follows the C-14 / VIM-01 contract —
- * read once at mount time; toggling `vimMode` at runtime requires a remount.
+ * Phase 20 Plan 20-01 (VIM-02) — the previous unconditional `vim()` injection
+ * is now wrapped in a per-widget `vimCompartment.of(...)` so the plugin-side
+ * `workspace.on('layout-change')` listener can dispatch a live reconfigure
+ * (see WidgetController.reconfigureVim). Mount-time vim state is still read
+ * once via the canonical `readVimModeFromVault` helper (matches Phase 19
+ * C-14 read-once discipline) and threads through as the initial Compartment
+ * payload.
  */
 function buildExtensions(
   plugin: WidgetMountHost,
   slug: string,
   readOnly: boolean,
+  vimCompartment: Compartment,
+  vimEnabled: boolean,
   onDocChanged?: (update: ViewUpdate) => void,
 ): Extension[] {
   const indent = plugin.settings.getIndentSizeOverride();
-  // C-14: read vimMode once at mount time. `getConfig` is an undocumented
-  // Obsidian internal — call it defensively so test fixtures (and any future
-  // host that omits it) don't crash at mount.
-  const getConfig = plugin.app.vault.getConfig;
-  const vimEnabled =
-    typeof getConfig === 'function' &&
-    (getConfig.call(plugin.app.vault, 'vimMode') as boolean | undefined) === true;
 
   // Shared visual extensions (both editable and read-only).
   const visual: Extension[] = [
@@ -293,8 +345,13 @@ function buildExtensions(
   // Editable mode: full interactive extensions.
   const exts: Extension[] = [
     ...visual,
-    // Conditional vim (BLOCKER 1 fix: gated on !readOnly above).
-    ...(vimEnabled ? [vim({ status: true } as Parameters<typeof vim>[0])] : []),
+    // Phase 20 Plan 20-01 (VIM-02) — vim is wrapped in a per-widget
+    // Compartment so reconfigureVim can swap `vim() ↔ []` live without
+    // rebuilding the EditorView. Initial payload mirrors the v1.2 / Phase 19
+    // mount-time gate (BLOCKER 1 fix: gated on !readOnly above).
+    vimCompartment.of(
+      vimEnabled ? vim({ status: true } as Parameters<typeof vim>[0]) : [],
+    ),
     // closeBracketsKeymap before defaultKeymap (Pitfall D from Phase 16).
     keymap.of(closeBracketsKeymap),
     bracketMatching(),
@@ -353,9 +410,18 @@ export function mountLeetCodeWidget(
     ? undefined
     : () => { ctl?.writer?.run(); };
 
+  // Phase 20 Plan 20-01 (VIM-02) — per-widget vimCompartment + mount-time
+  // vimMode read. The Compartment is identity-keyed so it MUST be
+  // constructed once per widget; sharing across widgets would broadcast
+  // every reconfigure. Read-only widgets pass `false` so the initial
+  // payload is `[]` (matches Phase 19 BLOCKER 1: vim never mounts on
+  // read-only widgets).
+  const vimCompartment = new Compartment();
+  const vimEnabled = !readOnly && readVimModeFromVault(plugin as unknown as Parameters<typeof readVimModeFromVault>[0]);
+
   const state = EditorState.create({
     doc: source,
-    extensions: buildExtensions(plugin, slug, readOnly, onDocChanged),
+    extensions: buildExtensions(plugin, slug, readOnly, vimCompartment, vimEnabled, onDocChanged),
   });
 
   const view = new EditorView({ state, parent: container });
@@ -376,7 +442,7 @@ export function mountLeetCodeWidget(
     });
   }
 
-  ctl = new WidgetController(view, container, file, fenceIndex, plugin);
+  ctl = new WidgetController(view, container, file, fenceIndex, plugin, vimCompartment, vimEnabled);
 
   // Plan 19-03 — hydrate previously-captured cursor + scroll if the plugin
   // host provides a statePersistence map AND we're within the 30s TTL window.

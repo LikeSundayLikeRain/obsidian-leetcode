@@ -153,7 +153,13 @@ describe('Read-only mount behavioral assertions (WIDGET-07 / UAT BLOCKER 1)', ()
     mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, makeFakePlugin(true) as never, false);
     expect(vim).toHaveBeenCalled();
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
-    expect(createArgs.extensions).toContain('mock-vim-extension');
+    // Phase 20 Plan 20-01 — vim is now wrapped in vimCompartment.of(vim());
+    // the mocked Compartment renders this as ['mock-compartment-of',
+    // 'mock-vim-extension'], so the marker is one level nested.
+    const flatContainsVim = (createArgs.extensions as unknown[]).some(
+      (e) => e === 'mock-vim-extension' || (Array.isArray(e) && e.includes('mock-vim-extension')),
+    );
+    expect(flatContainsVim).toBe(true);
     expect(EditorView.editable.of).toHaveBeenCalledWith(true);
     expect(createArgs.extensions).toContain('mock-editable-true');
   });

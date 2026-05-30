@@ -124,18 +124,35 @@ describe('Vim conditional mount (VIM-01)', () => {
     host = document.createElement('div');
   });
 
+  // Phase 20 Plan 20-01 (VIM-02) — vim is now wrapped in a per-widget
+  // `vimCompartment.of(vim())` so reconfigureVim can swap live without
+  // rebuilding the EditorView. The mocked Compartment in this file (lines
+  // 47-50) renders `Compartment.of(ext)` as `['mock-compartment-of', ext]`,
+  // so assertions look for the wrapped tuple containing 'mock-vim-extension'
+  // rather than the bare string.
+  function flatExtensionsContains(exts: unknown, marker: string): boolean {
+    if (!Array.isArray(exts)) return false;
+    for (const e of exts) {
+      if (e === marker) return true;
+      if (Array.isArray(e) && e.includes(marker)) return true;
+    }
+    return false;
+  }
+
   it('vimMode=true → vim() invoked and vim extension included in extensions array', () => {
     mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, makeFakePlugin(true) as never, false);
     expect(vim).toHaveBeenCalled();
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
-    expect(createArgs.extensions).toContain('mock-vim-extension');
+    // Phase 20 — vim is wrapped in vimCompartment.of(vim()); assert via the
+    // wrapped tuple shape produced by the test's mock Compartment.
+    expect(flatExtensionsContains(createArgs.extensions, 'mock-vim-extension')).toBe(true);
   });
 
   it('vimMode=false → vim() NOT invoked and vim extension absent', () => {
     mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, makeFakePlugin(false) as never, false);
     expect(vim).not.toHaveBeenCalled();
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
-    expect(createArgs.extensions).not.toContain('mock-vim-extension');
+    expect(flatExtensionsContains(createArgs.extensions, 'mock-vim-extension')).toBe(false);
   });
 
   it('reads vimMode via app.vault.getConfig at mount time (VIM-04 / CONTEXT C-14)', () => {
@@ -148,6 +165,6 @@ describe('Vim conditional mount (VIM-01)', () => {
     mountLeetCodeWidget(host, 'pass', { path: 'a.md' } as never, makeFakePlugin(true) as never, true);
     expect(vim).not.toHaveBeenCalled();
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
-    expect(createArgs.extensions).not.toContain('mock-vim-extension');
+    expect(flatExtensionsContains(createArgs.extensions, 'mock-vim-extension')).toBe(false);
   });
 });
