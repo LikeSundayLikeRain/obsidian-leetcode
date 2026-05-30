@@ -145,7 +145,7 @@ Plans:
 - **Conflict modal is a novel UX surface for this plugin.** Worth a paper-prototype review before implementation.
 - Pitfalls covered: P2, P8, P9, P10, P11, P16, P19, P20, P21, P24.
 
-**Plans:** 6/8 plans executed
+**Plans:** 7/8 plans executed
 
 Plans:
 **Wave 1**
@@ -260,7 +260,7 @@ Plans:
 | 17. Polish & Edge Cases                     | v1.2      | 13/13          | Complete    | 2026-05-25 |
 | 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 4/4            | Complete    | 2026-05-26 |
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
-| 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 6/8 | In Progress|  |
+| 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 7/8 | In Progress|  |
 | 21. v1.2 Migration                          | v1.3      | 0/0            | Not started | -          |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
 
