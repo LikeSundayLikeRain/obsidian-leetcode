@@ -60,6 +60,8 @@ import { DebouncedWriter } from './debouncedWriter';
 import type { SelfWriteSuppression } from './selfWriteSuppression';
 import type { StatePersistenceMap } from './statePersistence';
 import { readVimModeFromVault } from './vimMode';
+import { isEmbedContext } from './embedDetect';
+import { mountActionRow, type WidgetActionRowCtl } from './widgetActions';
 
 /**
  * Plugin-host shape required by the widget mount factory. Structurally typed
@@ -89,6 +91,13 @@ export interface WidgetMountHost {
       getFileCache(file: { path: string }):
         | { frontmatter?: Record<string, unknown> }
         | null;
+      // Phase 20 Plan 20-02 (ACTION-03) — per-widget reactivity hook.
+      // Optional in the structural contract so test fixtures can omit it.
+      on?(
+        name: 'changed',
+        cb: (file: { path: string }) => unknown,
+      ): unknown;
+      offref?(ref: unknown): void;
     };
   };
   settings: {
@@ -154,6 +163,27 @@ export class WidgetController {
    *  redundant Compartment.reconfigure to every widget). */
   public mountedVimMode: boolean;
 
+  /** Phase 20 Plan 20-02 (ACTION-01) — action row mounted inside the widget
+   *  container as a sibling of `.cm-editor`. Set by `mountLeetCodeWidget`
+   *  AFTER controller construction when `!isEmbedContext(...)`. Used by
+   *  Plan 20-04 retheme + multi-pane affordance to walk widget DOM. */
+  public actionRow?: HTMLDivElement;
+
+  /** Phase 20 Plan 20-02 (Pitfall P2 absorption + carry-forward to Plan 20-03).
+   *  Hash of the current widget doc body — used by the modify-handler
+   *  early-return so frontmatter-only writes (e.g., chevron switch via
+   *  processFrontMatter) don't trigger a widget reload. Computed at
+   *  construction and updated on every successful local write. */
+  public currentDocHash: string = '';
+
+  /** Phase 20 Plan 20-02 (ACTION-02 reactivity) — per-widget metadataCache
+   *  subscription EventRef. Stored so destroy() can offref it cleanly. The
+   *  subscription dispatches `languageCompartment.reconfigure(...)` on every
+   *  `metadataCache.on('changed')` fire whose file matches widget.file.path.
+   *  Optional — set by mountLeetCodeWidget when the host's metadataCache.on
+   *  is available (production); test fixtures may omit. */
+  public metadataChangedRef?: unknown;
+
   constructor(
     public readonly view: EditorView,
     public readonly container: HTMLElement,
@@ -166,6 +196,24 @@ export class WidgetController {
     this.persistenceKey = `${file.path}::${fenceIndex}`;
     this.vimCompartment = vimCompartment;
     this.mountedVimMode = mountedVimMode;
+  }
+
+  /**
+   * Phase 20 Plan 20-02 (ACTION-02) — read-only accessor for the current
+   * `lc-language` slug from frontmatter. Mirrors the WIDGET-06 fallback at
+   * `resolveLanguageSlug` above (Python default when missing/non-string)
+   * but without firing the Notice (chevron / action row reads are silent).
+   *
+   * Used by `mountActionRow` to label the chevron and by Plan 20-03 reload
+   * paths that need to know the widget's current slug.
+   */
+  get currentSlug(): string {
+    const fm = this.plugin.app.metadataCache.getFileCache(this.file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const raw = fm?.['lc-language'];
+    if (typeof raw === 'string' && raw.length > 0) return raw;
+    return 'python3';
   }
 
   /** Drain pending writer state. Returns the underlying forceFlush Promise
@@ -194,6 +242,22 @@ export class WidgetController {
       }
     }
     this.writer?.cancel();
+    // Phase 20 Plan 20-02 — drop per-widget metadataCache subscription.
+    // The `app.metadataCache.offref` API mirrors the workspace.offref shape;
+    // the structural type for `plugin.app.metadataCache` doesn't declare it,
+    // so we cast through `unknown` (the same workaround the v1.2 path uses
+    // at childEditorFactory.ts:270-274 for getConfig).
+    if (this.metadataChangedRef) {
+      try {
+        const mc = this.plugin.app.metadataCache as unknown as {
+          offref?: (ref: unknown) => void;
+        };
+        mc.offref?.(this.metadataChangedRef);
+      } catch {
+        // Defensive — offref may throw if the ref is stale.
+      }
+      this.metadataChangedRef = undefined;
+    }
     this.view.destroy();
   }
 
@@ -481,6 +545,98 @@ export function mountLeetCodeWidget(
   // useInlineWidget=ON; Plan 19-04 controller cleanup uses this).
   if (plugin.widgetRegistry) {
     plugin.widgetRegistry.set(`${file.path}::${fenceIndex}`, ctl);
+  }
+
+  // Phase 20 Plan 20-02 (ACTION-03) — per-widget metadataCache subscription.
+  // Filtered by file.path so an unrelated note's metadata change is a no-op
+  // (T-20-02-03 mitigation). Effects-only dispatch via languageCompartment
+  // preserves cursor + scroll + undo (Phase 16 Pitfall C analog). Wrapped
+  // in a guard so test fixtures that omit `metadataCache.on` don't crash.
+  if (
+    !readOnly &&
+    typeof plugin.app.metadataCache.on === 'function'
+  ) {
+    try {
+      ctl.metadataChangedRef = plugin.app.metadataCache.on(
+        'changed',
+        (changedFile: { path: string }) => {
+          if (changedFile.path !== ctl.file.path) return;
+          const fmFresh = plugin.app.metadataCache.getFileCache(ctl.file)?.frontmatter as
+            | Record<string, unknown>
+            | undefined;
+          const newSlug =
+            typeof fmFresh?.['lc-language'] === 'string' &&
+            (fmFresh['lc-language'] as string).length > 0
+              ? (fmFresh['lc-language'] as string)
+              : 'python3';
+          const indent = plugin.settings.getIndentSizeOverride();
+          try {
+            ctl.view.dispatch({
+              effects: languageCompartment.reconfigure(
+                buildLanguageExtensions(newSlug, indent),
+              ),
+            });
+          } catch {
+            // Defensive — view may be in teardown.
+          }
+        },
+      );
+    } catch {
+      // Defensive — metadataCache.on may not be available in all envs.
+    }
+  }
+
+  // Phase 20 Plan 20-02 (ACTION-01) — mount the action row inside the widget
+  // container as a sibling of `.cm-editor`. Skipped for embed-context widgets
+  // per Phase 19 EMBED-01..04 + this plan's must_haves contract. The
+  // `host.ownerDocument` is the canonical Document handle (popout-window-safe
+  // per project lint rule); fall back to `document` only if null in test envs.
+  // Read-only widgets ALSO mount the action row — the buttons fire same
+  // handlers regardless of `editable.of(false)` (UI-SPEC §1).
+  //
+  // The action row is constructed only when the controller's plugin host
+  // exposes the *FromWidget surface; this gate keeps mount-time test
+  // fixtures (which model only the WidgetMountHost shape) from crashing.
+  const hostPlugin = plugin as unknown as {
+    runFromWidget?: unknown;
+    submitFromWidget?: unknown;
+    aiSolutionFromWidget?: unknown;
+    resetFromWidget?: unknown;
+    retrieveLastSubmissionFromWidget?: unknown;
+    switchLanguageFromWidget?: unknown;
+  };
+  const hasFromWidgetSurface =
+    typeof hostPlugin.runFromWidget === 'function' &&
+    typeof hostPlugin.submitFromWidget === 'function' &&
+    typeof hostPlugin.aiSolutionFromWidget === 'function' &&
+    typeof hostPlugin.resetFromWidget === 'function' &&
+    typeof hostPlugin.retrieveLastSubmissionFromWidget === 'function' &&
+    typeof hostPlugin.switchLanguageFromWidget === 'function';
+  if (hasFromWidgetSurface) {
+    // Embed-context detection. Embed widgets are read-only display surfaces
+    // (Phase 19 EMBED-01..04); the action row would be misleading — don't
+    // mount it. We pass `null` for ctx + info because mount-time has no
+    // post-processor context; the host-DOM ancestor walk in isEmbedContext
+    // is the load-bearing signal here.
+    const ownerDoc = (host.ownerDocument as Document | null) ?? document;
+    const fakeCtx = { sourcePath: file.path } as unknown as Parameters<
+      typeof isEmbedContext
+    >[1];
+    const isEmbed = isEmbedContext(host, fakeCtx, file);
+    if (!isEmbed) {
+      try {
+        ctl.actionRow = mountActionRow(
+          ctl as unknown as WidgetActionRowCtl,
+          file,
+          ctl.currentSlug,
+          ownerDoc,
+        );
+      } catch {
+        // Defensive — chevron / button-row construction may throw under
+        // hostile test envs without `setIcon`. Action row mount is a UX
+        // surface; mount failure must NOT break the widget itself.
+      }
+    }
   }
 
   return ctl;
