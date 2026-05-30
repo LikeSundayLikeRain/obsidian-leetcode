@@ -415,6 +415,42 @@ export class WidgetController {
       ),
     });
   }
+
+  /**
+   * Phase 20 Plan 20-04 (THEME-04) — live theme retheme.
+   *
+   * Calls `view.requestMeasure()` to force CM6 to recompute layout metrics
+   * on the next animation frame. NO EditorView rebuild; cursor + scroll +
+   * undo state preserved. The actual visual retheme is owned by the
+   * cascading CSS class chain — `lc-nested-editor` + `HyperMD-codeblock` +
+   * `childEditorSemanticClasses` Lezer→CSS-class outputs — all carried over
+   * from v1.2 per Phase 19 THEME-01..THEME-03. Those classes already
+   * inherit Obsidian's `var(--code-keyword)`, `var(--background-primary)`,
+   * `var(--text-normal)`, etc., so a theme swap repaints them
+   * automatically via Obsidian's stylesheet replace. This method only
+   * exists to nudge CM6 to recompute layout-affected metrics (line height,
+   * gutter widths, scroll offsets) AFTER the new computed styles apply.
+   *
+   * Called from `src/widget/themeListener.ts` registered in
+   * `src/main.ts:Plugin.onload()` under the `useInlineWidget=ON` block.
+   * Single fan-out: `app.workspace.on('css-change')` → walk
+   * `widgetRegistry.values()` → call this method per controller.
+   *
+   * Idempotent — calling it on a non-theme `css-change` (e.g., Obsidian
+   * sidebar drawer toggle that happens to fire the event) is benign per
+   * threat T-20-04-05; `requestMeasure` schedules a remeasure that
+   * produces no visible flicker when the layout is unchanged.
+   */
+  cssRetheme(): void {
+    // Defensive — view may be in teardown when the css-change event arrives.
+    // Production CM6 throws on requestMeasure-after-destroy; swallow silently
+    // because the css-change global listener is fire-and-forget.
+    try {
+      this.view.requestMeasure();
+    } catch {
+      /* swallow — defensive against teardown race */
+    }
+  }
 }
 
 /**

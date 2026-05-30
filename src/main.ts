@@ -138,6 +138,7 @@ import { leetCodeBlockProcessor } from './widget/codeBlockProcessor';
 // Phase 20 Plan 20-01 (VIM-02) — canonical reader for the undocumented
 // `app.vault.getConfig('vimMode')` boolean. Single cast site.
 import { readVimModeFromVault } from './widget/vimMode';
+import { registerThemeListener } from './widget/themeListener';
 import { leetCodeFenceViewPlugin } from './widget/liveModeViewPlugin';
 // Phase 19 Plan 02 — selfWriteSuppression + sha1 helper for the modify-event
 // consumer. extractFenceBody for hashing observed disk fence body.
@@ -1000,6 +1001,19 @@ export default class LeetCodePlugin extends Plugin {
       this.registerDomEvent(window, 'beforeunload', () => {
         this.widgetRegistry?.flushAllSync();
       });
+
+      // Phase 20 Plan 20-04 (THEME-04) — live theme retheme dispatcher.
+      // Single global `app.workspace.on('css-change')` listener (verified
+      // at obsidian.d.ts:7137 in 1.12.3) iterates `widgetRegistry.values()`
+      // and calls `ctl.cssRetheme()` per widget. cssRetheme calls only
+      // `view.requestMeasure()` — no EditorView rebuild; cursor + scroll +
+      // undo state preserved. The cascading CSS classes (lc-nested-editor +
+      // HyperMD-codeblock + childEditorSemanticClasses) already inherit
+      // Obsidian's CSS variables; this listener exists only to nudge CM6
+      // to recompute layout-affected metrics after the new computed styles
+      // apply. MutationObserver fallback documented in 20-RESEARCH §"Pattern
+      // 7" but NOT shipped (event verified to exist).
+      registerThemeListener(this);
 
       // Phase 20 Plan 20-01 (VIM-02) — vim live-reconfigure dispatcher.
       // Obsidian fires no documented event for the Settings → Editor →

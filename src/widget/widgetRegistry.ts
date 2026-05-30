@@ -38,6 +38,19 @@ export interface WidgetControllerLike {
    *  it when `vimMode` changes. Optional in the structural contract so test
    *  fixtures (which don't drive vim toggles) can omit it. */
   reconfigureVim?: (enabled: boolean) => void;
+  /** Phase 20 Plan 20-04 (THEME-04) — production WidgetController exposes
+   *  this; the plugin-side `workspace.on('css-change')` listener walks the
+   *  registry and calls it on every theme transition. Calls
+   *  `view.requestMeasure()` — no EditorView rebuild. Optional in the
+   *  structural contract so test fixtures can omit it. */
+  cssRetheme?: () => void;
+  /** Phase 20 Plan 20-04 (multi-pane "Take over" CTA) — production
+   *  WidgetController exposes this; the plugin-side
+   *  `workspace.on('active-leaf-change')` listener walks the registry and
+   *  calls it with `'active'` on the focused-pane widget and `'peer'` on
+   *  every other widget for the same file path. Optional in the structural
+   *  contract so test fixtures can omit it. */
+  setPaneState?: (state: 'active' | 'peer') => void;
 }
 
 export class WidgetRegistry {
