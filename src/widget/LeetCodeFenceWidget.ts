@@ -72,15 +72,43 @@ export class LeetCodeFenceWidget extends WidgetType {
    * Content-hash identity (RESEARCH Pitfall 19-F). Returns true when both
    * widgets render the same fence body for the same file + index — letting
    * CM6 reuse the existing DOM instead of remounting on every keystroke.
+   *
+   * Phase 20 Plan 20-06 — when the strict sourceHash compare fails (two
+   * widgets differ ONLY by sourceHash), peek the suppression map. If the
+   * armed expected hash matches EITHER widget's sourceHash, treat as equal
+   * so CM6 reuses the existing DOM. This is the primary mechanism for
+   * next-build DOM reuse after a self-write echo: the ViewPlugin's gate
+   * keeps `this.decorations` stable for the echo transaction itself; this
+   * eq() clause keeps the DOM stable on the SUBSEQUENT genuine-keystroke
+   * rebuild while the suppression entry is still armed (5s TTL).
    */
   eq(other: WidgetType): boolean {
-    return (
-      other instanceof LeetCodeFenceWidget &&
-      other.plugin === this.plugin &&
-      other.file === this.file &&
-      other.fenceIndex === this.fenceIndex &&
-      other.sourceHash === this.sourceHash
-    );
+    if (!(other instanceof LeetCodeFenceWidget)) return false;
+    if (other.plugin !== this.plugin) return false;
+    if (other.file !== this.file) return false;
+    if (other.fenceIndex !== this.fenceIndex) return false;
+    if (other.sourceHash === this.sourceHash) return true;
+
+    // Phase 20 Plan 20-06 — suppression-map peek. When mid-self-write
+    // echo, the on-screen widget's hash is the pre-flush value AND the
+    // candidate widget's hash is the post-flush value; peek matches one
+    // of them (the armed expected hash equals the post-flush content).
+    // See .planning/debug/self-write-remount-cycle.md.
+    try {
+      const sup = this.plugin.selfWriteSuppression;
+      if (sup) {
+        const peeked = sup.peekExpectedHash(this.file.path);
+        if (
+          peeked !== null &&
+          (peeked === this.sourceHash || peeked === other.sourceHash)
+        ) {
+          return true;
+        }
+      }
+    } catch {
+      // Defensive — peek must never throw; if it does, fall through to false.
+    }
+    return false;
   }
 
   /**
