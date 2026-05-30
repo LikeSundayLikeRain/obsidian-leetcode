@@ -144,6 +144,7 @@ import { leetCodeFenceViewPlugin } from './widget/liveModeViewPlugin';
 import { SelfWriteSuppression } from './widget/selfWriteSuppression';
 import { sha1 } from './widget/debouncedWriter';
 import { extractFenceBody } from './widget/fenceSerialization';
+import type { WidgetController } from './widget/WidgetController';
 // Phase 19 Plan 03 — state persistence map (CONTEXT C-09 + D-01 + RESEARCH
 // Pattern 4). Captures cursor + scroll + history JSON on unmount; hydrates on
 // remount within 30s TTL. Belt-and-suspenders companion to Plan 19-01's
@@ -1020,6 +1021,16 @@ export default class LeetCodePlugin extends Plugin {
       // Plan 19-02 — vault.on('modify') self-write echo consumer (RESEARCH
       // Specific Findings §4 gated body — useInlineWidget can be flipped
       // mid-session; gate at fire time, not registration time).
+      //
+      // Phase 20 Plan 20-02 (Pitfall P2 absorption + Plan 20-03 setup):
+      // BEFORE the selfWriteSuppression.tryConsume call, check whether the
+      // observed fence-body hash matches the widget's `currentDocHash`. If
+      // it does, the modify event is a frontmatter-only echo (e.g., from
+      // chevron switch's processFrontMatter) — return early without
+      // invoking suppression so the widget never reloads on these writes.
+      // Plan 20-03 RELOCATES this check into step (b) of the full handler
+      // structure; this plan ships it as a pre-suppression early-return
+      // that Plan 20-03 will refactor.
       this.registerEvent(
         this.app.vault.on('modify', async (file) => {
           if (!this.settings.getUseInlineWidget()) return;
@@ -1032,14 +1043,45 @@ export default class LeetCodePlugin extends Plugin {
             // tracking lands in Plan 19-04+ / v1.4 deferred.
             const body = extractFenceBody(disk, 0) ?? '';
             const observedHash = await sha1(body);
+
+            // Phase 20 Plan 20-02 (Pitfall P2) — fence-body-unchanged
+            // early-return. If a widget for this file exists AND its
+            // currentDocHash matches what we just observed on disk, the
+            // file changed but the FENCE BODY did not (frontmatter-only
+            // write — the canonical case is the chevron-switch's
+            // processFrontMatter call from `switchLanguageFromWidget`).
+            // No reload needed; consult per-widget hash by walking the
+            // registry. We compare against EVERY widget on this file so
+            // multi-fence cases are handled when Plan 19-04+ tracking
+            // lands. If the widget has not yet captured a doc hash
+            // (currentDocHash empty at very first mount / before any
+            // edit), we do NOT short-circuit — fall through to suppression.
+            if (this.widgetRegistry) {
+              for (const ctl of this.widgetRegistry.values()) {
+                const widgetCtl = ctl as unknown as { file: { path: string }; currentDocHash?: string };
+                if (
+                  widgetCtl.file.path === file.path &&
+                  typeof widgetCtl.currentDocHash === 'string' &&
+                  widgetCtl.currentDocHash.length > 0 &&
+                  widgetCtl.currentDocHash === observedHash
+                ) {
+                  // Frontmatter-only write — fence body unchanged.
+                  // No reload, no suppression consumption.
+                  return;
+                }
+              }
+            }
+
             const result = this.selfWriteSuppression.tryConsume(file.path, observedHash);
             if (result === 'consumed') return; // self-write echo — drop
             if (result === 'stale' || result === 'miss') {
-              // External edit (or stale entry — defensive): Plan 20 owns the
-              // cursor-preserving reload (SYNC-04, SYNC-05); Plan 19-02 just
-              // logs for observability.
+              // External edit (or stale entry — defensive): Plan 20-03 owns
+              // the cursor-preserving reload (SYNC-04, SYNC-05) and the
+              // conflict-modal-or-silent-reload decision tree; Plan 19-02
+              // logs for observability and Plan 20-02 ships only the
+              // currentDocHash early-return above.
               logger.debug(
-                `[LC widget] external modify observed for ${file.path} — Plan 20 reload TBD`,
+                `[LC widget] external modify observed for ${file.path} — Plan 20-03 reload TBD`,
               );
             }
           } catch {
@@ -2398,6 +2440,19 @@ export default class LeetCodePlugin extends Plugin {
       new Notice('Active note has no `lc-slug` frontmatter.', 4000);
       return;
     }
+    await this.aiSolutionWithSlug(view.file, slug);
+  }
+
+  /**
+   * Phase 20 Plan 20-02 (D-action-04) — shared helper extracted from
+   * `aiSolutionFromActive`. The body delegates to `openAISolution` which
+   * resolves problem detail + opens the AI stream modal. `file` is unused
+   * by `openAISolution` today (the modal reads ctx via getActiveViewOfType
+   * inside its body) — passed through so the seam shape matches the other
+   * `*WithSlug` helpers and Phase 22's mechanical rename keeps the
+   * signature stable.
+   */
+  private async aiSolutionWithSlug(_file: TFile, slug: string): Promise<void> {
     await this.openAISolution(slug);
   }
 
@@ -2407,7 +2462,19 @@ export default class LeetCodePlugin extends Plugin {
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
-    await this.resetCode(ctx.file, ctx.slug);
+    await this.resetWithSlug(ctx.file, ctx.slug);
+  }
+
+  /**
+   * Phase 20 Plan 20-02 (D-action-04 architectural seam) — shared helper
+   * called by both `resetFromActive` (active-leaf path) and
+   * `resetFromWidget` (widget-mount path). Body is the same `resetCode`
+   * call as before; the seam exists so Phase 22 can mechanically delete
+   * `*FromActive` and rename `*FromWidget → *FromActive` without touching
+   * the LC API path.
+   */
+  private async resetWithSlug(file: TFile, slug: string): Promise<void> {
+    await this.resetCode(file, slug);
   }
 
   async retrieveLastSubmissionFromActive(): Promise<void> {
@@ -2416,8 +2483,17 @@ export default class LeetCodePlugin extends Plugin {
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
+    await this.retrieveLastSubmissionWithSlug(ctx.file, ctx.slug);
+  }
+
+  /**
+   * Phase 20 Plan 20-02 (D-action-04) — shared helper extracted from
+   * `retrieveLastSubmissionFromActive`. Both `*FromActive` and
+   * `*FromWidget` route through this body so the LC API path is shared.
+   */
+  private async retrieveLastSubmissionWithSlug(file: TFile, slug: string): Promise<void> {
     try {
-      const rows = await this.submissionHistory.get(ctx.slug);
+      const rows = await this.submissionHistory.get(slug);
       if (!rows || rows.length === 0) {
         new Notice('No past submissions found for this problem.', 4000);
         return;
@@ -2435,13 +2511,230 @@ export default class LeetCodePlugin extends Plugin {
         return;
       }
       const { copyToCode } = await import('./graph/copyToCode');
-      await copyToCode(this.app, ctx.file, detail.code, detail.lang.name);
+      await copyToCode(this.app, file, detail.code, detail.lang.name);
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- "## Code" is a verbatim section heading.
       new Notice('Last submission copied to ## Code.', 3000);
     } catch (err) {
       new Notice('Failed to retrieve submission.', 4000);
       console.error('[leetcode] retrieveLastSubmission:', err);
     }
+  }
+
+  // ============================================================================
+  // Phase 20 Plan 20-02 — *FromWidget plugin methods (D-action-04 seam).
+  // ============================================================================
+  // These methods route action-row button clicks from inside the v1.3 widget
+  // through to the same downstream LC API path that *FromActive uses today.
+  // Each method:
+  //   (a) calls widget.flushNow() so pending characters land on disk first
+  //       (Pattern F single-flush-then-read seam);
+  //   (b) reads code via widget.view.state.doc.toString() — NO disk round-trip
+  //       per ACTION-04 / L2;
+  //   (c) reads frontmatter via metadataCache.getFileCache(widget.file);
+  //   (d) routes to the shared *WithCode / *WithSlug private helper.
+  //
+  // Phase 22 mechanically deletes *FromActive and renames *FromWidget →
+  // *FromActive, so the LC API seam stays stable across the v1.2 → v1.3
+  // cutover.
+
+  /**
+   * Phase 20 Plan 20-02 — Run the widget's current code without leaving the
+   * widget. Reads code via widget.view.state.doc.toString() (no disk
+   * round-trip per ACTION-04). Routes through the shared `runWithCode` helper.
+   */
+  async runFromWidget(widget: WidgetController): Promise<void> {
+    await widget.flushNow();
+    const code = widget.view.state.doc.toString();
+    const file = widget.file;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const lcSlugRaw = fm?.['lc-slug'];
+    if (typeof lcSlugRaw !== 'string' || lcSlugRaw.length === 0) {
+      new Notice('This widget is not on a LeetCode note.', 4000);
+      return;
+    }
+    const lcSlug = lcSlugRaw;
+    const lcLanguage =
+      typeof fm?.['lc-language'] === 'string' && (fm['lc-language'] as string).length > 0
+        ? (fm['lc-language'] as string)
+        : 'python3';
+    const lcTitle =
+      typeof fm?.['lc-title'] === 'string' ? (fm['lc-title'] as string) : lcSlug;
+    // Synthesize a ProblemContext for the runInterpretedInput re-resolver.
+    // The widget mount path NEVER returns to active-leaf — the modal's onRun
+    // closure invokes this resolver, which produces a synthetic ctx based on
+    // the widget's current state (code is re-read at run time so in-flight
+    // edits are picked up).
+    const widgetCtxResolver = (): ProblemContext | null => {
+      // Re-read frontmatter at run-modal commit time; the user may have
+      // toggled language via the chevron between modal open and Run click.
+      const freshFm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+        | Record<string, unknown>
+        | undefined;
+      const freshSlug = freshFm?.['lc-slug'];
+      if (typeof freshSlug !== 'string' || freshSlug.length === 0) return null;
+      const freshLanguage =
+        typeof freshFm?.['lc-language'] === 'string' &&
+        (freshFm['lc-language'] as string).length > 0
+          ? (freshFm['lc-language'] as string)
+          : 'python3';
+      const freshTitle =
+        typeof freshFm?.['lc-title'] === 'string'
+          ? (freshFm['lc-title'] as string)
+          : freshSlug;
+      // The synthesized ctx omits `view` (no MarkdownView for widget path);
+      // runInterpretedInput only consults file/slug/title/lcLanguage/currentBody,
+      // not view. The cast is structurally narrower than the full ProblemContext
+      // shape and won't reach the unused `view` field at runtime.
+      return {
+        view: undefined as unknown as MarkdownView,
+        file,
+        slug: freshSlug,
+        title: freshTitle,
+        lcLanguage: freshLanguage,
+        currentBody: () => widget.view.state.doc.toString(),
+      };
+    };
+    await this.runWithCode(file, lcSlug, lcTitle, lcLanguage, () => code, widgetCtxResolver);
+  }
+
+  /**
+   * Phase 20 Plan 20-02 — Submit the widget's current code via the
+   * SubmissionOrchestrator. Code is read from widget state, NOT disk.
+   */
+  async submitFromWidget(widget: WidgetController): Promise<void> {
+    await widget.flushNow();
+    const code = widget.view.state.doc.toString();
+    const file = widget.file;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const lcSlugRaw = fm?.['lc-slug'];
+    if (typeof lcSlugRaw !== 'string' || lcSlugRaw.length === 0) {
+      new Notice('This widget is not on a LeetCode note.', 4000);
+      return;
+    }
+    const lcSlug = lcSlugRaw;
+    const lcLanguage =
+      typeof fm?.['lc-language'] === 'string' && (fm['lc-language'] as string).length > 0
+        ? (fm['lc-language'] as string)
+        : 'python3';
+    const lcTitle =
+      typeof fm?.['lc-title'] === 'string' ? (fm['lc-title'] as string) : lcSlug;
+    // The submitWithCode body re-reads code via getCurrentBody() — close
+    // over widget.view.state.doc so the orchestrator picks up any edits made
+    // while the verdict modal is open.
+    await this.submitWithCode(
+      file,
+      lcSlug,
+      lcTitle,
+      lcLanguage,
+      () => widget.view.state.doc.toString(),
+    );
+    // `code` is captured for completeness; the actual LC API submission body
+    // comes from getCurrentBody() at orchestrator-run time. Suppress unused
+    // warning by referencing it (keeps the read-via-state contract obvious).
+    void code;
+  }
+
+  /**
+   * Phase 20 Plan 20-02 — Open the AI solution modal for the widget's
+   * problem. No code is sent — the AI prompt fetches problem detail itself.
+   */
+  async aiSolutionFromWidget(widget: WidgetController): Promise<void> {
+    const file = widget.file;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const lcSlug = fm?.['lc-slug'];
+    if (typeof lcSlug !== 'string' || lcSlug.length === 0) {
+      new Notice('This widget is not on a LeetCode note.', 4000);
+      return;
+    }
+    await this.aiSolutionWithSlug(file, lcSlug);
+  }
+
+  /**
+   * Phase 20 Plan 20-02 — Reset the widget's code to LC starter via
+   * shared `resetCode` (which routes through child editor when registered).
+   */
+  async resetFromWidget(widget: WidgetController): Promise<void> {
+    const file = widget.file;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const lcSlug = fm?.['lc-slug'];
+    if (typeof lcSlug !== 'string' || lcSlug.length === 0) {
+      new Notice('This widget is not on a LeetCode note.', 4000);
+      return;
+    }
+    await this.resetWithSlug(file, lcSlug);
+  }
+
+  /**
+   * Phase 20 Plan 20-02 — Retrieve the user's last submission and copy it
+   * into the widget's fence. Routes through the shared
+   * `retrieveLastSubmissionWithSlug` helper.
+   */
+  async retrieveLastSubmissionFromWidget(widget: WidgetController): Promise<void> {
+    const file = widget.file;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const lcSlug = fm?.['lc-slug'];
+    if (typeof lcSlug !== 'string' || lcSlug.length === 0) {
+      new Notice('This widget is not on a LeetCode note.', 4000);
+      return;
+    }
+    await this.retrieveLastSubmissionWithSlug(file, lcSlug);
+  }
+
+  /**
+   * Phase 20 Plan 20-02 — Chevron-driven language switch from the v1.3
+   * widget. Sequence:
+   *
+   *   (a) await widget.flushNow() — pending characters land under OLD slug
+   *       (Pattern F + Pitfall 5 carry-over).
+   *   (b) await app.fileManager.processFrontMatter(file, fm => fm['lc-language'] = newSlug).
+   *       Atomic write per Obsidian docs (obsidian.d.ts:2830).
+   *   (c) NO CM6 dispatch on the parent. v1.3 fence opener is FIXED at
+   *       `\`\`\`leetcode-solve` (Phase 19 C-01); the chevron only updates
+   *       frontmatter. The widget reacts via the per-widget metadataCache
+   *       subscription installed by mountLeetCodeWidget — that listener
+   *       dispatches `languageCompartment.reconfigure` on the widget's view
+   *       which preserves cursor + scroll + undo (Phase 16 Pitfall C analog).
+   *
+   * On `processFrontMatter` failure surfaces a Notice. Pitfall P2 absorption
+   * (the modify echo from this frontmatter write would otherwise reload the
+   * widget) is wired into the existing modify handler in onload (`vault.on('modify')`)
+   * via the `currentDocHash` early-return added in this plan.
+   */
+  async switchLanguageFromWidget(
+    widget: WidgetController,
+    file: TFile,
+    newSlug: string,
+  ): Promise<void> {
+    // Step (a) — flush widget BEFORE frontmatter write.
+    await widget.flushNow();
+
+    // Step (b) — atomic frontmatter rewrite. Wrapped in try/catch so a
+    // malformed frontmatter doesn't blow up the chevron click silently.
+    try {
+      await this.app.fileManager.processFrontMatter(
+        file,
+        (fm: Record<string, unknown>) => {
+          fm['lc-language'] = newSlug;
+        },
+      );
+    } catch (err) {
+      new Notice("Failed to switch language. The note's frontmatter may be malformed.", 5000);
+      logger.debug('switchLanguageFromWidget: processFrontMatter failed', err);
+      return;
+    }
+
+    // Step (c) — NO parent CM6 dispatch. v1.3 widget reacts via
+    // per-widget metadataCache subscription (Compartment.reconfigure).
   }
 
   private async openAISolution(slug: string): Promise<void> {
@@ -2503,18 +2796,49 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /** Submit the active note via SubmissionOrchestrator (Plan 05). Opens a
-   *  VerdictModal, drives it through pending → terminal / abort / timeout. */
+   *  VerdictModal, drives it through pending → terminal / abort / timeout.
+   *  Phase 20 Plan 20-02 (D-action-04): thin wrapper around `submitWithCode`
+   *  — the seam Phase 22 renames mechanically. */
   async submitFromActive(): Promise<void> {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
-       
+
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
+    await this.submitWithCode(ctx.file, ctx.slug, ctx.title, ctx.lcLanguage, ctx.currentBody);
+  }
+
+  /**
+   * Phase 20 Plan 20-02 (D-action-04 architectural seam) — shared submit
+   * helper called by both `submitFromActive` (active-leaf path) and
+   * `submitFromWidget` (widget-mount path). Body matches the v1.2 path
+   * verbatim except (a) `slug`/`title`/`lcLanguage` are passed in rather
+   * than read from `getActiveProblemContext()`, and (b) `getCurrentBody`
+   * is a thunk so the orchestrator can re-read at submission time
+   * (matches the active-leaf semantics where the user may keep typing
+   * while the modal is open).
+   *
+   * For widget callers, `getCurrentBody` is `() => widget.view.state.doc.toString()`
+   * — closes over the live widget doc so re-reads stay current.
+   */
+  private async submitWithCode(
+    file: TFile,
+    slug: string,
+    title: string,
+    lcLanguage: string | null,
+    getCurrentBody: () => string,
+  ): Promise<void> {
     if (!this.guardSingleFlight()) return;
 
+    // Phase 20 Plan 20-02 (D-action-04) — synthetic problem context for
+    // the legacy startAutoReview shape; the structural type accepts the
+    // same {file, slug, title, currentBody} shape that ProblemContext
+    // exposes today.
+    const reviewCtx = { file, slug, title, currentBody: getCurrentBody };
+
     const modal = new VerdictModal(this.app, {
-      problemTitle: ctx.title,
+      problemTitle: title,
       onCancel: () => { this.cancelActiveSolve(); },
       onCopyFailingInput: (input: string) => {
         void this.openRunModalWithSeedAppended(input);
@@ -2525,16 +2849,16 @@ export default class LeetCodePlugin extends Plugin {
       // construction time — this is the active problem at submit time so
       // it stays correct even if the user navigates away while the verdict
       // is rendering. VerdictModal handles the close-then-fire ordering.
-      onOpenAIDebug: () => { void this.openAIDebug(ctx.slug); },
+      onOpenAIDebug: () => { void this.openAIDebug(slug); },
       // Phase 12 (D-08): suppress AI review + pattern chip during active contest
       // because the contest opens scratch files as native MarkdownViews whose
       // fence-row Submit button flows through this path.
       onStartReviewStream: this.contestSessionManager.getSession() ? undefined
         : this.settings.getAutoAIReviewOnAC() && this.settings.getActiveAIProvider()
-          ? (reviewAreaEl, component) => this.startAutoReview(ctx, reviewAreaEl, component)
+          ? (reviewAreaEl, component) => this.startAutoReview(reviewCtx, reviewAreaEl, component)
           : undefined,
       // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC (suppress during contest).
-      file: this.contestSessionManager.getSession() ? null : ctx.file,
+      file: this.contestSessionManager.getSession() ? null : file,
       getPatternHubPath: (p) => `${this.settings.getProblemsFolder()}/Patterns/${normalizePatternName(p)}.md`,
     });
     modal.open();
@@ -2572,9 +2896,9 @@ export default class LeetCodePlugin extends Plugin {
         getDefaultLanguage: () => this.settings.getDefaultLanguage(),
         getProblemDetail: (s) => this.settings.getProblemDetail(s),
       },
-      slug: ctx.slug,
-      lcLanguage: ctx.lcLanguage,
-      getCurrentBody: ctx.currentBody,
+      slug,
+      lcLanguage,
+      getCurrentBody,
       // D-21 — login wiring for the sticky session-expired Notice's button.
       login: () => { void this.auth.login(); },
       // Phase 08 Plan 04 (AIDBG-01) — capture non-Accepted verdicts into the
@@ -2604,18 +2928,18 @@ export default class LeetCodePlugin extends Plugin {
         if (!activeContest && verdictKind === 'ac') {
           try {
             await this.knowledgeGraph.onAccepted(
-              { file: ctx.file, slug: ctx.slug, title: ctx.title },
+              { file, slug, title },
               terminalTyped,
             );
           } catch (err) {
             logger.debug('graph.onAccepted: non-fatal (invisible-by-design)', err);
           }
-          this.submissionHistory.invalidate(ctx.slug);
+          this.submissionHistory.invalidate(slug);
         }
-        modal.renderVerdict(terminalTyped, ctx.title);
+        modal.renderVerdict(terminalTyped, title);
         // Contest verdict recording (badge update)
         if (activeContest) {
-          const idx = activeContest.problems.findIndex(p => p.slug === ctx.slug);
+          const idx = activeContest.problems.findIndex(p => p.slug === slug);
           if (idx >= 0) {
             if (verdictKind === 'ac') {
               this.contestSessionManager.recordVerdict(idx, 'accepted');
@@ -2640,7 +2964,7 @@ export default class LeetCodePlugin extends Plugin {
         // D-15 — hand the raw payload to the modal; its internal classifier
         // routes kind==='unknown' through renderUnknownVerdict which exposes
         // the copy-payload affordance (redacted via logger.redact).
-        modal.renderVerdict(err.payload as SubmitCheckResponse, ctx.title);
+        modal.renderVerdict(err.payload as SubmitCheckResponse, title);
       } else if (err instanceof SessionExpiredError || (err as Error).name === 'SessionExpiredError') {
         // D-21: sticky Notice + Log in button.
         showSessionExpiredNotice(() => { void this.auth.login(); });
@@ -2675,15 +2999,46 @@ export default class LeetCodePlugin extends Plugin {
    *  from the ephemeral tab store. The modal's Run button calls onRun with
    *  ONLY the active tab's input (D-07 single-active-tab semantics) and we
    *  forward it to `runInterpretedInput` which drives the same pending /
-   *  terminal / abort / timeout state machine as submit. */
+   *  terminal / abort / timeout state machine as submit.
+   *  Phase 20 Plan 20-02 (D-action-04): thin wrapper around `runWithCode`. */
   async runFromActive(): Promise<void> {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
-       
+
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
-    const detail = this.settings.getProblemDetail(ctx.slug);
+    await this.runWithCode(
+      ctx.file,
+      ctx.slug,
+      ctx.title,
+      ctx.lcLanguage,
+      ctx.currentBody,
+      /*resolveCtxOnRun=*/() => this.getActiveProblemContext(),
+    );
+  }
+
+  /**
+   * Phase 20 Plan 20-02 (D-action-04 architectural seam) — shared run helper
+   * called by both `runFromActive` (active-leaf path) and `runFromWidget`
+   * (widget-mount path). Body matches the v1.2 path verbatim except
+   *   (a) `slug`/`title`/`lcLanguage` are passed in;
+   *   (b) `getCurrentBody` thunk re-reads at invocation;
+   *   (c) `resolveCtxOnRun` is the closure RunModal's onRun calls so the
+   *       active-leaf path can re-resolve `getActiveProblemContext()` at
+   *       run-modal commit (the user may have closed + reopened the note
+   *       in between). For widget callers the closure synthesizes a ctx
+   *       directly from the widget reference.
+   */
+  private async runWithCode(
+    _file: TFile,
+    slug: string,
+    _title: string,
+    _lcLanguage: string | null,
+    _getCurrentBody: () => string,
+    resolveCtxOnRun: () => ProblemContext | null,
+  ): Promise<void> {
+    const detail = this.settings.getProblemDetail(slug);
     const exampleTestcases = detail?.exampleTestcases ?? '';
     // Phase 5.4 UAT fix — derive lines-per-case so RunModal can split LC's
     // single-newline-formatted exampleTestcases (observed live for two-sum)
@@ -2691,14 +3046,14 @@ export default class LeetCodePlugin extends Plugin {
     // and sampleTestCase are absent.
     const linesPerCase = deriveArity(detail?.metaData, detail?.sampleTestCase);
     new RunModal(this.app, {
-      slug: ctx.slug,
+      slug,
       exampleTestcases,
       linesPerCase,
       store: this.ephemeralTabs,
       onRun: (input: string) => {
         // Re-resolve context at run time (the modal is asynchronous; the user
         // may have closed + reopened the note in between).
-        const current = this.getActiveProblemContext();
+        const current = resolveCtxOnRun();
         if (current) void this.runInterpretedInput(current, input);
       },
     }).open();

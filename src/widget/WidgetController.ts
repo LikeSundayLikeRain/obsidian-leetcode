@@ -56,7 +56,7 @@ import {
 import { createThemedHighlight } from '../main/childEditorTheme';
 import { obsidianSemanticClasses } from '../main/childEditorSemanticClasses';
 import { computeFenceIndex } from './fenceLocator';
-import { DebouncedWriter } from './debouncedWriter';
+import { DebouncedWriter, sha1 } from './debouncedWriter';
 import type { SelfWriteSuppression } from './selfWriteSuppression';
 import type { StatePersistenceMap } from './statePersistence';
 import { readVimModeFromVault } from './vimMode';
@@ -469,10 +469,29 @@ export function mountLeetCodeWidget(
 
   // Plan 19-02 — declare controller upfront so the updateListener closure can
   // call into ctl.writer (which is set after view construction).
+  //
+  // Phase 20 Plan 20-02 (Pitfall P2 absorption + carry-forward to Plan 20-03):
+  // The onDocChanged callback ALSO refreshes `ctl.currentDocHash` so the
+  // modify-handler early-return at src/main.ts compares against the latest
+  // committed widget body. The hash refresh is fire-and-forget — the modify
+  // event always reads the disk hash AFTER the writer flushes, so a slight
+  // race between user keystroke + sha1 promise + modify event is fine
+  // (the modify event will simply see a slightly-stale hash and route to
+  // the suppression path, which is the safe default).
   let ctl: WidgetController;
   const onDocChanged = readOnly
     ? undefined
-    : () => { ctl?.writer?.run(); };
+    : () => {
+        ctl?.writer?.run();
+        // Refresh currentDocHash for Pitfall P2 absorption.
+        if (ctl) {
+          const body = ctl.view.state.doc.toString();
+          void sha1(body).then((hash) => {
+            // Guard against late-arriving promises after destroy.
+            if (ctl) ctl.currentDocHash = hash;
+          });
+        }
+      };
 
   // Phase 20 Plan 20-01 (VIM-02) — per-widget vimCompartment + mount-time
   // vimMode read. The Compartment is identity-keyed so it MUST be
@@ -507,6 +526,16 @@ export function mountLeetCodeWidget(
   }
 
   ctl = new WidgetController(view, container, file, fenceIndex, plugin, vimCompartment, vimEnabled);
+
+  // Phase 20 Plan 20-02 — initialize `currentDocHash` from the initial
+  // doc body. Fire-and-forget — the modify-handler early-return tolerates
+  // a brief window where currentDocHash is empty (it falls through to
+  // suppression in that case, which is the safe default).
+  if (!readOnly) {
+    void sha1(source).then((hash) => {
+      if (ctl) ctl.currentDocHash = hash;
+    });
+  }
 
   // Plan 19-03 — hydrate previously-captured cursor + scroll if the plugin
   // host provides a statePersistence map AND we're within the 30s TTL window.
