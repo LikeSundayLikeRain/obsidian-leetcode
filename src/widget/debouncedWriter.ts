@@ -26,7 +26,6 @@
 import { Notice, debounce, type App, type TFile, type Debouncer } from 'obsidian';
 import { extractFenceBody, rewriteFenceBody } from './fenceSerialization';
 import { SelfWriteSuppression } from './selfWriteSuppression';
-import { djb2 } from './hash';
 
 const FENCE_OPENER_RE = /^\s*```leetcode-solve\b/;
 
@@ -178,16 +177,10 @@ export class DebouncedWriter {
       const futureFullText = rewriteFenceBody(currentDisk, expectedFenceIndex, newBody);
       const futureFenceBody = extractFenceBody(futureFullText, expectedFenceIndex) ?? newBody;
       const expectedHash = await sha1(futureFenceBody);
-      // Phase 20 Plan 20-06 (UAT bug-fix) — compute djb2 alongside sha1 so
-      // the suppression entry services BOTH the vault.on('modify') consume
-      // path (sha1) and the CM6 ViewPlugin peek path (djb2 — must match the
-      // sync hash that liveModeViewPlugin.ts:81 computes per build). See
-      // src/widget/hash.ts header for the two-hash rationale.
-      const expectedDjb2 = djb2(futureFenceBody);
 
       // Arm BEFORE vault.process (CONTEXT C-04; probe-confirmed safe per
       // Plan 19-02 Task 1's modifyEventOrdering.probe.test.ts).
-      this.suppression.arm(this.file.path, expectedHash, expectedDjb2);
+      this.suppression.arm(this.file.path, expectedHash);
 
       // Write through vault.process. Idempotent — if `body !== currentDisk`
       // due to a race, the suppression entry won't consume and external-edit

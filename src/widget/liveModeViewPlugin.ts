@@ -43,25 +43,19 @@ type PluginHost = Plugin & WidgetMountHost;
  * visible doc. Used by BOTH the decorations field and the atomicRanges Facet
  * contribution — same RangeSet, no drift (RESEARCH Pattern 3 lines 263-272).
  *
- * Phase 20 Plan 20-06 — return shape widened to include the computed
- * `sourceHash` and `filePath` so `LeetCodeLiveViewPlugin.update()` can
- * peek the suppression map without re-deriving them. Both fields are null
- * when no LC widget mounts (no file, missing slug, missing/non-leetcode
- * fence).
+ * Phase 20 Plan 20-09 — return shape collapses back to DecorationSet.
+ * The Plan 20-06 widened return (sourceHash + filePath) was load-bearing
+ * for the suppression-map peek gate; that gate retires in Plan 20-09
+ * because real-time child→parent dispatch eliminates the parent
+ * reload-from-disk echo that the gate was designed to suppress.
  */
-interface BuildResult {
-  set: DecorationSet;
-  sourceHash: string | null;
-  filePath: string | null;
-}
-
 function buildLeetCodeFenceRanges(
   view: EditorView,
   plugin: PluginHost,
-): BuildResult {
+): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const file = view.state.field(editorInfoField, false)?.file as TFile | null | undefined;
-  if (!file) return { set: builder.finish(), sourceHash: null, filePath: null };
+  if (!file) return builder.finish();
 
   // C-10: lc-slug frontmatter gate. Use metadataCache (consistent with v1.2
   // callsites at codeActionsEditorExtension.ts:248-251), NOT ctx.frontmatter
@@ -71,12 +65,12 @@ function buildLeetCodeFenceRanges(
     | undefined;
   const slug = fm?.['lc-slug'];
   if (typeof slug !== 'string' || slug.length === 0) {
-    return { set: builder.finish(), sourceHash: null, filePath: null };
+    return builder.finish();
   }
 
   const fence = findCodeFence(view.state);
   if (!fence || fence.kind !== 'leetcode-solve') {
-    return { set: builder.finish(), sourceHash: null, filePath: null };
+    return builder.finish();
   }
 
   const from = view.state.doc.line(fence.openerLine).from;
@@ -112,7 +106,7 @@ function buildLeetCodeFenceRanges(
     }),
   );
 
-  return { set: builder.finish(), sourceHash, filePath: file.path };
+  return builder.finish();
 }
 
 /**
@@ -125,67 +119,17 @@ class LeetCodeLiveViewPlugin {
   ranges: DecorationSet;
 
   constructor(view: EditorView, private readonly plugin: PluginHost) {
-    const { set } = buildLeetCodeFenceRanges(view, plugin);
+    const set = buildLeetCodeFenceRanges(view, plugin);
     this.decorations = set;
     this.ranges = set;
   }
 
   update(update: ViewUpdate): void {
-    if (!(update.docChanged || update.viewportChanged)) return;
-
-    const { set, sourceHash, filePath } = buildLeetCodeFenceRanges(
-      update.view,
-      this.plugin,
-    );
-
-    // Phase 20 Plan 20-06 — provenance gate (gap-closure for
-    // self-write-remount-cycle, UAT Test 6).
-    //
-    // When the parent doc transition was caused by OUR own
-    // debouncedWriter.flush(), the suppression map will hold an armed
-    // entry whose expectedHash equals the rebuilt sourceHash. KEEP
-    // `this.decorations` reference-stable for this transaction so CM6
-    // does NOT call destroy() on the widget's host DOM. The next
-    // genuine keystroke will rebuild normally; eq()-hardening in
-    // LeetCodeFenceWidget makes that next rebuild also reuse the DOM
-    // via the suppression-map clause while the entry is still armed.
-    // See .planning/debug/self-write-remount-cycle.md.
-    //
-    // Plan 20-06 revision Blocker #2 — viewport gate is INTENTIONALLY
-    // omitted from the condition. CM6 reflows the viewport on doc
-    // changes routinely; gating on `!update.viewportChanged` would
-    // bypass this whenever docChanged + viewportChanged are both true
-    // (the exact scenario after a flush). The condition fires on
-    // `update.docChanged` alone.
-    //
-    // Multi-fence safety: `sourceHash` is null when the file has more
-    // than zero/one LC fences with a missing slug — the gate falls
-    // through to rebuild in those cases (Pitfall 19-E drift detection
-    // in debouncedWriter is the load-bearing path there).
-    //
-    // Blocker #1 — DO NOT mutate the on-screen widget's sourceHash.
-    // The field is `public readonly` per LeetCodeFenceWidget.ts:40 and
-    // its identity contract is content-hash-based (RESEARCH Pitfall
-    // 19-F). Reference-stability of `this.decorations` is the only
-    // mechanism this gate uses for the echo transaction.
-    if (
-      update.docChanged &&
-      sourceHash !== null &&
-      filePath !== null &&
-      this.plugin.selfWriteSuppression
-    ) {
-      const peeked = this.plugin.selfWriteSuppression.peekExpectedHash(filePath);
-      if (peeked !== null && peeked === sourceHash) {
-        // Self-write echo — reuse on-screen DecorationSet by skipping
-        // the assignment. `this.decorations` and `this.ranges` retain
-        // their existing references, so CM6 sees no DecorationSet
-        // change for THIS transaction and never calls widget.destroy().
-        return;
-      }
+    if (update.docChanged || update.viewportChanged) {
+      const set = buildLeetCodeFenceRanges(update.view, this.plugin);
+      this.decorations = set;
+      this.ranges = set;
     }
-
-    this.decorations = set;
-    this.ranges = set;
   }
 }
 

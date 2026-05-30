@@ -92,6 +92,11 @@ import { resolveLangSlug, lcSlugToFenceTag, LC_LANG_DISPLAY_LABELS } from './sol
 // Phase 5.3 D-13 parity — chevron's atomic dispatch reuses Phase 5.1's exported
 // `findCodeFence` so fence detection has one source of truth.
 import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorExtension';
+// Phase 20 Plan 20-09 — kind-aware findCodeFence (returns kind: 'leetcode-solve'
+// | 'legacy') for the v1.3 widget paths that must specifically target the
+// leetcode-solve fence and skip stray ```text/```javascript fences.
+import { findCodeFence as findLcCodeFence } from './widget/fenceLocator';
+import { syncAnnotation } from './widget/childParentSync';
 // Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment.
 // `switchFenceLanguage` dispatches a Compartment.reconfigure on the child
 // (when present) immediately after the parent CM6 dispatch, so the child's
@@ -2819,39 +2824,113 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /**
-   * Phase 20 Plan 20-02 — Chevron-driven language switch from the v1.3
-   * widget. Frontmatter-only path (intermediate state — Plan 20-09 Task 6
-   * replaces this with a parent CM6 dispatch + processFrontMatter pair so
-   * the fence body also swaps to the new language's starter code).
+   * Phase 20 Plan 20-09 Task 6 — Chevron-driven language switch from the
+   * v1.3 widget. Replaces the new starter code into the leetcode-solve
+   * fence body (NOT into a stray ```javascript fence — Bug B fix) AND
+   * updates lc-language frontmatter.
+   *
+   * Sequence:
+   *   (a) flush widget → no-op for v1.3 (writer retired Plan 20-09 Task 3)
+   *       but kept for backward compatibility with Reading-mode mounts.
+   *   (b) read lc-slug; bail silent if missing (chevron rendered on a
+   *       non-LC note via a race).
+   *   (c) fetch starter code via existing client.getProblemDetail (cached;
+   *       7-day TTL via SettingsStore). On rejection: locked Notice copy.
+   *   (d) find the leetcode-solve fence in the parent CM6 via the
+   *       kind-aware findLcCodeFence; bail silent if no fence or kind is
+   *       'legacy' (fence opener doesn't say leetcode-solve).
+   *   (e) dispatch on the parent CM6 with a single transaction:
+   *         - changes: replace fence body range with `${snippet}\n`
+   *         - userEvent 'leetcode.lang-switch' (CLAUDE.md `'leetcode.*'`
+   *           bypass for the section-protection transactionFilter).
+   *         - syncAnnotation.of(true) so the child's child→parent sync
+   *           extension's updateListener treats this as parent→child
+   *           and does NOT re-propagate.
+   *   (f) processFrontMatter `lc-language` = newSlug. The per-widget
+   *       metadataCache 'changed' subscription then fires
+   *       Compartment.reconfigure (parser swap) + actionRowRefresh
+   *       (chevron label + .is-current marker, Plan 20-08).
+   *
+   * Empty starter code (LC API quirk for some langs/problems): dispatch
+   * empty body. User sees a blank fence with the new language's parser.
    */
   async switchLanguageFromWidget(
     widget: WidgetController,
     file: TFile,
     newSlug: string,
   ): Promise<void> {
-    // Step (a) — flush widget BEFORE frontmatter write.
+    // Step (a) — flush widget; no-op under Plan 20-09 typing-path retire,
+    // kept for backward compat (Reading-mode + test fixtures).
     await widget.flushNow();
 
-    // Step (b) — atomic frontmatter rewrite. Wrapped in try/catch so a
-    // malformed frontmatter doesn't blow up the chevron click silently.
+    // Step (b) — read lc-slug; silent no-op if missing.
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+    const lcSlugRaw = fm?.['lc-slug'];
+    if (typeof lcSlugRaw !== 'string' || lcSlugRaw.length === 0) return;
+    const lcSlug = lcSlugRaw;
+    const newLabel = LC_LANG_DISPLAY_LABELS[newSlug] ?? newSlug;
+
+    // Step (c) — fetch starter code.
+    let snippet: string;
+    try {
+      const detail = await this.client.getProblemDetail(lcSlug);
+      snippet = detail?.codeSnippets?.find((s) => s.langSlug === newSlug)?.code ?? '';
+    } catch {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- locked Notice copy
+      new Notice(`Couldn't fetch starter code for ${newLabel}.`, 6000);
+      return;
+    }
+
+    // Step (d) — find the leetcode-solve fence. Resolve through the
+    // active markdown view's editor since switchLanguageFromWidget runs
+    // from the chevron click handler inside the widget's host view.
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || view.file !== file) return;
+    const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
+    const fence = findLcCodeFence(cm.state);
+    if (!fence || fence.kind !== 'leetcode-solve') return;
+
+    // Step (e) — parent CM6 dispatch on the fence body range. Body span:
+    // line(openerLine).to + 1 → line(closerLine).from. The trailing `\n`
+    // ensures the closer stays on its own line (no malformed-fence drift).
+    const bodyStart = cm.state.doc.line(fence.openerLine).to + 1;
+    const bodyEnd = cm.state.doc.line(fence.closerLine).from;
+    if (bodyStart > bodyEnd) return;
+
+    try {
+      cm.dispatch({
+        changes: { from: bodyStart, to: bodyEnd, insert: snippet + '\n' },
+        annotations: [
+          syncAnnotation.of(true),
+          // userEvent annotation passes the section-protection
+          // changeFilter's `'leetcode.*'` bypass.
+          // Cast through unknown to satisfy obsidian.d.ts types.
+          (
+            await import('@codemirror/state')
+          ).Transaction.userEvent.of('leetcode.lang-switch'),
+        ],
+      });
+    } catch (err) {
+      logger.debug('switchLanguageFromWidget: parent dispatch failed', err);
+      return;
+    }
+
+    // Step (f) — atomic frontmatter rewrite. The per-widget metadataCache
+    // 'changed' subscription fires Compartment.reconfigure + actionRowRefresh
+    // so the chevron label + parser update without remount.
     try {
       await this.app.fileManager.processFrontMatter(
         file,
-        (fm: Record<string, unknown>) => {
-          fm['lc-language'] = newSlug;
+        (fmObj: Record<string, unknown>) => {
+          fmObj['lc-language'] = newSlug;
         },
       );
     } catch (err) {
       new Notice("Failed to switch language. The note's frontmatter may be malformed.", 5000);
       logger.debug('switchLanguageFromWidget: processFrontMatter failed', err);
-      return;
     }
-
-    // Step (c) — NO parent CM6 dispatch here. v1.3 widget reacts via
-    // per-widget metadataCache subscription (Compartment.reconfigure +
-    // actionRowRefresh). Plan 20-09 Task 6 replaces this with a body-swap
-    // dispatch so the chevron click also writes the new language's
-    // starter code into the leetcode-solve fence body.
   }
 
   private async openAISolution(slug: string): Promise<void> {
