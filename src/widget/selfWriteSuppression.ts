@@ -19,7 +19,21 @@
 // we'd rather miss our own write than swallow an external one.
 
 interface SuppressionEntry {
+  /** SHA-1 of the future fence body — consumed by vault.on('modify')'s
+   *  tryConsume() for cryptographic-collision-safe self-write detection at
+   *  the vault layer. */
   expectedHash: string;
+  /** Phase 20 Plan 20-06 (UAT bug-fix) — djb2 of the future fence body —
+   *  consumed by liveModeViewPlugin.update() and LeetCodeFenceWidget.eq()
+   *  for the CM6 ViewPlugin provenance gate. djb2 is sync, matches the
+   *  ViewPlugin's per-build sourceHash computation in liveModeViewPlugin.ts:81.
+   *  Carried alongside `expectedHash` so a single arm() call services BOTH
+   *  observers without forcing the modify-handler to recompute djb2 (or
+   *  the ViewPlugin to recompute sha1 — async / SubtleCrypto unavailable
+   *  in update() semantics). Matches the rationale documented in
+   *  src/widget/hash.ts: sha1 is cryptographic (no collision risk), djb2 is
+   *  sync (fits ViewPlugin update). */
+  expectedDjb2: string;
   expiresAt: number;
 }
 
@@ -36,11 +50,22 @@ export class SelfWriteSuppression {
   private readonly TTL_MS = 2000;
 
   /** Arm a per-path entry. Subsequent tryConsume calls with the matching
-   *  hash will return 'consumed' (self-write); calls past the 2s TTL return
-   *  'stale'. Replaces any existing entry for this path. */
-  arm(path: string, expectedHash: string): void {
+   *  sha1 hash return 'consumed' (self-write); calls past the 2s TTL return
+   *  'stale'. Replaces any existing entry for this path.
+   *
+   *  Phase 20 Plan 20-06 (UAT bug-fix): callers ALSO pass the djb2 of the
+   *  same body so the CM6 ViewPlugin / widget eq() can peek with the sync
+   *  hash they already compute (see hash.ts header for the rationale).
+   *  Single arm() call services both observers — the alternative (two
+   *  parallel maps) would risk drift between the consume and peek paths.
+   *
+   *  `expectedDjb2` defaults to `expectedHash` for backward compatibility
+   *  with test fixtures that don't exercise the ViewPlugin peek path. New
+   *  production callers (debouncedWriter.flush) MUST pass both. */
+  arm(path: string, expectedHash: string, expectedDjb2: string = expectedHash): void {
     this.map.set(path, {
       expectedHash,
+      expectedDjb2,
       expiresAt: Date.now() + this.TTL_MS,
     });
   }
@@ -68,17 +93,22 @@ export class SelfWriteSuppression {
 
   /** Phase 20 Plan 20-06 — read-only peek for the CM6 ViewPlugin
    *  provenance check (`liveModeViewPlugin.ts`). Returns the armed
-   *  expected hash for `path` if an entry exists and has not expired;
-   *  returns `null` otherwise. Does NOT mutate the map — neither
-   *  consume nor lazy-evict on stale. The ViewPlugin's `update()` runs
-   *  on every parent CM6 transaction and must NOT race the
-   *  vault.on('modify') consume — peek leaves the entry intact for the
-   *  modify handler to consume on its own schedule. */
+   *  expected djb2 hash for `path` if an entry exists and has not expired;
+   *  returns `null` otherwise. Does NOT mutate the map — neither consume
+   *  nor lazy-evict on stale. The ViewPlugin's `update()` runs on every
+   *  parent CM6 transaction and must NOT race the vault.on('modify')
+   *  consume — peek leaves the entry intact for the modify handler to
+   *  consume on its own schedule.
+   *
+   *  Returns the djb2 (NOT sha1) hash because the ViewPlugin computes
+   *  djb2 synchronously via hash.ts:33 — see hash.ts header for why the
+   *  two algorithms are intentionally different (sha1 cryptographic for
+   *  vault-layer collision safety; djb2 sync for ViewPlugin update()). */
   peekExpectedHash(path: string): string | null {
     const entry = this.map.get(path);
     if (!entry) return null;
     if (Date.now() > entry.expiresAt) return null; // Stale — not consumed; tryConsume will lazy-evict.
-    return entry.expectedHash;
+    return entry.expectedDjb2;
   }
 
   /** Drain the map. Called by Plugin.onunload. */

@@ -270,6 +270,34 @@ describe('Phase 20 Plan 20-06 — ViewPlugin update() provenance gate (peekExpec
     expect(decision).toBe('rebuild');
   });
 
+  it('Test 10 (UAT bug-fix): peek returns djb2 hash, not sha1 — dual-hash arm', () => {
+    // Bug A: production debouncedWriter arms with sha1; ViewPlugin/eq peek
+    // with djb2. Plan 20-06 v1 plumbed the WRONG hash, so peek === sourceHash
+    // never matched. Bug A fix: arm carries BOTH; peek returns djb2.
+    const SHA1 = 'deadbeef-pretend-this-is-a-sha1-hex-digest';
+    const DJB2 = '12345678'; // 8-char djb2 hex
+    suppression.arm('foo.md', SHA1, DJB2);
+
+    const peeked = suppression.peekExpectedHash('foo.md');
+    // peek MUST return djb2, not sha1 — the ViewPlugin's per-build sourceHash
+    // is djb2 (synchronous; matches hash.ts:33).
+    expect(peeked).toBe(DJB2);
+    expect(peeked).not.toBe(SHA1);
+  });
+
+  it('Test 11 (UAT bug-fix): tryConsume still operates on sha1 (no regression)', () => {
+    const SHA1 = 'sha1-token-abc';
+    const DJB2 = 'djb2-token-xyz';
+    suppression.arm('foo.md', SHA1, DJB2);
+
+    // tryConsume with djb2 must MISS — the vault-layer collision-safe
+    // semantics depend on sha1 matching observedBody hash exactly.
+    expect(suppression.tryConsume('foo.md', DJB2)).toBe('miss');
+    // Re-arm because tryConsume(miss) drops the entry defensively.
+    suppression.arm('foo.md', SHA1, DJB2);
+    expect(suppression.tryConsume('foo.md', SHA1)).toBe('consumed');
+  });
+
   it('Test 9: stale entry (past TTL) returns null from peek → REBUILD', () => {
     // Manually expire by setting Date.now far in the future via mock.
     suppression.arm('foo.md', 'h-flush');
