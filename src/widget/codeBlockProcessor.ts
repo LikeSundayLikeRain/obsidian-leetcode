@@ -135,11 +135,38 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
     // embeds — the embed-target is typically the LC note's only fence).
     const renderInfo = info ?? { text: source, lineStart: 0, lineEnd: 0 };
 
-    // WIDGET-07 / CONTEXT C-03: Reading-mode widgets must be read-only.
-    // Obsidian calls registerMarkdownCodeBlockProcessor in BOTH Reading mode
-    // and Live Preview (when the block is preview-rendered). Detect Reading
-    // mode via DOM ancestor — .markdown-reading-view is only present there.
-    const isReadingMode = !!el.closest?.('.markdown-reading-view');
+    // WIDGET-07 / CONTEXT C-03 + Phase 20-09 (post-mortem fix): Reading-mode
+    // widgets must be read-only. `el` may be in a detached pre-render
+    // fragment when the post-processor fires — meaning
+    // el.closest('.markdown-reading-view') returns null even though we're
+    // really in Reading mode. This caused vim+mode-switch to mount an
+    // editable LP-mode widget into a Reading view (BUG 5).
+    //
+    // Use a three-signal OR for reliability:
+    //   1. el.closest('.markdown-reading-view') — fast path, works once el
+    //      is attached.
+    //   2. ctx.containerEl.closest('.markdown-reading-view') —
+    //      ctx.containerEl is the post-processor's containing section node,
+    //      which is mode-stable from the start.
+    //   3. workspace.getActiveViewOfType(MarkdownView)?.getMode() === 'preview'
+    //      — authoritative for the focused leaf.
+    const elReading = !!el.closest?.('.markdown-reading-view');
+    const ctxContainerEl = (ctx as unknown as { containerEl?: HTMLElement }).containerEl;
+    const ctxReading = !!ctxContainerEl?.closest?.('.markdown-reading-view');
+    let activeModeReading = false;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { MarkdownView } = require('obsidian') as { MarkdownView: unknown };
+      const av = (plugin.app as unknown as {
+        workspace?: {
+          getActiveViewOfType?(t: unknown): { getMode?(): string } | null;
+        };
+      }).workspace?.getActiveViewOfType?.(MarkdownView);
+      activeModeReading = av?.getMode?.() === 'preview';
+    } catch {
+      // Defensive — fall back to DOM signals.
+    }
+    const isReadingMode = elReading || ctxReading || activeModeReading;
 
     // Phase 20 Plan 20-09 — RenderChild path renders in BOTH reading
     // mode and Live Preview (Obsidian fires registerMarkdownCodeBlock-

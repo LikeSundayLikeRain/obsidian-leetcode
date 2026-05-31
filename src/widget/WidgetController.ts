@@ -257,6 +257,13 @@ export class WidgetController {
    *  readOnly parameter. */
   public readOnly: boolean = false;
 
+  /** Phase 20-09 (post-mortem fix): captured at onunload time — was the
+   *  contentDOM the document.activeElement before the post-processor
+   *  remount? Used by the adoption refocus path so multi-pane scenarios
+   *  don't steal focus to the non-typing pane. Only restored on adoption
+   *  if true. */
+  public hadFocusBeforeUnload: boolean = false;
+
   /** Phase 20 Plan 20-04 — overlay div mounted as a sibling of `.cm-editor`
    *  when this widget is in `peer` pane state. Click on overlay promotes the
    *  pane via `app.workspace.setActiveLeaf(<this widget's leaf>)`. Tracked on
@@ -1275,7 +1282,14 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
           if (ctl?.fenceIndex !== this.fenceIndex) return false;
           if (ctl?.readOnly !== this.readOnly) return false;
           const existingLeaf = ctl.container?.closest?.('.workspace-leaf');
-          if (existingLeaf && myLeaf && existingLeaf !== myLeaf) return false;
+          // Cross-leaf theft prevention: if the existing controller is
+          // mounted inside a real .workspace-leaf, only that same leaf may
+          // adopt it. A null myLeaf (the new RenderChild's containerEl is
+          // still in Obsidian's pre-render fragment) MUST NOT steal a
+          // controller already mounted in another pane — doing so would
+          // leave that pane blank. Parked controllers (no leaf ancestor)
+          // remain freely adoptable.
+          if (existingLeaf && existingLeaf !== myLeaf) return false;
           return true;
         })
       : undefined;
@@ -1294,7 +1308,19 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
         // The EditorView is never destroyed so its cursor is already
         // where the user left it; we only need to restore browser focus
         // so subsequent keystrokes route to contentDOM.
+        //
+        // Gate refocus on hadFocusBeforeUnload — multi-pane scenarios fire
+        // adoption for every visible pane on disk flush, and we must not
+        // steal focus to a non-typing pane. Only the pane whose contentDOM
+        // had document.activeElement focus before unload restores focus.
         const view = existing.view;
+        const shouldRefocus = existing.hadFocusBeforeUnload;
+        // Reset the flag so a subsequent unload-without-typing doesn't
+        // erroneously refocus.
+        existing.hadFocusBeforeUnload = false;
+        if (!shouldRefocus) {
+          return;
+        }
         const refocus = (): void => {
           try {
             if (!view || !view.contentDOM) return;
@@ -1374,12 +1400,22 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
       this.mountedRegistryKey = undefined;
       return;
     }
-    // Editable mount: park the controller's container in the hidden parking
-    // lot BEFORE Obsidian removes containerEl from the DOM. This keeps the
-    // EditorView in document.body so the browser does NOT fire blur — vim
-    // stays in insert mode, cursor remains stable, focus survives the
-    // post-processor remount cycle. The next RenderChild.onload reparents
-    // it from the lot into the new containerEl.
+    // Editable mount: capture whether this widget had focus BEFORE we park
+    // it. The next RenderChild.onload uses this to decide whether to
+    // refocus — multi-pane scenarios fire onload for every visible pane on
+    // disk flush, and we must not steal focus to the non-typing pane.
+    try {
+      this.controller.hadFocusBeforeUnload =
+        this.controller.view?.contentDOM === document.activeElement;
+    } catch {
+      this.controller.hadFocusBeforeUnload = false;
+    }
+    // Park the controller's container in the hidden parking lot BEFORE
+    // Obsidian removes containerEl from the DOM. This keeps the EditorView
+    // in document.body so the browser does NOT fire blur — vim stays in
+    // insert mode, cursor remains stable, focus survives the post-processor
+    // remount cycle. The next RenderChild.onload reparents it from the lot
+    // into the new containerEl.
     if (this.controller.container) {
       try {
         LeetCodeWidgetRenderChild.getParkingLot().appendChild(
