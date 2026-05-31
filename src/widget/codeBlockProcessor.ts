@@ -153,20 +153,49 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
     const elReading = !!el.closest?.('.markdown-reading-view');
     const ctxContainerEl = (ctx as unknown as { containerEl?: HTMLElement }).containerEl;
     const ctxReading = !!ctxContainerEl?.closest?.('.markdown-reading-view');
-    let activeModeReading = false;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { MarkdownView } = require('obsidian') as { MarkdownView: unknown };
-      const av = (plugin.app as unknown as {
-        workspace?: {
-          getActiveViewOfType?(t: unknown): { getMode?(): string } | null;
-        };
-      }).workspace?.getActiveViewOfType?.(MarkdownView);
-      activeModeReading = av?.getMode?.() === 'preview';
-    } catch {
-      // Defensive — fall back to DOM signals.
+    // WR-03 (review-fix) — prefer local DOM signals when the
+    // ctx.containerEl is connected to the live document. The global
+    // `getActiveViewOfType` reads the focused leaf, which produces
+    // false positives in split view: with a Reading pane focused while
+    // an LP pane re-renders, the global signal would mount the LP
+    // widget as read-only.
+    //
+    // Trust local signals first:
+    //   - `elReading` is the most specific (the host element is inside
+    //     the .markdown-reading-view subtree).
+    //   - `ctxReading` is the next-best (ctx.containerEl is mode-stable
+    //     from the start; the post-processor's containing section node
+    //     keeps its mode class even when el itself is in a detached
+    //     pre-render fragment).
+    // Only fall back to the global activeModeReading when neither local
+    // signal is decisive AND the ctx.containerEl is detached (we have
+    // no local truth to consult).
+    const ctxConnected = !!ctxContainerEl?.isConnected;
+    let isReadingMode: boolean;
+    if (elReading || ctxReading) {
+      isReadingMode = true;
+    } else if (ctxConnected) {
+      // Local DOM is connected and says NOT reading — trust it. Skip
+      // the global probe to avoid false positives in split view.
+      isReadingMode = false;
+    } else {
+      // ctx is detached (pre-render fragment); fall back to the global
+      // active-leaf mode signal.
+      let activeModeReading = false;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { MarkdownView } = require('obsidian') as { MarkdownView: unknown };
+        const av = (plugin.app as unknown as {
+          workspace?: {
+            getActiveViewOfType?(t: unknown): { getMode?(): string } | null;
+          };
+        }).workspace?.getActiveViewOfType?.(MarkdownView);
+        activeModeReading = av?.getMode?.() === 'preview';
+      } catch {
+        // Defensive — assume editable when probe fails.
+      }
+      isReadingMode = activeModeReading;
     }
-    const isReadingMode = elReading || ctxReading || activeModeReading;
 
     // Phase 20 Plan 20-09 — RenderChild path renders in BOTH reading
     // mode and Live Preview (Obsidian fires registerMarkdownCodeBlock-
