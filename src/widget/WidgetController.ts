@@ -1232,6 +1232,39 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
     return LeetCodeWidgetRenderChild.parkingLot;
   }
 
+  /**
+   * Phase 20 BL-01 (review-fix) + WR-15 (review-fix) — dispose the parking lot
+   * static. Called from `Plugin.onunload` so:
+   *   1. The lot div is removed from `document.body` (no orphan DOM).
+   *   2. The static field is reset so a subsequent plugin enable allocates
+   *      a fresh lot pointing into the live document tree (CommonJS module
+   *      cache otherwise persists the dead pointer across enable/disable —
+   *      WR-15).
+   *
+   * Also iterates any controllers still parked inside the lot and destroys
+   * them. Real paths that get here without an `onload` adoption: plugin
+   * disable / file rename (registryKey is frozen at construction) / tab
+   * close mid-typing / fall-through catch in `onload`.
+   *
+   * Idempotent — calling on a never-instantiated lot is a no-op.
+   */
+  static disposeParkingLot(): void {
+    const lot = LeetCodeWidgetRenderChild.parkingLot;
+    if (!lot) return;
+    try {
+      // Remove every parked container from the lot. The associated
+      // EditorViews are NOT destroyed here — `WidgetRegistry.destroyAll`
+      // (called from Plugin.onunload BEFORE this) is responsible for view
+      // teardown via each controller's `destroy()`. We just detach the
+      // DOM nodes from the live document.
+      while (lot.firstChild) lot.removeChild(lot.firstChild);
+      lot.remove();
+    } catch {
+      // Defensive — DOM may already be detached.
+    }
+    LeetCodeWidgetRenderChild.parkingLot = null;
+  }
+
   constructor(
     host: HTMLElement,
     private readonly source: string,
@@ -1340,7 +1373,22 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
         requestAnimationFrame(refocus);
         return;
       } catch {
-        // Fall through to fresh mount on any DOM error.
+        // BL-01 / BL-02 (review-fix) — fall-through catch: the registry
+        // entry references a controller we couldn't reparent (DOM error,
+        // detached existing.container, etc.). Destroy the stale entry
+        // BEFORE falling through to fresh mount — without this the
+        // registry accumulates dead controllers (BL-01 leak amplifier
+        // and BL-02 stale-pick risk on subsequent adoption).
+        try {
+          existing.destroy();
+        } catch {
+          /* swallow — already torn down */
+        }
+        try {
+          this.plugin.widgetRegistry?.delete(existing.registryKey);
+        } catch {
+          /* swallow — registry may be absent in tests */
+        }
       }
     }
 

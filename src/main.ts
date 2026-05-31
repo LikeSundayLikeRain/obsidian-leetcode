@@ -155,6 +155,8 @@ import { SelfWriteSuppression } from './widget/selfWriteSuppression';
 import { sha1 } from './widget/debouncedWriter';
 import { extractFenceBody } from './widget/fenceSerialization';
 import type { WidgetController } from './widget/WidgetController';
+// Runtime import for the parking-lot dispose call in onunload (BL-01 fix).
+import { LeetCodeWidgetRenderChild } from './widget/WidgetController';
 // Phase 20 Plan 20-03 (SYNC-04 / SYNC-05) — conflict modal opens when an
 // external edit lands during local in-flight typing. The plugin holds a
 // single `activeConflictModal` reference; the modal's constructor callback
@@ -1499,6 +1501,16 @@ export default class LeetCodePlugin extends Plugin {
     const flushP = this.widgetRegistry?.flushAll();
     if (flushP && typeof flushP.catch === 'function') flushP.catch(() => undefined);
     this.widgetRegistry?.destroyAll();
+    // Phase 20 BL-01 (review-fix) + WR-15 — dispose the parking lot static
+    // AFTER destroyAll. destroyAll tears down each controller's EditorView;
+    // disposeParkingLot then removes the lot div from document.body and nulls
+    // the static so a subsequent plugin enable allocates a fresh lot. Without
+    // this call:
+    //   - File rename leaves a parked controller dangling forever.
+    //   - Plugin disable + re-enable reuses a stale lot pointing into a dead
+    //     DOM tree (CommonJS module cache persists statics across reload).
+    //   - Tab close mid-typing parks a controller whose onload never re-fires.
+    LeetCodeWidgetRenderChild.disposeParkingLot();
     this.selfWriteSuppression?.clear();
     // Phase 19 Plan 03 — drain the state persistence map. The 60s sweep
     // interval registered in onload auto-cancels via registerInterval, but
