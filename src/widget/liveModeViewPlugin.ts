@@ -97,14 +97,6 @@ function buildLeetCodeFenceRanges(
     to,
     Decoration.replace({
       widget: new LeetCodeFenceWidget(plugin, file, fenceIndex, sourceHash, source),
-      // Phase 20 Plan 20-09 — `block: true` removed because RenderChild
-      // (registerMarkdownCodeBlockProcessor) renders the visible widget
-      // in Live Preview; the ViewPlugin's Decoration.replace conflicted
-      // with RenderChild's render and caused an empty gap.
-      //
-      // The ViewPlugin still contributes the SAME RangeSet to
-      // EditorView.atomicRanges so the parent cursor cannot enter the
-      // fence range — that's WIDGET-02 / C-05's load-bearing invariant.
     }),
   );
 
@@ -121,16 +113,7 @@ class LeetCodeLiveViewPlugin {
   ranges: DecorationSet;
 
   constructor(view: EditorView, private readonly plugin: PluginHost) {
-    // eslint-disable-next-line no-console
-    console.debug('[lc-uat] viewplugin.construct', {
-      docLength: view.state.doc.length,
-    });
     const set = buildLeetCodeFenceRanges(view, plugin);
-    // eslint-disable-next-line no-console
-    console.debug('[lc-uat] viewplugin.constructed', {
-      hasRanges: set !== Decoration.none,
-      rangeSize: set.size,
-    });
     this.decorations = set;
     this.ranges = set;
   }
@@ -160,11 +143,6 @@ class LeetCodeLiveViewPlugin {
     const isChildSync = update.transactions.some(
       (tr) => tr.annotation(Transaction.userEvent) === 'leetcode.child-sync',
     );
-    // eslint-disable-next-line no-console
-    console.debug('[lc-uat] parent->child decide', {
-      isChildSync,
-      userEvents: update.transactions.map((tr) => tr.annotation(Transaction.userEvent)),
-    });
     if (isChildSync) return;
     pushParentToChild(update.view, this.plugin);
   }

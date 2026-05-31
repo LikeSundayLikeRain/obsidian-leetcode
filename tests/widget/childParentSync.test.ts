@@ -1,22 +1,19 @@
-// Phase 20 Plan 20-09 Task 2 — child→parent sync extension tests.
+// Phase 20 Plan 20-09 (amended) — debounced child→parent sync extension tests.
 //
-// Tests:
-//   1. Single-character insertion in child remaps to parent fence-body offset.
-//   2. Multi-line insertion remaps correctly.
-//   3. Echo prevention: transactions carrying syncAnnotation don't re-dispatch.
-//   4. Fence missing (getFence returns null) → abort silently, no parent
-//      dispatch.
-//   5. Replacement (range edit, not insertion) remaps both `from` and `to`
-//      to parent offsets.
-//   6. update.docChanged === false → no parent dispatch.
+// The new architecture debounces child→parent dispatches (300ms idle).
+// Tests use vi.useFakeTimers() to advance time and verify:
+//   1. No dispatch before debounce fires.
+//   2. Debounced dispatch replaces parent fence body with child doc.
+//   3. Echo prevention: transactions carrying syncAnnotation don't trigger.
+//   4. Fence missing (getFence returns null) → abort silently.
+//   5. docChanged === false → no scheduling.
+//   6. Multiple rapid changes → only one dispatch after debounce.
+//   7. flushSync() fires immediately without waiting for debounce.
+//   8. cancel() prevents pending flush from firing.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock @codemirror/state with the minimum primitives the sync extension
-// touches: Annotation.define + Transaction.userEvent.of + addToHistory.of.
 vi.mock('@codemirror/state', () => {
-  // Symbol-keyed annotation registry. tr.annotation(<defKey>) returns the
-  // value stored on the transaction under that key (or undefined).
   type AnnotationDef<T> = { key: symbol; of: (value: T) => { __key: symbol; value: T } };
   const define = <T>(): AnnotationDef<T> => {
     const key = Symbol('annotation');
@@ -35,8 +32,6 @@ vi.mock('@codemirror/state', () => {
 });
 
 vi.mock('@codemirror/view', () => {
-  // updateListener.of(cb) just stores the callback so tests can call it
-  // directly with a synthetic ViewUpdate.
   return {
     EditorView: {
       updateListener: {
@@ -52,21 +47,15 @@ import {
 } from '../../src/widget/childParentSync';
 import type { FenceLocation } from '../../src/widget/fenceLocator';
 
-interface ChangeRange {
-  from: number;
-  to: number;
-  insert: string;
-}
-
 interface FakeParentDoc {
   text: string;
   lines: number;
   line(n: number): { from: number; to: number; text: string; number: number };
+  sliceString(from: number, to: number): string;
   get length(): number;
 }
 
 function makeFakeDoc(text: string): FakeParentDoc {
-  // Build line index: lines[i] holds the start offset of line i+1 (1-indexed).
   const starts: number[] = [0];
   for (let i = 0; i < text.length; i++) {
     if (text[i] === '\n') starts.push(i + 1);
@@ -74,7 +63,7 @@ function makeFakeDoc(text: string): FakeParentDoc {
   const ends: number[] = [];
   for (let i = 0; i < starts.length; i++) {
     const next = i + 1 < starts.length ? starts[i + 1]! : text.length + 1;
-    ends.push(next - 1); // .to excludes the trailing \n
+    ends.push(next - 1);
   }
 
   return {
@@ -91,6 +80,9 @@ function makeFakeDoc(text: string): FakeParentDoc {
         number: n,
       };
     },
+    sliceString(from: number, to: number) {
+      return text.slice(from, to);
+    },
     get length() {
       return text.length;
     },
@@ -99,8 +91,8 @@ function makeFakeDoc(text: string): FakeParentDoc {
 
 interface FakeParentView {
   state: { doc: FakeParentDoc };
-  dispatched: Array<{ changes: ChangeRange[]; annotations?: unknown[] }>;
-  dispatch(spec: { changes: ChangeRange[] | ChangeRange; annotations?: unknown[] }): void;
+  dispatched: Array<{ changes: { from: number; to: number; insert: string }; annotations?: unknown[] }>;
+  dispatch(spec: { changes: { from: number; to: number; insert: string }; annotations?: unknown[] }): void;
 }
 
 function makeFakeParentView(text: string): FakeParentView {
@@ -108,71 +100,30 @@ function makeFakeParentView(text: string): FakeParentView {
     state: { doc: makeFakeDoc(text) },
     dispatched: [],
     dispatch(spec) {
-      const arr = Array.isArray(spec.changes) ? spec.changes : [spec.changes];
-      view.dispatched.push({ changes: arr, annotations: spec.annotations });
+      view.dispatched.push(spec);
     },
   };
   return view;
 }
 
-interface FakeChangeSet {
-  iterChanges(
-    cb: (
-      fromA: number,
-      toA: number,
-      fromB: number,
-      toB: number,
-      inserted: string,
-    ) => void,
-  ): void;
-}
-
-function makeChangeSet(changes: Array<{ fromA: number; toA: number; insert: string }>): FakeChangeSet {
-  return {
-    iterChanges(cb) {
-      let fromB = 0;
-      for (const c of changes) {
-        const toB = fromB + c.insert.length;
-        cb(c.fromA, c.toA, fromB, toB, c.insert);
-        fromB = toB;
-      }
-    },
-  };
-}
-
 interface FakeUpdate {
   docChanged: boolean;
-  changes: FakeChangeSet;
   transactions: Array<{ annotation: (def: { key: symbol }) => unknown }>;
   view: { state: { doc: { toString: () => string } } };
-  startState: { doc: { toString: () => string } };
-  state: { doc: { toString: () => string } };
 }
 
 function makeUpdate(opts: {
   docChanged: boolean;
-  changes?: FakeChangeSet;
+  childDoc?: string;
   syncAnnotated?: boolean;
 }): FakeUpdate {
   const annotationKey = (syncAnnotation as unknown as { key: symbol }).key;
   return {
     docChanged: opts.docChanged,
-    changes: opts.changes ?? makeChangeSet([]),
     transactions: opts.syncAnnotated
-      ? [
-          {
-            annotation: (def: { key: symbol }) =>
-              def.key === annotationKey ? true : undefined,
-          },
-        ]
-      : [
-          {
-            annotation: () => undefined,
-          },
-        ],
-    view: { state: { doc: { toString: () => '' } } },
-    startState: { doc: { toString: () => '' } },
-    state: { doc: { toString: () => '' } },
+      ? [{ annotation: (def: { key: symbol }) => def.key === annotationKey ? true : undefined }]
+      : [{ annotation: () => undefined }],
+    view: { state: { doc: { toString: () => opts.childDoc ?? '' } } },
   };
 }
 
@@ -182,136 +133,154 @@ function getListenerCallback(
   return (ext as { __updateListener: (u: FakeUpdate) => void }).__updateListener;
 }
 
-describe('Phase 20 Plan 20-09 Task 2 — childParentSync', () => {
-  // Build a parent doc that has a leetcode-solve fence on lines 4-6:
-  //   line 1: ## Code
-  //   line 2: (blank)
-  //   line 3: ```leetcode-solve
-  //   line 4: class Solution {  <-- fence body line 1
-  //   line 5: }                  <-- fence body line 2
-  //   line 6: ```
-  // bodyStart = line(3).to + 1; bodyEnd = line(6).from
+describe('Phase 20 Plan 20-09 (amended) — debounced childParentSync', () => {
+  // Parent doc with leetcode-solve fence on lines 3-6:
+  //   line 1: '## Code\n'         positions 0-7
+  //   line 2: '\n'                 position  8
+  //   line 3: '```leetcode-solve\n' positions 9-26
+  //   line 4: 'class Solution {\n'  positions 27-43
+  //   line 5: '}\n'                positions 44-45
+  //   line 6: '```\n'              positions 46-49
+  // bodyStart = line(3).to + 1 = 26 + 1 = 27 (but .to excludes \n, so 25+1=26? let's verify)
+  // Actually: line(3) text is '```leetcode-solve', from=9, to=25 (end of text before \n)
+  //   bodyStart = 25 + 1 = 26... No — let's just let the test verify empirically.
   const PARENT_TEXT = '## Code\n\n```leetcode-solve\nclass Solution {\n}\n```\n';
   const FENCE: FenceLocation = { openerLine: 3, closerLine: 6, kind: 'leetcode-solve' };
+  // bodyStart = 27, bodyEnd = 46
+  // parent fence body = 'class Solution {\n}\n' (includes trailing \n before closer)
 
   let parent: FakeParentView;
   let getFence: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     parent = makeFakeParentView(PARENT_TEXT);
     getFence = vi.fn(() => FENCE);
   });
 
-  it('Test 1: single-character insertion in child remaps to parent fence-body offset', () => {
-    const ext = createChildParentSyncExtension(parent as never, getFence as never);
-    const cb = getListenerCallback(ext);
-
-    // Child docChange: insert 'X' at child offset 0.
-    cb(makeUpdate({
-      docChanged: true,
-      changes: makeChangeSet([{ fromA: 0, toA: 0, insert: 'X' }]),
-    }));
-
-    expect(parent.dispatched.length).toBe(1);
-    const dispatch = parent.dispatched[0]!;
-    // Parent fence body starts at line(3).to + 1.
-    // line 3 (1-indexed) = '```leetcode-solve' starting at offset 9 (after '## Code\n\n').
-    // line(3).to = 9 + '```leetcode-solve'.length = 9 + 17 = 26.
-    // bodyStart = 27.
-    expect(dispatch.changes[0]!.from).toBe(27);
-    expect(dispatch.changes[0]!.to).toBe(27);
-    expect(dispatch.changes[0]!.insert).toBe('X');
-    // Only userEvent annotation attached. Plan 20-09 UAT bug-fix:
-    // addToHistory.of(false) removed because it blocked Obsidian's
-    // auto-save (the parent's history integration drives auto-save's
-    // dirty signal). The Tasks plugin's canonical pattern dispatches
-    // without ANY annotations; we keep userEvent for the
-    // 'leetcode.*' bypass + ViewPlugin echo detection.
-    expect(dispatch.annotations).toBeDefined();
-    expect(dispatch.annotations!.length).toBe(1);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('Test 2: multi-character insertion remaps correctly', () => {
-    const ext = createChildParentSyncExtension(parent as never, getFence as never);
+  it('Test 1: no dispatch before debounce timer fires', () => {
+    const { extension: ext } = createChildParentSyncExtension(parent as never, getFence as never);
     const cb = getListenerCallback(ext);
 
-    cb(makeUpdate({
-      docChanged: true,
-      changes: makeChangeSet([{ fromA: 5, toA: 5, insert: 'abc' }]),
-    }));
+    cb(makeUpdate({ docChanged: true, childDoc: 'class Solution {\n  return 0;\n}' }));
 
-    expect(parent.dispatched.length).toBe(1);
-    const dispatch = parent.dispatched[0]!;
-    expect(dispatch.changes[0]!.from).toBe(27 + 5);
-    expect(dispatch.changes[0]!.to).toBe(27 + 5);
-    expect(dispatch.changes[0]!.insert).toBe('abc');
-  });
-
-  it('Test 3: echo prevention — syncAnnotation transaction does NOT dispatch', () => {
-    const ext = createChildParentSyncExtension(parent as never, getFence as never);
-    const cb = getListenerCallback(ext);
-
-    cb(makeUpdate({
-      docChanged: true,
-      changes: makeChangeSet([{ fromA: 0, toA: 0, insert: 'X' }]),
-      syncAnnotated: true,
-    }));
-
-    // No dispatch — would have been an echo loop.
     expect(parent.dispatched.length).toBe(0);
   });
 
-  it('Test 4: getFence returns null → abort silently, no parent dispatch', () => {
+  it('Test 2: dispatch fires after debounce (300ms) with full body replace', () => {
+    const { extension: ext } = createChildParentSyncExtension(parent as never, getFence as never);
+    const cb = getListenerCallback(ext);
+
+    const newBody = 'class Solution {\n  return 0;\n}';
+    cb(makeUpdate({ docChanged: true, childDoc: newBody }));
+
+    vi.advanceTimersByTime(300);
+
+    expect(parent.dispatched.length).toBe(1);
+    const dispatch = parent.dispatched[0]!;
+    expect(dispatch.changes.from).toBe(27); // bodyStart
+    expect(dispatch.changes.to).toBe(46);   // bodyEnd
+    // Trailing \n appended to preserve fence structure
+    expect(dispatch.changes.insert).toBe(newBody + '\n');
+  });
+
+  it('Test 3: echo prevention — syncAnnotation skips scheduling', () => {
+    const { extension: ext } = createChildParentSyncExtension(parent as never, getFence as never);
+    const cb = getListenerCallback(ext);
+
+    cb(makeUpdate({ docChanged: true, childDoc: 'modified', syncAnnotated: true }));
+
+    vi.advanceTimersByTime(500);
+
+    expect(parent.dispatched.length).toBe(0);
+  });
+
+  it('Test 4: getFence returns null → abort silently', () => {
     const nullFence = vi.fn(() => null);
-    const ext = createChildParentSyncExtension(parent as never, nullFence as never);
+    const { extension: ext } = createChildParentSyncExtension(parent as never, nullFence as never);
     const cb = getListenerCallback(ext);
 
-    cb(makeUpdate({
-      docChanged: true,
-      changes: makeChangeSet([{ fromA: 0, toA: 0, insert: 'X' }]),
-    }));
+    cb(makeUpdate({ docChanged: true, childDoc: 'modified' }));
+
+    vi.advanceTimersByTime(500);
 
     expect(parent.dispatched.length).toBe(0);
-    expect(nullFence).toHaveBeenCalled();
   });
 
-  it('Test 5: range replacement remaps both from and to', () => {
-    const ext = createChildParentSyncExtension(parent as never, getFence as never);
+  it('Test 5: docChanged false → no scheduling', () => {
+    const { extension: ext } = createChildParentSyncExtension(parent as never, getFence as never);
     const cb = getListenerCallback(ext);
 
-    // Replace child[2..5] with 'XYZ'.
-    cb(makeUpdate({
-      docChanged: true,
-      changes: makeChangeSet([{ fromA: 2, toA: 5, insert: 'XYZ' }]),
-    }));
+    cb(makeUpdate({ docChanged: false, childDoc: 'modified' }));
+
+    vi.advanceTimersByTime(500);
+
+    expect(parent.dispatched.length).toBe(0);
+  });
+
+  it('Test 6: multiple rapid changes → single dispatch after debounce', () => {
+    const { extension: ext } = createChildParentSyncExtension(parent as never, getFence as never);
+    const cb = getListenerCallback(ext);
+
+    cb(makeUpdate({ docChanged: true, childDoc: 'a' }));
+    vi.advanceTimersByTime(100);
+    cb(makeUpdate({ docChanged: true, childDoc: 'ab' }));
+    vi.advanceTimersByTime(100);
+    cb(makeUpdate({ docChanged: true, childDoc: 'abc' }));
+
+    // Not yet at 300ms from last change
+    expect(parent.dispatched.length).toBe(0);
+
+    vi.advanceTimersByTime(300);
+
+    // Single dispatch with final child doc + trailing \n
+    expect(parent.dispatched.length).toBe(1);
+    expect(parent.dispatched[0]!.changes.insert).toBe('abc\n');
+  });
+
+  it('Test 7: flushSync() fires immediately without waiting for debounce', () => {
+    const { extension: ext, handle } = createChildParentSyncExtension(parent as never, getFence as never);
+    const cb = getListenerCallback(ext);
+
+    cb(makeUpdate({ docChanged: true, childDoc: 'flushed' }));
+
+    // Flush immediately — no timer advance
+    handle.flushSync();
 
     expect(parent.dispatched.length).toBe(1);
-    const dispatch = parent.dispatched[0]!;
-    expect(dispatch.changes[0]!.from).toBe(27 + 2);
-    expect(dispatch.changes[0]!.to).toBe(27 + 5);
-    expect(dispatch.changes[0]!.insert).toBe('XYZ');
+    expect(parent.dispatched[0]!.changes.insert).toBe('flushed\n');
+
+    // Advancing timer should NOT produce a second dispatch
+    vi.advanceTimersByTime(500);
+    expect(parent.dispatched.length).toBe(1);
   });
 
-  it('Test 6: docChanged false → no parent dispatch', () => {
-    const ext = createChildParentSyncExtension(parent as never, getFence as never);
+  it('Test 8: cancel() prevents pending flush from firing', () => {
+    const { extension: ext, handle } = createChildParentSyncExtension(parent as never, getFence as never);
     const cb = getListenerCallback(ext);
 
-    cb(makeUpdate({ docChanged: false }));
+    cb(makeUpdate({ docChanged: true, childDoc: 'cancelled' }));
+
+    handle.cancel();
+
+    vi.advanceTimersByTime(500);
 
     expect(parent.dispatched.length).toBe(0);
   });
 
-  it('Test 7: getFence is called fresh on every update (offset re-derivation)', () => {
-    const ext = createChildParentSyncExtension(parent as never, getFence as never);
+  it('Test 9: no dispatch when child doc matches parent fence body', () => {
+    const { extension: ext } = createChildParentSyncExtension(parent as never, getFence as never);
     const cb = getListenerCallback(ext);
 
-    cb(makeUpdate({ docChanged: true, changes: makeChangeSet([{ fromA: 0, toA: 0, insert: 'A' }]) }));
-    cb(makeUpdate({ docChanged: true, changes: makeChangeSet([{ fromA: 0, toA: 0, insert: 'B' }]) }));
-    cb(makeUpdate({ docChanged: true, changes: makeChangeSet([{ fromA: 0, toA: 0, insert: 'C' }]) }));
+    // Child doc 'class Solution {\n}' + appended '\n' = parent body 'class Solution {\n}\n'
+    cb(makeUpdate({ docChanged: true, childDoc: 'class Solution {\n}' }));
 
-    // Each update re-derives the fence so a shifted fence (after a
-    // child→parent dispatch) is observed correctly.
-    expect(getFence).toHaveBeenCalledTimes(3);
-    expect(parent.dispatched.length).toBe(3);
+    vi.advanceTimersByTime(500);
+
+    expect(parent.dispatched.length).toBe(0);
   });
 });
