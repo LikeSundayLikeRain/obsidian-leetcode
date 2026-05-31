@@ -105,7 +105,7 @@ export class DebouncedWriter {
     // (which now races past the rate-limit gate by updating
     // lastFlushAt), and a second from the deferred timer firing later.
     if (this.rateLimitTimer !== null) {
-      clearTimeout(this.rateLimitTimer);
+      window.clearTimeout(this.rateLimitTimer);
       this.rateLimitTimer = null;
     }
     // forceFlush leaves `pending = true` until flush() completes — the
