@@ -290,6 +290,15 @@ export class WidgetController {
    *  is available (production); test fixtures may omit. */
   public metadataChangedRef?: unknown;
 
+  /** WR-11 (review-fix) — cleanup callbacks fired in `destroy()` BEFORE
+   *  view.destroy. Used by mountLeetCodeWidget to remove the mousedown
+   *  listeners it attaches to view.dom (CONTEXT D-02 stopPropagation +
+   *  click-to-focus). Push-anytime / fire-once contract — destroy()
+   *  drains the array. Public so test fixtures (or future mount-time
+   *  resources) can register additional teardown without re-touching
+   *  the controller's internal destroy ordering. */
+  public readonly destroyHooks: Array<() => void> = [];
+
   constructor(
     public readonly view: EditorView,
     public readonly container: HTMLElement,
@@ -383,6 +392,19 @@ export class WidgetController {
       }
       this.takeoverOverlay = undefined;
     }
+    // WR-11 (review-fix) — drain any registered destroy hooks (e.g.,
+    // the view.dom mousedown listener removers) BEFORE view.destroy.
+    // Drain order: hooks first so they can still touch view.dom, then
+    // view.destroy tears down the EditorView. Each hook is wrapped to
+    // never throw upstream — one bad hook should not block the others.
+    for (const hook of this.destroyHooks) {
+      try {
+        hook();
+      } catch {
+        /* swallow — defensive */
+      }
+    }
+    this.destroyHooks.length = 0;
     this.view.destroy();
   }
 
@@ -982,17 +1004,29 @@ export function mountLeetCodeWidget(
   // CONTEXT D-02: stopPropagation FIRST (raw-source-reveal mitigation), THEN
   // click-to-focus (carry-over from childEditorFactory.ts:405-413). Order
   // matters — stopPropagation must execute before parent handlers see the event.
+  //
+  // WR-11 (review-fix) — capture both listener references so they can be
+  // removed in destroy(). Without this, parked controllers (BL-01 lifecycle)
+  // retain mousedown handlers anchored to the EditorView's view.dom even
+  // after destroy(); the listeners hold a closure reference to view, blocking
+  // GC. Anchored to the view's own DOM (not the document), so DOM detach
+  // alone DOES eventually free them — but explicit removeEventListener is
+  // the cleaner contract.
+  let mouseDownStopProp: ((e: Event) => void) | null = null;
+  let mouseDownFocus: (() => void) | null = null;
   if (view.dom) {
-    view.dom.addEventListener('mousedown', (e: Event) => {
+    mouseDownStopProp = (e: Event) => {
       e.stopPropagation();
-    });
-    view.dom.addEventListener('mousedown', () => {
+    };
+    mouseDownFocus = () => {
       window.requestAnimationFrame(() => {
         if (document.activeElement !== view.contentDOM) {
           view.contentDOM.focus();
         }
       });
-    });
+    };
+    view.dom.addEventListener('mousedown', mouseDownStopProp);
+    view.dom.addEventListener('mousedown', mouseDownFocus);
   }
 
   ctl = new WidgetController(
@@ -1010,6 +1044,21 @@ export function mountLeetCodeWidget(
   // controller of the wrong mode (e.g. Reading-mode RenderChild picking up
   // an editable LP-mode controller).
   ctl.readOnly = readOnly;
+  // WR-11 (review-fix) — attach a cleanup that removes the mousedown
+  // listeners on destroy(). Pushed onto the controller's `destroyHooks`
+  // so the listeners are removed in tandem with view.destroy().
+  if (view.dom && mouseDownStopProp && mouseDownFocus) {
+    const stopProp = mouseDownStopProp;
+    const focus = mouseDownFocus;
+    ctl.destroyHooks.push(() => {
+      try {
+        view.dom.removeEventListener('mousedown', stopProp);
+        view.dom.removeEventListener('mousedown', focus);
+      } catch {
+        /* swallow — view already torn down */
+      }
+    });
+  }
 
   // Phase 20 Plan 20-02 — initialize `currentDocHash` from the initial
   // doc body. Fire-and-forget — the modify-handler early-return tolerates
