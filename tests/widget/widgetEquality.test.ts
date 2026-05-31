@@ -91,10 +91,14 @@ describe('LeetCodeFenceWidget.eq() — content-hash identity (Pitfall 19-F)', ()
     expect(w1.eq(w2)).toBe(true);
   });
 
-  it('same file + fenceIndex but DIFFERENT sourceHash → eq() === false (body changed → remount)', () => {
+  it('same (plugin, file, fenceIndex) → eq() === true even with DIFFERENT sourceHash (Phase 20-09 location-only identity)', () => {
+    // Content is NOT part of widget identity. The child editor owns the
+    // source of truth in memory; only file.path + fenceIndex determine
+    // widget identity. This prevents CM6 from destroying the widget DOM
+    // when the parent doc updates (e.g. on disk flush).
     const w1 = makeWidget(plugin, file, 0, 'abc12345', 'hello');
     const w2 = makeWidget(plugin, file, 0, 'def67890', 'world');
-    expect(w1.eq(w2)).toBe(false);
+    expect(w1.eq(w2)).toBe(true);
   });
 
   it('same file + sourceHash but DIFFERENT fenceIndex → eq() === false', () => {

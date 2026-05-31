@@ -84,12 +84,24 @@ export class LeetCodeFenceWidget extends WidgetType {
    * No suppression peek needed.
    */
   eq(other: WidgetType): boolean {
+    // Phase 20-09 (post-mortem fix): widget identity is location-only —
+    // (plugin, file path, fenceIndex). Content (sourceHash) is NOT part of
+    // identity.
+    //
+    // Why: the child editor owns the source-of-truth for its content. When
+    // the child mirrors a keystroke into the parent, the ViewPlugin rebuilds
+    // the RangeSet with a new sourceHash. If sourceHash were part of eq(),
+    // CM6 would destroy the widget DOM + call toDOM() again on every
+    // keystroke — defeating the parking-lot adoption pattern (the EditorView
+    // would be torn down before the new RenderChild can adopt it).
+    //
+    // Identity comparison uses `file.path` (not `file ===`) because Obsidian
+    // may give us a different TFile reference on each post-processor invocation.
+    if (!(other instanceof LeetCodeFenceWidget)) return false;
     return (
-      other instanceof LeetCodeFenceWidget &&
       other.plugin === this.plugin &&
-      other.file === this.file &&
-      other.fenceIndex === this.fenceIndex &&
-      other.sourceHash === this.sourceHash
+      other.file?.path === this.file?.path &&
+      other.fenceIndex === this.fenceIndex
     );
   }
 
