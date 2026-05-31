@@ -1174,13 +1174,29 @@ export default class LeetCodePlugin extends Plugin {
               return;
             }
 
-            // (c) Plan 20-09 — self-write detection. Under real-time
-            // child→parent sync (Plan 20-09 Tasks 2-3), the parent CM6
-            // always reflects the child's typed content; Obsidian's
-            // built-in editor auto-save then writes disk. When the
-            // observed disk body equals the child's current doc, the
-            // modify event is the auto-save echo of our own typing →
-            // silent no-op.
+            // (c) Phase 20 BL-04 (review-fix) — selfWriteSuppression
+            // consume. The DebouncedWriter arms a per-path suppression
+            // entry BEFORE vault.process; the modify event echo lands
+            // here. tryConsume drops the entry on a hash match (silent
+            // self-write echo); a stale or miss falls through to (d).
+            // Without this call the suppression map grows monotonically
+            // (one entry per debounced flush, never drained) AND the
+            // post-flush echo could open a ConflictModal during normal
+            // typing because the writer.hasPending() gate at (d) fires
+            // before the writer's pending flag resets (see
+            // DebouncedWriter.flush() try/finally — pending stays true
+            // through the entire flush body, including the modify echo).
+            const consumeResult = this.selfWriteSuppression.tryConsume(
+              file.path,
+              observedHash,
+            );
+            if (consumeResult === 'consumed') return;
+
+            // Backup self-write detection for the case where the
+            // suppression entry was missed (stale TTL, hash mismatch
+            // race per RESEARCH §1 fail-safe). When the observed disk
+            // body equals the child's current doc, the modify event
+            // is the auto-save echo of our own typing → silent no-op.
             const childDoc = matchingWidget.view.state.doc.toString();
             if (observedBody === childDoc) return;
 
