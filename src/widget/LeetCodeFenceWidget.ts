@@ -108,9 +108,16 @@ export class LeetCodeFenceWidget extends WidgetType {
     // Identity comparison uses `file.path` (not `file ===`) because Obsidian
     // may give us a different TFile reference on each post-processor invocation.
     if (!(other instanceof LeetCodeFenceWidget)) return false;
+    // WR-14 (review-fix) — `file: TFile` is contractually non-null. The
+    // previous `?.path` chain masked a real hazard: if both sides somehow
+    // received `undefined`, the comparison `undefined === undefined` would
+    // collapse to true and CM6 would reuse the wrong DOM. Drop the
+    // optional chains so a null file would TypeError loudly (the fix
+    // for that is "don't construct the widget without a file", not
+    // "silently treat two missing files as the same").
     return (
       other.plugin === this.plugin &&
-      other.file?.path === this.file?.path &&
+      other.file.path === this.file.path &&
       other.fenceIndex === this.fenceIndex
     );
   }
