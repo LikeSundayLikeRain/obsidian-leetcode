@@ -1359,8 +1359,16 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
     //      editable LP-mode controller (would show vim status line +
     //      editable CM6 in Reading view) and vice-versa.
     const myLeaf = this.containerEl.closest?.('.workspace-leaf') ?? null;
-    const existing = registry
-      ? [...registry.values()].find((ctl) => {
+    // WR-09 (review-fix) — collect all candidates, then deterministically
+    // pick. The previous `.find()` returned the FIRST inserted match —
+    // a Map-iteration-order-dependent choice. With multiple matches
+    // (e.g., a parked controller from a prior unmount AND a still-attached
+    // controller in another leaf that survived the predicate), the choice
+    // varied across runs. Prefer parked controllers (freely adoptable, no
+    // active pane to disrupt); among parked, prefer the most recently
+    // registered (Map insertion order — last in, first out).
+    const candidates = registry
+      ? [...registry.values()].filter((ctl) => {
           if (ctl?.file?.path !== this.file.path) return false;
           if (ctl?.fenceIndex !== this.fenceIndex) return false;
           if (ctl?.readOnly !== this.readOnly) return false;
@@ -1396,7 +1404,22 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
           if (existingLeaf && existingLeaf !== myLeaf) return false;
           return true;
         })
-      : undefined;
+      : [];
+    // WR-09 — deterministic preference. With multiple matches, prefer
+    // parked controllers (freely adoptable; no active pane to disrupt)
+    // over leaf-attached ones; among parked, prefer the most recently
+    // registered (Map iteration is insertion-order, so the LAST parked
+    // entry is the newest). Falls back to the last leaf-attached entry
+    // when no parked match exists.
+    const isParked = (ctl: WidgetController): boolean =>
+      !!ctl.container?.parentElement?.classList?.contains(
+        'lc-widget-parking-lot',
+      );
+    const parkedCandidates = candidates.filter(isParked);
+    const existing =
+      parkedCandidates.length > 0
+        ? parkedCandidates[parkedCandidates.length - 1]
+        : candidates[candidates.length - 1];
 
     if (existing && existing.container) {
       try {
