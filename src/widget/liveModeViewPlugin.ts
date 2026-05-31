@@ -180,10 +180,29 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
     const candidate = ctl as unknown as {
       file?: { path?: string };
       view?: EditorView;
+      writer?: { hasPending?: () => boolean };
     };
     if (candidate.file?.path !== file.path) continue;
     const childView = candidate.view;
     if (!childView) continue;
+
+    // BL-05 (review-fix) — active-typing gate. Skip the parent→child
+    // push when the widget's debounced disk writer has a pending flush
+    // (writer.hasPending() === true). This guards the case where
+    // Obsidian's auto-save reload races a keystroke: the auto-save
+    // dispatches a parent docChange with no userEvent (so the
+    // 'leetcode.*' bypass at the call site doesn't catch it), the
+    // 250ms-debounced parent reload then dispatches a full-doc
+    // replacement on the child with addToHistory.of(false), and CM6
+    // clamps the child selection to the new doc length — vim cursor
+    // jumps to end of doc.
+    //
+    // hasPending() is true while the user is actively typing (writer
+    // armed but not yet flushed). When the writer is idle the parent
+    // doc reflects the most recent on-disk content and the push is
+    // safe — the child's state matches anyway, so the equality gate
+    // below short-circuits in the common case.
+    if (candidate.writer?.hasPending?.() === true) continue;
 
     // No-op when child already matches parent (avoids unnecessary
     // dispatches that pollute the child's history). Normalize trailing
