@@ -1375,9 +1375,24 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
         if (!shouldRefocus) {
           return;
         }
+        // BL-03 (review-fix) — cap the rAF retry budget. Without this,
+        // contentDOM destruction (tab closed mid-typing, file deleted,
+        // plugin teardown) leaves the loop spinning at 60fps forever,
+        // pinning a memory reference to the dead view. ~1s budget at
+        // 60fps == 60 attempts; in practice contentDOM reattaches in 1-2
+        // frames so the cap is a safety net, not a normal-path tuning.
+        let attempts = 0;
+        const REFOCUS_MAX_ATTEMPTS = 60;
         const refocus = (): void => {
           try {
+            if (attempts++ > REFOCUS_MAX_ATTEMPTS) return;
             if (!view || !view.contentDOM) return;
+            // Bail if the view was destroyed during the rAF queue —
+            // EditorView.destroyed is private at the type level, so
+            // route through unknown for the same reason as the BL-02
+            // alive-check predicate.
+            const vAny = view as unknown as { destroyed?: boolean };
+            if (vAny.destroyed === true) return;
             if (!view.contentDOM.isConnected) {
               requestAnimationFrame(refocus);
               return;
