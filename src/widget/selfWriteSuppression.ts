@@ -20,11 +20,18 @@
 //
 // Phase 20 Plan 20-09: the dual-hash arm + peekExpectedHash + peekMap
 // added in Plan 20-06 retired with the typing-path vault.process retire.
-// The class collapses back to its single-hash sha1-only shape because
-// the only remaining caller of arm() is the chevron/`copyToCode` path
-// (Bug B body-swap rewrite, Plan 20-09 Task 6) and the conflict-modal
-// trigger (Plan 20-03). Both consume via tryConsume; neither needs the
-// ViewPlugin-side peek path.
+// The class collapses back to its single-hash sha1-only shape.
+//
+// WR-01 (review-fix) — current callers of arm():
+//   - DebouncedWriter.flush (the editable-widget typing-path: arms
+//     before vault.process so the modify-handler echo is absorbed)
+//   - chevron/`copyToCode` body-swap rewrite (Plan 20-09 Task 6)
+//   - conflict-modal trigger (Plan 20-03)
+// And tryConsume() is invoked from main.ts vault.on('modify') step (c)
+// (BL-04 review-fix). The previous "single remaining caller of arm()"
+// commentary lied because the modify-handler tryConsume was deleted
+// while DebouncedWriter still armed entries — leaking the map. BL-04
+// restored tryConsume; this comment now reflects the live wiring.
 
 interface SuppressionEntry {
   expectedHash: string;
