@@ -1314,6 +1314,27 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
           if (ctl?.file?.path !== this.file.path) return false;
           if (ctl?.fenceIndex !== this.fenceIndex) return false;
           if (ctl?.readOnly !== this.readOnly) return false;
+          // BL-02 (review-fix) — alive-check on the existing controller's
+          // EditorView. Two paths leave a destroyed view in the registry:
+          //   1. LeetCodeFenceWidget.destroy(_dom) racing onunload parking
+          //      the same controller (the destroy call below tears down
+          //      view but the registry-delete may have already run before
+          //      the parking write).
+          //   2. The fall-through catch in this onload (now fixed in
+          //      BL-01) used to leave the stale entry alive.
+          // After a destroyed-controller match, view.contentDOM.isConnected
+          // is false forever — refocus rAF spins indefinitely (BL-03).
+          // Filter destroyed views BEFORE pane-ownership compare so we
+          // skip the dead entry even when myLeaf and existingLeaf would
+          // otherwise match.
+          // EditorView's `destroyed` field is private at the type level;
+          // route through `unknown` to read it without violating the
+          // declared interface (the runtime field is observable in CM6).
+          const ctlView = ctl?.view as unknown as
+            | { contentDOM?: HTMLElement; destroyed?: boolean }
+            | undefined;
+          if (!ctlView || !ctlView.contentDOM) return false;
+          if (ctlView.destroyed === true) return false;
           const existingLeaf = ctl.container?.closest?.('.workspace-leaf');
           // Cross-leaf theft prevention: if the existing controller is
           // mounted inside a real .workspace-leaf, only that same leaf may
