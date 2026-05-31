@@ -1442,10 +1442,18 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
         // had document.activeElement focus before unload restores focus.
         const view = existing.view;
         const shouldRefocus = existing.hadFocusBeforeUnload;
-        // Reset the flag so a subsequent unload-without-typing doesn't
-        // erroneously refocus.
-        existing.hadFocusBeforeUnload = false;
+        // WR-04 (review-fix) — defer the flag reset until the rAF
+        // terminal callback. The previous code reset BEFORE rAF ran,
+        // so if the rAF refocus failed (BL-03 spin or destroy race),
+        // the focus signal was lost forever. Multi-pane focus theft if
+        // an out-of-order onload fires for a non-typing pane in between.
+        // Resetting only on terminal exit (success or budget-exhaustion)
+        // keeps the signal alive across one ill-timed onload retry.
         if (!shouldRefocus) {
+          // Pane that didn't have focus — leave the flag intact so the
+          // next legitimate onload (the typing pane) can still claim
+          // focus. Without this, the first onload after parking always
+          // resets the flag regardless of which pane it belongs to.
           return;
         }
         // BL-03 (review-fix) — cap the rAF retry budget. Without this,
@@ -1456,16 +1464,35 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
         // frames so the cap is a safety net, not a normal-path tuning.
         let attempts = 0;
         const REFOCUS_MAX_ATTEMPTS = 60;
+        const resetFlag = (): void => {
+          try {
+            existing.hadFocusBeforeUnload = false;
+          } catch {
+            /* swallow — controller may be in teardown */
+          }
+        };
         const refocus = (): void => {
           try {
-            if (attempts++ > REFOCUS_MAX_ATTEMPTS) return;
-            if (!view || !view.contentDOM) return;
+            if (attempts++ > REFOCUS_MAX_ATTEMPTS) {
+              // WR-04 — terminal: reset flag on budget exhaustion so a
+              // subsequent unload-without-typing doesn't erroneously
+              // refocus on the next adoption.
+              resetFlag();
+              return;
+            }
+            if (!view || !view.contentDOM) {
+              resetFlag();
+              return;
+            }
             // Bail if the view was destroyed during the rAF queue —
             // EditorView.destroyed is private at the type level, so
             // route through unknown for the same reason as the BL-02
             // alive-check predicate.
             const vAny = view as unknown as { destroyed?: boolean };
-            if (vAny.destroyed === true) return;
+            if (vAny.destroyed === true) {
+              resetFlag();
+              return;
+            }
             if (!view.contentDOM.isConnected) {
               requestAnimationFrame(refocus);
               return;
@@ -1475,8 +1502,11 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
             if (document.activeElement !== view.contentDOM) {
               view.focus();
             }
+            // WR-04 — terminal: reset flag on successful focus.
+            resetFlag();
           } catch {
             /* swallow — refocus is best-effort */
+            resetFlag();
           }
         };
         requestAnimationFrame(refocus);
