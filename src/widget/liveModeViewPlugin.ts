@@ -171,12 +171,23 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
   if (!fence || fence.kind !== 'leetcode-solve') return;
   const newBody = extractFenceBody(view.state, fence);
 
+  // WR-05 (review-fix) — prefer the per-path iterator added to
+  // WidgetRegistry. Falls back to the full values() walk when the
+  // registry is a structural shape (test fixtures) that doesn't expose
+  // valuesForPath.
   const registry = plugin.widgetRegistry as unknown as
-    | { values(): Iterable<unknown> }
+    | {
+        values(): Iterable<unknown>;
+        valuesForPath?(path: string): Iterable<unknown>;
+      }
     | undefined;
   if (!registry || typeof registry.values !== 'function') return;
+  const iter =
+    typeof registry.valuesForPath === 'function'
+      ? registry.valuesForPath(file.path)
+      : registry.values();
 
-  for (const ctl of registry.values()) {
+  for (const ctl of iter) {
     const candidate = ctl as unknown as {
       file?: { path?: string };
       view?: EditorView;

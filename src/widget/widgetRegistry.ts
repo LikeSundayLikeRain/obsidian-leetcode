@@ -60,6 +60,13 @@ export interface WidgetControllerLike {
 
 export class WidgetRegistry {
   private readonly map = new Map<string, WidgetControllerLike>();
+  /** WR-05 (review-fix) — per-path index. Used by hot paths that walk
+   *  every controller for one file (e.g., `pushParentToChild`,
+   *  modify-handler matchingWidget lookup). Without the index,
+   *  per-keystroke parent docChange iterates ALL N entries; with N tabs
+   *  and N widgets, the cost is O(N) per keystroke. The index keeps
+   *  insertion-order semantics within each path bucket via Set. */
+  private readonly byPath = new Map<string, Set<WidgetControllerLike>>();
 
   /** Retrieve a controller by `${path}::${fenceIndex}::${leafId}` key
    *  (Phase 20 Plan 20-05 added the leafId segment for per-pane disambiguation). */
@@ -69,7 +76,24 @@ export class WidgetRegistry {
 
   /** Store a controller under the given key. Replaces any existing entry. */
   set(key: string, ctl: WidgetControllerLike): void {
+    // WR-05 — when replacing an existing entry, drop the old controller
+    // from its path bucket FIRST so a path-keyed lookup never returns
+    // a controller we just clobbered.
+    const prev = this.map.get(key);
+    if (prev) {
+      const prevSet = this.byPath.get(prev.file.path);
+      if (prevSet) {
+        prevSet.delete(prev);
+        if (prevSet.size === 0) this.byPath.delete(prev.file.path);
+      }
+    }
     this.map.set(key, ctl);
+    let bucket = this.byPath.get(ctl.file.path);
+    if (!bucket) {
+      bucket = new Set();
+      this.byPath.set(ctl.file.path, bucket);
+    }
+    bucket.add(ctl);
   }
 
   /** Check if a key exists. */
@@ -82,7 +106,24 @@ export class WidgetRegistry {
    *  on the controller before removing — this matches the v1.2
    *  ChildEditorRegistry's separation of concerns. */
   delete(key: string): void {
+    const prev = this.map.get(key);
+    if (prev) {
+      const bucket = this.byPath.get(prev.file.path);
+      if (bucket) {
+        bucket.delete(prev);
+        if (bucket.size === 0) this.byPath.delete(prev.file.path);
+      }
+    }
     this.map.delete(key);
+  }
+
+  /** WR-05 — fast path-keyed iteration. Used by `pushParentToChild` and
+   *  the modify-handler to avoid O(N) walks per parent docChange. Returns
+   *  an empty iterator when no widgets are mounted for the given path. */
+  *valuesForPath(path: string): IterableIterator<WidgetControllerLike> {
+    const bucket = this.byPath.get(path);
+    if (!bucket) return;
+    yield* bucket.values();
   }
 
   /** Iterate every registered controller and invoke `flushNow()` on each
@@ -121,6 +162,8 @@ export class WidgetRegistry {
       ctl.destroy();
     }
     this.map.clear();
+    // WR-05 — drop the path index alongside the main map.
+    this.byPath.clear();
   }
 
   /** Flush every controller whose stored file path matches `filePath`. Used
