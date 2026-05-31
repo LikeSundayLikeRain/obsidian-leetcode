@@ -893,13 +893,14 @@ export function mountLeetCodeWidget(
   plugin: WidgetMountHost,
   readOnly: boolean,
   fenceIndex = 0,
-  /** Phase 20 Plan 20-09 — parent EditorView reference for the
-   *  child→parent sync extension. Required for editable Live-Preview
-   *  mounts (LeetCodeFenceWidget.toDOM passes this in). Optional for
-   *  Reading-mode mounts (LeetCodeWidgetRenderChild.onload — readOnly
-   *  is true there, so no sync needed; the listener is never installed). */
-  parentView?: EditorView,
 ): WidgetController {
+  // WR-08 (review-fix) — the previous `parentView?: EditorView` parameter
+  // was unused. It was originally added in Plan 20-09 as the seed for
+  // `createChildParentSyncExtension(parentView, ...)` but the sync
+  // extension never got wired in (the import in this file is dead per
+  // WR-07; the typing-path now relies on Obsidian's built-in editor
+  // auto-save instead). Removing the parameter so call sites no longer
+  // resolve a parent EditorView they never use.
   // CONTEXT C-13 + PATTERNS line 1101 — three classes, two carry-over
   // (lc-nested-editor + HyperMD-codeblock) plus the v1.3-specific
   // lc-leetcode-solve so Phase 22 polish can target widgets specifically.
@@ -1429,28 +1430,10 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
     }
 
     // No existing controller — mount fresh.
-    let parentView: EditorView | undefined;
-    if (!this.readOnly) {
-      try {
-        const app = (
-          this.plugin as unknown as {
-            app?: {
-              workspace?: {
-                getActiveViewOfType?(type: unknown): { editor?: { cm?: EditorView } } | null;
-              };
-            };
-          }
-        ).app;
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { MarkdownView } = require('obsidian') as { MarkdownView: unknown };
-        const av = app?.workspace?.getActiveViewOfType?.(MarkdownView);
-        const cm = av?.editor?.cm;
-        if (cm) parentView = cm;
-      } catch {
-        // Defensive — Obsidian's runtime API may differ across versions.
-      }
-    }
-
+    // WR-08 (review-fix) — the previous block resolved a parent EditorView
+    // for the unwired createChildParentSyncExtension. Both the parameter
+    // and the resolution are removed; the typing-path relies on Obsidian's
+    // built-in editor auto-save (BL-04 + tryConsume gate handle the echo).
     this.controller = mountLeetCodeWidget(
       this.containerEl,
       this.source,
@@ -1458,7 +1441,6 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
       this.plugin,
       this.readOnly,
       this.fenceIndex,
-      parentView,
     );
     this.mountedRegistryKey = this.controller.registryKey;
   }

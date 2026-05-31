@@ -133,13 +133,14 @@ export class LeetCodeFenceWidget extends WidgetType {
    * path reverse-resolved via `${file.path}::${fenceIndex}` and could delete
    * a sibling pane's controller in a multi-pane scenario.
    */
-  toDOM(view: EditorView): HTMLElement {
+  toDOM(_view: EditorView): HTMLElement {
     const host = document.createElement('div');
-    // Phase 20 Plan 20-09 — pass the parent EditorView into the mount
-    // factory so the child's createChildParentSyncExtension can dispatch
-    // range-remapped changes onto the parent in real time. This replaces
-    // the prior debouncedWriter→vault.process pipeline that caused
-    // widget DOM detach + focus loss.
+    // WR-08 (review-fix) — the previous call passed `view` into a
+    // `parentView?` parameter on mountLeetCodeWidget that was never read.
+    // The parameter was the intended hook for createChildParentSyncExtension
+    // but that extension never got wired in (WR-07 dead-code). The typing
+    // path relies on Obsidian's editor auto-save + the modify-handler
+    // self-write absorb (BL-04 tryConsume).
     const ctl = mountLeetCodeWidget(
       host,
       this.source,
@@ -147,7 +148,6 @@ export class LeetCodeFenceWidget extends WidgetType {
       this.plugin,
       /*readOnly=*/false,
       this.fenceIndex,
-      view,
     );
     this.mountedCtlKey = ctl.registryKey;
     return host;
