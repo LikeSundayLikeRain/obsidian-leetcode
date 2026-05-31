@@ -98,6 +98,16 @@ export class DebouncedWriter {
   /** Cancel pending timer and flush synchronously. Returns the flush Promise. */
   forceFlush(): Promise<void> {
     this.deb.cancel();
+    // WR-12 (review-fix) — also clear any rate-limit retry timer that
+    // setTimeout deferred behind the rateLimitMs window. Without this
+    // clear, a forceFlush during the rate-limit defer window would
+    // produce TWO vault.process calls: one from this.flush() below
+    // (which now races past the rate-limit gate by updating
+    // lastFlushAt), and a second from the deferred timer firing later.
+    if (this.rateLimitTimer !== null) {
+      clearTimeout(this.rateLimitTimer);
+      this.rateLimitTimer = null;
+    }
     // forceFlush leaves `pending = true` until flush() completes — the
     // sentinel is reset in the flush body's try/finally so any awaited
     // forceFlush observes a clean post-condition.
@@ -132,6 +142,15 @@ export class DebouncedWriter {
     if (now - this.lastFlushAt < this.rateLimitMs) {
       if (this.rateLimitTimer === null) {
         const wait = this.rateLimitMs - (now - this.lastFlushAt);
+        // WR-12 (review-fix) — the previous code only set the new timer
+        // when `rateLimitTimer === null`, so concurrent calls coalesce
+        // on the existing timer. That coalescing remains correct, but
+        // the symmetry with cancel() / forceFlush() is reinforced here
+        // for readers: every assignment to rateLimitTimer is paired
+        // with an explicit clear elsewhere (cancel sets back to null;
+        // forceFlush clears before re-entering flush). Don't add a
+        // pre-clear here — it would re-arm the wait window on every
+        // burst and never fire.
         this.rateLimitTimer = setTimeout(() => {
           this.rateLimitTimer = null;
           void this.flush();
