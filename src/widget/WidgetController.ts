@@ -247,6 +247,16 @@ export class WidgetController {
    *  paths. */
   public isEmbed: boolean = false;
 
+  /** Phase 20-09 (post-mortem fix): readOnly flag captured at mount time.
+   *  Used by the adoption predicate so a Reading-mode RenderChild does not
+   *  pick up an editable LP-mode controller (which would show the editable
+   *  CM6 + vim status line + interactive editor in Reading view).
+   *
+   *  Defaults to `false` (editable) for legacy test fixtures that construct
+   *  controllers directly. Production mountLeetCodeWidget sets this from the
+   *  readOnly parameter. */
+  public readOnly: boolean = false;
+
   /** Phase 20 Plan 20-04 — overlay div mounted as a sibling of `.cm-editor`
    *  when this widget is in `peer` pane state. Click on overlay promotes the
    *  pane via `app.workspace.setActiveLeaf(<this widget's leaf>)`. Tracked on
@@ -898,13 +908,13 @@ export function mountLeetCodeWidget(
 
   const slug = resolveLanguageSlug(plugin, file);
 
-  // Phase 20 Plan 20-05 — resolve a stable per-pane leafId AND compose the
-  // per-pane registry key BEFORE constructing the controller. Two panes
-  // showing the same `(file.path, fenceIndex)` produce DIFFERENT registry
-  // keys so neither clobbers the other on Map.set. Pane-blind state
-  // hydration (`persistenceKey`) is preserved separately on the controller.
+  // Phase 20 Plan 20-05 + Phase 20-09 (post-mortem) — registry key includes
+  // leafId AND mode so two panes (LP + Reading) on the same file each get
+  // their own controller. Pane-blind state hydration (`persistenceKey`) is
+  // preserved separately on the controller for cursor restoration.
   const leafId = resolveLeafId(host);
-  const registryKey = `${file.path}::${fenceIndex}::${leafId}`;
+  const mode = readOnly ? 'read' : 'lp';
+  const registryKey = `${file.path}::${fenceIndex}::${leafId}::${mode}`;
 
   // Phase 20-09 (post-mortem rewrite) — debounced widget-to-DISK flush.
   //
@@ -987,6 +997,11 @@ export function mountLeetCodeWidget(
     vimEnabled,
     registryKey,
   );
+  // Phase 20-09 (post-mortem fix) — capture readOnly so the adoption
+  // predicate in LeetCodeWidgetRenderChild.onload can refuse to adopt a
+  // controller of the wrong mode (e.g. Reading-mode RenderChild picking up
+  // an editable LP-mode controller).
+  ctl.readOnly = readOnly;
 
   // Phase 20 Plan 20-02 — initialize `currentDocHash` from the initial
   // doc body. Fire-and-forget — the modify-handler early-return tolerates
@@ -1243,12 +1258,26 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
     const registry = this.plugin.widgetRegistry as unknown as
       | { values(): IterableIterator<WidgetController> }
       | undefined;
+    // Adoption predicate:
+    //   1. Match (file.path, fenceIndex) — same fence in same file.
+    //   2. Pane-ownership: if the existing controller's container is
+    //      currently inside a DIFFERENT .workspace-leaf, that pane already
+    //      owns it — we must NOT steal it (would leave the other pane
+    //      blank). Containers parked under document.body have no
+    //      .workspace-leaf ancestor and are freely adoptable.
+    //   3. Mode match: a Reading-mode RenderChild must NOT adopt an
+    //      editable LP-mode controller (would show vim status line +
+    //      editable CM6 in Reading view) and vice-versa.
+    const myLeaf = this.containerEl.closest?.('.workspace-leaf') ?? null;
     const existing = registry
-      ? [...registry.values()].find(
-          (ctl) =>
-            ctl?.file?.path === this.file.path &&
-            ctl?.fenceIndex === this.fenceIndex,
-        )
+      ? [...registry.values()].find((ctl) => {
+          if (ctl?.file?.path !== this.file.path) return false;
+          if (ctl?.fenceIndex !== this.fenceIndex) return false;
+          if (ctl?.readOnly !== this.readOnly) return false;
+          const existingLeaf = ctl.container?.closest?.('.workspace-leaf');
+          if (existingLeaf && myLeaf && existingLeaf !== myLeaf) return false;
+          return true;
+        })
       : undefined;
 
     if (existing && existing.container) {
@@ -1325,13 +1354,33 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
   }
 
   onunload(): void {
-    // Park the controller's container in the hidden parking lot BEFORE
-    // Obsidian removes containerEl from the DOM. This keeps the EditorView
-    // in document.body so the browser does NOT fire blur — vim stays in
-    // insert mode, cursor remains stable, focus survives the post-processor
-    // remount cycle. The next RenderChild.onload reparents it from the lot
-    // into the new containerEl.
-    if (this.controller && this.controller.container) {
+    if (!this.controller) {
+      this.mountedRegistryKey = undefined;
+      return;
+    }
+    // Read-only mounts (Reading mode, embed) have no editable state to
+    // preserve — destroy them on unload instead of parking. This avoids
+    // accumulating orphan readonly controllers across rapid mode flips
+    // (LP↔Reading) and prevents the registry from growing unbounded.
+    if (this.controller.readOnly) {
+      try {
+        this.controller.destroy();
+      } catch {
+        // Defensive — already torn down.
+      }
+      const key = this.mountedRegistryKey ?? this.controller.registryKey;
+      if (key) this.plugin.widgetRegistry?.delete(key);
+      this.controller = undefined;
+      this.mountedRegistryKey = undefined;
+      return;
+    }
+    // Editable mount: park the controller's container in the hidden parking
+    // lot BEFORE Obsidian removes containerEl from the DOM. This keeps the
+    // EditorView in document.body so the browser does NOT fire blur — vim
+    // stays in insert mode, cursor remains stable, focus survives the
+    // post-processor remount cycle. The next RenderChild.onload reparents
+    // it from the lot into the new containerEl.
+    if (this.controller.container) {
       try {
         LeetCodeWidgetRenderChild.getParkingLot().appendChild(
           this.controller.container,
