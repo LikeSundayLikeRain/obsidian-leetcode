@@ -140,10 +140,17 @@ class LeetCodeLiveViewPlugin {
     // updateListener (createChildParentSyncExtension) treats this as a
     // parent→child echo and skips re-propagation back to the parent.
     if (!update.docChanged) return;
-    const isChildSync = update.transactions.some(
-      (tr) => tr.annotation(Transaction.userEvent) === 'leetcode.child-sync',
-    );
-    if (isChildSync) return;
+    // Skip parent→child push for ANY plugin-origin transaction (anything
+    // with a 'leetcode.*' userEvent). Pushing back into the child after our
+    // own writes would corrupt the redo stack — the child already has the
+    // canonical state; a second dispatch with addToHistory.of(false)
+    // (inside pushParentToChild) would invalidate any redo entries the user
+    // had built up in the child editor.
+    const isPluginEcho = update.transactions.some((tr) => {
+      const ev = tr.annotation(Transaction.userEvent);
+      return typeof ev === 'string' && ev.startsWith('leetcode.');
+    });
+    if (isPluginEcho) return;
     pushParentToChild(update.view, this.plugin);
   }
 }
@@ -179,9 +186,12 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
     if (!childView) continue;
 
     // No-op when child already matches parent (avoids unnecessary
-    // dispatches that pollute the child's history).
+    // dispatches that pollute the child's history). Normalize trailing
+    // whitespace + line endings before compare — the disk write may add a
+    // trailing \n that the in-memory child doc doesn't carry.
     const childDoc = childView.state.doc.toString();
-    if (childDoc === newBody) continue;
+    const norm = (s: string) => s.replace(/\r\n/g, '\n').replace(/\s+$/, '');
+    if (norm(childDoc) === norm(newBody)) continue;
 
     try {
       childView.dispatch({
