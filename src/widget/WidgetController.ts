@@ -217,6 +217,11 @@ export class WidgetController {
    *  redundant Compartment.reconfigure to every widget). */
   public mountedVimMode: boolean;
 
+  /** Phase 20 Plan 20-09 (amended) — debounced child→parent sync handle.
+   *  Exposes `flushSync()` for imperative callers (flush-on-unload,
+   *  flush-on-leaf-change, Cmd-Q) and `cancel()` for teardown. */
+  public syncHandle?: import('./childParentSync').ChildParentSyncHandle;
+
   /** Phase 20 Plan 20-02 (ACTION-01) — action row mounted inside the widget
    *  container as a sibling of `.cm-editor`. Set by `mountLeetCodeWidget`
    *  AFTER controller construction when `!isEmbedContext(...)`. Used by
@@ -305,10 +310,11 @@ export class WidgetController {
     return 'python3';
   }
 
-  /** Drain pending writer state. Returns the underlying forceFlush Promise
-   *  when a writer is attached; otherwise resolves immediately. Called from
-   *  WidgetRegistry.flushAll, MarkdownRenderChild.onunload, etc. */
+  /** Drain pending writer state + sync timer. Returns the underlying
+   *  forceFlush Promise when a writer is attached; otherwise resolves
+   *  immediately. Called from WidgetRegistry.flushAll, onunload, etc. */
   flushNow(): Promise<void> {
+    this.syncHandle?.flushSync();
     if (this.writer) return this.writer.forceFlush();
     return Promise.resolve();
   }
@@ -331,6 +337,7 @@ export class WidgetController {
       }
     }
     this.writer?.cancel();
+    this.syncHandle?.cancel();
     // Phase 20 Plan 20-02 — drop per-widget metadataCache subscription.
     // The `app.metadataCache.offref` API mirrors the workspace.offref shape;
     // the structural type for `plugin.app.metadataCache` doesn't declare it,
@@ -776,12 +783,10 @@ function buildExtensions(
   vimCompartment: Compartment,
   vimEnabled: boolean,
   onDocChanged?: (update: ViewUpdate) => void,
-  /** Phase 20 Plan 20-09 — when present, an additional updateListener
-   *  is appended that dispatches range-remapped child changes onto the
-   *  parent CM6 in real time. Editable Live-Preview mounts pass this in.
-   *  Read-only mounts and editable mounts without a parent reference
-   *  (test fixtures) skip the sync extension. */
-  parentView?: EditorView,
+  /** Phase 20 Plan 20-09 (amended) — debounced child→parent sync extension.
+   *  When present, the extension is appended directly. Editable Live-Preview
+   *  mounts pass this in. Read-only mounts skip. */
+  syncExtension?: Extension,
 ): Extension[] {
   const indent = plugin.settings.getIndentSizeOverride();
 
@@ -843,30 +848,11 @@ function buildExtensions(
       }),
     );
   }
-  // 12. Phase 20 Plan 20-09 — child→parent CM6 sync. Each child
-  //     docChange dispatches range-remapped changes onto the parent
-  //     CM6 in real time. Disk persistence is handled by Obsidian's
-  //     standard editor auto-save on the parent — we never call
-  //     vault.process from the typing path → no parent reload-from-disk
-  //     → no widget DOM detach → focus stays. Skipped for read-only
-  //     mounts and for mounts that don't have a parent EditorView
-  //     reference (test fixtures pass undefined).
-  if (!readOnly && parentView) {
-    // eslint-disable-next-line no-console
-    console.debug('[lc-uat] sync.wiring.installed', {
-      parentDocLength: parentView.state.doc.length,
-    });
-    exts.push(
-      createChildParentSyncExtension(parentView, () =>
-        findCodeFence(parentView.state, { preferLeetCodeSolve: true }),
-      ),
-    );
-  } else {
-    // eslint-disable-next-line no-console
-    console.debug('[lc-uat] sync.wiring.skipped', {
-      readOnly,
-      hasParentView: !!parentView,
-    });
+  // 12. Phase 20 Plan 20-09 (amended) — debounced child→parent sync.
+  //     The sync extension is pre-built by the caller (mountLeetCodeWidget)
+  //     and passed in. Skipped for read-only mounts and test fixtures.
+  if (!readOnly && syncExtension) {
+    exts.push(syncExtension);
   }
   return exts;
 }
@@ -912,14 +898,6 @@ export function mountLeetCodeWidget(
 
   const slug = resolveLanguageSlug(plugin, file);
 
-  // eslint-disable-next-line no-console
-  console.debug('[lc-uat] mountLeetCodeWidget.start', {
-    file: file.path,
-    readOnly,
-    fenceIndex,
-    hasParentView: !!parentView,
-  });
-
   // Phase 20 Plan 20-05 — resolve a stable per-pane leafId AND compose the
   // per-pane registry key BEFORE constructing the controller. Two panes
   // showing the same `(file.path, fenceIndex)` produce DIFFERENT registry
@@ -928,28 +906,35 @@ export function mountLeetCodeWidget(
   const leafId = resolveLeafId(host);
   const registryKey = `${file.path}::${fenceIndex}::${leafId}`;
 
-  // Phase 20 Plan 20-09 — child→parent CM6 sync via createChildParentSyncExtension
-  // (see src/widget/childParentSync.ts). The extension dispatches range-remapped
-  // changes onto the parent CM6 in real time, eliminating the prior
-  // debouncedWriter→vault.process pipeline that caused widget DOM detach
-  // → focus loss.
+  // Phase 20-09 (post-mortem rewrite) — debounced widget-to-DISK flush.
   //
-  // currentDocHash refresh remains: the modify-handler at src/main.ts uses it
-  // for the Pitfall P2 frontmatter-only-write early-return. The hash is
-  // computed asynchronously (sha1) so a brief window after each keystroke
-  // sees a stale hash; the modify-handler defaults to the suppression path
-  // in that case, which is safe (it will not silently reload).
+  // Architecture: the widget owns the source of truth in memory. Typing
+  // stays purely in the child EditorView's state. After ~500ms of idle
+  // (Debouncer reset on every keystroke), the writer fires `vault.process`
+  // to atomically update the fence body on disk. Obsidian's modify event
+  // then bubbles back through the parent CM6 reload pipeline, but
+  // selfWriteSuppression catches the echo so we don't double-process.
+  //
+  // The post-processor re-fires only on actual disk changes — once per
+  // typing pause, not per keystroke. Adoption + parking lot in
+  // LeetCodeWidgetRenderChild handles that single remount cleanly.
   let ctl: WidgetController;
+
   const onDocChanged = readOnly
     ? undefined
     : () => {
-        // Refresh currentDocHash for Pitfall P2 absorption.
+        // Refresh currentDocHash for Pitfall P2 absorption (modify-handler
+        // gate uses it to skip frontmatter-only-write echoes).
         if (ctl) {
           const body = ctl.view.state.doc.toString();
           void sha1(body).then((hash) => {
             if (ctl) ctl.currentDocHash = hash;
           });
         }
+        // Schedule a debounced disk flush. The DebouncedWriter resets its
+        // timer on every call, so the actual flush only fires after ~500ms
+        // of typing idle (CONTEXT C-06). hasPending() goes true here.
+        ctl?.writer?.run();
       };
 
   // Phase 20 Plan 20-01 (VIM-02) — per-widget vimCompartment + mount-time
@@ -970,7 +955,7 @@ export function mountLeetCodeWidget(
       vimCompartment,
       vimEnabled,
       onDocChanged,
-      parentView,
+      undefined,
     ),
   });
 
@@ -1023,18 +1008,30 @@ export function mountLeetCodeWidget(
   // persistence map is absent (test fixtures).
   plugin.statePersistence?.hydrateState(ctl.persistenceKey, view);
 
-  // Phase 20 Plan 20-09 — DebouncedWriter retired from the typing path.
-  // Real-time child→parent CM6 sync (createChildParentSyncExtension)
-  // keeps the parent doc in sync with every keystroke; Obsidian's
-  // built-in editor auto-save persists to disk. We never call
-  // vault.process from typing, which removes the parent reload-from-disk
-  // step that was forcing widget DOM detach + focus loss.
-  //
-  // ctl.writer remains optional on the controller for backward
-  // compatibility (Reading-mode mounts, test fixtures); flushNow()
-  // returns Promise.resolve() when writer is absent. flushAll callers
-  // (Plugin.onunload, vault.on('rename')) still work correctly because
-  // a missing writer is a no-op flush — there's nothing pending.
+  // Phase 20-09 (post-mortem rewrite) — bind DebouncedWriter for editable
+  // mounts. The writer flushes the child's current doc to disk via
+  // vault.process after ~500ms of typing idle (Debouncer resets on every
+  // call). selfWriteSuppression is armed before the flush so the modify
+  // event echo is absorbed by main.ts's modify handler — preventing a
+  // double-reload that would tear down the widget mid-typing.
+  if (
+    !readOnly &&
+    plugin.selfWriteSuppression &&
+    typeof plugin.app.vault.read === 'function' &&
+    typeof plugin.app.vault.process === 'function'
+  ) {
+    const delay = plugin.settings.getWidgetSyncDebounceMs?.() ?? 500;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ctl.writer = new DebouncedWriter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      plugin.app as any,
+      file,
+      () => ctl.view.state.doc.toString(),
+      () => ctl.fenceIndex,
+      plugin.selfWriteSuppression,
+      delay,
+    );
+  }
 
   // Register in plugin.widgetRegistry if present (set by main.ts onload when
   // useInlineWidget=ON; Plan 19-04 controller cleanup uses this).
@@ -1162,19 +1159,56 @@ export function mountLeetCodeWidget(
 }
 
 /**
- * Reading-mode lifecycle wrapper. Registered via `ctx.addChild(...)` from
- * the codeBlockProcessor. Lifecycle: onload mounts the widget; onunload
- * flushes (no-op in Plan 19-01) + destroys + unregisters.
+ * Reading-mode + Live-Preview lifecycle wrapper. Registered via
+ * `ctx.addChild(...)` from the codeBlockProcessor.
+ *
+ * Phase 20-09 (amended) — registry-based survival with parking lot:
+ *
+ *   The problem: when the debounced child→parent sync updates the parent
+ *   CM6 doc, Obsidian's codeblock post-processor re-fires. The old
+ *   RenderChild is unloaded (DOM would be removed) and a new one is loaded.
+ *   If the EditorView's DOM is inside the old container when Obsidian
+ *   removes it, the browser fires a blur event → vim exits insert mode →
+ *   cursor resets.
+ *
+ *   Solution: a "parking lot" — a persistent hidden div in document.body
+ *   that the EditorView is moved into during onunload (which fires BEFORE
+ *   Obsidian removes the old container from the DOM). The EditorView stays
+ *   in the document → no blur. The next onload moves it from the parking
+ *   lot into the new container.
+ *
+ *   Lifecycle:
+ *     onunload → park controller.container in parking lot (EditorView stays
+ *                in DOM, no blur, no destroy)
+ *     onload   → check registry → if found, move from parking lot into
+ *                new containerEl (no reconstruction)
+ *                if not found, mount fresh
  */
 export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
   private controller?: WidgetController;
-  /** Phase 20 Plan 20-05 — registry key stored on the render child at the
-   *  same moment the registry entry is created (inside mountLeetCodeWidget).
-   *  Onunload deletes unconditionally via this field — never depends on
-   *  `this.controller` being set, so the registry can never leak even if a
-   *  future code path nulls out `this.controller` before `onunload` runs. */
   private mountedRegistryKey?: string;
   public readonly fenceIndex: number;
+
+  /** Module-level parking lot — created once, reused across all instances. */
+  private static parkingLot: HTMLDivElement | null = null;
+
+  private static getParkingLot(): HTMLDivElement {
+    if (!LeetCodeWidgetRenderChild.parkingLot) {
+      const lot = document.createElement('div');
+      lot.className = 'lc-widget-parking-lot';
+      lot.setAttribute('aria-hidden', 'true');
+      lot.style.position = 'fixed';
+      lot.style.left = '-9999px';
+      lot.style.top = '-9999px';
+      lot.style.width = '0';
+      lot.style.height = '0';
+      lot.style.overflow = 'hidden';
+      lot.style.pointerEvents = 'none';
+      document.body.appendChild(lot);
+      LeetCodeWidgetRenderChild.parkingLot = lot;
+    }
+    return LeetCodeWidgetRenderChild.parkingLot;
+  }
 
   constructor(
     host: HTMLElement,
@@ -1186,15 +1220,76 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
     private readonly readOnly: boolean,
   ) {
     super(host);
-    // CONTEXT D-01 — count prior `\`\`\`leetcode-solve` openers in the
-    // section text. info.lineStart is 0-indexed line of the fence opener.
     this.fenceIndex = computeFenceIndex(info.text, info.lineStart);
   }
 
   onload(): void {
-    // Phase 20 Plan 20-09 — resolve parent EditorView for editable mounts
-    // in Live Preview so the child→parent sync extension can install.
-    // Reading-mode + embed mounts are read-only and don't need parentView.
+    // Adoption path: registerMarkdownCodeBlockProcessor re-fires on every
+    // parent fence-body content change in Live Preview. To preserve the
+    // embedded EditorView's focus, cursor, vim state, and undo stack across
+    // these remounts, we look up an existing controller in widgetRegistry
+    // by (file.path, fenceIndex) — pane-blind because the new containerEl
+    // is not inside .workspace-leaf at onload time (Obsidian pre-renders
+    // in a detached subtree, so leafId would not match).
+    //
+    // Lifecycle:
+    //   onunload (old) → park controller.container in a hidden div under
+    //                    document.body so the EditorView stays in the DOM
+    //                    and never receives a blur event.
+    //   onload  (new) → look up controller in registry → reparent its
+    //                    container into this.containerEl → refocus on next
+    //                    animation frame (waits until Obsidian moves
+    //                    containerEl into the visible DOM).
+    const registry = this.plugin.widgetRegistry as unknown as
+      | { values(): IterableIterator<WidgetController> }
+      | undefined;
+    const existing = registry
+      ? [...registry.values()].find(
+          (ctl) =>
+            ctl?.file?.path === this.file.path &&
+            ctl?.fenceIndex === this.fenceIndex,
+        )
+      : undefined;
+
+    if (existing && existing.container) {
+      try {
+        this.containerEl.appendChild(existing.container);
+        this.controller = existing;
+        this.mountedRegistryKey = existing.registryKey;
+
+        // Refocus on next animation frame, but do NOT restore cursor or
+        // dispatch any selection — the EditorView's own state is the
+        // source of truth, and dispatching a stale `selection` here can
+        // race with concurrent user typing (Enter + new line characters
+        // landing during the rAF callback queue), corrupting the doc.
+        // The EditorView is never destroyed so its cursor is already
+        // where the user left it; we only need to restore browser focus
+        // so subsequent keystrokes route to contentDOM.
+        const view = existing.view;
+        const refocus = (): void => {
+          try {
+            if (!view || !view.contentDOM) return;
+            if (!view.contentDOM.isConnected) {
+              requestAnimationFrame(refocus);
+              return;
+            }
+            // Only focus if we don't already have it. Avoids re-entrant
+            // focus events during rapid typing bursts.
+            if (document.activeElement !== view.contentDOM) {
+              view.focus();
+            }
+          } catch {
+            /* swallow — refocus is best-effort */
+          }
+        };
+        requestAnimationFrame(refocus);
+        return;
+      } catch {
+        // Fall through to fresh mount on any DOM error.
+      }
+    }
+
+    // No existing controller — mount fresh.
     let parentView: EditorView | undefined;
     if (!this.readOnly) {
       try {
@@ -1207,8 +1302,6 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
             };
           }
         ).app;
-        // Use Obsidian's MarkdownView via require-time import (already
-        // imported at module top).
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { MarkdownView } = require('obsidian') as { MarkdownView: unknown };
         const av = app?.workspace?.getActiveViewOfType?.(MarkdownView);
@@ -1228,48 +1321,26 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
       this.fenceIndex,
       parentView,
     );
-    // Phase 20 Plan 20-05 (Blocker #5 mitigation) — pair registry insertion
-    // (which happens INSIDE mountLeetCodeWidget) with the field assignment
-    // here in the SAME synchronous block. Onunload deletes via this field,
-    // never via `this.controller?.registryKey`, so the registry can NEVER
-    // leak — even on a hypothetical race where `this.controller` becomes
-    // null before unload.
     this.mountedRegistryKey = this.controller.registryKey;
   }
 
   onunload(): void {
-    // Plan 19-03 — capture cursor + scroll + history JSON BEFORE flushing
-    // and destroying. The state is preserved in the plugin-singleton
-    // statePersistence map (30s TTL) so a subsequent remount within the
-    // window restores cursor and scroll. CONTEXT D-02 belt-and-suspenders.
-    // Capture even on read-only mounts (legitimate UX: scrolling through
-    // an embed and reopening should restore scroll position).
-    if (this.controller && this.plugin.statePersistence) {
+    // Park the controller's container in the hidden parking lot BEFORE
+    // Obsidian removes containerEl from the DOM. This keeps the EditorView
+    // in document.body so the browser does NOT fire blur — vim stays in
+    // insert mode, cursor remains stable, focus survives the post-processor
+    // remount cycle. The next RenderChild.onload reparents it from the lot
+    // into the new containerEl.
+    if (this.controller && this.controller.container) {
       try {
-        this.plugin.statePersistence.captureState(
-          this.controller.persistenceKey,
-          this.controller.view,
+        LeetCodeWidgetRenderChild.getParkingLot().appendChild(
+          this.controller.container,
         );
       } catch {
-        // Defensive — capture is best-effort; never block unmount on it.
+        // Defensive — parking lot may fail in unusual DOM states.
       }
     }
-    // Plan 19-02 — flushNow returns a Promise; fire-and-forget here because
-    // MarkdownRenderChild.onunload is sync-shaped. Race-safe: destroy()
-    // cancels the writer, so the in-flight write either lands or aborts
-    // cleanly. The widgetRegistry.flushAll path (Plugin.onunload) is the
-    // load-bearing one for graceful shutdown — see RESEARCH Pitfall 19-B.
-    const p = this.controller?.flushNow();
-    if (p && typeof p.catch === 'function') p.catch(() => undefined);
-    this.controller?.destroy();
-    // Phase 20 Plan 20-05 (Blocker #5) — delete unconditionally via the stored
-    // registryKey (not `this.controller?.registryKey`). The field was set in
-    // onload at the same moment as the registry insertion, so this path can
-    // NEVER leak a registry entry — even on a hypothetical race where
-    // `this.controller` becomes null before unload.
-    if (this.mountedRegistryKey) {
-      this.plugin.widgetRegistry?.delete(this.mountedRegistryKey);
-      this.mountedRegistryKey = undefined;
-    }
+    this.controller = undefined;
+    this.mountedRegistryKey = undefined;
   }
 }

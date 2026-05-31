@@ -238,13 +238,11 @@ describe('mountLeetCodeWidget', () => {
 
   // --- Plan 19-02 / 20-09 — writer wiring -------------------------------
 
-  it('Plan 20-09: writer NOT attached even when plugin host provides vault.read/process — typing path uses real-time child→parent sync now', () => {
-    // Plan 20-09 retired DebouncedWriter from the typing path. The widget's
-    // child→parent sync extension dispatches range-remapped changes onto the
-    // parent CM6 in real time; Obsidian's built-in editor auto-save persists
-    // to disk. ctl.writer remains optional on the controller but is never
-    // populated in the editable Live-Preview mount path. flushNow() returns
-    // Promise.resolve() when writer is absent.
+  it('Phase 20-09 (post-mortem): writer IS attached for editable mounts when plugin host provides vault.read/process + selfWriteSuppression', () => {
+    // Post-mortem rewrite: DebouncedWriter is back on the typing path. The
+    // widget owns the source of truth in memory; child docChanges schedule a
+    // ~500ms idle-debounced flush to disk via vault.process. Self-write
+    // suppression prevents the modify-event echo from re-rendering the widget.
     const fullPlugin = {
       ...plugin,
       app: {
@@ -258,7 +256,7 @@ describe('mountLeetCodeWidget', () => {
       selfWriteSuppression: { arm: vi.fn(), tryConsume: vi.fn() } as never,
     };
     const ctl = mountLeetCodeWidget(host, 'pass', file as never, fullPlugin as never, /*readOnly=*/false);
-    expect(ctl.writer).toBeUndefined();
+    expect(ctl.writer).toBeDefined();
   });
 
   it('Plan 19-02: writer NOT attached on read-only mounts (no listener registered)', () => {
