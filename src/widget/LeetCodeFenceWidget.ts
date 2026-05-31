@@ -42,13 +42,23 @@ export class LeetCodeFenceWidget extends WidgetType {
    * ViewPlugin passes `djb2(source)` (synchronous, RESEARCH Pitfall 19-F).
    * Tests that exercise eq() identity in isolation supply hashes directly
    * so they can verify content-changed vs. content-unchanged transitions.
+   *
+   * BL-06 (review-fix) — `source` is `private` (was `public readonly`).
+   * Under CM6's widget-reuse contract: when `eq()` returns true, CM6 reuses
+   * the FIRST widget instance's DOM and discards subsequent widget instances'
+   * fields. The first-observed `source` therefore lies about current fence
+   * content forever after the first toDOM. There's no current consumer that
+   * reads it, but exposing the field publicly invited a future bug. Making
+   * it private + commenting the trap keeps the parameter alive for the
+   * single legitimate use site (the inaugural toDOM seed) while preventing
+   * external readers from grabbing the stale value.
    */
   constructor(
     public readonly plugin: WidgetMountHost,
     public readonly file: TFile,
     public readonly fenceIndex: number,
     public readonly sourceHash: string,
-    public readonly source: string,
+    private readonly source: string,
   ) {
     super();
   }
@@ -165,9 +175,27 @@ export class LeetCodeFenceWidget extends WidgetType {
           destroy(): void;
           persistenceKey?: string;
           view?: import('@codemirror/view').EditorView;
+          container?: HTMLElement;
         }
       | undefined;
     if (ctl) {
+      // BL-06 (review-fix) — coordinate destroy with parking-lot adoption.
+      // LeetCodeWidgetRenderChild.onunload moves the controller's container
+      // into the `.lc-widget-parking-lot` div BEFORE Obsidian removes the
+      // old containerEl, so the EditorView survives the post-processor
+      // remount cycle. If LeetCodeFenceWidget.destroy fires concurrently
+      // (CM6 widget-reuse rebuild path), we MUST NOT destroy a parked
+      // controller — the next RenderChild.onload will adopt it.
+      const parent = ctl.container?.parentElement;
+      const isParked = !!parent?.classList?.contains('lc-widget-parking-lot');
+      if (isParked) {
+        // Leave the controller alive in the registry so the upcoming
+        // RenderChild.onload can adopt it. Drop our own toDOM-bound key
+        // so a subsequent destroy on this widget instance is a no-op.
+        this.mountedCtlKey = null;
+        return;
+      }
+
       // Plan 19-03 — capture BEFORE flush + destroy so cursor + scroll
       // (and historyJSON) survive the Live-Preview unmount path. The
       // mousedown.stopPropagation listener (Plan 19-01) handles cursor-
