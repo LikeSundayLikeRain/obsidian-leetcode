@@ -92,19 +92,18 @@ import { resolveLangSlug, lcSlugToFenceTag, LC_LANG_DISPLAY_LABELS } from './sol
 // Phase 5.3 D-13 parity — chevron's atomic dispatch reuses Phase 5.1's exported
 // `findCodeFence` so fence detection has one source of truth.
 import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorExtension';
-// Phase 20 Plan 20-09 — kind-aware findCodeFence (returns kind: 'leetcode-solve'
-// | 'legacy') for the v1.3 widget paths that must specifically target the
-// leetcode-solve fence and skip stray ```text/```javascript fences.
-//
 // Phase 20 Plan 20-10 (gap-closure T9/T10) — countLeetCodeSolveFenceOpeners is
 // the canonical "is there a leetcode-solve fence in this text?" predicate.
 // Used by resolveFenceKind in resetCode (T10 fix) and copyToCode (T9 fix).
 // SSoT discipline: same primitive as the registry-key computation.
-import {
-  findCodeFence as findLcCodeFence,
-  countLeetCodeSolveFenceOpeners,
-} from './widget/fenceLocator';
-import { syncAnnotation } from './widget/childParentSync';
+//
+// Phase 20 Plan 20-10 Task 4 retired the parent-CM6 dispatch path in
+// switchLanguageFromWidget — `findLcCodeFence` and `syncAnnotation` were the
+// last surviving widget-path consumers of those imports. The legacy
+// switchFenceLanguage / chevron path uses the parallel `findCodeFence` from
+// `./main/codeActionsEditorExtension` (different module, different SSoT
+// scope) and is unchanged.
+import { countLeetCodeSolveFenceOpeners } from './widget/fenceLocator';
 // Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment.
 // `switchFenceLanguage` dispatches a Compartment.reconfigure on the child
 // (when present) immediately after the parent CM6 dispatch, so the child's
@@ -2897,10 +2896,10 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /**
-   * Phase 20 Plan 20-09 Task 6 — Chevron-driven language switch from the
-   * v1.3 widget. Replaces the new starter code into the leetcode-solve
-   * fence body (NOT into a stray ```javascript fence — Bug B fix) AND
-   * updates lc-language frontmatter.
+   * Phase 20 Plan 20-10 Task 4 (gap-closure T3 — language switch silent
+   * regression). Rewritten from Plan 20-09 Task 6 to dispatch via the
+   * canonical write-path (CLAUDE.md §Conventions Phase 17 D-05) — the
+   * registered child editor — instead of the parent CM6.
    *
    * Sequence:
    *   (a) flush widget → no-op for v1.3 (writer retired Plan 20-09 Task 3)
@@ -2909,23 +2908,31 @@ export default class LeetCodePlugin extends Plugin {
    *       non-LC note via a race).
    *   (c) fetch starter code via existing client.getProblemDetail (cached;
    *       7-day TTL via SettingsStore). On rejection: locked Notice copy.
-   *   (d) find the leetcode-solve fence in the parent CM6 via the
-   *       kind-aware findLcCodeFence; bail silent if no fence or kind is
-   *       'legacy' (fence opener doesn't say leetcode-solve).
-   *   (e) dispatch on the parent CM6 with a single transaction:
-   *         - changes: replace fence body range with `${snippet}\n`
-   *         - userEvent 'leetcode.lang-switch' (CLAUDE.md `'leetcode.*'`
-   *           bypass for the section-protection transactionFilter).
-   *         - syncAnnotation.of(true) so the child's child→parent sync
-   *           extension's updateListener treats this as parent→child
-   *           and does NOT re-propagate.
+   *   (d) resolve the dispatch target — childEditorRegistry.get(file.path)
+   *       PRIMARY, widget.view FALLBACK. The registry lookup is keyed on
+   *       file.path so it works regardless of which leaf is active —
+   *       multi-pane / popout / Reading-mode chevron clicks all reach
+   *       the right child. Closes T3's silent-bail anti-pattern (the
+   *       prior implementation consulted getActiveViewOfType + bailed
+   *       on view.file !== file).
+   *   (e) dispatch a single full-doc replace on the resolved target with
+   *       userEvent 'leetcode.lang-switch'. Range 0..doc.length so a
+   *       smaller starter never leaves a stale tail. The registered
+   *       child's existing childEditorSync mirror propagates the change
+   *       to the parent doc with addToHistory.of(false) (Phase 17 D-05),
+   *       preserving Phase 15 D-05 cm-z scope isolation.
    *   (f) processFrontMatter `lc-language` = newSlug. The per-widget
-   *       metadataCache 'changed' subscription then fires
-   *       Compartment.reconfigure (parser swap) + actionRowRefresh
-   *       (chevron label + .is-current marker, Plan 20-08).
+   *       metadataCache 'changed' subscription at WidgetController.ts:
+   *       1126-1166 fires Compartment.reconfigure (parser swap) +
+   *       actionRowRefresh (chevron label + .is-current marker, Plan
+   *       20-08) without a remount.
    *
    * Empty starter code (LC API quirk for some langs/problems): dispatch
    * empty body. User sees a blank fence with the new language's parser.
+   *
+   * Reference: .planning/debug/widget-plugin-handoff-cluster.md (T3 root
+   * cause) + CLAUDE.md §Conventions "Canonical plugin write-path pattern
+   * (Phase 17 D-05)".
    */
   async switchLanguageFromWidget(
     widget: WidgetController,
@@ -2956,37 +2963,36 @@ export default class LeetCodePlugin extends Plugin {
       return;
     }
 
-    // Step (d) — find the leetcode-solve fence. Resolve through the
-    // active markdown view's editor since switchLanguageFromWidget runs
-    // from the chevron click handler inside the widget's host view.
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view || view.file !== file) return;
-    const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
-    const fence = findLcCodeFence(cm.state, { preferLeetCodeSolve: true });
-    if (!fence || fence.kind !== 'leetcode-solve') return;
+    // Step (d) — resolve canonical write target (Phase 17 D-05). Per
+    // CLAUDE.md §Conventions, plugin writes touching the fence body
+    // dispatch through `childEditorRegistry.get(file.path)` when one is
+    // registered. Falls back to widget.view only when the registry
+    // returns null (rare embed-context where mountLeetCodeWidget ran but
+    // registry wiring did not). The active-view guard is REMOVED — the
+    // registry lookup is keyed on file.path, independent of which leaf
+    // is active. Closes T3 silent-bail anti-pattern (multi-pane / popout
+    // chevron clicks).
+    const dispatchTarget =
+      this.childEditorRegistry?.get(file.path) ?? widget.view;
 
-    // Step (e) — parent CM6 dispatch on the fence body range. Body span:
-    // line(openerLine).to + 1 → line(closerLine).from. The trailing `\n`
-    // ensures the closer stays on its own line (no malformed-fence drift).
-    const bodyStart = cm.state.doc.line(fence.openerLine).to + 1;
-    const bodyEnd = cm.state.doc.line(fence.closerLine).from;
-    if (bodyStart > bodyEnd) return;
-
+    // Step (e) — full-doc replace on the resolved target. Range
+    // 0..doc.length so a smaller new starter never leaves a stale tail.
+    // userEvent 'leetcode.lang-switch' set defensively per CLAUDE.md
+    // §Conventions ('leetcode.*' bypass convention). The registered
+    // child does not currently have section-protection on its CM6, but
+    // the annotation is zero-risk and future-proofs against registry
+    // → section-protection wiring changes.
     try {
-      cm.dispatch({
-        changes: { from: bodyStart, to: bodyEnd, insert: snippet + '\n' },
-        annotations: [
-          syncAnnotation.of(true),
-          // userEvent annotation passes the section-protection
-          // changeFilter's `'leetcode.*'` bypass.
-          // Cast through unknown to satisfy obsidian.d.ts types.
-          (
-            await import('@codemirror/state')
-          ).Transaction.userEvent.of('leetcode.lang-switch'),
-        ],
+      dispatchTarget.dispatch({
+        changes: {
+          from: 0,
+          to: dispatchTarget.state.doc.length,
+          insert: snippet,
+        },
+        userEvent: 'leetcode.lang-switch',
       });
     } catch (err) {
-      logger.debug('switchLanguageFromWidget: parent dispatch failed', err);
+      logger.debug('switchLanguageFromWidget: child dispatch failed', err);
       return;
     }
 
