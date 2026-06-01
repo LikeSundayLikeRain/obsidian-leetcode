@@ -33,7 +33,14 @@
 //   D-backup-01 — backup folder: migration-backup-{slug}-{ISO} with sanitized
 //                 ISO (no `:`, no millis); file inside named {slug}.md.
 //   D-backup-02 — one backup per note ever; idempotency short-circuits before
-//                 the backup writer runs on subsequent re-opens.
+//                 the backup writer runs on subsequent re-opens. Plan 21-06
+//                 CR-02 — pre-existence check via `BACKUP_FOLDER_RE` per-slug
+//                 match closes the partial-failure retry path: when
+//                 vault.process throws AFTER writeBackup succeeded, the next
+//                 re-entry must NOT write a second backup. The pre-existence
+//                 helper lists `.obsidian/plugins/obsidian-leetcode/`,
+//                 matches each folder against the SSoT regex, and skips
+//                 writeBackup when a folder for THIS slug already exists.
 //
 // Threats mitigated (per .planning/phases/21-v1-2-migration/21-01-PLAN.md):
 //   T-21-bytes — body byte-exact via SSoT delegation to rewriteFenceOpenerTag
@@ -63,7 +70,11 @@ import type { App, TFile } from 'obsidian';
 import { LC_LANG_SLUGS, resolveLangSlug } from '../solve/languages';
 import { countLeetCodeSolveFenceOpeners } from './fenceLocator';
 import { rewriteFenceOpenerTag } from './fenceSerialization';
+import { BACKUP_FOLDER_RE } from './migrationBackupGc';
 import { logger } from '../shared/logger';
+
+/** Plugin folder under the vault root (mirrors migrationBackupGc.BASE_DIR). */
+const PLUGIN_DIR = '.obsidian/plugins/obsidian-leetcode';
 
 // Sentinel string for resolveLangSlug — fenceTag → sentinel means unknown tag.
 const SLUG_SENTINEL = '__sentinel__';
@@ -171,6 +182,50 @@ function buildBackupPaths(slug: string): { dir: string; file: string } {
 }
 
 /**
+ * Plan 21-06 CR-02 — pre-existence check for a backup folder belonging to
+ * `slug` under the plugin directory. Returns true iff a folder matching
+ * `migration-backup-{slug}-{ISO}` already exists.
+ *
+ * Reuses the SSoT regex `BACKUP_FOLDER_RE` (exported from
+ * `./migrationBackupGc.ts`) so the per-slug filter uses the SAME
+ * shape constraint that the GC sweep enforces. NO regex literal duplication.
+ *
+ * Pure side-effect surface: ONE `app.vault.adapter.list` call. No mutations.
+ *
+ * Defensive on rejection: when `adapter.list` throws (e.g. first-install vault
+ * — plugin folder does not yet exist), return false so the orchestrator
+ * proceeds with `writeBackup` as before. The orchestrator's outer try/catch
+ * (Pattern S-05) covers any propagation; this helper's internal catch is
+ * defensive layering for the common first-install case.
+ *
+ * Strips the `.obsidian/plugins/obsidian-leetcode/` prefix from each
+ * `adapter.list` result so `BACKUP_FOLDER_RE` matches the bare folder
+ * name (the regex is anchored on `^migration-backup-`, not on the prefix).
+ */
+async function backupAlreadyExistsForSlug(
+  app: App,
+  slug: string,
+): Promise<boolean> {
+  let listing: { files: string[]; folders: string[] };
+  try {
+    listing = await app.vault.adapter.list(PLUGIN_DIR);
+  } catch {
+    // First-install vault or transient I/O error — no backup exists; proceed.
+    return false;
+  }
+  const prefix = `${PLUGIN_DIR}/`;
+  for (const folderFull of listing.folders ?? []) {
+    const folderName = folderFull.startsWith(prefix)
+      ? folderFull.slice(prefix.length)
+      : folderFull;
+    const m = BACKUP_FOLDER_RE.exec(folderName);
+    if (!m) continue;
+    if (m[1] === slug) return true;
+  }
+  return false;
+}
+
+/**
  * Write a backup sidecar of the pre-migration note text. Used by
  * `migrateLegacyFenceIfNeeded` BEFORE any rewrite (T-21-backup invariant).
  *
@@ -267,7 +322,24 @@ export async function migrateLegacyFenceIfNeeded(
 
     // Step 3 — backup BEFORE rewrite. Throws propagate to the outer catch;
     // when they do, vault.process is NEVER called (T-21-backup invariant).
-    await writeBackup(app, file, slug, text);
+    //
+    // Plan 21-06 CR-02 — pre-existence check protects D-backup-02 invariant
+    // on the partial-failure retry path. If a previous migration attempt
+    // succeeded at writeBackup but failed at vault.process (vault locked,
+    // plugin reload mid-write, transient I/O error), the next re-entry
+    // must NOT write a SECOND backup folder. The check is cheap (one
+    // `adapter.list` call) and DOES NOT abort migration on a hit — only
+    // the backup write step is skipped; the orchestrator continues with
+    // Step 4 (vault.process) as the retry the user implicitly requested.
+    const alreadyBackedUp = await backupAlreadyExistsForSlug(app, slug);
+    if (!alreadyBackedUp) {
+      await writeBackup(app, file, slug, text);
+    } else {
+      logger.debug(
+        'migration.fenceMigrator: backup folder already exists for slug; skipping (CR-02 retry path)',
+        { slug },
+      );
+    }
 
     // Step 4 — atomic body-touching write via vault.process. SSoT delegation
     // to rewriteFenceOpenerTag (CRLF-tolerant; body byte-exact).

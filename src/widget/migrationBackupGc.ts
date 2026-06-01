@@ -13,11 +13,15 @@
 //                 30 days. Runs unconditionally.
 //   MIGRATE-05  — 30-day TTL backup cleanup as a release requirement.
 //
-// Threats mitigated (per .planning/phases/21-v1-2-migration/21-04-PLAN.md):
-//   T-21-gc       — strict folder-name regex `^migration-backup-(.+)-\d{4}-\d{2}-
-//                   \d{2}T\d{2}-\d{2}-\d{2}Z$` rejects any non-backup folder
-//                   under the plugin directory; non-backup folders (e.g.
+// Threats mitigated (per .planning/phases/21-v1-2-migration/21-04-PLAN.md +
+//                    .planning/phases/21-v1-2-migration/21-06-PLAN.md):
+//   T-21-gc       — strict folder-name regex (Plan 21-04) rejects any non-backup
+//                   folder under the plugin directory; non-backup folders (e.g.
 //                   `data`, `cache`) are NEVER deleted by this routine.
+//                   Tightened in Plan 21-06 (CR-03) to require LC-slug shape
+//                   `[a-z0-9][a-z0-9-]*[a-z0-9]` — non-LC-shape folders
+//                   (uppercase, mixed-case, single-char, leading/trailing
+//                   hyphen) are guaranteed NEVER to match.
 //   T-21-pitfall-4 — adapter.list rejection (likely first-install: plugin
 //                    folder does not yet exist) caught + debug-logged + return.
 //                    Plugin onload NEVER blocks on a missing-directory throw.
@@ -43,20 +47,66 @@ const BASE_DIR = '.obsidian/plugins/obsidian-leetcode';
 
 /**
  * Strict folder-name regex (T-21-gc mitigation). Captures:
- *   group 1 — the slug (anything that doesn't contain the trailing ISO suffix)
+ *   group 1 — the LC slug (LC-slug-shape: lowercase alphanumeric + hyphens;
+ *             starts AND ends with [a-z0-9]; minimum 2 characters)
  *   group 2 — the sanitized ISO timestamp (`YYYY-MM-DDTHH-MM-SSZ` — `:` was
  *             replaced with `-` for cross-OS filesystem safety per
  *             D-backup-01).
  *
  * Anything that doesn't match — e.g. `data`, `cache`, `migration-backup-foo`
- * (no ISO), `migration-backup-foo-2026-06-01` (no time) — is skipped. The
- * routine NEVER deletes a folder that does not match this regex.
+ * (no ISO), `migration-backup-foo-2026-06-01` (no time), `migration-backup-FOO-...`
+ * (uppercase), `migration-backup-a-...` (single char), `migration-backup--leading-...`
+ * (leading hyphen) — is skipped. The routine NEVER deletes a folder that
+ * does not match this regex.
+ *
+ * EXPORTED — single source of truth (Plan 21-06 CR-02). Reused by
+ * `src/widget/fenceMigrator.ts:backupAlreadyExistsForSlug` to verify
+ * the partial-failure retry path's pre-existence check uses the SAME
+ * shape constraint that the GC sweep enforces. NO regex literal duplication.
+ *
+ * Tightened in Plan 21-06 (CR-03):
+ *   from /^migration-backup-(.+)-(\d{4}-...)Z$/  (greedy, no char class)
+ *   to   /^migration-backup-([a-z0-9][a-z0-9-]*[a-z0-9])-(\d{4}-...)Z$/
+ * The slug character class `[a-z0-9]...[a-z0-9]` enforces the LC slug
+ * convention (per leetcode.com — slugs are lowercase alphanumeric + hyphens,
+ * 2+ chars, no leading/trailing hyphen). Multi-segment slugs (`foo-bar-baz`)
+ * still match because the body class `[a-z0-9-]*` accepts hyphens internally.
  */
-const BACKUP_FOLDER_RE =
-  /^migration-backup-(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$/;
+export const BACKUP_FOLDER_RE =
+  /^migration-backup-([a-z0-9][a-z0-9-]*[a-z0-9])-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$/;
 
 /** 30 days in milliseconds (T-21-pitfall-5 — direction is `now - parsed > TTL_MS`). */
 const TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Plan 21-06 WR-05 — module-level concurrency lock.
+ *
+ * Second concurrent call to `runMigrationBackupGc` returns immediately at
+ * debug level; the lock is reset in `finally` so transient errors don't
+ * permanently disable the GC. The lock is module-scoped (not instance-
+ * scoped) because there is at most one cleanup routine across the plugin
+ * lifetime — a single in-flight sweep is sufficient to satisfy MIGRATE-05's
+ * TTL contract.
+ *
+ * On plugin reload (module re-import), the lock resets to `false` naturally
+ * — no leak.
+ */
+let gcRunning = false;
+
+/**
+ * Test-only helper. Resets the module-level `gcRunning` lock to `false`.
+ * Used by vitest `beforeEach` / `afterEach` to ensure hermeticity between
+ * tests (the lock is module-scoped, so a test that holds it open must not
+ * bleed into the next test).
+ *
+ * NOT for production use. Production code MUST NOT call this — the lock
+ * is reset automatically by the `finally` block in `runMigrationBackupGc`.
+ *
+ * Plan 21-06 WR-05.
+ */
+export function __resetGcRunningForTesting(): void {
+  gcRunning = false;
+}
 
 /**
  * Reverse the `:` → `-` substitution in the captured ISO suffix so
@@ -96,48 +146,64 @@ function parseSanitizedIso(captured: string): number {
  * + `vi.setSystemTime`).
  */
 export async function runMigrationBackupGc(app: App): Promise<void> {
-  // Step 1 — defensive list. First-install vaults reject here (Pitfall 4).
-  let listing: { files: string[]; folders: string[] };
-  try {
-    listing = await app.vault.adapter.list(BASE_DIR);
-  } catch (err) {
-    logger.debug(
-      'migrationBackupGc: adapter.list failed (likely first-install)',
-      err,
-    );
+  // Plan 21-06 WR-05 — module-level concurrency lock. Entry guard before any
+  // I/O so a re-entry during the `adapter.list` await also short-circuits.
+  if (gcRunning) {
+    logger.debug('migrationBackupGc: skipping concurrent invocation', {});
     return;
   }
+  gcRunning = true;
 
-  const now = Date.now();
+  try {
+    // Step 1 — defensive list. First-install vaults reject here (Pitfall 4).
+    let listing: { files: string[]; folders: string[] };
+    try {
+      listing = await app.vault.adapter.list(BASE_DIR);
+    } catch (err) {
+      logger.debug(
+        'migrationBackupGc: adapter.list failed (likely first-install)',
+        err,
+      );
+      return;
+    }
 
-  // Step 2 — iterate folders.
-  for (const folderFull of listing.folders ?? []) {
-    // Strip the BASE_DIR prefix to get the bare folder name.
-    // adapter.list returns paths relative to the vault root, e.g.
-    //   '.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-...'
-    // We want just 'migration-backup-two-sum-...' for regex matching.
-    const prefix = `${BASE_DIR}/`;
-    const folderName = folderFull.startsWith(prefix)
-      ? folderFull.slice(prefix.length)
-      : folderFull;
+    const now = Date.now();
 
-    const m = BACKUP_FOLDER_RE.exec(folderName);
-    if (!m) continue; // T-21-gc mitigation — strict regex skips non-backups.
+    // Step 2 — iterate folders.
+    for (const folderFull of listing.folders ?? []) {
+      // Strip the BASE_DIR prefix to get the bare folder name.
+      // adapter.list returns paths relative to the vault root, e.g.
+      //   '.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-...'
+      // We want just 'migration-backup-two-sum-...' for regex matching.
+      const prefix = `${BASE_DIR}/`;
+      const folderName = folderFull.startsWith(prefix)
+        ? folderFull.slice(prefix.length)
+        : folderFull;
 
-    // Step 3 — parse ISO timestamp.
-    const captured = m[2] ?? '';
-    const ts = parseSanitizedIso(captured);
-    if (Number.isNaN(ts)) continue;
+      const m = BACKUP_FOLDER_RE.exec(folderName);
+      if (!m) continue; // T-21-gc mitigation — strict regex skips non-backups.
 
-    // Step 4 — TTL check (T-21-pitfall-5 direction).
-    if (now - ts > TTL_MS) {
-      try {
-        await app.vault.adapter.rmdir(folderFull, true);
-      } catch (err) {
-        logger.debug('migrationBackupGc: rmdir failed', err);
-        // Continue iterating — partial cleanup failure must not abort the
-        // remaining sweep.
+      // Step 3 — parse ISO timestamp.
+      const captured = m[2] ?? '';
+      const ts = parseSanitizedIso(captured);
+      if (Number.isNaN(ts)) continue;
+
+      // Step 4 — TTL check (T-21-pitfall-5 direction).
+      if (now - ts > TTL_MS) {
+        try {
+          await app.vault.adapter.rmdir(folderFull, true);
+        } catch (err) {
+          logger.debug('migrationBackupGc: rmdir failed', err);
+          // Continue iterating — partial cleanup failure must not abort
+          // the remaining sweep.
+        }
       }
     }
+  } finally {
+    // Plan 21-06 WR-05 — reset lock so transient errors don't permanently
+    // disable the GC. The inner try/catches around adapter.list +
+    // adapter.rmdir already implement Pattern S-05; this outer try/finally
+    // exists ONLY to reset the lock (no `catch` here).
+    gcRunning = false;
   }
 }
