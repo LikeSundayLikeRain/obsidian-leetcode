@@ -145,7 +145,7 @@ Plans:
 - **Conflict modal is a novel UX surface for this plugin.** Worth a paper-prototype review before implementation.
 - Pitfalls covered: P2, P8, P9, P10, P11, P16, P19, P20, P21, P24.
 
-**Plans:** 9/9 plans complete
+**Plans:** 9/10 plans complete (1 gap-closure pending)
 
 Plans:
 **Wave 1**
@@ -163,6 +163,10 @@ Plans:
 **Wave 4** *(blocked on Wave 3)*
 
 - [x] 20-04-PLAN.md — Live theme retheme + multi-pane "Take over" affordance (polish): app.workspace.on('css-change') → cssRetheme via view.requestMeasure; app.workspace.on('active-leaf-change') → setGreyedOut + .lc-takeover-overlay CTA per UI-SPEC §3
+
+**Gap closure (post-UAT)**
+
+- [x] 20-10-PLAN.md — Gap closure for UAT T3/T7/T8/T9/T10: fence-kind audit primitive + body-only Reset for v1.3 leetcode-solve fence (T10 DATA CORRUPTION); switchLanguageFromWidget rewrite to childEditorRegistry dispatch (T3); runWithCode/submitWithCode refactor accepting code directly (T7); SubmissionHistoryStore short-TTL-on-empty + retrieve invalidate (T9); .leetcode-widget-codeblock inner wrapper for action-row DOM hierarchy (T8) — completed 2026-05-31
 
 **UI hint**: yes
 
@@ -214,9 +218,13 @@ Plans:
 4. Full test suite (1,713 v1.2 tests minus the 8 dead-test deletions, plus all new widget unit + integration tests) runs green; `eslint-plugin-obsidianmd` passes with zero `innerHTML` usages in `src/widget/`.
 5. CLAUDE.md `## Conventions` no longer contains the `'leetcode.*'` userEvent paragraph or the "Canonical plugin write-path pattern (Phase 17 D-05)" paragraph; README is updated with v1.3 architecture overview, migration docs, sync interaction notes, and Cmd-Z/Cmd-F scoping behavior.
 6. BRAT alpha tag ships and runs in real user vaults for at least one feedback cycle; plugin-store re-review submission is filed and accepted.
+7. **Vim-Tab cursor-marker sync (carried from Phase 20 Plan 20-10 hotfix part 7).** When Tab is pressed in vim Insert mode, the widget routes the keystroke through `insertTab` / `indentMore` directly, so vim's CM5-style block-cursor marker can lag the real CM6 caret (visible as a stale `|` to the left of the actual cursor). Fix routes Insert-mode Tab through vim's input pipeline (e.g. `CodeMirror.signal` / `Vim.handleKey` on the `getCM(view)` adapter) so vim updates its caret tracker, OR replaces the explicit Tab handler with a vim-aware indent command that calls vim's own insert-text path. Cosmetic only — typing lands at the correct offset; the visual marker is wrong.
+8. **Widget hover border removed (carried from Phase 20 UAT polish).** Hovering the v1.3 widget surface paints a border (Obsidian default `.cm-editor`-level `:hover` outline bleeding through). Add a defensive override scoped to `.lc-nested-editor .cm-editor:hover` (or the equivalent inner wrapper) to suppress the border without nuking the cursor-marker / focus-ring styles.
+9. **Action row uses normal font, not monospace (carried from Phase 20 UAT polish).** The widget's action-row chevron + buttons currently inherit `var(--font-monospace)` from the surrounding `.cm-editor` theme rule. Add an override on `.leetcode-code-actions` (and its descendants) setting `font-family: var(--font-text)` so the controls read as UI chrome rather than code.
 
 **Key risks/notes:**
 
+- **Vim-Tab cursor-marker sync** (success criterion 7). Cosmetic block-cursor desync introduced by the Plan 20-10 hotfix Tab handler. Reproducer: enable vim, press `i` to enter Insert mode, press Tab — text inserts correctly but the vim caret marker visually stays at the pre-Tab column. Investigation entry point: `src/widget/WidgetController.ts` Tab handler around the `keymap.of([...])` block; `getCM(view)` returns a CM5 adapter that can dispatch through vim's input layer.
 - **Coexistence ends here.** Phases 19-21 ran the v1.3 widget behind `useInlineWidget=OFF`; flipping the default to ON is a hard cutover. After this phase, the v1.2 path is irrecoverable except via `git revert`.
 - **VIM-03 fallback lands here only if Phase 20 live-reconfigure proved empirically unreliable.** If Phase 20 succeeded, VIM-03's "reload to apply vim toggle" banner becomes a no-op success criterion; if it failed, VIM-03 ships the banner UX in this phase.
 - **Plugin-store re-review trigger.** The review checklist must be re-run since the architectural surface changed substantially: confirm `isDesktopOnly`, no `innerHTML` in widget code, no remote eval, no telemetry, manifest version bump (PITFALLS P13, P25).
