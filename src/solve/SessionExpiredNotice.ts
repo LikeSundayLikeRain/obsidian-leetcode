@@ -38,10 +38,13 @@ import { Notice } from 'obsidian';
 export function showSessionExpiredNotice(
   login: () => void | Promise<void>,
 ): Notice {
-  // Use Obsidian's DOM helpers off `activeDocument` so popout windows wire
-  // their fragments into the right document; the test setup polyfills the
-  // helpers onto happy-dom's document so this same path runs in unit tests.
-  const frag = activeDocument.createFragment();
+  // Use Obsidian's top-level `createFragment` helper — it returns a
+  // DocumentFragment that Notice will append into the active notice container
+  // (popout-window safe). NOTE: `createFragment` is a top-level function in
+  // obsidian's API, NOT a method on Document — calling
+  // `activeDocument.createFragment()` throws TypeError at runtime even though
+  // an old ambient declaration claimed otherwise (Phase 20 Plan 20-10 hotfix).
+  const frag = createFragment();
   // CF-04 LOCKED copy — do NOT paraphrase. A trailing space separates copy
   // from the Log in button in the sticky notice. "LeetCode" is a proper-noun
   // brand name (sentence-case rule's brand allowlist permits it).

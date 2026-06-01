@@ -29,7 +29,6 @@ interface DomCreateHelpers {
   createEl(tag: string, options?: DomCreateOptions): HTMLElement;
   createDiv(options?: DomCreateOptions | string): HTMLDivElement;
   createSpan(options?: DomCreateOptions | string): HTMLSpanElement;
-  createFragment(): DocumentFragment;
 }
 
 declare global {
@@ -42,8 +41,7 @@ declare global {
     createEl(tag: string, options?: DomCreateOptions): HTMLElement;
     createDiv(options?: DomCreateOptions | string): HTMLDivElement;
     createSpan(options?: DomCreateOptions | string): HTMLSpanElement;
-    createFragment(): DocumentFragment;
-  }
+    }
 
   // Same shorthand helpers exist on every Element so chained `parent.createDiv(...)`
   // compiles. Obsidian also exposes `el.empty()` / `el.addClass()` / etc.
@@ -65,6 +63,13 @@ declare global {
   // in; it carries the standard Window members we need (setTimeout,
   // navigator, HTMLElement, ...) so we keep the type as `Window`.
   const activeWindow: Window;
+
+  // Phase 20 Plan 20-10 hotfix — `createFragment` is a top-level global
+  // function in Obsidian's runtime API (NOT a method on Document — calling
+  // `activeDocument.createFragment()` throws TypeError at runtime). Declare
+  // it as a const binding so source modules can read it from the global
+  // namespace without importing from 'obsidian' (which doesn't re-export it).
+  function createFragment(callback?: (el: DocumentFragment) => void): DocumentFragment;
 }
 
 export {};

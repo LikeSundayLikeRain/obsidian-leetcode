@@ -175,4 +175,16 @@ if (g.document) {
   if (typeof docMaybe.createFragment !== 'function') {
     docMaybe.createFragment = () => doc.createDocumentFragment();
   }
+  // Phase 20 Plan 20-10 hotfix — Obsidian also exposes `createFragment` as
+  // a TOP-LEVEL global function (declared in obsidian.d.ts:196). Source
+  // modules now call bare `createFragment()` instead of the (incorrect)
+  // `activeDocument.createFragment()`. Polyfill the global onto happy-dom's
+  // globalThis so tests resolve the same identifier.
+  if (typeof gThis['createFragment'] !== 'function') {
+    gThis['createFragment'] = (callback?: (el: DocumentFragment) => void): DocumentFragment => {
+      const frag = doc.createDocumentFragment();
+      callback?.(frag);
+      return frag;
+    };
+  }
 }

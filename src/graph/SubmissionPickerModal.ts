@@ -373,7 +373,7 @@ function fireSessionExpiredNotice(login: () => void | Promise<void> = () => unde
       // spy receives a frame identical to the production helper's. Tests can
       // introspect the fragment via the captured arg. See
       // src/solve/SessionExpiredNotice.ts for the matching production shape.
-      const frag = activeDocument.createFragment();
+      const frag = createFragment();
       const copy = activeDocument.createSpan();
 
       copy.textContent = 'LeetCode session expired. Log in again.';
