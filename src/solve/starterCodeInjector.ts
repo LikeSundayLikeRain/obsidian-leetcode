@@ -71,8 +71,34 @@ export interface InjectOptions {
  * Pure string transform. Idempotent when `## Code` already contains a fenced
  * block whose tag is a recognized LC langSlug (D-07). Inserts starter BEFORE
  * existing unrecognized blocks (Pitfall 6).
+ *
+ * Phase 21 Plan 21-03 (D-emit-02) — mirrors the `fenceKind` short-circuit on
+ * `forceInjectCodeSection`. When `opts.fenceKind === 'leetcode-solve'` AND
+ * the note already contains at least one `\`\`\`leetcode-solve` fence,
+ * delegate to `rewriteFenceBody` for body-only replacement (preserving the
+ * v1.3 opener byte-for-byte). When the v1.3 fence is absent (transitional
+ * note), fall through to the legacy path so the starter still lands.
  */
 export function injectCodeSection(current: string, opts: InjectOptions): string {
+  // Phase 21 Plan 21-03 (D-emit-02) — kind-aware short-circuit.
+  // SSoT: REUSES rewriteFenceBody + countLeetCodeSolveFenceOpeners. Same
+  // shape as forceInjectCodeSection's lines 164-179 short-circuit (Phase 20
+  // Plan 20-10). Without this gate, the legacy path would scan for a
+  // recognized langSlug fence, miss the leetcode-solve opener (not in
+  // LC_LANG_SLUGS), treat the section as having no recognized fence, and
+  // graft a sibling ```python langSlug fence on top of the v1.3 fence —
+  // the same data-corruption pattern Plan 20-10 fixed for the force variant.
+  if (opts.fenceKind === 'leetcode-solve') {
+    const v13Count = countLeetCodeSolveFenceOpeners(
+      current,
+      Number.MAX_SAFE_INTEGER,
+    );
+    if (v13Count > 0) {
+      return rewriteFenceBody(current, 0, opts.starterCode.trim());
+    }
+    // fall through — no v1.3 fence to replace; behave as legacy path.
+  }
+
   const lines = current.split('\n');
   const codeStart = indexOfLine(lines, CODE_HEADING_LINE);
   const notesStart = indexOfLine(lines, NOTES_HEADING_LINE);

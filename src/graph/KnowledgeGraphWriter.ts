@@ -213,8 +213,13 @@ export class KnowledgeGraphWriter {
       try {
         const problemHtml = this.settings.getProblemDetail(ctx.slug)?.contentHtml ?? '';
         // Read current file body to extract the code fence content.
+        // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter so
+        // v1.3 leetcode-solve fences resolve language from lc-language SSoT.
         const body = await this.app.vault.cachedRead(ctx.file);
-        const extracted = extractFirstFencedBlock(body);
+        const fm = this.app.metadataCache.getFileCache(ctx.file)?.frontmatter as
+          | { 'lc-language'?: string }
+          | undefined;
+        const extracted = extractFirstFencedBlock(body, fm);
         const code = extracted?.code ?? '';
         const language = typeof terminal.lang === 'string' && terminal.lang.length > 0
           ? terminal.lang

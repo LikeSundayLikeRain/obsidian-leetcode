@@ -39,6 +39,10 @@ export interface ContestFinalizerSettings {
   getProblemsFolder(): string;
   getDefaultLanguage(): string;
   getProblemDetail(slug: string): ContestFinalizerDetail | null;
+  /** Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08) — gate buildNoteBody fence
+   *  emitter. Optional to preserve back-compat for tests that build a minimal
+   *  ContestFinalizerSettings; falls back to legacy emit when omitted. */
+  getUseInlineWidget?(): boolean;
 }
 
 export interface ContestFinalizerDetail {
@@ -300,11 +304,15 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
     } else {
       // Create full problem note (same as normal note creation)
       const problemMd = detail.contentHtml ? htmlToMarkdown(detail.contentHtml) : '';
+      // Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08) — gate fence emitter on
+      // useInlineWidget. Optional getter falls back to legacy emit when the
+      // settings port omits it (test fixtures).
       const body = buildNoteBody({
         problemMarkdown: problemMd,
         langSlug: problem.language || settings.getDefaultLanguage(),
         starterCode: problem.code || undefined,
         title: detail.title,
+        useInlineWidget: settings.getUseInlineWidget?.() ?? false,
       });
       let file: TFile;
       try {
