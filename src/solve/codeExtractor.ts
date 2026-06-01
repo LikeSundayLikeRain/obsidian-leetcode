@@ -19,11 +19,32 @@
 //     default via languages.ts resolveLangSlug(null, defaultLang).
 //   - Fence tag may contain [a-zA-Z0-9_+#-] to support `c++`, `c#` — caller
 //     normalizes to LC's canonical slugs.
+//
+// Phase 21 Plan 21-03 (D-extract-01) — frontmatter-source dispatch:
+//   When the located fence opener is ```leetcode-solve, the lang field is
+//   sourced from the optional `frontmatter['lc-language']` arg (the v1.3
+//   canonical SSoT). When the located fence is any other tag (legacy LC
+//   fence, ```text, ```bash, …), behavior is preserved verbatim — the
+//   fence tag wins regardless of frontmatter.
+//
+//   This makes codeExtractor the SINGLE codepath that reads language for
+//   Run/Submit/AI-Debug/AI-Review (D-extract-02). Phase 22 deletes the
+//   legacy fence-tag branch when `useInlineWidget=ON` becomes the default
+//   and all production notes use the v1.3 fence opener.
 
 const FENCE_OPEN = /^```([a-zA-Z0-9_+#-]*)\s*$/;
 const FENCE_CLOSE = /^```\s*$/;
 const CODE_HEADING = /^## Code\s*$/;
 const SECTION_BOUNDARY = /^## \S/;
+
+/**
+ * Phase 21 Plan 21-03 — matches the v1.3 fence opener exactly. Mirrors
+ * `LC_OPENER_RE` in `src/widget/fenceSerialization.ts` (kept inline here to
+ * keep this module dependency-free per the purity contract). Used to
+ * dispatch between the frontmatter-sourced lang (Branch A/B) and the
+ * legacy fence-tag lang (Branch C).
+ */
+const LC_OPENER_TAG = 'leetcode-solve';
 
 export interface ExtractedCode {
   lang: string | null;
@@ -42,8 +63,34 @@ export interface ExtractedCode {
  *   2. If no `## Code` heading exists, fall back to the first fence anywhere
  *      in the body — preserves compatibility with notes that don't use the
  *      standard schema.
+ *
+ * Phase 21 Plan 21-03 (D-extract-01) three-branch dispatch:
+ *   - Branch A — fence tag === 'leetcode-solve' AND
+ *               `frontmatter['lc-language']` is a non-empty string →
+ *               return { lang: frontmatter['lc-language'], code }.
+ *   - Branch B — fence tag === 'leetcode-solve' AND `lc-language` missing/
+ *               empty → return { lang: null, code }. Caller's
+ *               `resolveLangSlug(null, defaultLang)` handles the fallback.
+ *   - Branch C — fence tag !== 'leetcode-solve' (legacy LC fence, non-LC
+ *               fence, untagged ``` opener) → return
+ *               { lang: fenceTag ?? null, code }. Verbatim legacy behavior;
+ *               frontmatter is ignored on non-leetcode-solve fences. This
+ *               preserves Run/Submit on unmigrated v1.0/v1.1/v1.2 notes
+ *               during the v1.3 transition window.
+ *
+ * The `frontmatter` arg is OPTIONAL — undefined falls through to Branch C
+ * for full backward compatibility with callers that haven't been updated.
+ *
+ * Per D-extract-02, this is the SINGLE codepath for Run/Submit language
+ * derivation in v1.3. No consumer should add a parallel
+ * `metadataCache.getFileCache(file)?.frontmatter?.['lc-language']` shortcut
+ * for code-execution dispatch (chevron + frontmatter-write paths are
+ * separate concerns and out of scope).
  */
-export function extractFirstFencedBlock(noteBody: string): ExtractedCode | null {
+export function extractFirstFencedBlock(
+  noteBody: string,
+  frontmatter?: { 'lc-language'?: string },
+): ExtractedCode | null {
   const lines = noteBody.split('\n');
   const codeHeadingIdx = lines.findIndex((ln) => CODE_HEADING.test(ln));
   if (codeHeadingIdx >= 0) {
@@ -54,17 +101,22 @@ export function extractFirstFencedBlock(noteBody: string): ExtractedCode | null 
         break;
       }
     }
-    return extractFromRange(lines, codeHeadingIdx + 1, sectionEnd);
+    return extractFromRange(lines, codeHeadingIdx + 1, sectionEnd, frontmatter);
   }
-  return extractFromRange(lines, 0, lines.length);
+  return extractFromRange(lines, 0, lines.length, frontmatter);
 }
 
-function extractFromRange(lines: string[], start: number, end: number): ExtractedCode | null {
+function extractFromRange(
+  lines: string[],
+  start: number,
+  end: number,
+  frontmatter: { 'lc-language'?: string } | undefined,
+): ExtractedCode | null {
   let i = start;
   while (i < end) {
     const openMatch = FENCE_OPEN.exec(lines[i] ?? '');
     if (openMatch) {
-      const lang = openMatch[1] ?? '';
+      const fenceTag = openMatch[1] ?? '';
       const codeLines: string[] = [];
       i++;
       while (i < end && !FENCE_CLOSE.test(lines[i] ?? '')) {
@@ -72,7 +124,20 @@ function extractFromRange(lines: string[], start: number, end: number): Extracte
         i++;
       }
       if (i >= end) return null; // unclosed fence within range
-      return { lang: lang.length > 0 ? lang : null, code: codeLines.join('\n') };
+      const code = codeLines.join('\n');
+      // Phase 21 Plan 21-03 (D-extract-01) — three-branch dispatch.
+      if (fenceTag === LC_OPENER_TAG) {
+        // Branches A + B: leetcode-solve fence; frontmatter is the SSoT.
+        const fmLang = frontmatter?.['lc-language'];
+        const lang = typeof fmLang === 'string' && fmLang.length > 0 ? fmLang : null;
+        return { lang, code };
+      }
+      // Branch C: legacy fence / non-LC fence / untagged. Verbatim behavior —
+      // frontmatter is ignored to preserve transition-window correctness on
+      // unmigrated notes (legacy ```python keeps lang='python' even when the
+      // user has manually set lc-language to a different value via the
+      // chevron; the fence-tag remains the SSoT until migration runs).
+      return { lang: fenceTag.length > 0 ? fenceTag : null, code };
     }
     i++;
   }
