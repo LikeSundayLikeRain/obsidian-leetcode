@@ -48,19 +48,21 @@ export function showSessionExpiredNotice(
   // CF-04 LOCKED copy — do NOT paraphrase. A trailing space separates copy
   // from the Log in button in the sticky notice. "LeetCode" is a proper-noun
   // brand name (sentence-case rule's brand allowlist permits it).
-  const copy = activeDocument.createSpan();
-
+  //
+  // NOTE: Obsidian's `Node.createSpan/createEl` (enhance.js) creates AND
+  // appends in one call — it's not a pure factory. Calling
+  // `activeDocument.createSpan()` appends to the Document itself, which
+  // throws "Only one element on document allowed". Call the helpers on the
+  // fragment so they append to the fragment instead (Plan 20-10 hotfix).
+  const copy = frag.createSpan();
   copy.textContent = 'LeetCode session expired. Log in again.';
-  frag.appendChild(copy);
 
-  const spacer = activeDocument.createSpan();
+  const spacer = frag.createSpan();
   spacer.textContent = ' ';
-  frag.appendChild(spacer);
 
-  const btn = activeDocument.createEl('button');
+  const btn = frag.createEl('button');
   btn.className = 'leetcode-notice-action mod-cta';
   btn.textContent = 'Log in';
-  frag.appendChild(btn);
 
   // timeout: 0 → sticky (Pitfall 7). User MUST click Log in or close manually.
   const notice = new Notice(frag, 0);

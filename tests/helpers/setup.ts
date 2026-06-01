@@ -141,6 +141,16 @@ if (g.document) {
     doc,
     true,
   );
+  // Phase 20 Plan 20-10 hotfix — Obsidian patches createEl/createDiv/createSpan
+  // onto Node.prototype, so DocumentFragment (and every other Node subtype)
+  // gets them too. Mirror that here in append-mode so source code calling
+  // `frag.createSpan()` builds the fragment in one step.
+  installHelpers(
+    (g.window as unknown as { DocumentFragment: { prototype: DocumentFragment } })
+      .DocumentFragment.prototype as unknown as DomHelperHost & Record<string, unknown>,
+    doc,
+    true,
+  );
   // Expose createDiv / createEl / createSpan as globalThis functions so
   // source modules that call the bare global form (e.g. `createDiv(...)`)
   // — which is how Obsidian injects them on window in production — work in

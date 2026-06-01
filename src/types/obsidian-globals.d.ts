@@ -43,6 +43,13 @@ declare global {
     createSpan(options?: DomCreateOptions | string): HTMLSpanElement;
     }
 
+  // Obsidian patches `createEl` / `createDiv` / `createSpan` onto Node, so
+  // DocumentFragment (which extends Node) gets them too. The native obsidian
+  // typings declare these on Node (obsidian.d.ts:183-191); we mirror that
+  // here so source modules can call e.g. `frag.createSpan()` and have it
+  // append the new element to the fragment in one step.
+  interface Node extends DomCreateHelpers {}
+
   // Same shorthand helpers exist on every Element so chained `parent.createDiv(...)`
   // compiles. Obsidian also exposes `el.empty()` / `el.addClass()` / etc.
   interface HTMLElement extends DomCreateHelpers {

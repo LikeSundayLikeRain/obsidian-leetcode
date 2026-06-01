@@ -374,15 +374,14 @@ function fireSessionExpiredNotice(login: () => void | Promise<void> = () => unde
       // introspect the fragment via the captured arg. See
       // src/solve/SessionExpiredNotice.ts for the matching production shape.
       const frag = createFragment();
-      const copy = activeDocument.createSpan();
-
+      // Obsidian's Node.createSpan/createEl create AND append; call on the
+      // fragment so they append to it, not to the Document (Plan 20-10 hotfix).
+      const copy = frag.createSpan();
       copy.textContent = 'LeetCode session expired. Log in again.';
-      frag.appendChild(copy);
-      const btn = activeDocument.createEl('button');
+      const btn = frag.createEl('button');
       btn.className = 'leetcode-notice-action mod-cta';
       btn.textContent = 'Log in';
       btn.addEventListener('click', () => { void Promise.resolve(login()).catch(() => undefined); });
-      frag.appendChild(btn);
       new Ctor(frag, SESSION_EXPIRED_NOTICE_MS);
       return;
     } catch {
