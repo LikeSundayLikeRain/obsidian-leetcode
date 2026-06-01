@@ -1150,11 +1150,23 @@ export function mountLeetCodeWidget(
     try {
       ctl.metadataChangedRef = plugin.app.metadataCache.on(
         'changed',
-        (changedFile: { path: string }) => {
+        (
+          changedFile: { path: string },
+          _data?: string,
+          cache?: { frontmatter?: Record<string, unknown> },
+        ) => {
           if (changedFile.path !== ctl.file.path) return;
-          const fmFresh = plugin.app.metadataCache.getFileCache(ctl.file)?.frontmatter as
-            | Record<string, unknown>
-            | undefined;
+          // Plan 20-10 hotfix — use the cache passed into the callback (3rd
+          // arg of Obsidian's metadataCache 'changed' signature) rather than
+          // calling getFileCache(ctl.file) afresh. The latter can return the
+          // PRIOR snapshot when the event fires, which produced a one-cycle
+          // lag where the parser kept the previous slug after a chevron
+          // switch and only caught up on the second click.
+          const fmFresh =
+            (cache?.frontmatter as Record<string, unknown> | undefined) ??
+            (plugin.app.metadataCache.getFileCache(ctl.file)?.frontmatter as
+              | Record<string, unknown>
+              | undefined);
           const newSlug =
             typeof fmFresh?.['lc-language'] === 'string' &&
             (fmFresh['lc-language'] as string).length > 0
