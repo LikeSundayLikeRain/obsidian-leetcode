@@ -24,6 +24,7 @@ vi.mock('obsidian', async () => {
 import {
   extractFenceBody,
   rewriteFenceBody,
+  rewriteFenceOpenerTag,
 } from '../../src/widget/fenceSerialization';
 
 // ---------------------------------------------------------------------------
@@ -212,5 +213,155 @@ describe('fence body round-trip property tests — Plan 19-04 expanded corpus (R
       const rewritten = rewriteFenceBody(multiFenceWithNonLC, 0, body);
       expect(rewritten).toBe(multiFenceWithNonLC);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 21 Plan 21-01 — rewriteFenceOpenerTag corpus.
+//
+// Mirrors the shape of the Plan 19-01 baseline corpus: SHELLS_LEGACY ×
+// HOSTILE_BODIES drives a cartesian-product it.each. The legacy shells use
+// recognized langSlugs (python / java / cpp / golang / typescript) so the
+// helper finds the FIRST opener under `## Code` and swaps it to
+// `\`\`\`leetcode-solve` while preserving the body byte-exact.
+// ---------------------------------------------------------------------------
+
+const SHELLS_LEGACY: string[] = [
+  '## Code\n\n```python\n{{BODY}}\n```\n',
+  '## Code\n\n```java\n{{BODY}}\n```\n## Notes\n',
+  // CRLF — every line uses \r\n. Body is interpolated verbatim, so the
+  // template still uses \r\n around the {{BODY}} placeholder.
+  '## Code\r\n\r\n```cpp\r\n{{BODY}}\r\n```\r\n',
+  // With frontmatter prefix.
+  '---\nlc-slug: x\nlc-language: golang\n---\n## Code\n\n```golang\n{{BODY}}\n```\n',
+  // Multi-section: `## Problem` body precedes `## Code`; `## Notes` follows.
+  '## Problem\n\nintro\n\n## Code\n\n```typescript\n{{BODY}}\n```\n## Notes\n',
+];
+
+describe('rewriteFenceOpenerTag — body preservation', () => {
+  type Case = {
+    label: string;
+    shellIdx: number;
+    body: string;
+  };
+
+  const cases: Case[] = [];
+  SHELLS_LEGACY.forEach((_, sIdx) => {
+    HOSTILE_BODIES.forEach((body, bIdx) => {
+      cases.push({
+        label: `legacy shell ${sIdx} body ${bIdx}`,
+        shellIdx: sIdx,
+        body,
+      });
+    });
+  });
+
+  it.each(cases)(
+    '$label — extract+rewrite preserves body byte-exact',
+    ({ shellIdx, body }) => {
+      const file = SHELLS_LEGACY[shellIdx]!.replace('{{BODY}}', body);
+      const rewritten = rewriteFenceOpenerTag(file, 'leetcode-solve');
+
+      // Invariant 1: body byte-exact via extractFenceBody (which now finds
+      // the leetcode-solve fence at index 0 in the rewritten output).
+      expect(extractFenceBody(rewritten, 0)).toBe(body);
+
+      // Invariant 2: idempotent on second call.
+      const rewrittenTwice = rewriteFenceOpenerTag(rewritten, 'leetcode-solve');
+      expect(rewrittenTwice).toBe(rewritten);
+    },
+  );
+
+  it.each(cases)(
+    '$label — non-fence-opener portion unchanged byte-exact',
+    ({ shellIdx, body }) => {
+      const file = SHELLS_LEGACY[shellIdx]!.replace('{{BODY}}', body);
+      const rewritten = rewriteFenceOpenerTag(file, 'leetcode-solve');
+
+      // Invariant 3: split file at the opener line — prefix + suffix unchanged.
+      // We locate the opener in BOTH files via the first `\`\`\`` line under
+      // `## Code` and assert prefix + suffix lines are byte-equal.
+      const splitAtOpener = (s: string): { prefix: string; openerLine: string; suffix: string } => {
+        // Walk through char-by-char tracking line boundaries because the file
+        // may contain CRLF and we must preserve EOL bytes in the prefix/suffix
+        // splits. Find the first `\`\`\`` line that appears AFTER a `## Code`
+        // heading line.
+        let inCodeSection = false;
+        let lineStart = 0;
+        for (let i = 0; i <= s.length; i++) {
+          const isEol = i === s.length || s[i] === '\n';
+          if (!isEol) continue;
+          // Determine the line content (excluding the trailing eol bytes).
+          let lineEnd = i;
+          if (lineEnd > lineStart && s[lineEnd - 1] === '\r') lineEnd -= 1;
+          const lineText = s.slice(lineStart, lineEnd);
+          // Match patterns.
+          if (/^\s*##\s+Code\s*$/.test(lineText)) {
+            inCodeSection = true;
+          } else if (/^\s*##\s+\S/.test(lineText)) {
+            inCodeSection = false;
+          } else if (inCodeSection && /^\s*```/.test(lineText)) {
+            // Found the opener. Compute the line text (no eol) AND the
+            // following eol bytes (\n or \r\n).
+            const lineWithEol = s.slice(lineStart, i + 1);
+            return {
+              prefix: s.slice(0, lineStart),
+              openerLine: lineWithEol,
+              suffix: s.slice(i + 1),
+            };
+          }
+          lineStart = i + 1;
+        }
+        return { prefix: s, openerLine: '', suffix: '' };
+      };
+
+      const before = splitAtOpener(file);
+      const after = splitAtOpener(rewritten);
+      expect(after.prefix).toBe(before.prefix);
+      expect(after.suffix).toBe(before.suffix);
+      // The opener line MUST have changed bytes (langSlug → leetcode-solve).
+      expect(after.openerLine).not.toBe(before.openerLine);
+      // The opener content should be `\`\`\`leetcode-solve` followed by the
+      // ORIGINAL eol bytes captured above.
+      const eolMatch = before.openerLine.match(/(\r?\n)$/);
+      const eol = eolMatch ? eolMatch[1] : '';
+      expect(after.openerLine).toBe('```leetcode-solve' + eol);
+    },
+  );
+
+  // Spot-check the manual byte-exact case from the acceptance criterion.
+  it('manual spot-check: python opener swaps to leetcode-solve preserving body', () => {
+    const input = '## Code\n\n```python\ndef f():\n    return 1\n```\n';
+    const expected = '## Code\n\n```leetcode-solve\ndef f():\n    return 1\n```\n';
+    expect(rewriteFenceOpenerTag(input, 'leetcode-solve')).toBe(expected);
+  });
+
+  it('idempotency spot-check: already-leetcode-solve input returns unchanged', () => {
+    const input = '## Code\n\n```leetcode-solve\nx\n```\n';
+    expect(rewriteFenceOpenerTag(input, 'leetcode-solve')).toBe(input);
+  });
+
+  // Permissiveness: the helper is permissive on miss (caller's strict-match
+  // predicate is the gate). Returning input unchanged on miss keeps the
+  // helper safe to call on arbitrary text.
+  it('no `## Code` heading — returns input unchanged', () => {
+    const input = '## Notes\n\n```python\nx\n```\n';
+    expect(rewriteFenceOpenerTag(input, 'leetcode-solve')).toBe(input);
+  });
+
+  it('`## Code` heading but no fence inside — returns input unchanged', () => {
+    const input = '## Code\n\nno fence\n## Notes\n';
+    expect(rewriteFenceOpenerTag(input, 'leetcode-solve')).toBe(input);
+  });
+
+  it('section boundary — fence inside `## Notes`, not `## Code` — returns input unchanged', () => {
+    const input = '## Code\n\nplain prose\n## Notes\n\n```python\nx\n```\n';
+    expect(rewriteFenceOpenerTag(input, 'leetcode-solve')).toBe(input);
+  });
+
+  it('CRLF input round-trips with CRLF preserved per-line', () => {
+    const input = '## Code\r\n\r\n```python\r\nbody\r\n```\r\n';
+    const expected = '## Code\r\n\r\n```leetcode-solve\r\nbody\r\n```\r\n';
+    expect(rewriteFenceOpenerTag(input, 'leetcode-solve')).toBe(expected);
   });
 });
