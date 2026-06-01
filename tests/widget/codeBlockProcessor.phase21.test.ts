@@ -154,7 +154,8 @@ describe('Phase 21 mount-path migration', () => {
 
     // Migration was attempted with autoMigrateOnOpen=true.
     expect(migrateSpy).toHaveBeenCalledTimes(1);
-    const opts = migrateSpy.mock.calls[0]![2] as { autoMigrateOnOpen?: boolean; defaultLanguage?: string };
+    const call = migrateSpy.mock.calls[0] as unknown as unknown[];
+    const opts = call[2] as { autoMigrateOnOpen?: boolean; defaultLanguage?: string };
     expect(opts.autoMigrateOnOpen).toBe(true);
     expect(opts.defaultLanguage).toBe('python3');
     // Banner was NOT mounted (auto path silent).
@@ -188,7 +189,7 @@ describe('Phase 21 mount-path migration', () => {
     expect(candidateSpy).toHaveBeenCalledTimes(1);
     // Banner mounted.
     expect(bannerSpy).toHaveBeenCalledTimes(1);
-    const args = bannerSpy.mock.calls[0]!;
+    const args = bannerSpy.mock.calls[0] as unknown as unknown[];
     expect(args[0]).toBe(el); // host
     expect(args[1]).toBe(V12_SOURCE); // source
     // mode argument — manual-prompt for autoMigrateOnOpen=OFF Reading path.

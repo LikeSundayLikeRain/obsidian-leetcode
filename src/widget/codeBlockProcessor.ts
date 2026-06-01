@@ -26,12 +26,30 @@ import {
 } from 'obsidian';
 import { isEmbedContext } from './embedDetect';
 import { LeetCodeWidgetRenderChild, type WidgetMountHost } from './WidgetController';
+// Phase 21 Plan 21-02 Task 3 — pre-mount migration gate (D-trigger-01).
+// Reading-mode handler awaits migrateLegacyFenceIfNeeded BEFORE constructing
+// the widget so the v1.2 → v1.3 fence rewrite happens in the same render
+// frame the user is already waiting on. autoMigrateOnOpen=OFF surfaces the
+// legacyFenceBanner with a [Migrate now] CTA (D-auto-02). Master gate
+// useInlineWidget=ON is consulted at every call site (L9).
+import {
+  isMigrationCandidate,
+  migrateLegacyFenceIfNeeded,
+} from './fenceMigrator';
+import { mountLegacyFenceBanner } from './legacyFenceBanner';
 
 type ProcessorHost = Plugin & WidgetMountHost & {
   app: WidgetMountHost['app'] & {
     vault: WidgetMountHost['app']['vault'] & {
       getAbstractFileByPath(path: string): unknown;
     };
+  };
+  // Phase 21 — settings access for the master gate + auto-migrate gate +
+  // user's defaultLanguage (threaded into the migrator for D-edge-03 fill).
+  settings: WidgetMountHost['settings'] & {
+    getUseInlineWidget?(): boolean;
+    getAutoMigrateOnOpen?(): boolean;
+    getDefaultLanguage?(): string;
   };
 };
 
@@ -75,11 +93,11 @@ function renderStaticFallback(el: HTMLElement, source: string): void {
  * and routes to either a render child (CM6 widget mount) or a static fallback.
  */
 export function leetCodeBlockProcessor(plugin: ProcessorHost) {
-  return (
+  return async (
     source: string,
     el: HTMLElement,
     ctx: MarkdownPostProcessorContext,
-  ): void => {
+  ): Promise<void> => {
     // Resolve TFile from sourcePath. Non-TFile (broken path, missing file)
     // routes to static fallback — never throws.
     const fileLike = plugin.app.vault.getAbstractFileByPath(ctx.sourcePath);
@@ -98,6 +116,82 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
       | undefined;
     const lcSlug = fm?.['lc-slug'];
     const hasLcSlug = typeof lcSlug === 'string' && lcSlug.length > 0;
+
+    // Phase 21 Plan 21-02 Task 3 — pre-mount migration gate. Runs BEFORE
+    // the existing embed/RenderChild dispatch. Two paths gated on the
+    // useInlineWidget master toggle (L9):
+    //
+    //   - autoMigrateOnOpen=ON  → silently awaits migrateLegacyFenceIfNeeded.
+    //                             If migration ran, return early; the
+    //                             vault.on('modify') event re-fires the
+    //                             post-processor on the rewritten fence and
+    //                             the v1.3 widget mounts in that cycle.
+    //   - autoMigrateOnOpen=OFF → renders the legacyFenceBanner with the
+    //                             [Migrate now] CTA when the strict-match
+    //                             predicate accepts the source. Click
+    //                             handler dispatches with force: true.
+    //
+    // Gates self-return; otherwise the existing path (embed / lc-slug)
+    // continues unchanged. Defensive try/catch wraps the await — migration
+    // must NOT block file open (Pattern S-05 silent-on-failure).
+    //
+    // settings may be undefined in test fixtures that exercise mount-only
+    // paths; when absent, skip both Phase 21 gates and let the existing
+    // path apply (matches L9 — useInlineWidget=OFF behavior).
+    const settings = plugin.settings;
+    if (
+      hasLcSlug &&
+      settings?.getUseInlineWidget?.() === true &&
+      settings?.getAutoMigrateOnOpen?.() === true
+    ) {
+      try {
+        const migrated = await migrateLegacyFenceIfNeeded(
+          plugin.app as Parameters<typeof migrateLegacyFenceIfNeeded>[0],
+          file,
+          {
+            autoMigrateOnOpen: true,
+            defaultLanguage:
+              settings?.getDefaultLanguage?.() ?? 'python3',
+          },
+        );
+        if (migrated) {
+          // vault.on('modify') will trigger a fresh post-processor invocation
+          // that mounts the v1.3 widget on the rewritten leetcode-solve
+          // fence. This invocation has no further work — render a static
+          // intermediate so the user never sees a "no widget" frame.
+          renderStaticFallback(el, source);
+          return;
+        }
+      } catch {
+        // Defensive — migration failures fall through to the existing path.
+      }
+    }
+    if (
+      hasLcSlug &&
+      settings?.getUseInlineWidget?.() === true &&
+      settings?.getAutoMigrateOnOpen?.() !== true
+    ) {
+      // The strict-match predicate consults the FULL note text (it walks
+      // for `## Code` heading + recognized langSlug fence). The post-
+      // processor receives only the fence body in `source`; pull the full
+      // note from ctx.getSectionInfo(el)?.text. When section info is null
+      // (degenerate path), skip the banner — the existing render-child
+      // logic below handles the embed/no-info cases gracefully.
+      const sectionText = ctx.getSectionInfo(el)?.text;
+      if (
+        typeof sectionText === 'string' &&
+        isMigrationCandidate(sectionText, fm)
+      ) {
+        mountLegacyFenceBanner(
+          el,
+          source,
+          file,
+          plugin as Parameters<typeof mountLegacyFenceBanner>[3],
+          'manual-prompt',
+        );
+        return;
+      }
+    }
 
     // Pitfall 19-D: getSectionInfo(el) returns null in many embed contexts.
     // Plan 19-04 — pass `info` (which may be null) to isEmbedContext as the

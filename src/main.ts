@@ -104,6 +104,10 @@ import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorEx
 // `./main/codeActionsEditorExtension` (different module, different SSoT
 // scope) and is unchanged.
 import { countLeetCodeSolveFenceOpeners } from './widget/fenceLocator';
+// Phase 21 Plan 21-02 Task 3 — command palette entry `Migrate current note`
+// dispatches the v1.2 → v1.3 migration with force: true (D-auto-03 escape
+// hatch). Gated via editorCheckCallback on useInlineWidget=ON + lc-slug.
+import { migrateLegacyFenceIfNeeded } from './widget/fenceMigrator';
 // Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment.
 // `switchFenceLanguage` dispatches a Compartment.reconfigure on the child
 // (when present) immediately after the parent CM6 dispatch, so the child's
@@ -685,6 +689,39 @@ export default class LeetCodePlugin extends Plugin {
         if (!isValidSlug(slug)) return false;
         if (!checking) {
           void this.refreshProblem(slug);
+        }
+        return true;
+      },
+    });
+
+    // Phase 21 Plan 21-02 Task 3 — D-auto-03 keyboard escape hatch. Registered
+    // UNCONDITIONALLY (visible regardless of autoMigrateOnOpen); the
+    // editorCheckCallback self-gates on useInlineWidget=ON + lc-slug presence.
+    // Plugin-store rules per main.ts:580-584: id does NOT contain 'leetcode'
+    // or 'command'; name is sentence case and does NOT start with the plugin
+    // name; NO `hotkeys` field. Dispatches with force: true (bypasses the
+    // autoMigrateOnOpen setting per D-auto-03).
+    this.addCommand({
+      id: 'migrate-current-note',
+      name: 'Migrate current note',
+      editorCheckCallback: (checking, _editor, view) => {
+        const file = view.file;
+        if (!file) return false;
+        if (!this.settings.getUseInlineWidget()) return false;
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm: Record<string, unknown> | undefined = cache?.frontmatter;
+        const slug = fm?.['lc-slug'];
+        if (!isValidSlug(slug)) return false;
+        if (!checking) {
+          void migrateLegacyFenceIfNeeded(this.app, file, {
+            force: true,
+            autoMigrateOnOpen: true,
+            defaultLanguage:
+              this.settings.getDefaultLanguage?.() ?? 'python3',
+          }).catch(() => {
+            // Defensive — silent on failure; user retries via the command
+            // palette or via the manual-prompt banner click handler.
+          });
         }
         return true;
       },

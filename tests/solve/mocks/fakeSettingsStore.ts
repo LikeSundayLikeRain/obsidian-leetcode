@@ -55,6 +55,9 @@ export interface FakeSettings {
   // Phase 19 C-06 — debounced widget writer delay (5 options).
   getWidgetSyncDebounceMs(): 300 | 400 | 500 | 1000 | 2000;
   setWidgetSyncDebounceMs(v: 300 | 400 | 500 | 1000 | 2000): Promise<void>;
+  // Phase 21 MIGRATE-06 — auto-migrate v1.2 notes on open.
+  getAutoMigrateOnOpen(): boolean;
+  setAutoMigrateOnOpen(v: boolean): Promise<void>;
 }
 
 /** Optional seed values for `makeFakeSettingsStore`. Any field left undefined
@@ -197,6 +200,13 @@ export function makeFakeSettingsStore(overrides: FakeSettingsOverrides = {}): Fa
       return 400 as const;
     },
     async setWidgetSyncDebounceMs(_v: 300 | 400 | 500 | 1000 | 2000) {
+      // no-op in fake
+    },
+    // Phase 21 MIGRATE-06 — auto-migrate setting. Default true mirrors prod.
+    getAutoMigrateOnOpen() {
+      return true;
+    },
+    async setAutoMigrateOnOpen(_v: boolean) {
       // no-op in fake
     },
   };
