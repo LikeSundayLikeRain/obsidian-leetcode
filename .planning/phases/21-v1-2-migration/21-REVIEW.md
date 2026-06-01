@@ -1,396 +1,369 @@
 ---
 phase: 21-v1-2-migration
-reviewed: 2026-06-01T00:00:00Z
-depth: standard
-files_reviewed: 16
+reviewed: 2026-06-01T18:00:00Z
+depth: deep
+files_reviewed: 19
 files_reviewed_list:
-  - src/widget/fenceMigrator.ts
-  - src/widget/fenceSerialization.ts
-  - src/widget/legacyFenceBanner.ts
-  - src/widget/codeBlockProcessor.ts
-  - src/widget/liveModeViewPlugin.ts
-  - src/widget/migrationBackupGc.ts
-  - src/settings/SettingsStore.ts
-  - src/settings/SettingsTab.ts
-  - src/solve/codeExtractor.ts
-  - src/solve/starterCodeInjector.ts
-  - src/solve/submissionOrchestrator.ts
-  - src/notes/NoteTemplate.ts
-  - src/notes/NoteWriter.ts
-  - src/contest/ContestFinalizer.ts
-  - src/graph/KnowledgeGraphWriter.ts
   - src/main.ts
+  - src/main/readingModeLegacyBannerPostProcessor.ts
+  - src/main/readingModeMigrationHook.ts
+  - src/notes/NoteWriter.ts
+  - src/solve/starterCodeInjector.ts
+  - src/widget/codeBlockProcessor.ts
+  - src/widget/fenceMigrator.ts
+  - src/widget/liveModeBannerStateField.ts
+  - src/widget/liveModeViewPlugin.ts
+  - src/widget/multiPaneCoordinator.ts
+  - src/widget/WidgetController.ts
+  - tests/main/readingModeLegacyBannerPostProcessor.test.ts
+  - tests/main/readingModeMigrationTrigger.test.ts
+  - tests/notes/NoteWriter.starter-retrofit.test.ts
+  - tests/solve/starterCodeInjector.test.ts
+  - tests/widget/codeBlockProcessor.phase21.test.ts
+  - tests/widget/fenceMigrator.test.ts
+  - tests/widget/liveModeBannerStateField.test.ts
+  - tests/widget/multiPaneCoordinator.test.ts
 findings:
-  critical: 4
-  warning: 9
+  critical: 2
+  warning: 7
   info: 4
-  total: 17
+  total: 13
 status: issues_found
 ---
 
-# Phase 21: Code Review Report
+# Phase 21: Code Review Report (Gap-Closure Plans 21-08..21-13)
 
-**Reviewed:** 2026-06-01
-**Depth:** standard
-**Files Reviewed:** 16
+**Reviewed:** 2026-06-01T18:00:00Z
+**Depth:** deep
+**Files Reviewed:** 19
 **Status:** issues_found
 
 ## Summary
 
-Phase 21 implements v1.2 → v1.3 lazy-on-open fence migration. The change set is substantial: a new pure migrator (`fenceMigrator.ts`), a banner DOM module (`legacyFenceBanner.ts`), a fire-and-forget GC sweep (`migrationBackupGc.ts`), three-branch dispatch in `codeExtractor`, and threading of `frontmatter` arg + `useInlineWidget` gate through 6 consumer call sites.
+Gap-closure plans 21-08..21-13 target six post-UAT findings (Reading-mode rerender after auto-migration, frontmatter auto-repair, Reading-mode legacy banner post-processor, Live-Preview StateField migration of `Decoration.replace`, multi-pane `reconcileFocus` null-leaf branch + `promoteThisPane` self-recover, retrofit fence dedup gate). The diff is well-tested overall (~150 new test cases across the 7 new test files), and the project conventions are honored: no `innerHTML`, vault writes via `app.vault.process` / `app.fileManager.processFrontMatter`, no plugin CM6 dispatch into locked ranges that lacks a `'leetcode.*'` userEvent.
 
-The body byte-exactness pipeline (rewriteFenceOpenerTag + splitPreservingEols) appears solid and is property-tested. The settings shape-guards continue the project's strict-equality posture. However, several real defects exist:
+The two **Critical** findings are correctness regressions the unit tests don't catch:
 
-- **Reading-mode entry point gap (BLOCKER):** `registerMarkdownCodeBlockProcessor('leetcode-solve', …)` only fires for `leetcode-solve` fences. Legacy v1.2 notes (with `\`\`\`python` etc.) opened in Reading mode never invoke `migrateLegacyFenceIfNeeded` because the registered handler is for the post-migration tag. There is no Reading-mode migration trigger; only Live Preview's view plugin detects `kind === 'legacy'`. This contradicts the comment in the codeBlockProcessor pre-mount-gate header ("Reading-mode handler awaits migrateLegacyFenceIfNeeded BEFORE constructing the widget") and leaves Reading-mode v1.2 users with no migration unless they switch panes.
-- **Backup atomicity gap (BLOCKER):** `migrateLegacyFenceIfNeeded` calls `writeBackup` then `vault.process`. If `vault.process` throws AFTER the backup succeeds but BEFORE/DURING the body rewrite, the next file-open re-runs the orchestrator and writes a SECOND backup folder (different ISO suffix). D-backup-02 says "one backup per note ever" — this guarantee is violated on retry after partial failure.
-- **`legacyFenceBanner.ts` `manual-prompt` branch missing host empty-before-render (BLOCKER):** the function calls `empty(host)` once at top, then `mk(host, 'div', …)` to add the banner, then `renderReadOnly(host, source)` which DOES NOT empty `host` again. So the banner div + `<pre><code>` source are siblings — fine. BUT: `renderReadOnly` reads `(host as { createEl?: … }).createEl`. After the createEl exists, it calls `ce.call(host, 'pre')` then `(pre).createEl('code', …)`. If host has `createEl` but the returned `pre` instance is a happy-dom or non-Obsidian element without `createEl`, the chained call throws — and the unhandled exception inside the post-processor surfaces in the user's notes pane.
-- **Backup GC `BACKUP_FOLDER_RE` is greedy (BLOCKER):** `^migration-backup-(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$`. The `(.+)` is greedy. If a future folder shape adds a literal `-2026-...` suffix to a non-backup folder, it could match. More immediately — this regex captures group 1 = slug. Slugs in the wild may contain `-2026-…-style` substrings (e.g., a slug `foo-2026-01-01T12-34-56Zsomething`), but realistic LC slugs are kebab-case alphanumerics, so this is mostly theoretical. The deeper concern: `Date.parse(parseSanitizedIso('YYYY-MM-DDTHH-MM-SSZ'))` — the regex `T(\d{2})-(\d{2})-(\d{2})Z$` succeeds for any matching tail; if a slug ends in a substring matching the full regex's group 2 capture (e.g., a malicious or accidentally-named folder), TTL math could delete the folder.
+1. **CR-01** — `repairInFlight` is documented as a cross-mode dedupe Set but only the Live-Preview StateField mutates it; the Reading-mode hook fires `repair` without claiming the lock, so a Reading-pane + LP-pane combo can fire two concurrent `processFrontMatter` calls on the same file.
+2. **CR-02** — `readingModeLegacyBannerPostProcessor` performs `pre.replaceWith(host)` BEFORE `mountLegacyFenceBanner`. If banner mount throws after the replace, the original `<pre>` is gone and the user sees a blank gap. Test 12 only forces `replaceWith` itself to throw, not the post-replace mount path.
 
-In addition there are 9 warnings and 4 info items — most concerning the silent-failure posture, race-stale frontmatter reads, and module-level state that persists across plugin reloads.
+The seven **Warning** findings cover: StateField side-effects firing on every `tr.docChanged` rather than first-mount; missing destroyed-view check in `pushParentToChild`; the `liveModeBannerStateField` repair side-effect violating CM6's "StateField update should be pure" contract; redundant `getUseInlineWidget` reads in `NoteWriter.retrofitStarterCode` exposing a settings-toggle race; multi-`## Code` corner-case behavior of `findFirstLeetCodeSolveFenceIndexInCodeSection` that is correct but undocumented and untested; and full-registry `O(N)` filter in `LeetCodeWidgetRenderChild.onload`.
 
 ## Critical Issues
 
-### CR-01: Reading mode never invokes migration trigger for legacy v1.2 notes
+### CR-01: `repairInFlight` cross-mode dedupe is documented but only the Live-Preview path mutates the Set
 
-**File:** `src/widget/codeBlockProcessor.ts:95-194`, `src/main.ts:1042` (`registerMarkdownCodeBlockProcessor('leetcode-solve', …)`)
-**Issue:** The migration-gate code in `codeBlockProcessor.ts:142-194` runs inside the handler registered for the `leetcode-solve` fence tag. Legacy v1.2 notes carry `\`\`\`python`, `\`\`\`java`, etc. — NOT `\`\`\`leetcode-solve` — so this handler is NEVER invoked on a v1.2 legacy note in Reading mode. The migration-trigger code is therefore dead in Reading mode, and the file header comment ("Reading-mode handler awaits migrateLegacyFenceIfNeeded BEFORE constructing the widget so the v1.2 → v1.3 fence rewrite happens in the same render frame") is misleading.
-
-The only actual Reading-mode user surface for a legacy note is Obsidian's stock `\`\`\`python` syntax-highlighted block — which has no migration prompt. The user must switch to Live Preview to trigger migration. CONTEXT D-trigger-01 acknowledges Live Preview as a fallback ("Reading mode is the user-visible primary surface for legacy notes"), but Reading mode currently has NO surface at all.
-
-**Fix:** Either:
-1. Register additional code-block processors for the recognized LC langSlug fence tags (`python`, `java`, `cpp`, `golang`, …) that gate on `lc-slug` frontmatter and route legacy LC notes through `mountLegacyFenceBanner` / `migrateLegacyFenceIfNeeded`.
-2. Add a `vault.on('file-open')` or `workspace.on('file-open')` handler that calls `migrateLegacyFenceIfNeeded` for any TFile whose frontmatter has `lc-slug`. This is the simplest fix and matches L5 ("Lazy-on-first-open only").
-3. Update the header comment + CONTEXT to acknowledge "Reading-mode auto-migration is intentionally NOT supported in v1.3; the user must switch to Live Preview or invoke the palette command" — and verify this is the intended design (it conflicts with the explicit MIGRATE-06 default ON contract).
-
-```typescript
-// Option 2 — file-open hook in main.ts onload():
-this.registerEvent(
-  this.app.workspace.on('file-open', (file) => {
-    if (!file || !this.settings.getUseInlineWidget()) return;
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-    if (typeof fm?.['lc-slug'] !== 'string') return;
-    void migrateLegacyFenceIfNeeded(this.app, file, {
-      autoMigrateOnOpen: this.settings.getAutoMigrateOnOpen(),
-      defaultLanguage: this.settings.getDefaultLanguage(),
-    });
-  }),
-);
-```
-
-### CR-02: Double-backup on retry after partial migration failure violates D-backup-02
-
-**File:** `src/widget/fenceMigrator.ts:240-308`
-**Issue:** D-backup-02 states "one backup per note ever; idempotency short-circuits before the backup writer runs on subsequent re-opens." The orchestrator pipeline is:
-
-1. read text + fm
-2. `isMigrationCandidate(text, fm)` — checks `countLeetCodeSolveFenceOpeners > 0` for idempotency
-3. `writeBackup(...)` — writes `.obsidian/plugins/obsidian-leetcode/migration-backup-{slug}-{ISO}/`
-4. `vault.process(...)` — rewrites the opener
-5. `processFrontMatter(...)` — fills lc-language
-
-If step 4 throws (vault locked, I/O error, plugin reload mid-write), the catch in step 5 wraps the orchestrator and returns false. On the NEXT file open:
-- Step 1: re-reads text (still has legacy fence — step 4 never landed)
-- Step 2: `countLeetCodeSolveFenceOpeners > 0`? NO (rewrite never ran)
-- `isMigrationCandidate` returns true again
-- Step 3: writes a SECOND backup with a DIFFERENT ISO timestamp
-- Step 4: this time succeeds
-
-Result: two backup folders for the same note. Storage waste is minor; the contract violation matters because Phase 22 cleanup may rely on D-backup-02's "one backup per note" invariant for safe deletion logic. The 30-day GC saves us eventually but not before the user sees `migration-backup-{slug}-T1` AND `migration-backup-{slug}-T2`.
-
-**Fix:** Guard the backup writer with a pre-existence check on the backup folder shape:
-
-```typescript
-// Inside writeBackup or migrateLegacyFenceIfNeeded:
-async function backupAlreadyExistsForSlug(app: App, slug: string): Promise<boolean> {
-  try {
-    const listing = await app.vault.adapter.list('.obsidian/plugins/obsidian-leetcode');
-    const re = new RegExp(`^migration-backup-${escape(slug)}-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}Z$`);
-    return (listing.folders ?? []).some((f) => re.test(f.split('/').pop() ?? ''));
-  } catch { return false; }
-}
-
-// In migrateLegacyFenceIfNeeded:
-if (!(await backupAlreadyExistsForSlug(app, slug))) {
-  await writeBackup(app, file, slug, text);
-}
-```
-
-Alternatively: explicit one-shot persisted flag in plugin data (`migrationBackedUpSlugs: Set<string>`) checked & set inside the same atomic flow.
-
-### CR-03: Greedy slug capture in BACKUP_FOLDER_RE permits TTL deletion of foreign folders
-
-**File:** `src/widget/migrationBackupGc.ts:55-56`
-**Issue:** `^migration-backup-(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$`. `(.+)` is greedy. Any future plugin-internal folder named e.g. `migration-backup-something-2026-01-01T12-00-00Z` (regardless of whether it was created by this plugin) is matched, parsed, and TTL-deleted via `rmdir(path, true)` (recursive=true, line 135). Although the prefix `migration-backup-` is somewhat distinctive, NOTHING in the regex enforces that the slug portion conforms to LC slug shape (kebab-case alphanumeric, no `-{4 digits}-`). The phase context flag explicitly called out "false positives risk deleting non-backup folders under `.obsidian/plugins/obsidian-leetcode/`" — this regex provides only weak protection.
-
-A second concern: `parseSanitizedIso(captured)` uses `.replace(/T(\d{2})-(\d{2})-(\d{2})Z$/, 'T$1:$2:$3Z')`. If `captured` is malformed (e.g., adapter returned a path with a different time format), the replace silently no-ops and `Date.parse` returns NaN → skipped. SAFE for THAT path. But the OUTER regex permits the slug (`group 1`) to itself contain a `\d{4}-\d{2}-\d{2}T...` pattern; greedy `.+` would still match the LAST `-\d{4}-…Z$` suffix. That's the behavior we want, but requires careful slug shape constraints.
-
-**Fix:** Tighten the slug character class:
-
-```typescript
-// Restrict slug to LC-shape kebab-case alphanumerics:
-const BACKUP_FOLDER_RE =
-  /^migration-backup-([a-z0-9][a-z0-9-]*[a-z0-9])-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$/;
-```
-
-LC slugs match `[a-z0-9-]+` per leetcode.com convention. Reject anything outside that. Tests should add a fixture like `migration-backup-foo-bar-baz-2026-01-01T00-00-00Z` (multi-segment slug) to confirm the tighter regex still matches valid backups.
-
-### CR-04: `legacyFenceBanner.renderReadOnly` chains `.createEl` on a returned `pre` without checking it exists
-
-**File:** `src/widget/legacyFenceBanner.ts:97-109`
+**File:** `src/main/readingModeMigrationHook.ts:160-200`, `src/main.ts:357`, `src/widget/liveModeBannerStateField.ts:297-314`
 **Issue:**
+The `LeetCodePlugin` instance owns two dedupe Sets — `migrateInFlight` (line 347 in `main.ts`) and `repairInFlight` (line 357). Plan 21-09's design comment at `liveModeBannerStateField.ts:282-285` documents `repairInFlight` as the dedupe gate for the frontmatter-repair path, and the Live-Preview StateField correctly adds/deletes entries (lines 299, 313).
 
-```typescript
-function renderReadOnly(host: HTMLElement, source: string): void {
-  const ce = (host as unknown as { createEl?: CreateElFn }).createEl;
-  if (typeof ce === 'function') {
-    const pre = ce.call(host, 'pre');
-    (pre as unknown as { createEl: CreateElFn }).createEl('code', { text: source });
-    return;
-  }
-  // ...happy-dom fallback
-}
-```
+The Reading-mode hook factory (`makeReadingModeMigrationHandler`) accepts only `migrateInFlight` (interface line 50, gate at 132 and 139). The hook invokes `deps.repair(...)` on line 173 with NO repair-side dedupe — neither claim nor release. So when a user opens a v1.3-body+missing-lc-language note in a workspace with both a Reading-mode pane and a Live-Preview pane visible, both paths can call `processFrontMatter` concurrently for the same file. The inner gate inside `repairFrontmatterIfNeeded` (clause C5: only assign when `lc-language` is empty) prevents data clobber, but the documented invariant ("dedupe Set shared between consumers") is silently violated.
 
-The function checks `host.createEl` exists before using it, but assumes the returned `pre` element ALSO exposes `createEl`. In Obsidian's runtime this is true (HTMLElement.prototype is patched globally). However:
-
-1. `ce.call(host, 'pre')` could return undefined if the createEl shim is non-Obsidian (legitimate runtime in tests / popup windows / iframes where Obsidian's prototype patch hasn't fired yet).
-2. Calling `.createEl` on undefined throws `TypeError: Cannot read properties of undefined`.
-3. This exception is NOT caught — it propagates out of `mountLegacyFenceBanner`, which is called from `mountLegacyFenceBanner(...)` in `codeBlockProcessor.ts:185-191` (no try/catch wrap) and `liveModeViewPlugin.ts:91-97` (inside `toDOM`, also no try/catch). A throw in `toDOM` from a CM6 widget BREAKS the editor render cycle — the user sees a broken pane.
-
-Also, `mountLegacyFenceBanner` itself has no top-level try/catch — only `runMigrate`'s click handler does. An exception during `mk(banner, 'p', …)` or `renderReadOnly(host, …)` crashes the post-processor.
+The 21-VERIFICATION trail and the test suite do not exercise the cross-mode race because each test file mocks the other mode away. The next reviewer (or the Phase 22 author tearing out v1.2 scaffolding) will read the JSDoc, trust it, and miss the race.
 
 **Fix:**
+Thread `repairInFlight` into `ReadingModeMigrationHookDeps` and gate the repair call symmetrically with `migrateInFlight`:
 
-```typescript
-function renderReadOnly(host: HTMLElement, source: string): void {
-  const ce = (host as unknown as { createEl?: CreateElFn }).createEl;
-  if (typeof ce === 'function') {
-    const pre = ce.call(host, 'pre');
-    const preCe = (pre as unknown as { createEl?: CreateElFn })?.createEl;
-    if (typeof preCe === 'function') {
-      preCe.call(pre, 'code', { text: source });
-      return;
-    }
-    // pre lacks createEl — fall through to manual text content
-    pre.textContent = source;
-    return;
-  }
-  // ...happy-dom fallback (unchanged)
+```ts
+// src/main/readingModeMigrationHook.ts
+export interface ReadingModeMigrationHookDeps {
+  // ...existing fields...
+  /** Plan 21-09 — sibling dedupe Set for repair path. Mirrors migrateInFlight. */
+  repairInFlight: Set<string>;
 }
 
-// Wrap the entry point:
-export function mountLegacyFenceBanner(host, source, file, plugin, mode) {
+// inside the .then() that invokes repair (replacing line 173-177):
+.then(async (migrated) => {
+  migratedFlag = migrated === true;
+  if (migratedFlag) return;
+  if (deps.repairInFlight.has(file.path)) return;
+  deps.repairInFlight.add(file.path);
   try {
-    empty(host);
-    // ... existing body
-  } catch (err) {
-    logger.debug('migration.legacyFenceBanner: mount failed', err);
-    // best-effort plain-text fallback
-    try { host.textContent = source; } catch { /* */ }
+    const repaired = await deps.repair(deps.app, file, {
+      autoMigrateOnOpen: true,
+      defaultLanguage,
+    });
+    repairedFlag = repaired === true;
+  } finally {
+    deps.repairInFlight.delete(file.path);
   }
-}
+})
 ```
+
+Then in `src/main.ts:1576-1602`, pass `repairInFlight: this.repairInFlight` into the deps object.
+
+### CR-02: Reading-mode legacy banner post-processor irreversibly mutates the DOM before banner mount
+
+**File:** `src/main/readingModeLegacyBannerPostProcessor.ts:200-204`
+**Issue:**
+The handler executes:
+
+```ts
+const ownerDoc = target.pre.ownerDocument;
+const host = ownerDoc.createElement('div');
+host.classList.add('leetcode-migration-banner-host');
+target.pre.replaceWith(host);                       // ← original <pre> is now detached
+mountLegacyFenceBanner(host, source, file, plugin as never, 'manual-prompt');
+```
+
+The outer try/catch at line 99-108 logs at debug and returns — so when `mountLegacyFenceBanner` throws AFTER `replaceWith` has already executed, the user is left with an empty `<div class="leetcode-migration-banner-host">` in place of their rendered code block. There is no recovery: the `<pre>` is detached and not retained by the function, the silent-on-failure log gives no surface to the user, and the next paint shows a blank gap.
+
+`mountLegacyFenceBanner` is non-trivial DOM construction (CTAs, icon glyphs, click handlers, label text); throws can come from any of `createEl`, `setIcon`, or click-handler closure capture. Test 12 in `tests/main/readingModeLegacyBannerPostProcessor.test.ts:525-549` only forces `replaceWith` itself to throw — it does NOT cover the post-replace banner-mount throw path, so the regression hides.
+
+The CLAUDE.md "Pattern S-05 silent-on-failure" intent is "leave the rendered DOM untouched" — line 46 of `readingModeLegacyBannerPostProcessor.ts` describes the intent verbatim. The implementation's order-of-operations betrays the intent: the moment `replaceWith` runs, the DOM IS touched.
+
+**Fix:**
+Mount the banner into the detached host BEFORE attaching to the document. If banner mount throws, the original `<pre>` stays in place:
+
+```ts
+const host = ownerDoc.createElement('div');
+host.classList.add('leetcode-migration-banner-host');
+// Mount banner FIRST into the detached host. Throws here leave the
+// rendered <pre> intact in the DOM (pre.replaceWith never ran).
+mountLegacyFenceBanner(host, source, file, plugin as never, 'manual-prompt');
+// Atomic swap — runs ONLY if mount succeeded.
+target.pre.replaceWith(host);
+```
+
+This requires `mountLegacyFenceBanner` to be safe to call on a detached host — it should be (it appends children to whatever host it gets). Add a regression test that throws from inside `mountLegacyFenceBanner` and asserts `root.contains(pre) === true && root.querySelector('.leetcode-migration-banner-host') === null` (meaning the original pre was preserved).
 
 ## Warnings
 
-### WR-01: `migrateInFlight` Set is module-level and never cleared on plugin unload
+### WR-01: Live-Preview StateField migration / repair side-effects re-fire on every docChanged transaction, not just first mount
 
-**File:** `src/widget/liveModeViewPlugin.ts:67`
-**Issue:** `const migrateInFlight = new Set<string>();` lives at module scope. If the plugin is reloaded (Settings → toggle useNestedEditor / useInlineWidget → reload), the module is re-imported with a fresh Set under typical bundler semantics — but in development hot-reload modes (pjeby/hot-reload, the documented dev-vault helper from CLAUDE.md), the module instance may persist across plugin instances, leaking entries from prior runs. Worse, if a migration is in-flight when the plugin unloads, the `.finally(() => migrateInFlight.delete(file.path))` may never fire (promise abandoned) — entry leaks until next module re-import.
+**File:** `src/widget/liveModeBannerStateField.ts:225-247, 290-316`
+**Issue:**
+The two StateField `update` callbacks call `buildLegacyBannerDecorations(tr.state)` / `buildLeetCodeWidgetDecorations(tr.state)` on every transaction with `tr.docChanged === true`. Both build helpers contain a fire-and-forget side-effect (migrate / repair) gated only by the per-path `migrateInFlight` / `repairInFlight` Set.
 
-**Fix:** Move `migrateInFlight` into the ViewPlugin instance or a per-plugin singleton attached to the LeetCodePlugin host:
+Once the in-flight Set is cleared by `.finally`, the very next `docChanged` transaction (e.g., a single keystroke after the migration completed) re-evaluates the predicate. If metadataCache is still cold (a real possibility — `app.metadataCache` updates are async and can lag the file write by tens of ms), the predicate STILL matches and a second `processFrontMatter` invocation fires. Rapid typing during the initial mount window can produce a small burst of repair invocations.
 
-```typescript
-// In LeetCodeLiveViewPlugin:
-class LeetCodeLiveViewPlugin {
-  private static migrateInFlight = new WeakMap<App, Set<string>>();
-  private getInFlight(): Set<string> {
-    let s = LeetCodeLiveViewPlugin.migrateInFlight.get(this.plugin.app);
-    if (!s) { s = new Set(); LeetCodeLiveViewPlugin.migrateInFlight.set(this.plugin.app, s); }
-    return s;
+In practice the inner gate inside `repairFrontmatterIfNeeded` (clause C5) makes each subsequent call short-circuit. But the design implies "fire ONCE per file-open," and the observable disk I/O traffic disagrees.
+
+**Fix:**
+Add a per-session "already ran for this file" Set distinct from the in-flight gate:
+
+```ts
+// In LeetCodePlugin (main.ts):
+repairCompletedThisSession: Set<string> = new Set();
+
+// In buildLeetCodeWidgetDecorations:
+if (
+  needsRepair &&
+  !plugin.repairCompletedThisSession?.has(file.path) &&
+  isInlineWidgetEnabled(plugin) &&
+  isAutoMigrateEnabled(plugin)
+) {
+  // ... existing in-flight gate ...
+  void repairFrontmatterIfNeeded(...).finally(() => {
+    plugin.repairCompletedThisSession?.add(file.path);
+    repairInFlight.delete(file.path);
+  });
+}
+```
+
+Mirror the same on the legacy migrate path. Reset both on `vault.on('rename')` and `Plugin.onunload`.
+
+### WR-02: `liveModeViewPlugin.pushParentToChild` does not check `view.destroyed` before dispatching
+
+**File:** `src/widget/liveModeViewPlugin.ts:107-165`
+**Issue:**
+The function iterates `widgetRegistry.valuesForPath(file.path)` (or full `values()` fallback) and calls `childView.dispatch(...)`. If a widget is being destroyed concurrently (e.g., the user closes the tab while typing in another pane), `childView` may be torn down between the registry read at line 140 and the dispatch at line 153.
+
+The dispatch is wrapped in try/catch (lines 152-163) which catches the throw, but the catch swallows silently. Other code paths in this codebase (`WidgetController.ts:1492-1496`, the BL-02 alive-check in the adoption predicate) explicitly check `view.destroyed === true` before consuming an EditorView — that discipline is missing here. A destroyed-view dispatch is benign (the catch absorbs it) but the contract is asymmetric.
+
+**Fix:**
+```ts
+const childView = candidate.view;
+if (!childView) continue;
+const destroyed = (childView as unknown as { destroyed?: boolean }).destroyed;
+if (destroyed === true) continue;
+// ... rest of loop body ...
+```
+
+### WR-03: `repairFrontmatterIfNeeded` invoked from a CM6 StateField violates "StateField update should be pure"
+
+**File:** `src/widget/liveModeBannerStateField.ts:259-316`
+**Issue:**
+The build helper acknowledges (lines 285-287) that side-effects in `StateField.create / update` are "unusual but acceptable here." For the existing legacy-banner migrate path (lines 229-247), this was a defensible compromise. For repair, however, `processFrontMatter` writes to disk, which fires `vault.on('modify')`, which may or may not arrive at the parent CM6 as a `docChanged` transaction (frontmatter-only edits sometimes do, sometimes don't, depending on whether the YAML changed length).
+
+If the modify event lands as `docChanged`, the StateField update fires AGAIN, re-evaluates `needsRepair`, and the inner gate of `repairFrontmatterIfNeeded` saves the day — but disk I/O during transaction processing remains a CM6 contract violation. Doubling the contract violation surface (legacy-banner migrate AND v1.3-widget repair) increases the chance of a hard-to-trace future regression.
+
+**Fix:**
+Move the repair side-effect out of the StateField:
+- **Option A** (preferred): Add a `metadataCache.on('changed')` subscriber that fires `repairFrontmatterIfNeeded` when `lc-slug` is present and `lc-language` is missing. Less constrained execution context than transaction processing.
+- **Option B**: Extend the `workspace.on('file-open')` Reading-mode hook (already invoked unconditionally in main.ts:1573-1603) to also handle the Live-Preview path. The hook is already wired to the same `migrate` + `repair` deps.
+
+Either avoids the contract violation while preserving the closure of UAT Gap 2.
+
+### WR-04: `NoteWriter.retrofitStarterCode` reads `getUseInlineWidget` at the wrapper, then again inside `retrofitStarterCodeRaw`, exposing a settings-toggle race
+
+**File:** `src/notes/NoteWriter.ts:242-262`, `src/solve/starterCodeInjector.ts:280-301`
+**Issue:**
+The wrapper at NoteWriter:246 reads `getUseInlineWidget?.() ?? false` and short-circuits when ON. For the OFF path, it falls through to `retrofitStarterCodeRaw(this.app, file, detail, this.settings)`. The raw retrofit at `starterCodeInjector.ts:289-290` reads `getUseInlineWidget` AGAIN to derive `fenceKind: 'leetcode-solve' | 'legacy'`.
+
+When the wrapper let the call through (`useInlineWidget=OFF/undefined`), the second read should always yield `'legacy'`. But because the wrapper passes the LIVE `this.settings` reference (not a frozen snapshot), if `getUseInlineWidget` is a closure that toggles between calls — settings reload mid-`openProblem`, or the user clicking "Insert starter" in a settings tab during a slow LC fetch — the second read can yield `true`. That sends `fenceKind: 'leetcode-solve'` into `injectCodeSection` even though the wrapper let the call through under the legacy gate. Result: a v1.3 short-circuit attempt on a note that has no v1.3 fence (because the wrapper would have skipped the call entirely if v1.3 were intended).
+
+The defense-in-depth comment at NoteWriter:230-241 acknowledges the duplicate gate but does not address the race window.
+
+**Fix:**
+Resolve `useInlineWidget` once at the wrapper and pass a frozen settings shim down:
+
+```ts
+private async retrofitStarterCode(
+  file: TFile,
+  detail: DetailCacheEntry | null,
+): Promise<void> {
+  const useInlineWidget = this.settings.getUseInlineWidget?.() ?? false;
+  if (useInlineWidget) {
+    logger.debug('notes.retrofitStarterCode: skipped — v1.3 widget owns the fence body');
+    return;
   }
+  // Snapshot the settings as observed at this gate; subsequent reads
+  // inside retrofitStarterCodeRaw use the frozen snapshot, eliminating
+  // the live-settings race.
+  const frozen = {
+    getDefaultLanguage: () => this.settings.getDefaultLanguage(),
+    getUseInlineWidget: () => false,
+  };
+  // ...existing pre-checks...
+  await retrofitStarterCodeRaw(this.app, file, detail, frozen);
 }
 ```
 
-### WR-02: Stale `fm` reference used for outer `needsLang` check after vault.process
+### WR-05: Multi-`## Code` corner-case behavior of `findFirstLeetCodeSolveFenceIndexInCodeSection` is undocumented and untested
 
-**File:** `src/widget/fenceMigrator.ts:281-282`
-**Issue:** Step 1 reads `fm = app.metadataCache.getFileCache(file)?.frontmatter`. Step 4 runs `vault.process` which rewrites the body (NOT the frontmatter). Step 5 evaluates `needsLang = typeof fm?.['lc-language'] !== 'string' || fm['lc-language'] === ''` against the SAME `fm` reference read in step 1. Between step 1 and step 5, another path (chevron click, manual edit, Obsidian Sync) could write `lc-language` to disk; metadataCache may or may not have caught up. The outer guard is stale; only the inner re-check (lines 288-291) protects the actual write.
+**File:** `src/widget/fenceMigrator.ts:145-170`
+**Issue:**
+The helper iterates lines linearly. Comments at lines 121-141 describe the index semantics for the single-`## Code` case, but multi-`## Code` regions (mentioned in `countLeetCodeSolveFenceOpenersInCodeSection`'s JSDoc at line 187 as "degenerate but possible") are not addressed in the `findFirst...` helper's contract. Walking through the algorithm:
 
-In practice this is safe — the inner re-check IS authoritative. But the outer guard is misleading and could mask a subtle race if a future change relies on the outer check being authoritative.
+- File has `## Code` (no fence) → `## Notes` (with `\`\`\`leetcode-solve`) → `## Code` (with `\`\`\`leetcode-solve`):
+  - `inCodeSection=true` at first `## Code`, no opener seen.
+  - `inCodeSection=false` at `## Notes`; the Notes fence increments `lcOpenerCount` to 1.
+  - `inCodeSection=true` at second `## Code`; first in-section opener returns 1.
+  - `rewriteFenceBody(text, 1, body)` rewrites the second leetcode-solve fence overall — which IS the in-Code one. Correct.
 
-**Fix:** Always run the processFrontMatter callback unconditionally and let the inner re-check decide:
+- File has `## Code` (with `\`\`\`leetcode-solve`) → `## Notes` (with stray `\`\`\`leetcode-solve`) → `## Code` (with another `\`\`\`leetcode-solve`):
+  - In-section opener at first `## Code` returns 0 immediately. Correct.
 
-```typescript
-// Always invoke processFrontMatter; inner callback is the authoritative gate.
-await app.fileManager.processFrontMatter(file, (fmObj) => {
-  if (typeof fmObj['lc-language'] !== 'string' || fmObj['lc-language'] === '') {
-    fmObj['lc-language'] = opts?.defaultLanguage ?? 'python3';
-  }
-});
+The function appears to behave correctly under all multi-`## Code` topologies, but the test suite covers only the single-section case. A future refactor could break the invariant invisibly.
+
+**Fix:**
+Add property-based test coverage for multi-`## Code` topologies, AND document the invariant explicitly:
+
+```ts
+/**
+ * Multi-`## Code` semantics: returns the LC-opener index for the FIRST
+ * in-section opener encountered linearly. Stray openers in interleaved
+ * non-Code sections (e.g., `## Notes`) increment the LC-opener counter
+ * outside the section so rewriteFenceBody targets the right fence.
+ */
 ```
 
-This is one extra processFrontMatter no-op when language is already set, but the metadata cache is then guaranteed-consistent.
+### WR-06: `LeetCodeWidgetRenderChild.onload` materializes the entire registry on every mount
 
-### WR-03: `isMigrationCandidate` recomputes `countLeetCodeSolveFenceOpeners` over ENTIRE noteText, including frontmatter region
+**File:** `src/widget/WidgetController.ts:1471-1523`
+**Issue:**
+The candidate-collection step `[...registry.values()].filter(...)` materializes the full registry on every onload. With N widgets across M panes, the cost is O(N) per mount. Reading-mode rapid-flip scenarios (toggle Edit↔Reading↔Edit, multi-pane open) compound this.
 
-**File:** `src/widget/fenceMigrator.ts:110`
-**Issue:** `countLeetCodeSolveFenceOpeners(noteText, Number.MAX_SAFE_INTEGER)` scans the whole file for `^\s*\`\`\`leetcode-solve\b`. Frontmatter `---` blocks containing user-typed content with that pattern would incorrectly match. While unrealistic for actual frontmatter (YAML keys can't begin with backticks), a fenced block inside `## Notes` containing the literal text `\`\`\`leetcode-solve` (e.g., a doc/example) would prevent migration. This is the inverse of the intended idempotency clause.
+The `liveModeViewPlugin.pushParentToChild` adoption already uses `valuesForPath(path)` (lines 120-131) which is a path-keyed iterator. The same iterator is available here.
 
-The comment on the predicate says "C5: idempotency — note does NOT already contain `\`\`\`leetcode-solve`". A user's note may legitimately reference the string `\`\`\`leetcode-solve` inside `## Notes` for documentation purposes; this aborts migration even though the actual `## Code` fence is still legacy.
+This is borderline performance vs. correctness — performance is out of v1 scope. Listed as Warning rather than Critical because the registry is bounded by visible panes (typically 1-3) and the cost is negligible in practice. But the WR-09 comment block at 1467-1470 explicitly invokes "deterministic preference" and adopting the path-keyed iterator would make the intent cleaner.
 
-**Fix:** Scope the idempotency check to the `## Code` section only, mirroring what `rewriteFenceOpenerTag` does:
-
-```typescript
-function hasLeetCodeSolveOpenerInCodeSection(noteText: string): boolean {
-  const lines = noteText.split(/\r?\n/);
-  let inCodeSection = false;
-  for (const line of lines) {
-    if (H2_CODE_RE.test(line)) { inCodeSection = true; continue; }
-    if (H2_ANY_RE.test(line)) { inCodeSection = false; continue; }
-    if (inCodeSection && /^\s*```leetcode-solve\b/.test(line)) return true;
-  }
-  return false;
-}
-// Replace clause C5:
-if (hasLeetCodeSolveOpenerInCodeSection(noteText)) return false;
+**Fix:**
+```ts
+const registryWithIter = registry as unknown as
+  | {
+      values(): IterableIterator<WidgetController>;
+      valuesForPath?(p: string): Iterable<WidgetController>;
+    }
+  | undefined;
+const iter = registryWithIter?.valuesForPath
+  ? [...registryWithIter.valuesForPath(this.file.path)]
+  : registryWithIter ? [...registryWithIter.values()] : [];
+const candidates = iter.filter(/* existing predicate */);
 ```
 
-### WR-04: `mountLegacyFenceBanner` `manual-prompt` mode renders banner + read-only block as siblings on host without separator
+### WR-07: `extractLangSlug` invariant relies on undocumented all-lowercase `LC_LANG_SLUGS` Set
 
-**File:** `src/widget/legacyFenceBanner.ts:51-79`
-**Issue:** In `manual-prompt` mode the function calls `empty(host)`, then `mk(host, 'div', …)` for the banner, then `renderReadOnly(host, source)`. The `<pre><code>` is appended directly to `host`, NOT inside the banner div. There's no visual separator (no class, no spacing wrapper). The CSS class `leetcode-migration-banner` is only on the banner div; the read-only block is a bare sibling.
+**File:** `src/main/readingModeLegacyBannerPostProcessor.ts:158, 209-217`
+**Issue:**
+Obsidian renders `<code class="language-Java">` (capitalized) when source markdown is `\`\`\`Java`. The regex `LANGUAGE_CLASS_RE = /^language-([A-Za-z0-9_+#-]+)$/` accepts uppercase via the character class, then `m[1].toLowerCase()` is applied. `resolveLangSlug(slug, SLUG_SENTINEL)` returns lowercase. `LC_LANG_SLUGS.has(resolved)` requires the Set to be all-lowercase — this is an implicit, undocumented invariant in `src/solve/languages.ts`.
 
-Behaviorally this works (banner above, code below). But the file header comment claims it shows "Banner with [Migrate now] button + read-only `<pre><code>` of source" as a single unit. CSS styling may not target the read-only block as part of the banner.
+If a future contributor adds a mixed-case entry to `LC_LANG_SLUGS` (e.g., `'CSharp'` for clarity), the post-processor silently fails to recognize legitimate user fences. The flow is correct today; the fragility is the concern.
 
-**Fix:** Wrap the read-only block in a sibling div inside `host` so it can be styled cohesively:
+**Fix:**
+Either add a runtime invariant assertion at module load in `solve/languages.ts`, or document the invariant inline at the call site:
 
-```typescript
-mk(banner, 'p', { text: 'This note uses the v1.2 format.', cls: 'leetcode-migration-banner__copy' });
-mk(banner, 'button', { text: 'Migrate now', cls: 'leetcode-migration-banner__cta' });
-const readOnlyWrap = mk(host, 'div', { cls: 'leetcode-migration-banner__readonly' });
-renderReadOnly(readOnlyWrap, source);
-```
-
-### WR-05: `runMigrationBackupGc` does not throttle / dedupe concurrent invocations
-
-**File:** `src/widget/migrationBackupGc.ts:98-143`, called from `src/main.ts:420`
-**Issue:** `Promise.resolve().then(() => runMigrationBackupGc(this.app))`. If onload runs more than once in a session (plugin reload, settings flip with reload), multiple GCs queue concurrently. Each iterates the same folder list and calls `adapter.rmdir(folderFull, true)`. If two invocations both decide to delete the same expired folder, the second call hits `ENOENT` — caught by the inner try/catch at line 133-138 → logger.debug + continue. SAFE but noisy.
-
-More concerning: `for (const folderFull of listing.folders ?? [])` is sequential `await`. A vault with 100s of expired backups blocks for the duration of all rmdir calls — non-blocking via fire-and-forget at the call site, but the promise stays pending and may overlap with normal vault writes.
-
-**Fix:** Add a module-level `gcRunning` flag + early exit:
-
-```typescript
-let gcRunning = false;
-export async function runMigrationBackupGc(app: App): Promise<void> {
-  if (gcRunning) return;
-  gcRunning = true;
-  try { /* existing body */ }
-  finally { gcRunning = false; }
-}
-```
-
-### WR-06: `validateContestSlug` throws inside `finalizeContest` — ContestFinalizer is unaware of Phase 21 changes
-
-**File:** `src/contest/ContestFinalizer.ts:75-80`
-**Issue:** Not introduced in Phase 21, but: `validateContestSlug` throws plain `Error` on invalid slug. The new Phase 21 `useInlineWidget` gate inside `buildNoteBody` is fine — but the `codeBlockFor(problem.language, problem.code)` at line 405 (inside `buildContestProblemBody`) is a DEAD function. It's defined but never called. This dead function emits the LEGACY fence regardless of `useInlineWidget` — if a future Phase 22 cleanup deletes `codeBlockFor` without first verifying `buildContestProblemBody` is unused, this will fail to compile.
-
-**Fix:** Delete `buildContestProblemBody` (it's unused — verify with grep):
-
-```bash
-grep -rn "buildContestProblemBody" /Users/moxu/projects/obsidian-leetcode/src
-# If only the definition matches: safe to delete.
-```
-
-### WR-07: `injectCodeSection` `fenceKind === 'leetcode-solve'` short-circuit replaces fence body without checking section boundary
-
-**File:** `src/solve/starterCodeInjector.ts:91-100`
-**Issue:** When `fenceKind === 'leetcode-solve'` AND `countLeetCodeSolveFenceOpeners > 0`, the function calls `rewriteFenceBody(current, 0, opts.starterCode.trim())`. `rewriteFenceBody`'s fenceIndex=0 means "the FIRST `\`\`\`leetcode-solve` fence in the file". If the user has TWO `\`\`\`leetcode-solve` fences (uncommon but possible — e.g., a legacy migration miss + a newly-injected one), this overwrites the first one. The intent is to replace the `## Code` fence; if the user has placed a `\`\`\`leetcode-solve` reference in `## Notes` ABOVE `## Code` (or via a copy-paste), the wrong fence is overwritten.
-
-**Fix:** Locate the first `\`\`\`leetcode-solve` fence inside `## Code` specifically, OR add a clear precondition that only ONE `leetcode-solve` fence may exist per note (with a unit test fixture that fails for multi-fence inputs). The current implementation silently corrupts.
-
-### WR-08: `migrationBackupGc.parseSanitizedIso` accepts strings with extra trailing characters
-
-**File:** `src/widget/migrationBackupGc.ts:71-77`
-**Issue:** `iso = captured.replace(/T(\d{2})-(\d{2})-(\d{2})Z$/, 'T$1:$2:$3Z')`. The regex anchors at end with `$` but `captured` is the regex group 2 from `BACKUP_FOLDER_RE` which already enforces `\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$` exactly. Defensive but redundant. NOT a defect — but if `BACKUP_FOLDER_RE` is ever loosened, `parseSanitizedIso` would silently mis-parse.
-
-**Fix:** Add an explicit shape assertion:
-
-```typescript
-function parseSanitizedIso(captured: string): number {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/.test(captured)) return NaN;
-  const iso = captured.replace(/T(\d{2})-(\d{2})-(\d{2})Z$/, 'T$1:$2:$3Z');
-  return Date.parse(iso);
-}
-```
-
-### WR-09: `getCurrentCode` widget path skips empty-string check on `lcLanguage` but trusts default fallback
-
-**File:** `src/solve/submissionOrchestrator.ts:316`
-**Issue:** `const langSlug = this.deps.lcLanguage ?? resolveLangSlug(extractedLang, this.deps.settings.getDefaultLanguage());`. The widget path SHOULD have `lcLanguage` always (per the Phase 21 contract: lc-language frontmatter is the SSoT). But if the widget caller passes `lcLanguage: ''` (empty string) instead of `null`/`undefined`, `??` does NOT short-circuit (empty string is truthy in `??` semantics — only null/undefined trigger fallback). The submit body then carries `lang: ''`, which LC rejects as a 400 Bad Request.
-
-The widget call site (`main.ts:2910-2913`) does check `lc-language` is non-empty before defaulting to `python3` — so this is defended at the OUTER call site. But the orchestrator interface is loose; a future caller passing empty-string to `lcLanguage` would silently corrupt the request.
-
-**Fix:** Tighten the orchestrator's defaulting:
-
-```typescript
-const lcLang = typeof this.deps.lcLanguage === 'string' && this.deps.lcLanguage.length > 0
-  ? this.deps.lcLanguage
-  : null;
-const langSlug = lcLang ?? resolveLangSlug(extractedLang, this.deps.settings.getDefaultLanguage());
+```ts
+// LC_LANG_SLUGS is canonically lowercase (verified at module load in
+// src/solve/languages.ts); resolveLangSlug returns lowercase so the
+// .has() check below is case-stable.
+if (!LC_LANG_SLUGS.has(resolved)) continue;
 ```
 
 ## Info
 
-### IN-01: `fenceMigrator.ts:70` regex constants duplicated in `fenceSerialization.ts:238-241`
+### IN-01: `H2_ANY_RE` regex anchors on `\S` — single non-whitespace char qualifies as "any heading"
 
-**File:** `src/widget/fenceMigrator.ts:71-74`, `src/widget/fenceSerialization.ts:238-241`
-**Issue:** Both files declare `H2_CODE_RE = /^\s*##\s+Code\s*$/`, `H2_ANY_RE = /^\s*##\s+\S/`, `FENCE_OPENER_RE = /^\s*\`\`\`([A-Za-z0-9_+#-]*)\s*$/`, `FENCE_CLOSER_RE = /^\s*\`\`\`\s*$/`. These are character-identical between the two files. SSoT discipline is invoked elsewhere (e.g., for `rewriteFenceBody`); the regex constants should live in a shared module.
+**File:** `src/main/readingModeLegacyBannerPostProcessor.ts:67-68, 219-230`
+**Issue:** The regex order in `isUnderCodeHeading` is correct (Code-specific first, generic second), and `H2_ANY_RE = /^\s*##\s+\S/` accepts a single non-whitespace char. Pathological headings like `## #` would correctly be flagged as "any heading," forcing a not-under-Code result. Edge case is benign but worth a comment for the next reader.
 
-**Fix:** Extract to `src/widget/fenceConstants.ts` and import from both call sites.
+**Fix:** Optional — add a brief comment near `H2_ANY_RE` explaining the intent (catch any non-Code H2 as a section boundary).
 
-### IN-02: Comment drift — `fenceMigrator.ts:53-60` says useInlineWidget is the master gate, but module gates only on autoMigrateOnOpen
+### IN-02: `readingModeMigrationHook.ts` `.then().catch().finally().then(rerender)` chain comment is hard to parse
 
-**File:** `src/widget/fenceMigrator.ts:53-60`
-**Issue:** The header comment claims "useInlineWidget=ON is the master gate (L9). This module does NOT inspect useInlineWidget — the gate is the caller's responsibility (Plan 21-02 wires it in the mount paths)." But `liveModeViewPlugin.ts:160-163` and `codeBlockProcessor.ts:142-146` both check `useInlineWidget?.() === true` — fine. However, the command-palette callsite at `main.ts:725` checks `getUseInlineWidget()` (no optional) and proceeds. The doc could clarify that: (a) `force: true` ALWAYS bypasses autoMigrateOnOpen but does NOT bypass the caller's useInlineWidget gate; (b) the module trusts the caller to gate.
+**File:** `src/main/readingModeMigrationHook.ts:160-200`
+**Issue:** The chain works because Promise spec guarantees the trailing `.then` runs AFTER `.finally`. Test G1.4 verifies the observable invariant. The inline comment at lines 187-200 ("trailing .then is attached above. The else branch follows") is dense and reads as tangled on first pass.
 
-**Fix:** Add an explicit assertion:
+**Fix:** Optional rewrite for clarity — call out the four-step ordering in a numbered comment:
 
-```typescript
-// Optional dev-mode invariant check:
-if (process.env.NODE_ENV === 'development' && opts?.force === true) {
-  // Caller MUST have already gated on useInlineWidget=ON.
-  console.assert(/* caller invariant */);
-}
+```ts
+// Auto-path migration. Order:
+//   1. .then  — capture migrated boolean; chain repair if migrated=false.
+//   2. .catch — record both flags as false; logDebug the rejection.
+//   3. .finally — UNCONDITIONALLY clear the in-flight lock.
+//   4. trailing .then — after .finally, fire rerender iff EITHER flag is true.
+//      Wrapped in inner try/catch so a rerender throw does not leak.
 ```
 
-(Or just clarify the comment.)
+### IN-03: `WidgetController.promoteThisPane` walks `getLeavesOfType` per click
 
-### IN-03: `extractFirstFencedBlock` Branch C ignores empty fence tag, returns `lang: null` — but caller compatibility relies on this
+**File:** `src/widget/WidgetController.ts:738-767`
+**Issue:** Each overlay click re-walks all markdown leaves. The underlying `app.workspace.getLeavesOfType` is reasonably fast (Obsidian indexes leaves), but the function comment block (lines 720-737) is so detailed that the simple `.find` walk underneath looks mismatched. The post-UAT Gap A self-recover invocation of `setPaneState('active')` is correct (idempotent on already-active state).
 
-**File:** `src/solve/codeExtractor.ts:135-141`
-**Issue:** Comment at line 119: "Empty fence tag '\`\`\`' returns lang: null — caller resolves the default via languages.ts resolveLangSlug(null, defaultLang)." The new Branch C now returns `{ lang: fenceTag.length > 0 ? fenceTag : null, code }`. For an untagged `\`\`\`` opener, `fenceTag = ''` → `lang: null`. CORRECT. BUT: legacy v1.2 LC notes ALWAYS had a tag. An untagged `\`\`\`` is not v1.2 LC content; it's user content. Returning `lang: null` for user content lets the orchestrator fall back to defaultLang and submit the user's notes-section pseudo-code as a solution. Pre-Phase-21, that was already the behavior (preserved verbatim). Worth a regression test.
+**Fix:** None required.
 
-**Fix:** None required (verbatim behavior preserved). Add a test fixture with an untagged ` ``` ` to confirm null-lang fallback path.
+### IN-04: `fenceMigrator.ts` `void sawCodeHeading;` is a discard pattern that signals dead code
 
-### IN-04: `liveModeViewPlugin.AutoMigratingBannerWidget.eq()` ignores source, may cause stale DOM on body change
+**File:** `src/widget/fenceMigrator.ts:589-592`
+**Issue:** The block:
 
-**File:** `src/widget/liveModeViewPlugin.ts:101-106`
-**Issue:** `eq(other)` compares only `file.path`. If the user makes a typo in the legacy fence body during the migration window (the auto-migrating banner is showing), CM6 would NOT remount because eq returns true. Since the banner displays "Migrating note to v1.3 format..." with no body content, this is fine. But if a future change adds source preview to the auto-migrating banner, eq must include source comparison.
+```ts
+// No leetcode-solve opener inside any `## Code` region — caller falls
+// through silently. (sawCodeHeading retained for symmetry; result is
+// false either way.)
+void sawCodeHeading;
+return false;
+```
 
-**Fix:** None required for current banner content. Add a comment guarding future changes:
+The `void` discard is dead code — `sawCodeHeading` is set inside the loop but never consulted. The comment "retained for symmetry" suggests intent that didn't ship. Either remove the variable entirely or use it for a debug-level diagnostic when a `## Code` heading exists but no leetcode-solve opener is found.
 
-```typescript
-eq(other: WidgetType): boolean {
-  // NOTE: source intentionally excluded — banner displays no source content.
-  // If banner content is extended to show source, add `&& other.source === this.source`.
-  return other instanceof AutoMigratingBannerWidget && other.file.path === this.file.path;
+**Fix:**
+```ts
+// Remove unused tracking variable:
+const lines = noteText.split(/\r?\n/);
+let inCodeSection = false;
+for (let i = 0; i < lines.length; i++) {
+  const text = lines[i] ?? '';
+  if (H2_CODE_RE.test(text)) { inCodeSection = true; continue; }
+  if (H2_ANY_RE.test(text)) { inCodeSection = false; continue; }
+  // ...
 }
+return false;
 ```
 
 ---
 
-_Reviewed: 2026-06-01_
+_Reviewed: 2026-06-01T18:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard_
+_Depth: deep_
