@@ -16,6 +16,7 @@ vi.mock('obsidian', async () => {
 });
 
 import {
+  countLeetCodeSolveFenceOpenersInCodeSection,
   isMigrationCandidate,
   migrateLegacyFenceIfNeeded,
   writeBackup,
@@ -198,6 +199,57 @@ describe('isMigrationCandidate — 5-clause strict-match predicate', () => {
       expect(isMigrationCandidate(note, { 'lc-slug': 'two-sum' })).toBe(false);
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Plan 21-07 Task 2 — WR-03 closure. isMigrationCandidate clause 5
+  // (idempotency check) now scopes the leetcode-solve opener count to the
+  // `## Code` section only. Stray ```leetcode-solve references in
+  // `## Notes` or `## Problem` no longer abort migration of the legacy
+  // ## Code fence.
+  // ───────────────────────────────────────────────────────────────────────
+  describe('WR-03-fix — clause 5 scoped to ## Code section', () => {
+    it('WR-03-fix Test A — leetcode-solve fence in ## Code aborts migration (clause 5 fires)', () => {
+      const note =
+        '---\nlc-slug: x\n---\n## Code\n\n```leetcode-solve\nbody\n```\n\n## Notes\n\nuser content\n';
+      expect(isMigrationCandidate(note, { 'lc-slug': 'x' })).toBe(false);
+    });
+
+    it('WR-03-fix Test B — leetcode-solve reference ONLY in ## Notes does NOT abort migration', () => {
+      const note =
+        '---\nlc-slug: x\n---\n## Code\n\n```python\nbody\n```\n\n## Notes\n\nFor reference, the v1.3 fence syntax is:\n\n```leetcode-solve\nexample\n```\n';
+      expect(isMigrationCandidate(note, { 'lc-slug': 'x' })).toBe(true);
+    });
+
+    it('WR-03-fix Test C — leetcode-solve in BOTH ## Code AND ## Notes aborts (mixed-state)', () => {
+      const note =
+        '---\nlc-slug: x\n---\n## Code\n\n```leetcode-solve\nbody\n```\n\n## Notes\n\n```leetcode-solve\nstray\n```\n';
+      expect(isMigrationCandidate(note, { 'lc-slug': 'x' })).toBe(false);
+    });
+
+    it('WR-03-fix Test D — leetcode-solve in ## Problem (above ## Code) does NOT abort', () => {
+      const note =
+        '---\nlc-slug: x\n---\n## Problem\n\nFor reference: ```leetcode-solve\nexample\n```\n\n## Code\n\n```python\nbody\n```\n';
+      expect(isMigrationCandidate(note, { 'lc-slug': 'x' })).toBe(true);
+    });
+
+    it('WR-03-fix Test E — countLeetCodeSolveFenceOpenersInCodeSection helper directly', () => {
+      // Pure helper: counts ONLY in-code-section openers.
+      const noteOnlyInCode =
+        '## Code\n\n```leetcode-solve\nbody\n```\n\n## Notes\n\nplain prose\n';
+      expect(countLeetCodeSolveFenceOpenersInCodeSection(noteOnlyInCode)).toBe(1);
+
+      const noteOnlyInNotes =
+        '## Code\n\n```python\nbody\n```\n\n## Notes\n\n```leetcode-solve\nexample\n```\n';
+      expect(countLeetCodeSolveFenceOpenersInCodeSection(noteOnlyInNotes)).toBe(0);
+
+      const noteInProblem =
+        '## Problem\n\n```leetcode-solve\nexample\n```\n\n## Code\n\n```python\nbody\n```\n';
+      expect(countLeetCodeSolveFenceOpenersInCodeSection(noteInProblem)).toBe(0);
+
+      const noBoundary = 'no headings\n```leetcode-solve\n```\n';
+      expect(countLeetCodeSolveFenceOpenersInCodeSection(noBoundary)).toBe(0);
+    });
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -346,14 +398,23 @@ describe('migrateLegacyFenceIfNeeded', () => {
     expect(processOrder).toBeLessThan(fmOrder);
   });
 
-  it('D-edge-04: lc-language already set — processFrontMatter is NOT called', async () => {
+  it('D-edge-04: lc-language already set — inner gate preserves it (Plan 21-07 WR-02 — outer needsLang check removed; processFrontMatter is invoked unconditionally; the inner callback gate is the single source of truth)', async () => {
+    const captured: Array<Record<string, unknown>> = [];
     const state = makeState({
       fileText: v12NoteWithFm,
       frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' }, // already set
+      processFrontMatterImpl: async (_f, fn) => {
+        const fm: Record<string, unknown> = { 'lc-slug': 'two-sum', 'lc-language': 'java' };
+        fn(fm);
+        captured.push(fm);
+      },
     });
     const { app, file } = makeApp(state);
     await migrateLegacyFenceIfNeeded(app, file, { autoMigrateOnOpen: true });
-    expect(state.processFrontMatterSpy).not.toHaveBeenCalled();
+    // WR-02: invoked unconditionally — but the inner gate short-circuits.
+    expect(state.processFrontMatterSpy).toHaveBeenCalledTimes(1);
+    // D-edge-04 behavior preserved: lc-language NOT overwritten.
+    expect(captured[0]?.['lc-language']).toBe('java');
   });
 
   it('D-edge-04: lc-language is empty string — processFrontMatter IS called (treats empty as missing)', async () => {
@@ -607,6 +668,87 @@ describe('migrateLegacyFenceIfNeeded', () => {
     const r = await migrateLegacyFenceIfNeeded(app, file, { autoMigrateOnOpen: true });
     expect(r).toBe(true);
     expect(state.adapterWriteSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Plan 21-07 Task 2 — WR-02 closure. The outer `needsLang` check using
+  // metadataCache-snapshot fm is REMOVED; the inner re-check inside the
+  // processFrontMatter callback is now the single authoritative gate.
+  // processFrontMatter is invoked unconditionally for migration candidates;
+  // when lc-language is already set, the inner gate short-circuits and
+  // Obsidian writes nothing (no-op callback => no file write).
+  // ───────────────────────────────────────────────────────────────────────
+  it('WR-02-fix Test A — processFrontMatter invoked exactly once when lc-language is already set', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const state = makeState({
+      fileText: v12Note,
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' },
+      processFrontMatterImpl: async (_f, fn) => {
+        const fm: Record<string, unknown> = { 'lc-slug': 'two-sum', 'lc-language': 'java' };
+        fn(fm);
+        captured.push(fm);
+      },
+    });
+    const { app, file } = makeApp(state);
+    const r = await migrateLegacyFenceIfNeeded(app, file, {
+      autoMigrateOnOpen: true,
+      defaultLanguage: 'python3',
+    });
+    expect(r).toBe(true);
+    // Plan 21-07 WR-02: processFrontMatter is invoked unconditionally.
+    expect(state.processFrontMatterSpy).toHaveBeenCalledTimes(1);
+    // Inner gate short-circuited: lc-language stays 'java' (NOT overwritten
+    // with the default 'python3').
+    expect(captured[0]?.['lc-language']).toBe('java');
+  });
+
+  it('WR-02-fix Test B — processFrontMatter invoked exactly once when lc-language is missing', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const state = makeState({
+      fileText: v12Note,
+      frontmatter: { 'lc-slug': 'two-sum' }, // no lc-language
+      processFrontMatterImpl: async (_f, fn) => {
+        const fm: Record<string, unknown> = { 'lc-slug': 'two-sum' };
+        fn(fm);
+        captured.push(fm);
+      },
+    });
+    const { app, file } = makeApp(state);
+    const r = await migrateLegacyFenceIfNeeded(app, file, {
+      autoMigrateOnOpen: true,
+      defaultLanguage: 'python3',
+    });
+    expect(r).toBe(true);
+    expect(state.processFrontMatterSpy).toHaveBeenCalledTimes(1);
+    // Inner gate fired: lc-language was missing, default ('python3') was injected.
+    expect(captured[0]?.['lc-language']).toBe('python3');
+  });
+
+  it('WR-02-fix Test C — race-safety: stale metadataCache snapshot, real frontmatter has lc-language', async () => {
+    // metadataCache returns stale fm WITHOUT lc-language. The pre-21-07
+    // outer-check would have fired and tried to inject. Post-21-07: the
+    // outer check is gone; processFrontMatter receives the REAL frontmatter
+    // (lc-language='java'), and the inner gate correctly preserves it.
+    const captured: Array<Record<string, unknown>> = [];
+    const state = makeState({
+      fileText: v12Note,
+      frontmatter: { 'lc-slug': 'two-sum' }, // STALE: no lc-language
+      processFrontMatterImpl: async (_f, fn) => {
+        // Real frontmatter has lc-language='java' (e.g. a recent chevron write).
+        const fm: Record<string, unknown> = { 'lc-slug': 'two-sum', 'lc-language': 'java' };
+        fn(fm);
+        captured.push(fm);
+      },
+    });
+    const { app, file } = makeApp(state);
+    const r = await migrateLegacyFenceIfNeeded(app, file, {
+      autoMigrateOnOpen: true,
+      defaultLanguage: 'python3',
+    });
+    expect(r).toBe(true);
+    expect(state.processFrontMatterSpy).toHaveBeenCalledTimes(1);
+    // Inner gate (the SSoT) preserved the real value — no clobber.
+    expect(captured[0]?.['lc-language']).toBe('java');
   });
 
   it('CR-02-fix Test E — second-open of an already-migrated note short-circuits BEFORE pre-existence check', async () => {

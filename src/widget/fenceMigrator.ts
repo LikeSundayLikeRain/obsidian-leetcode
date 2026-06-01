@@ -1,6 +1,14 @@
 // src/widget/fenceMigrator.ts
 //
 // Phase 21 Plan 21-01 — v1.2 → v1.3 fence migration foundation.
+// Plan 21-07 (WR-02 + WR-03) — outer needsLang check removed in
+// migrateLegacyFenceIfNeeded; processFrontMatter is now invoked
+// unconditionally for migration candidates and the inner callback gate is
+// the single authoritative source of truth (closes the WR-02 stale-fm
+// race window). New exported helper countLeetCodeSolveFenceOpenersInCodeSection
+// scopes clause 5 of isMigrationCandidate to the ## Code section only,
+// so stray ```leetcode-solve references in ## Notes / ## Problem no longer
+// abort migration of the legacy ## Code fence (closes WR-03).
 //
 // Three exported functions:
 //   1. isMigrationCandidate(noteText, frontmatter) — pure 5-clause strict-match
@@ -68,7 +76,6 @@
 
 import type { App, TFile } from 'obsidian';
 import { LC_LANG_SLUGS, resolveLangSlug } from '../solve/languages';
-import { countLeetCodeSolveFenceOpeners } from './fenceLocator';
 import { rewriteFenceOpenerTag } from './fenceSerialization';
 import { BACKUP_FOLDER_RE } from './migrationBackupGc';
 import { logger } from '../shared/logger';
@@ -83,6 +90,100 @@ const H2_CODE_RE = /^\s*##\s+Code\s*$/;
 const H2_ANY_RE = /^\s*##\s+\S/;
 const FENCE_OPENER_RE = /^\s*```([A-Za-z0-9_+#-]*)\s*$/;
 const FENCE_CLOSER_RE = /^\s*```\s*$/;
+const LC_SOLVE_OPENER_RE = /^\s*```leetcode-solve\b/;
+
+/**
+ * Plan 21-07 WR-07 — locate the FIRST `\`\`\`leetcode-solve` opener that
+ * sits INSIDE the `## Code` section, and return its WHOLE-FILE fence-opener
+ * index (suitable for direct consumption by `rewriteFenceBody(noteText,
+ * fenceIndex, ...)`).
+ *
+ * `rewriteFenceBody`'s `fenceIndex` counts ONLY `\`\`\`leetcode-solve` openers
+ * (not all openers — see `locateFenceByIndex` in `./fenceSerialization.ts`).
+ * This helper returns the count of leetcode-solve openers that appear
+ * BEFORE the target opener, so passing the result to `rewriteFenceBody`
+ * targets the correct fence.
+ *
+ * Walks lines forward; tracks `inCodeSection` via H2_CODE_RE / H2_ANY_RE;
+ * counts every `\`\`\`leetcode-solve` opener found OUTSIDE ## Code; when the
+ * first IN-section leetcode-solve opener is encountered, returns the
+ * accumulated count. Returns null when no in-section leetcode-solve opener
+ * exists (caller falls through to the legacy path with a debug log).
+ *
+ * Mirrors `forceInjectCodeSection`'s ## Code-scoped discipline (Phase 20
+ * Plan 20-10 lines 188-208) so multi-fence corner cases — stray
+ * `\`\`\`leetcode-solve` references in `## Problem` or `## Notes` — no longer
+ * cause `injectCodeSection`'s short-circuit to corrupt the wrong fence.
+ *
+ * Pure: no I/O; safe inside vault.process retry semantics.
+ */
+export function findFirstLeetCodeSolveFenceIndexInCodeSection(
+  noteText: string,
+): number | null {
+  const lines = noteText.split(/\r?\n/);
+  let inCodeSection = false;
+  let lcOpenerCount = 0;
+  for (const line of lines) {
+    if (H2_CODE_RE.test(line)) {
+      inCodeSection = true;
+      continue;
+    }
+    if (H2_ANY_RE.test(line)) {
+      inCodeSection = false;
+      continue;
+    }
+    // Only `\`\`\`leetcode-solve` openers participate in the index — the
+    // rewriteFenceBody contract counts only LC_OPENER_RE matches.
+    if (LC_SOLVE_OPENER_RE.test(line)) {
+      if (inCodeSection) {
+        return lcOpenerCount;
+      }
+      lcOpenerCount++;
+    }
+  }
+  return null;
+}
+
+/**
+ * Plan 21-07 WR-03 — count `\`\`\`leetcode-solve` opener lines that fall
+ * INSIDE the `## Code` section ONLY. Sibling helper to
+ * `countLeetCodeSolveFenceOpeners` in `./fenceLocator.ts` (which keeps its
+ * whole-note scope; other call sites depend on whole-note semantics).
+ *
+ * Walks lines forward; sets `inCodeSection = true` upon `H2_CODE_RE.test(line)`;
+ * sets `inCodeSection = false` upon any other H2 heading. Counts only when
+ * `inCodeSection === true`. CRLF-tolerant via /\r?\n/.
+ *
+ * Used by `isMigrationCandidate` clause 5 (idempotency check) so a
+ * user-authored `\`\`\`leetcode-solve` reference in `## Notes` or `## Problem`
+ * does NOT abort migration of the actual `## Code` fence.
+ *
+ * Multiple `## Code` headings (degenerate but possible): every `## Code`
+ * region contributes — opener lines inside ANY `## Code` region count.
+ *
+ * Pure: no I/O; safe inside vault.process retry semantics.
+ */
+export function countLeetCodeSolveFenceOpenersInCodeSection(
+  noteText: string,
+): number {
+  const lines = noteText.split(/\r?\n/);
+  let inCodeSection = false;
+  let count = 0;
+  for (const line of lines) {
+    if (H2_CODE_RE.test(line)) {
+      inCodeSection = true;
+      continue;
+    }
+    if (H2_ANY_RE.test(line)) {
+      inCodeSection = false;
+      continue;
+    }
+    if (inCodeSection && LC_SOLVE_OPENER_RE.test(line)) {
+      count++;
+    }
+  }
+  return count;
+}
 
 /**
  * Pure predicate — true iff the note is a v1.2 LC plugin-owned note that
@@ -117,8 +218,10 @@ export function isMigrationCandidate(
   if (typeof lcSlug !== 'string' || lcSlug.length === 0) return false;
 
   // Clause 5 — idempotency early-out (D-edge-02). Cheap short-circuit before
-  // the linear scan; SSoT via countLeetCodeSolveFenceOpeners.
-  if (countLeetCodeSolveFenceOpeners(noteText, Number.MAX_SAFE_INTEGER) > 0) {
+  // the linear scan. Plan 21-07 WR-03 — scoped to ## Code only via the new
+  // sibling helper, so stray ```leetcode-solve references in ## Notes /
+  // ## Problem no longer abort migration of the legacy ## Code fence.
+  if (countLeetCodeSolveFenceOpenersInCodeSection(noteText) > 0) {
     return false;
   }
 
@@ -348,24 +451,28 @@ export async function migrateLegacyFenceIfNeeded(
     );
 
     // Step 5 — fill lc-language ONLY when missing/empty (D-edge-03 +
-    // D-edge-04). Inner re-check inside processFrontMatter callback for
-    // race-safety (Pattern 2 + Pitfall 7).
-    const needsLang =
-      typeof fm?.['lc-language'] !== 'string' || fm['lc-language'] === '';
-    if (needsLang) {
-      const defaultLang = opts?.defaultLanguage ?? 'python3';
-      await app.fileManager.processFrontMatter(
-        file,
-        (fmObj: Record<string, unknown>) => {
-          if (
-            typeof fmObj['lc-language'] !== 'string' ||
-            fmObj['lc-language'] === ''
-          ) {
-            fmObj['lc-language'] = defaultLang;
-          }
-        },
-      );
-    }
+    // D-edge-04). Plan 21-07 WR-02 — outer `needsLang` check using the
+    // metadataCache-snapshot fm has been REMOVED; the inner re-check inside
+    // the processFrontMatter callback is now the single authoritative gate.
+    // processFrontMatter is invoked unconditionally for migration candidates;
+    // when lc-language is already set, the inner gate short-circuits and
+    // the no-op callback writes nothing (Obsidian's processFrontMatter writes
+    // the file ONLY when the callback mutates the object). Closes the WR-02
+    // stale-fm race window: if metadataCache had a stale snapshot but the
+    // real frontmatter received by the callback already has lc-language set,
+    // the inner gate correctly preserves it (no clobber).
+    const defaultLang = opts?.defaultLanguage ?? 'python3';
+    await app.fileManager.processFrontMatter(
+      file,
+      (fmObj: Record<string, unknown>) => {
+        if (
+          typeof fmObj['lc-language'] !== 'string' ||
+          fmObj['lc-language'] === ''
+        ) {
+          fmObj['lc-language'] = defaultLang;
+        }
+      },
+    );
 
     return true;
   } catch (err) {

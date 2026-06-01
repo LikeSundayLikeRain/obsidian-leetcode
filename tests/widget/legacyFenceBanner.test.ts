@@ -9,7 +9,7 @@
 // file constructs a mock TFile + mock App + mock plugin, then renders the
 // banner into a host div and asserts the resulting tree shape.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
@@ -29,6 +29,7 @@ vi.mock('../../src/widget/fenceMigrator', () => ({
 }));
 
 import { mountLegacyFenceBanner } from '../../src/widget/legacyFenceBanner';
+import { logger } from '../../src/shared/logger';
 
 interface MockPlugin {
   app: { vault: unknown; metadataCache: unknown };
@@ -211,5 +212,199 @@ describe('mountLegacyFenceBanner', () => {
     expect(lastCall).toBeDefined();
     const opts = lastCall![2] as { defaultLanguage?: string };
     expect(opts.defaultLanguage).toBe('python3');
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Plan 21-07 Task 1 — CR-04 closure. Defensive DOM in renderReadOnly +
+  // top-level try/catch in mountLegacyFenceBanner. Banner DOM construction
+  // never throws into the editor render cycle, even on synthetic
+  // non-Obsidian hosts (test runners, iframes, popup windows where
+  // Obsidian's HTMLElement.prototype patches haven't fired).
+  // ───────────────────────────────────────────────────────────────────────
+  describe('CR-04-fix — defensive DOM construction', () => {
+    let debugSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      debugSpy.mockRestore();
+    });
+
+    it("CR-04-fix Test A — pre lacks createEl, source preserved as textContent (renderReadOnly defensive path)", () => {
+      const file = makeFile();
+      const plugin = makePlugin();
+      // Construct a host whose createEl returns a pre element with NO
+      // .createEl helper. The obsidian-stub installs createEl on
+      // HTMLElement.prototype globally, so we explicitly delete it on the
+      // returned pre to simulate non-Obsidian environments (iframes /
+      // popup windows / test envs where the prototype patch hasn't fired).
+      const host = document.createElement('div');
+      const createElStub = vi.fn((tag: string, opts?: { text?: string; cls?: string }) => {
+        const el = document.createElement(tag);
+        if (opts?.text !== undefined) el.textContent = opts.text;
+        if (opts?.cls !== undefined) {
+          for (const c of opts.cls.split(/\s+/).filter(Boolean)) el.classList.add(c);
+        }
+        host.appendChild(el);
+        // Hide the prototype createEl on this specific element by defining
+        // an own-property setter to undefined (jsdom inherits createEl from
+        // the obsidian-stub's prototype patch otherwise). The defensive code
+        // sees `pre.createEl` as undefined and takes the textContent path.
+        Object.defineProperty(el, 'createEl', {
+          configurable: true,
+          value: undefined,
+        });
+        return el;
+      });
+      (host as unknown as { createEl: typeof createElStub }).createEl = createElStub;
+
+      const source = 'def f():\n    return 1\n';
+      expect(() => {
+        mountLegacyFenceBanner(
+          host,
+          source,
+          file as never,
+          plugin as never,
+          'manual-prompt',
+        );
+      }).not.toThrow();
+
+      // The pre was created via host.createEl, but pre.createEl is undefined,
+      // so the defensive fallback ran: pre.textContent = source.
+      const pre = host.querySelector('pre');
+      expect(pre).not.toBeNull();
+      expect(pre!.textContent).toBe(source);
+      // No <code> wrapper because the chained createEl was not callable.
+      expect(pre!.querySelector('code')).toBeNull();
+    });
+
+    it("CR-04-fix Test B — mountLegacyFenceBanner top-level throw caught + plain-text fallback", () => {
+      const file = makeFile();
+      const plugin = makePlugin();
+      const host = document.createElement('div');
+      // Force createEl to throw. Without the top-level try/catch, this
+      // propagates into the editor render cycle.
+      (host as unknown as { createEl: () => HTMLElement }).createEl = vi
+        .fn()
+        .mockImplementation(() => {
+          throw new TypeError('synthetic banner failure');
+        });
+
+      const source = 'fence body';
+      expect(() => {
+        mountLegacyFenceBanner(
+          host,
+          source,
+          file as never,
+          plugin as never,
+          'manual-prompt',
+        );
+      }).not.toThrow();
+
+      // logger.debug was called once with a 'mount failed' message.
+      expect(debugSpy).toHaveBeenCalled();
+      const messages = (debugSpy.mock.calls as unknown[][])
+        .map((call) => String((call[0] as unknown) ?? ''))
+        .join(' | ');
+      expect(messages).toContain('mount failed');
+
+      // Plain-text fallback: host.textContent = source.
+      expect(host.textContent).toBe(source);
+    });
+
+    it("CR-04-fix Test C — 'auto-migrating' mode also wrapped in top-level try/catch", () => {
+      const file = makeFile();
+      const plugin = makePlugin();
+      const host = document.createElement('div');
+      (host as unknown as { createEl: () => HTMLElement }).createEl = vi
+        .fn()
+        .mockImplementation(() => {
+          throw new TypeError('synthetic auto-migrating failure');
+        });
+
+      const source = 'auto body';
+      expect(() => {
+        mountLegacyFenceBanner(
+          host,
+          source,
+          file as never,
+          plugin as never,
+          'auto-migrating',
+        );
+      }).not.toThrow();
+
+      expect(debugSpy).toHaveBeenCalled();
+      expect(host.textContent).toBe(source);
+    });
+
+    it("CR-04-fix Test D — 'read-only-legacy' mode hits the renderReadOnly defensive path (pre lacks createEl)", () => {
+      const file = makeFile();
+      const plugin = makePlugin();
+      const host = document.createElement('div');
+      const createElStub = vi.fn((tag: string) => {
+        // Return a stock pre with the prototype createEl explicitly hidden
+        // (simulates non-Obsidian environments).
+        const el = document.createElement(tag);
+        host.appendChild(el);
+        Object.defineProperty(el, 'createEl', {
+          configurable: true,
+          value: undefined,
+        });
+        return el;
+      });
+      (host as unknown as { createEl: typeof createElStub }).createEl = createElStub;
+
+      const source = 'read-only legacy body\n';
+      expect(() => {
+        mountLegacyFenceBanner(
+          host,
+          source,
+          file as never,
+          plugin as never,
+          'read-only-legacy',
+        );
+      }).not.toThrow();
+
+      const pre = host.querySelector('pre');
+      expect(pre).not.toBeNull();
+      // Defensive fallback: pre.textContent = source.
+      expect(pre!.textContent).toBe(source);
+    });
+
+    it("CR-04-fix Test E — host.textContent setter throws (paranoid catch — nothing escapes)", () => {
+      const file = makeFile();
+      const plugin = makePlugin();
+      // Build a host with both throwing createEl AND throwing textContent
+      // setter — degenerate iframe-detached scenario.
+      const host = document.createElement('div');
+      (host as unknown as { createEl: () => HTMLElement }).createEl = vi
+        .fn()
+        .mockImplementation(() => {
+          throw new TypeError('synthetic createEl failure');
+        });
+      // Override textContent setter to throw.
+      Object.defineProperty(host, 'textContent', {
+        configurable: true,
+        get() {
+          return '';
+        },
+        set() {
+          throw new TypeError('synthetic textContent setter failure');
+        },
+      });
+
+      expect(() => {
+        mountLegacyFenceBanner(
+          host,
+          'fence body',
+          file as never,
+          plugin as never,
+          'manual-prompt',
+        );
+      }).not.toThrow();
+      // logger.debug was called for the outer mount-failed branch.
+      expect(debugSpy).toHaveBeenCalled();
+    });
   });
 });

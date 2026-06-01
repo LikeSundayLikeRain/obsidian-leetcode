@@ -14,6 +14,12 @@
 // Pattern S-07 — no innerHTML. createEl with text option (XSS-safe);
 // happy-dom fallback to document.createElement + textContent (mirrors
 // renderStaticFallback in src/widget/codeBlockProcessor.ts:42-69).
+//
+// CR-04 (Plan 21-07) — defensive `pre.createEl` chain in renderReadOnly +
+// top-level try/catch wrap on mountLegacyFenceBanner with logger.debug +
+// host.textContent fallback. Banner DOM never throws into the editor render
+// cycle, even in non-Obsidian environments (test runners, iframes, popup
+// windows where Obsidian's HTMLElement.prototype patches haven't fired).
 
 import type { App, TFile } from 'obsidian';
 import { migrateLegacyFenceIfNeeded } from './fenceMigrator';
@@ -48,34 +54,50 @@ export function mountLegacyFenceBanner(
   plugin: BannerPlugin,
   mode: LegacyBannerMode,
 ): void {
-  empty(host);
-  if (mode === 'read-only-legacy') {
-    renderReadOnly(host, source);
-    return;
-  }
-  const banner = mk(host, 'div', {
-    cls: `leetcode-migration-banner leetcode-migration-banner--${mode}`,
-  });
-  if (mode === 'auto-migrating') {
+  // CR-04 (Plan 21-07) — top-level try/catch around the entire mount body.
+  // Any throw from empty(host), mk(...), renderReadOnly(...), or addEventListener
+  // is logged at debug level and the host receives a plain-text source rendering
+  // so the editor render cycle never breaks. The inner try around
+  // host.textContent = source is paranoid (host could be detached or have a
+  // non-writable textContent in degenerate test/iframe scenarios) — silently
+  // swallow to guarantee no throw escapes.
+  try {
+    empty(host);
+    if (mode === 'read-only-legacy') {
+      renderReadOnly(host, source);
+      return;
+    }
+    const banner = mk(host, 'div', {
+      cls: `leetcode-migration-banner leetcode-migration-banner--${mode}`,
+    });
+    if (mode === 'auto-migrating') {
+      mk(banner, 'p', {
+        text: 'Migrating note to v1.3 format...',
+        cls: 'leetcode-migration-banner__copy',
+      });
+      return;
+    }
+    // mode === 'manual-prompt'
     mk(banner, 'p', {
-      text: 'Migrating note to v1.3 format...',
+      text: 'This note uses the v1.2 format.',
       cls: 'leetcode-migration-banner__copy',
     });
-    return;
+    const button = mk(banner, 'button', {
+      text: 'Migrate now',
+      cls: 'leetcode-migration-banner__cta',
+    }) as HTMLButtonElement;
+    button.addEventListener('click', () => {
+      void runMigrate(plugin, file);
+    });
+    renderReadOnly(host, source);
+  } catch (err) {
+    logger.debug('migration.legacyFenceBanner: mount failed', err);
+    try {
+      host.textContent = source;
+    } catch {
+      // host may be detached or have a non-writable textContent — defensive.
+    }
   }
-  // mode === 'manual-prompt'
-  mk(banner, 'p', {
-    text: 'This note uses the v1.2 format.',
-    cls: 'leetcode-migration-banner__copy',
-  });
-  const button = mk(banner, 'button', {
-    text: 'Migrate now',
-    cls: 'leetcode-migration-banner__cta',
-  }) as HTMLButtonElement;
-  button.addEventListener('click', () => {
-    void runMigrate(plugin, file);
-  });
-  renderReadOnly(host, source);
 }
 
 /** Click handler. Pattern S-05 silent-on-failure: log debug + leave banner
@@ -93,12 +115,27 @@ async function runMigrate(plugin: BannerPlugin, file: TFile): Promise<void> {
 }
 
 /** Render `<pre><code>{source}</code></pre>` via createEl + text option;
- *  happy-dom path uses document.createElement + textContent. */
+ *  happy-dom path uses document.createElement + textContent.
+ *
+ *  CR-04 (Plan 21-07) — defensive check on the chained createEl. When the
+ *  outer host.createEl returns a `pre` element whose own `createEl` helper
+ *  is undefined (non-Obsidian environments — test runners / iframes /
+ *  popup windows where Obsidian's HTMLElement.prototype patches haven't
+ *  fired), the chained call would throw `TypeError: Cannot read properties
+ *  of undefined`. We extract `preCe` via optional chaining; if it's a
+ *  function, invoke it; else fall through to `pre.textContent = source`
+ *  so the source bytes are still rendered as plain text (no `<code>`
+ *  wrapper but no throw either). */
 function renderReadOnly(host: HTMLElement, source: string): void {
   const ce = (host as unknown as { createEl?: CreateElFn }).createEl;
   if (typeof ce === 'function') {
     const pre = ce.call(host, 'pre');
-    (pre as unknown as { createEl: CreateElFn }).createEl('code', { text: source });
+    const preCe = (pre as unknown as { createEl?: CreateElFn })?.createEl;
+    if (typeof preCe === 'function') {
+      preCe.call(pre, 'code', { text: source });
+      return;
+    }
+    pre.textContent = source;
     return;
   }
   const pre = document.createElement('pre');

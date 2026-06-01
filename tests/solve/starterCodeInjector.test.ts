@@ -172,3 +172,138 @@ describe('injectCodeSection — fenceKind dispatch (Plan 21-03 v13-emit, D-emit-
     expect(out).not.toContain('```leetcode-solve');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Plan 21-07 Task 3 — WR-07 closure. injectCodeSection's v1.3 short-circuit
+// targets the FIRST leetcode-solve fence INSIDE ## Code (not the first
+// leetcode-solve fence in the WHOLE FILE). Mirrors forceInjectCodeSection's
+// ## Code-scoped discipline. Multi-fence corner cases — stray
+// ```leetcode-solve in ## Problem or ## Notes — no longer corrupt the
+// wrong fence.
+// ─────────────────────────────────────────────────────────────────────────
+describe('injectCodeSection — WR-07-fix ## Code-scoped fence index (Plan 21-07)', () => {
+  it('WR-07-fix Test A — happy path (single v1.3 fence in ## Code) replaces body', () => {
+    const body = [
+      '## Code',
+      '',
+      '```leetcode-solve',
+      'old body',
+      '```',
+      '',
+    ].join('\n');
+    const out = injectCodeSection(body, {
+      starterCode: 'new body',
+      langSlug: 'python3',
+      fenceKind: 'leetcode-solve',
+    });
+    expect(out).toContain('```leetcode-solve\nnew body\n```');
+    expect(out).not.toContain('old body');
+  });
+
+  it("WR-07-fix Test B — stray leetcode-solve in ## Notes (BELOW ## Code) — only ## Code's fence rewritten", () => {
+    const body = [
+      '## Code',
+      '',
+      '```leetcode-solve',
+      'actual body',
+      '```',
+      '',
+      '## Notes',
+      '',
+      'Reference:',
+      '',
+      '```leetcode-solve',
+      'example',
+      '```',
+      '',
+    ].join('\n');
+    const out = injectCodeSection(body, {
+      starterCode: 'NEW',
+      langSlug: 'python3',
+      fenceKind: 'leetcode-solve',
+    });
+    // ## Code fence rewritten; ## Notes example fence preserved.
+    expect(out).toContain('```leetcode-solve\nNEW\n```');
+    expect(out).toContain('```leetcode-solve\nexample\n```');
+    expect(out).not.toContain('actual body');
+    // Order preserved: NEW (in ## Code) appears BEFORE example (in ## Notes).
+    const newIdx = out.indexOf('NEW');
+    const exampleIdx = out.indexOf('example');
+    expect(newIdx).toBeGreaterThan(0);
+    expect(exampleIdx).toBeGreaterThan(newIdx);
+  });
+
+  it("WR-07-fix Test C — stray leetcode-solve in ## Problem (ABOVE ## Code) — ONLY ## Code's fence rewritten (regression case)", () => {
+    // This is the WR-07 regression case: pre-21-07, the wrong fence (the
+    // ## Problem one) would be overwritten because rewriteFenceBody(text, 0)
+    // targets the FIRST leetcode-solve opener regardless of section.
+    const body = [
+      '## Problem',
+      '',
+      'For reference:',
+      '',
+      '```leetcode-solve',
+      'example',
+      '```',
+      '',
+      '## Code',
+      '',
+      '```leetcode-solve',
+      'actual body',
+      '```',
+      '',
+    ].join('\n');
+    const out = injectCodeSection(body, {
+      starterCode: 'NEW',
+      langSlug: 'python3',
+      fenceKind: 'leetcode-solve',
+    });
+    // The ## Problem reference fence is preserved.
+    expect(out).toContain('```leetcode-solve\nexample\n```');
+    // The ## Code fence got the new body.
+    expect(out).toContain('```leetcode-solve\nNEW\n```');
+    // The original ## Code body is replaced.
+    expect(out).not.toContain('actual body');
+    // Order: example (in ## Problem) BEFORE NEW (in ## Code).
+    const exampleIdx = out.indexOf('example');
+    const newIdx = out.indexOf('NEW');
+    expect(exampleIdx).toBeGreaterThan(0);
+    expect(newIdx).toBeGreaterThan(exampleIdx);
+  });
+
+  it('WR-07-fix Test D — no v1.3 fence in ## Code (helper returns null) — falls through to legacy path', () => {
+    const body = [
+      '## Code',
+      '',
+      '```python',
+      'legacy',
+      '```',
+      '',
+    ].join('\n');
+    const out = injectCodeSection(body, {
+      starterCode: 'NEW',
+      langSlug: 'python3',
+      fenceKind: 'leetcode-solve',
+    });
+    // Legacy python fence is recognized (idempotent); injectCodeSection
+    // returns the body unchanged via D-07 idempotency contract.
+    expect(out).toContain('```python');
+    expect(out).toContain('legacy');
+    expect(out).not.toContain('NEW');
+  });
+
+  it('WR-07-fix Test E — no ## Code section at all — falls through to legacy path which creates ## Code', () => {
+    const body = '## Notes\n\n```leetcode-solve\nfencey\n```\n';
+    const out = injectCodeSection(body, {
+      starterCode: 'NEW',
+      langSlug: 'python3',
+      fenceKind: 'leetcode-solve',
+    });
+    // The stray ```leetcode-solve in ## Notes is preserved.
+    expect(out).toContain('```leetcode-solve\nfencey\n```');
+    // The legacy path creates a ## Code section.
+    expect(out).toContain('## Code');
+    expect(out).toContain('```python');
+    expect(out).toContain('NEW');
+  });
+});
