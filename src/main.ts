@@ -1561,6 +1561,10 @@ export default class LeetCodePlugin extends Plugin {
           migrate: migrateLegacyFenceIfNeeded,
           isMigrationCandidate,
           logDebug: (msg, ...args) => logger.debug(msg, ...args),
+          // Phase 21 Plan 21-08 (Gap 1) — Reading-mode rerender after
+          // auto-migration. Wired in Task 2 to the real
+          // `rerenderReadingModePanes` helper. Until then, no-op.
+          rerenderPreviewLeaves: () => undefined,
         }),
       ),
     );

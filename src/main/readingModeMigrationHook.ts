@@ -64,6 +64,15 @@ export interface ReadingModeMigrationHookDeps {
   ) => boolean;
   /** DI for testability — production wires `logger.debug`. */
   logDebug: (msg: string, ...args: unknown[]) => void;
+  /**
+   * Phase 21 Plan 21-08 (Gap 1) — invoked AFTER migrate(...) resolves with
+   * `migrated === true` to force a Reading-mode pane re-render so the v1.3
+   * widget mounts on the SAME open. Production wires the
+   * `rerenderReadingModePanes(app, path)` helper which walks
+   * `getLeavesOfType('markdown')` and calls `view.previewMode.rerender(true)`
+   * on matching preview-mode leaves. No-op for false / rejection / OFF.
+   */
+  rerenderPreviewLeaves: (path: string) => void;
 }
 
 /**
@@ -103,13 +112,29 @@ export function makeReadingModeMigrationHandler(
       // re-evaluate (idempotency in the orchestrator makes the second
       // pass a no-op).
       deps.migrateInFlight.add(file.path);
+      // Phase 21 Plan 21-08 (Gap 1) — capture the resolved `migrated`
+      // boolean and force a Reading-mode pane re-render iff the migration
+      // actually rewrote the fence. Ordering note (per G1.4):
+      //   1. .then captures `migrated`.
+      //   2. .catch handles rejection (rerender skipped).
+      //   3. .finally clears the in-flight lock UNCONDITIONALLY.
+      //   4. AFTER .finally, a trailing .then() observes the captured
+      //      `migrated` value and fires rerenderPreviewLeaves so a
+      //      re-entrant post-processor → file-open echo would NOT see the
+      //      dedupe lock held. Inner try/catch swallows rerender throws so
+      //      the .finally has already run regardless.
+      let migratedFlag = false;
       void deps
         .migrate(deps.app, file, {
           autoMigrateOnOpen: true,
           defaultLanguage:
             deps.settings.getDefaultLanguage?.() ?? 'python3',
         })
+        .then((migrated) => {
+          migratedFlag = migrated === true;
+        })
         .catch((err) => {
+          migratedFlag = false;
           deps.logDebug(
             'migration.fileOpenHook: non-fatal failure',
             err,
@@ -117,6 +142,17 @@ export function makeReadingModeMigrationHandler(
         })
         .finally(() => {
           deps.migrateInFlight.delete(file.path);
+        })
+        .then(() => {
+          if (!migratedFlag) return;
+          try {
+            deps.rerenderPreviewLeaves(file.path);
+          } catch (err) {
+            deps.logDebug(
+              'migration.fileOpenHook: rerenderPreviewLeaves threw (non-fatal)',
+              err,
+            );
+          }
         });
     } else {
       // autoMigrateOnOpen=OFF Reading-mode path. The Live Preview
