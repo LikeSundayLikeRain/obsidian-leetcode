@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { injectCodeSection } from '../../src/solve/starterCodeInjector';
+import { describe, it, expect, vi } from 'vitest';
+import { injectCodeSection, retrofit } from '../../src/solve/starterCodeInjector';
 
 describe('injectCodeSection — idempotent path (SOLVE-02, D-06/D-07)', () => {
   const OPTS = { starterCode: 'def solve():\n    pass', langSlug: 'python3' };
@@ -305,5 +305,179 @@ describe('injectCodeSection — WR-07-fix ## Code-scoped fence index (Plan 21-07
     expect(out).toContain('## Code');
     expect(out).toContain('```python');
     expect(out).toContain('NEW');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 21 Plan 21-13 — retrofit() fenceKind plumbing (Post-UAT Gap B
+// closure). The bug: `retrofit()` calls `injectCodeSection` WITHOUT a
+// `fenceKind` argument; on a v1.3 note that already has a leetcode-solve
+// fence under ## Code, the legacy path runs and grafts a sibling
+// ```<langSlug> fence on top — DATA CORRUPTION on every fresh problem-open.
+//
+// Threat-model + write-path hygiene: retrofit dispatches via
+// `app.vault.process(file, fn)` (CF-06 / L8). No CM6 dispatches; the
+// `'leetcode.*'` userEvent rule (Phase 05.5) does NOT apply. The injected
+// `fn` is a pure-string transform around `injectCodeSection`; no new write
+// path introduced.
+// ─────────────────────────────────────────────────────────────────────────
+describe('retrofit() fenceKind plumbing — Post-UAT Gap B (Plan 21-13)', () => {
+  /**
+   * Helper — build a captured-callback vault.process spy. The capture lets
+   * tests run the closure synchronously against any input string without
+   * needing a real Obsidian vault.
+   */
+  function makeProcessSpy() {
+    let captured: ((current: string) => string) | null = null;
+    const process = vi.fn(async (_file: unknown, fn: (current: string) => string) => {
+      captured = fn;
+      return fn('');
+    });
+    const app = { vault: { process } } as unknown as Parameters<typeof retrofit>[0];
+    const file = { path: 'LeetCode/1-foo.md' } as unknown as Parameters<typeof retrofit>[1];
+    return {
+      app,
+      file,
+      process,
+      run(input: string): string {
+        if (!captured) throw new Error('vault.process callback never captured');
+        return captured(input);
+      },
+    };
+  }
+
+  /** Counts the number of fence opener lines (` ```\S+ `) in a note body. */
+  function countFenceOpeners(text: string): number {
+    return (text.match(/^\s*```\S+\s*$/gm) ?? []).length;
+  }
+
+  const PYTHON_DETAIL = {
+    fetchedAt: Date.now(),
+    id: 1,
+    title: 'Foo',
+    difficulty: 'Easy' as const,
+    url: 'https://leetcode.com/problems/foo/',
+    contentHtml: '<p>foo</p>',
+    topicSlugs: [],
+    codeSnippets: [
+      { lang: 'Python3', langSlug: 'python3', code: 'class Solution:\n    pass' },
+    ],
+  };
+
+  it('U1: retrofit threads fenceKind=leetcode-solve when settings.getUseInlineWidget()=true → rewriteFenceBody short-circuit, single fence opener preserved', async () => {
+    const spy = makeProcessSpy();
+    const settings = {
+      getDefaultLanguage: () => 'python3',
+      getUseInlineWidget: () => true,
+    };
+    const existing = [
+      '## Problem',
+      'A problem.',
+      '',
+      '## Code',
+      '',
+      '```leetcode-solve',
+      'OLD',
+      'BODY',
+      '```',
+      '',
+      '## Notes',
+    ].join('\n');
+    await retrofit(spy.app, spy.file, PYTHON_DETAIL as never, settings);
+    const out = spy.run(existing);
+    // Exactly ONE fence opener — body replaced via rewriteFenceBody.
+    expect(countFenceOpeners(out)).toBe(1);
+    expect(out).toMatch(/^```leetcode-solve\s*$/m);
+    // No sibling ```python graft.
+    expect(out).not.toMatch(/^```python\s*$/m);
+    // Body now has the trimmed starter.
+    expect(out).toContain('class Solution:');
+    expect(out).not.toContain('OLD\nBODY');
+  });
+
+  it('U2: retrofit threads fenceKind=legacy when settings.getUseInlineWidget()=false → legacy path runs verbatim', async () => {
+    const spy = makeProcessSpy();
+    const settings = {
+      getDefaultLanguage: () => 'python3',
+      getUseInlineWidget: () => false,
+    };
+    // Legacy shape: no ## Code, no leetcode-solve fence.
+    const existing = '## Problem\nA problem.\n\n## Notes\nMy notes.\n';
+    await retrofit(spy.app, spy.file, PYTHON_DETAIL as never, settings);
+    const out = spy.run(existing);
+    // Legacy path injects a ```python (Phase 5.3 D-04 remap) fence.
+    expect(out).toContain('```python');
+    expect(out).toContain('class Solution:');
+    // No leetcode-solve fence emitted.
+    expect(out).not.toContain('```leetcode-solve');
+  });
+
+  it('U3: retrofit defaults to legacy when settings omits getUseInlineWidget (back-compat)', async () => {
+    const spy = makeProcessSpy();
+    const settings = { getDefaultLanguage: () => 'python3' };
+    const existing = '## Problem\nA problem.\n\n## Notes\nMy notes.\n';
+    await retrofit(spy.app, spy.file, PYTHON_DETAIL as never, settings);
+    const out = spy.run(existing);
+    // Behaves identically to U2 — legacy path.
+    expect(out).toContain('```python');
+    expect(out).toContain('class Solution:');
+    expect(out).not.toContain('```leetcode-solve');
+  });
+
+  it('U4: retrofit on a v1.3-shaped note with useInlineWidget=true and matching starter is byte-equal idempotent', async () => {
+    const spy = makeProcessSpy();
+    const settings = {
+      getDefaultLanguage: () => 'python3',
+      getUseInlineWidget: () => true,
+    };
+    // Body content matches what `retrofit` will derive (trimmed starter).
+    const existing = [
+      '## Problem',
+      'A problem.',
+      '',
+      '## Code',
+      '',
+      '```leetcode-solve',
+      'class Solution:',
+      '    pass',
+      '```',
+      '',
+      '## Notes',
+    ].join('\n');
+    await retrofit(spy.app, spy.file, PYTHON_DETAIL as never, settings);
+    const out = spy.run(existing);
+    // Idempotent — output equals input byte-for-byte.
+    expect(out).toBe(existing);
+  });
+
+  it('U5: retrofit on v1.3 note with DIFFERENT starter rewrites body, opener byte-for-byte preserved, ZERO sibling fences', async () => {
+    const spy = makeProcessSpy();
+    const settings = {
+      getDefaultLanguage: () => 'python3',
+      getUseInlineWidget: () => true,
+    };
+    const existing = [
+      '## Problem',
+      'A problem.',
+      '',
+      '## Code',
+      '',
+      '```leetcode-solve',
+      'OLD STARTER',
+      '```',
+      '',
+      '## Notes',
+    ].join('\n');
+    await retrofit(spy.app, spy.file, PYTHON_DETAIL as never, settings);
+    const out = spy.run(existing);
+    // Exactly one fence opener.
+    expect(countFenceOpeners(out)).toBe(1);
+    // The opener is leetcode-solve.
+    expect(out).toMatch(/^```leetcode-solve\s*$/m);
+    // ZERO ```python siblings.
+    expect(out).not.toMatch(/^```python\s*$/m);
+    // Body replaced.
+    expect(out).toContain('class Solution:');
+    expect(out).not.toContain('OLD STARTER');
   });
 });

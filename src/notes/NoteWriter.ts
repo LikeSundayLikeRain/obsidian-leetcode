@@ -226,11 +226,32 @@ export class NoteWriter {
    * is left structurally unchanged until they either configure a default
    * language in settings or invoke the explicit "Insert starter code"
    * command (Plan 07 Task 2).
+   *
+   * Phase 21 Plan 21-13 (Post-UAT Gap B closure) — defense-in-depth gate:
+   * when `useInlineWidget=ON` (the v1.3 path), the v1.3 widget owns its own
+   * fence body via `vault.process` writes; running the legacy retrofit on
+   * top would graft a sibling `\`\`\`<langSlug>` fence ahead of the existing
+   * `\`\`\`leetcode-solve` fence — the duplicate-fence corruption reported
+   * in `21-HUMAN-UAT.md` Gap B. Mirrors Phase 20 Plan 20-09's
+   * `main.ts:1421-1429` file-open gate that closed a near-identical
+   * corruption pattern. The four call sites of this wrapper (lines 272,
+   * 343, 419, 453 below — re-open with cached detail / cache-cleared
+   * recovery / new-note belt-and-suspenders / backgroundRefresh after TTL)
+   * are all protected by this single gate.
    */
   private async retrofitStarterCode(
     file: TFile,
     detail: DetailCacheEntry | null,
   ): Promise<void> {
+    const useInlineWidget = this.settings.getUseInlineWidget?.() ?? false;
+    if (useInlineWidget) {
+      // v1.3 widget owns the fence body; retrofit is structurally meaningless
+      // and would corrupt the note by stacking a sibling fence (Plan 21-13).
+      logger.debug(
+        'notes.retrofitStarterCode: skipped — v1.3 widget owns the fence body via vault.process writes; retrofit is structurally meaningless on the v1.3 path',
+      );
+      return;
+    }
     const defaultLang = this.settings.getDefaultLanguage();
     const hasAnyStarter = Array.isArray(detail?.codeSnippets) && (detail?.codeSnippets?.length ?? 0) > 0;
     if (!defaultLang && !hasAnyStarter) {

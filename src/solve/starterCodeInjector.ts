@@ -252,18 +252,48 @@ export function forceInjectCodeSection(current: string, opts: InjectOptions): st
 /**
  * Side-effect wrapper: runs injectCodeSection via vault.process.
  * Silent on success; debug-log on failure. Never Notices (D-09).
+ *
+ * Phase 21 Plan 21-13 (Post-UAT Gap B closure) — the `settings` parameter is
+ * widened with an optional `getUseInlineWidget?(): boolean` getter. When the
+ * getter exists AND returns true, retrofit derives `fenceKind: 'leetcode-solve'`
+ * and threads it into `injectCodeSection`'s `InjectOptions`, engaging the
+ * v1.3 short-circuit at `injectCodeSection.ts:106-112` (the
+ * `rewriteFenceBody` body-only-replace path that preserves the
+ * `\`\`\`leetcode-solve` opener byte-for-byte).
+ *
+ * Without this plumbing, the retrofit's call falls through to the legacy
+ * path at lines 114-146 which prepends a fresh `\`\`\`<defaultLanguage>`
+ * fence ahead of the existing v1.3 fence — TWO fences in `## Code` on
+ * disk (the user-reported "duplicate fence" symptom in
+ * `21-HUMAN-UAT.md` Gap B). The corruption hits all four NoteWriter
+ * `retrofitStarterCode` call sites (lines 272, 343, 419, 453) through
+ * the shared wrapper.
+ *
+ * Defense-in-depth: NoteWriter.retrofitStarterCode also gates on
+ * `useInlineWidget` and short-circuits BEFORE invoking this raw retrofit
+ * (analog of Phase 20 Plan 20-09 `main.ts:1421-1429` file-open gate). The
+ * fenceKind plumbing here is belt-and-suspenders — it saves any
+ * non-NoteWriter caller (today: none in production; future: any
+ * settings-tab "rebuild starter code" command etc.) from the same
+ * corruption.
  */
 export async function retrofit(
   app: App,
   file: TFile,
   detail: DetailCacheEntry | null,
-  settings: { getDefaultLanguage(): string },
+  settings: { getDefaultLanguage(): string; getUseInlineWidget?(): boolean },
 ): Promise<void> {
   try {
     const defaultLang = settings.getDefaultLanguage();
     const starter = resolveStarter(detail, defaultLang);
+    const fenceKind: 'leetcode-solve' | 'legacy' =
+      settings.getUseInlineWidget?.() === true ? 'leetcode-solve' : 'legacy';
     await app.vault.process(file, (current) =>
-      injectCodeSection(current, { starterCode: starter, langSlug: defaultLang }),
+      injectCodeSection(current, {
+        starterCode: starter,
+        langSlug: defaultLang,
+        fenceKind,
+      }),
     );
   } catch (err) {
     logger.debug('solve.retrofit: non-fatal failure', err);
