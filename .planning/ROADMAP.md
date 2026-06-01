@@ -198,12 +198,12 @@ Plans:
 - Research flag: LOW for mechanics; MEDIUM for hand-edited note edge cases (e.g., user-modified fence with extra blank lines, malformed frontmatter, missing `## Code` heading).
 - Pitfalls covered: P7, P13.
 
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 21-01-PLAN.md — fenceMigrator core + strict-match predicate + rewriteFenceOpenerTag CRLF helper + property-test corpus (Foundation; MIGRATE-01..04, MIGRATE-07)
+- [x] 21-01-PLAN.md — fenceMigrator core + strict-match predicate + rewriteFenceOpenerTag CRLF helper + property-test corpus (Foundation; MIGRATE-01..04, MIGRATE-07)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -286,7 +286,7 @@ Plans:
 | 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 4/4            | Complete    | 2026-05-26 |
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
 | 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 9/9 | Complete   | 2026-05-31 |
-| 21. v1.2 Migration                          | v1.3      | 0/4            | Planned     | -          |
+| 21. v1.2 Migration                          | v1.3      | 1/4 | In Progress|  |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
 
 ## Backlog
