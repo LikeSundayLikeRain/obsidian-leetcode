@@ -162,6 +162,8 @@ import { ChildEditorRegistry } from './main/childEditorRegistry';
 import { buildNestedEditorExtension, nestedEditorRebuildEffect } from './main/nestedEditorExtension';
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
+// PHASE_22_DELETE_WITH_V1_2_PATH — Phase 21 v1.2 banner discovery import; remove with the module.
+import { registerLegacyBannerPostProcessor } from './main/readingModeLegacyBannerPostProcessor';
 import { registerVaultModifyRepairTrigger } from './main/childEditorSync';
 // Phase 19 Plan 01 — v1.3 inline widget primitives. Hard-gated behind
 // useInlineWidget=ON (default OFF) per CONTEXT D-05; v1.2 nested-editor
@@ -1064,6 +1066,15 @@ export default class LeetCodePlugin extends Plugin {
         'leetcode-solve',
         leetCodeBlockProcessor(this),
       );
+      // PHASE_22_DELETE_WITH_V1_2_PATH — Phase 21 v1.2 banner registration; remove with the module.
+      // Plan 21-10: surfaces the legacy migration banner in Reading mode for
+      // v1.2-shaped notes (langSlug fence under ## Code, lc-slug present)
+      // when autoMigrateOnOpen=OFF. Closes UAT Gap 3 / Test 4a — the
+      // tag-bound `registerMarkdownCodeBlockProcessor('leetcode-solve', ...)`
+      // above only fires for fences literally tagged `leetcode-solve`, so
+      // a separate non-tag-bound post-processor is required to discover
+      // v1.2 fences and replace them with `mountLegacyFenceBanner('manual-prompt')`.
+      registerLegacyBannerPostProcessor(this);
       this.registerEditorExtension([leetCodeFenceViewPlugin(this)]);
 
       // Plan 19-02 — six flush-on-transition hooks (CONTEXT C-07).
