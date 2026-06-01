@@ -3020,6 +3020,40 @@ export default class LeetCodePlugin extends Plugin {
       return;
     }
 
+    // Plan 20-10 hotfix part 5 — apply the language parser swap directly
+    // on the same target instead of waiting for the metadataCache 'changed'
+    // event to drive it. The downstream listener races Obsidian's
+    // metadata-parse pipeline: 'changed' can fire while the cache it
+    // hands the listener still reflects the PRIOR frontmatter, producing
+    // a one-cycle lag where the body shows new code but the parser keeps
+    // the old slug until a second click. Dispatching here is the
+    // load-bearing path; the per-widget listener becomes a defensive
+    // backstop and is idempotent (Compartment.reconfigure with an equal
+    // payload is a no-op).
+    //
+    // Wrapped in its own try so test scaffolding that does not stub
+    // `settings.getIndentSizeOverride` or `childLanguageTracker` does not
+    // break — the parser swap is best-effort here.
+    try {
+      const indent = this.settings.getIndentSizeOverride?.() ?? 4;
+      dispatchTarget.dispatch({
+        effects: languageCompartment.reconfigure(
+          buildLanguageExtensions(newSlug, indent),
+        ),
+      });
+      this.childLanguageTracker?.set(dispatchTarget, newSlug);
+    } catch (err) {
+      logger.debug('switchLanguageFromWidget: parser reconfigure failed', err);
+    }
+    // Refresh the chevron label + .is-current marker immediately so the
+    // user sees the visible state flip on the same click that issued the
+    // dispatch — no wait for the metadataCache event.
+    try {
+      widget.actionRowRefresh?.(newSlug);
+    } catch {
+      // Defensive — chevron UI must never block the dispatch path.
+    }
+
     // Step (f) — atomic frontmatter rewrite. The per-widget metadataCache
     // 'changed' subscription fires Compartment.reconfigure + actionRowRefresh
     // so the chevron label + parser update without remount.
