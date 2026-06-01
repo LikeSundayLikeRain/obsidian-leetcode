@@ -198,7 +198,7 @@ Plans:
 - Research flag: LOW for mechanics; MEDIUM for hand-edited note edge cases (e.g., user-modified fence with extra blank lines, malformed frontmatter, missing `## Code` heading).
 - Pitfalls covered: P7, P13.
 
-**Plans:** 7 plans (4 shipped + 3 gap-closure from 21-VERIFICATION.md)
+**Plans:** 6/7 plans executed
 
 Plans:
 **Wave 1**
@@ -219,8 +219,8 @@ Plans:
 
 **Gap closure** *(parallel; independent file ownership; close 21-VERIFICATION.md BLOCKERs CR-01..CR-04 + WARNINGs WR-01/02/03/05/07)*
 
-- [ ] 21-05-PLAN.md — Reading-mode file-open hook + Plugin-instance migrateInFlight (CR-01 + WR-01; MIGRATE-01, MIGRATE-06)
-- [ ] 21-06-PLAN.md — Pre-existence backup check + tightened LC-slug regex + GC concurrency lock (CR-02 + CR-03 + WR-05; MIGRATE-02, MIGRATE-05)
+- [x] 21-05-PLAN.md — Reading-mode file-open hook + Plugin-instance migrateInFlight (CR-01 + WR-01; MIGRATE-01, MIGRATE-06)
+- [x] 21-06-PLAN.md — Pre-existence backup check + tightened LC-slug regex + GC concurrency lock (CR-02 + CR-03 + WR-05; MIGRATE-02, MIGRATE-05)
 - [ ] 21-07-PLAN.md — Defensive banner DOM + processFrontMatter unconditional + ## Code-scoped helpers (CR-04 + WR-02 + WR-03 + WR-07; MIGRATE-02, MIGRATE-06, MIGRATE-08)
 
 ---
@@ -292,7 +292,7 @@ Plans:
 | 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 4/4            | Complete    | 2026-05-26 |
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
 | 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 9/9 | Complete   | 2026-05-31 |
-| 21. v1.2 Migration                          | v1.3      | 4/4 | Complete   | 2026-06-01 |
+| 21. v1.2 Migration                          | v1.3      | 6/7 | In Progress|  |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
 
 ## Backlog
