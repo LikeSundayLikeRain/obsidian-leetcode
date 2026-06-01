@@ -35,7 +35,24 @@ vi.mock('../../src/widget/legacyFenceBanner', () => ({
 
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
-  return actual;
+  // Override TFile with an instantiable form so the module-under-test's
+  // `instanceof TFileRuntime` check returns true for our test fakes.
+  class TFile {
+    path: string;
+    name: string;
+    basename: string;
+    extension: string;
+    parent: unknown = null;
+    constructor(path: string) {
+      this.path = path;
+      const slash = path.lastIndexOf('/');
+      this.name = slash >= 0 ? path.slice(slash + 1) : path;
+      const dot = this.name.lastIndexOf('.');
+      this.basename = dot >= 0 ? this.name.slice(0, dot) : this.name;
+      this.extension = dot >= 0 ? this.name.slice(dot + 1) : '';
+    }
+  }
+  return { ...actual, TFile };
 });
 
 // Mock the shared logger so test can assert logger.debug fires when
@@ -151,7 +168,11 @@ interface FakeAppOpts {
   abstractByPath?: Record<string, unknown>;
 }
 
-function makeApp(opts: FakeAppOpts) {
+async function makeApp(opts: FakeAppOpts) {
+  // Pull the mocked TFile from the obsidian vi.mock factory so the runtime
+  // `instanceof TFile` check inside the module-under-test returns true for
+  // objects we hand back from getAbstractFileByPath.
+  const { TFile } = await import('obsidian');
   return {
     workspace: { on: vi.fn() },
     metadataCache: {
@@ -167,15 +188,7 @@ function makeApp(opts: FakeAppOpts) {
           return opts.abstractByPath[path];
         }
         if (path in opts.fmByPath || path in opts.textByPath) {
-          // Return a TFile-shaped object. The runtime check `instanceof TFile`
-          // returns false against this plain object — the module under test
-          // therefore must NOT use `instanceof TFile`. The Plan accepts this:
-          // it specifies "Resolve TFile via getAbstractFileByPath(...). Bail
-          // (no-op) if not a TFile" — `instanceof` is one valid implementation
-          // but the cheaper duck-type check (`abstract && typeof
-          // abstract.path === 'string'`) is also acceptable and avoids
-          // import-cycle pain in test environments.
-          return { path, name: path.split('/').pop() ?? path, basename: '', extension: 'md' };
+          return new (TFile as unknown as new (p: string) => unknown)(path);
         }
         return null;
       }),
@@ -190,7 +203,7 @@ interface FakeSettings {
   defaultLanguage: string;
 }
 
-function makePlugin(app: ReturnType<typeof makeApp>, settings: FakeSettings) {
+function makePlugin(app: Awaited<ReturnType<typeof makeApp>>, settings: FakeSettings) {
   return {
     app,
     settings: {
@@ -250,7 +263,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 1: lc-slug missing → no DOM mutation, banner not called', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'Random/notes.md': { tag: 'misc' } },
       textByPath: { 'Random/notes.md': NOT_LC_NOTE },
     });
@@ -269,7 +282,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 2: useInlineWidget=OFF → no DOM mutation', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE },
     });
@@ -288,7 +301,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 3: autoMigrateOnOpen=ON → no DOM mutation (auto path takes over)', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE },
     });
@@ -306,7 +319,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 4: isMigrationCandidate returns false (text fence) → no DOM mutation', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE_TEXT_FENCE },
     });
@@ -327,7 +340,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 5: ctx.sourcePath resolves to non-TFile → no DOM mutation, no throw', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: {},
       textByPath: {},
       // Explicitly returns null (no abstract file).
@@ -347,7 +360,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 6: note already contains ```leetcode-solve (idempotent) → no DOM mutation', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V13_NOTE },
     });
@@ -373,7 +386,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 7: single ```java code block under ## Code → pre replaced + banner mount called', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE },
     });
@@ -388,10 +401,13 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
     await processor(root, makeCtx('LC/two-sum.md', sectionInfoFor(V12_NOTE, '```java')));
 
     expect(mountLegacyFenceBannerMock).toHaveBeenCalledTimes(1);
-    const [hostArg, sourceArg, fileArg, _pluginArg, modeArg] =
-      mountLegacyFenceBannerMock.mock.calls[0] as unknown as [
-        HTMLElement, string, { path: string }, unknown, string,
-      ];
+    const callArgs = mountLegacyFenceBannerMock.mock.calls[0] as unknown as [
+      HTMLElement, string, { path: string }, unknown, string,
+    ];
+    const hostArg = callArgs[0];
+    const sourceArg = callArgs[1];
+    const fileArg = callArgs[2];
+    const modeArg = callArgs[4];
     expect(hostArg.classList.contains('leetcode-migration-banner-host')).toBe(true);
     expect(sourceArg).toBe('class Solution {}');
     expect(fileArg.path).toBe('LC/two-sum.md');
@@ -404,7 +420,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 8: ```python3 alias → resolveLangSlug recognizes it; banner mounted', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE_PYTHON3 },
     });
@@ -425,7 +441,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 9: ```text fence (NOT a recognized LC slug) → no DOM mutation', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE_TEXT_FENCE },
     });
@@ -446,7 +462,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 10: multiple code blocks where LC-langSlug one is NOT first → still locates and replaces it', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE },
     });
@@ -487,7 +503,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 11: no `pre > code` children at all → no DOM mutation, no throw', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE },
     });
@@ -508,7 +524,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 12: pre.replaceWith throws → caught, logger.debug called, no rethrow', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE },
     });
@@ -538,7 +554,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 13: code.textContent extracted byte-exactly (no whitespace mangling)', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE },
     });
@@ -564,7 +580,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 14: getSectionInfo points at fence under ## Code → render banner', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE },
     });
@@ -606,7 +622,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
       '```',
       '',
     ].join('\n');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': NOTE_WITH_NOTES_EXAMPLE },
     });
@@ -639,7 +655,7 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
 
   it('Test 16: getSectionInfo null + single matched langSlug block → render banner (fallback path)', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = makeApp({
+    const app = await makeApp({
       fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
       textByPath: { 'LC/two-sum.md': V12_NOTE },
     });
