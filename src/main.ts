@@ -108,6 +108,10 @@ import { countLeetCodeSolveFenceOpeners } from './widget/fenceLocator';
 // dispatches the v1.2 → v1.3 migration with force: true (D-auto-03 escape
 // hatch). Gated via editorCheckCallback on useInlineWidget=ON + lc-slug.
 import { migrateLegacyFenceIfNeeded } from './widget/fenceMigrator';
+// Phase 21 Plan 21-04 Task 1 — 30-day TTL backup cleanup (MIGRATE-05).
+// Fire-and-forget microtask scheduled from Plugin.onload(). Runs
+// UNCONDITIONALLY regardless of useInlineWidget per D-backup-03.
+import { runMigrationBackupGc } from './widget/migrationBackupGc';
 // Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment.
 // `switchFenceLanguage` dispatches a Compartment.reconfigure on the child
 // (when present) immediately after the parent CM6 dispatch, so the child's
@@ -403,6 +407,17 @@ export default class LeetCodePlugin extends Plugin {
 
     // Step 1 — load persisted settings (cookies, folder, language, index)
     this.settings = await SettingsStore.load(this);
+
+    // Phase 21 Plan 21-04 Task 1 (MIGRATE-05; D-backup-03; T-21-load) —
+    // schedule a fire-and-forget microtask to sweep `migration-backup-*`
+    // folders older than 30 days. Runs UNCONDITIONALLY regardless of the
+    // `useInlineWidget` setting (backups exist on disk regardless of the
+    // current widget setting). The microtask uses `Promise.resolve().then`
+    // (NOT setTimeout) so cleanup runs inside the same tick but never
+    // blocks plugin readiness; the routine is silent-on-failure
+    // (Pattern S-05) so first-install vaults (no plugin folder) do NOT
+    // throw and DO NOT block onload. NEVER awaited.
+    Promise.resolve().then(() => runMigrationBackupGc(this.app));
 
     // Step 2 — install requestUrl fetcher BEFORE any LC construction (RESEARCH.md Pitfall 1).
     // @leetnotion/leetcode-api's Credential.init() fires an eager fetch; if our shim isn't
