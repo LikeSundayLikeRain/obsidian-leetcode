@@ -114,6 +114,7 @@ import { countLeetCodeSolveFenceOpeners } from './widget/fenceLocator';
 import {
   isMigrationCandidate,
   migrateLegacyFenceIfNeeded,
+  repairFrontmatterIfNeeded,
 } from './widget/fenceMigrator';
 // Phase 21 Plan 21-05 Task 2 (CR-01) — extracted factory; tests drive it
 // directly without instantiating the full LeetCodePlugin lifecycle.
@@ -344,6 +345,16 @@ export default class LeetCodePlugin extends Plugin {
   // the Set is ready BEFORE onload runs and before any consumer of
   // PluginHost from liveModeViewPlugin.ts dereferences it.
   migrateInFlight: Set<string> = new Set();
+  // Phase 21 Plan 21-09 — sibling per-Plugin-instance Set for the
+  // frontmatter-repair path (asymmetric v1.3-body + missing lc-language
+  // shape). Separate from migrateInFlight because the two operations
+  // target different fence shapes (legacy vs. leetcode-solve) and may
+  // need to fire in sequence on the same file: the Reading-mode hook
+  // first awaits migrate, then awaits repair when migrate returns false.
+  // Live Preview's StateField guards the leetcode-solve branch with
+  // this Set so a docChange-driven rebuild does not retrigger
+  // processFrontMatter on every keystroke.
+  repairInFlight: Set<string> = new Set();
   // Phase 19 Plan 01 — instantiated only when useInlineWidget=ON (D-05
   // hard-gate). Optional field; main.ts onunload uses optional chaining when
   // calling destroyAll() so the v1.2 baseline path remains unaffected.
@@ -1574,6 +1585,10 @@ export default class LeetCodePlugin extends Plugin {
           migrateInFlight: this.migrateInFlight,
           migrate: migrateLegacyFenceIfNeeded,
           isMigrationCandidate,
+          // Phase 21 Plan 21-09 (UAT Gap 2) — repair path for the
+          // asymmetric "v1.3 body + missing lc-language" shape. Invoked
+          // AFTER migrate(...) resolves with `migrated === false`.
+          repair: repairFrontmatterIfNeeded,
           logDebug: (msg, ...args) => logger.debug(msg, ...args),
           // Phase 21 Plan 21-08 (Gap 1) — Reading-mode rerender after
           // auto-migration. Walks app.workspace.getLeavesOfType('markdown'),

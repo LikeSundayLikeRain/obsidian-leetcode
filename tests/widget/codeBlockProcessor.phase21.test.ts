@@ -43,15 +43,20 @@ vi.mock('obsidian', async () => {
 // vi.hoisted spies — must be declared inside hoisted() so vi.mock factories
 // can reference them without TDZ. Mirrors the pattern in
 // tests/widget/legacyFenceBanner.test.ts.
-const { migrateSpy, candidateSpy, bannerSpy } = vi.hoisted(() => ({
-  migrateSpy: vi.fn(async () => true),
-  candidateSpy: vi.fn(() => true),
-  bannerSpy: vi.fn(),
-}));
+const { migrateSpy, candidateSpy, bannerSpy, repairSpy, repairCandidateSpy } =
+  vi.hoisted(() => ({
+    migrateSpy: vi.fn(async () => true),
+    candidateSpy: vi.fn(() => true),
+    bannerSpy: vi.fn(),
+    repairSpy: vi.fn(async () => false),
+    repairCandidateSpy: vi.fn(() => false),
+  }));
 
 vi.mock('../../src/widget/fenceMigrator', () => ({
   migrateLegacyFenceIfNeeded: migrateSpy,
   isMigrationCandidate: candidateSpy,
+  repairFrontmatterIfNeeded: repairSpy,
+  isFrontmatterRepairCandidate: repairCandidateSpy,
 }));
 
 vi.mock('../../src/widget/legacyFenceBanner', () => ({
@@ -132,8 +137,12 @@ describe('Phase 21 mount-path migration', () => {
     migrateSpy.mockClear();
     candidateSpy.mockClear();
     bannerSpy.mockClear();
+    repairSpy.mockClear();
+    repairCandidateSpy.mockClear();
     migrateSpy.mockResolvedValue(true);
     candidateSpy.mockReturnValue(true);
+    repairSpy.mockResolvedValue(false);
+    repairCandidateSpy.mockReturnValue(false);
   });
 
   it('Case 1: useInlineWidget=ON + autoMigrateOnOpen=ON + lc-slug → awaits migrate, renders static fallback, no addChild', async () => {
@@ -218,6 +227,79 @@ describe('Phase 21 mount-path migration', () => {
     expect(bannerSpy).not.toHaveBeenCalled();
     // The original codeBlockProcessor behavior continues — for an
     // lc-slug + valid section, addChild fires (existing v1.2 path).
+    expect(ctx.addChild).toHaveBeenCalledTimes(1);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Phase 21 Plan 21-09 — Reading-mode post-processor invokes repair when
+  // migrate is not a candidate (post-processor only fires for the
+  // 'leetcode-solve' fence tag — the body is already v1.3 — so the
+  // asymmetric "missing lc-language" case must hit `repair` before mount.
+  // ───────────────────────────────────────────────────────────────────────
+  it('Case 5 [Plan 21-09]: useInlineWidget=ON + autoMigrateOnOpen=ON + migrate=false + repair candidate → repair invoked, static fallback rendered, no addChild', async () => {
+    const metadataCache = createFakeMetadataCache();
+    metadataCache.setFrontmatter('LeetCode/two-sum.md', { 'lc-slug': 'two-sum' });
+    const plugin = createFakePlugin({ metadataCache });
+    const settings: FakeSettings = {
+      getUseInlineWidget: () => true,
+      getAutoMigrateOnOpen: () => true,
+      getDefaultLanguage: () => 'java',
+      getIndentSizeOverride: () => 'auto',
+    };
+    const processor = await getProcessor(plugin, settings);
+    const el = makeHost();
+    const v13Section = {
+      text:
+        '---\nlc-slug: two-sum\n---\n\n## Code\n\n```leetcode-solve\ndef solve(): pass\n```\n',
+      lineStart: 5,
+      lineEnd: 7,
+    };
+    const ctx = makeCtx('LeetCode/two-sum.md', v13Section);
+
+    // migrate returns false (not a v1.2-shaped candidate); repair returns true.
+    migrateSpy.mockResolvedValueOnce(false);
+    repairSpy.mockResolvedValueOnce(true);
+
+    await processor(V12_SOURCE, el, ctx as never);
+
+    expect(migrateSpy).toHaveBeenCalledTimes(1);
+    expect(repairSpy).toHaveBeenCalledTimes(1);
+    const repairCall = repairSpy.mock.calls[0] as unknown as unknown[];
+    const repairOpts = repairCall[2] as {
+      autoMigrateOnOpen?: boolean;
+      defaultLanguage?: string;
+    };
+    expect(repairOpts.autoMigrateOnOpen).toBe(true);
+    expect(repairOpts.defaultLanguage).toBe('java');
+    // Repair ran → static fallback; widget remounts on the next
+    // metadataCache.changed event.
+    expect(ctx.addChild).not.toHaveBeenCalled();
+    const code = el.querySelector('pre code');
+    expect(code).not.toBeNull();
+  });
+
+  it('Case 6 [Plan 21-09]: migrate=false + repair=false → falls through to legacy mount path', async () => {
+    const metadataCache = createFakeMetadataCache();
+    metadataCache.setFrontmatter('LeetCode/two-sum.md', { 'lc-slug': 'two-sum' });
+    const plugin = createFakePlugin({ metadataCache });
+    const settings: FakeSettings = {
+      getUseInlineWidget: () => true,
+      getAutoMigrateOnOpen: () => true,
+      getDefaultLanguage: () => 'python3',
+      getIndentSizeOverride: () => 'auto',
+    };
+    const processor = await getProcessor(plugin, settings);
+    const el = makeHost();
+    const ctx = makeCtx('LeetCode/two-sum.md', V12_SECTION);
+
+    migrateSpy.mockResolvedValueOnce(false);
+    repairSpy.mockResolvedValueOnce(false);
+
+    await processor(V12_SOURCE, el, ctx as never);
+
+    expect(migrateSpy).toHaveBeenCalledTimes(1);
+    expect(repairSpy).toHaveBeenCalledTimes(1);
+    // Both false → existing mount path runs.
     expect(ctx.addChild).toHaveBeenCalledTimes(1);
   });
 

@@ -136,9 +136,14 @@ function wireHook(args: {
   isMigrationCandidate: ReturnType<typeof vi.fn>;
   logDebug: ReturnType<typeof vi.fn>;
   rerenderPreviewLeaves?: ReturnType<typeof vi.fn>;
+  repair?: ReturnType<typeof vi.fn>;
 }): (file: TFile | null) => void {
   const { plugin, migrate, isMigrationCandidate, logDebug } = args;
   const rerenderPreviewLeaves = args.rerenderPreviewLeaves ?? vi.fn();
+  // Plan 21-09 — repair DI added to ReadingModeMigrationHookDeps. Default
+  // resolves to false so existing tests that omit the spy continue to
+  // exercise the migrate-only path.
+  const repair = args.repair ?? vi.fn(async () => false);
   const handler = makeReadingModeMigrationHandler({
     app: plugin.app,
     settings: plugin.settings,
@@ -156,6 +161,9 @@ function wireHook(args: {
     rerenderPreviewLeaves: rerenderPreviewLeaves as unknown as Parameters<
       typeof makeReadingModeMigrationHandler
     >[0]['rerenderPreviewLeaves'],
+    repair: repair as unknown as Parameters<
+      typeof makeReadingModeMigrationHandler
+    >[0]['repair'],
   });
   const ref = (
     plugin.app.workspace as unknown as {
@@ -682,6 +690,215 @@ describe('Phase 21 Plan 21-05 — Reading-mode workspace.on(file-open) trigger',
       // Leaf F still gets its rerender call.
       expect(leafF.rerender).toHaveBeenCalledTimes(1);
       expect(leafF.rerender).toHaveBeenCalledWith(true);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Phase 21 Plan 21-09 — Reading-mode hook invokes `repair` AFTER `migrate`
+  // returns false (closes UAT Gap 2 / Test 2 — asymmetric "v1.3 body +
+  // missing lc-language" shape).
+  // ───────────────────────────────────────────────────────────────────────
+  describe('Plan 21-09 — repair invoked after migrate returns false', () => {
+    it('Test R1 [migrate=false → repair invoked once with autoMigrateOnOpen=true + defaultLanguage]', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'java',
+      });
+      migrate = vi.fn(async () => false);
+      const repair = vi.fn(async () => true);
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(migrate).toHaveBeenCalledTimes(1);
+      expect(repair).toHaveBeenCalledTimes(1);
+      const [appArg, fileArg, opts] = repair.mock.calls[0] as unknown as [
+        App,
+        TFile,
+        { autoMigrateOnOpen?: boolean; defaultLanguage?: string },
+      ];
+      expect(appArg).toBe(app);
+      expect(fileArg).toBe(file);
+      expect(opts.autoMigrateOnOpen).toBe(true);
+      expect(opts.defaultLanguage).toBe('java');
+    });
+
+    it('Test R2 [migrate=true → repair NOT invoked (migrator already injected lc-language)]', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => true);
+      const repair = vi.fn(async () => true);
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(migrate).toHaveBeenCalledTimes(1);
+      expect(repair).not.toHaveBeenCalled();
+    });
+
+    it('Test R3 [autoMigrateOnOpen=OFF → repair NOT invoked]', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: false,
+        defaultLanguage: 'python3',
+      });
+      const repair = vi.fn(async () => true);
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(repair).not.toHaveBeenCalled();
+      expect(migrate).not.toHaveBeenCalled();
+    });
+
+    it('Test R4 [migrate=false + repair=true → rerenderPreviewLeaves invoked once]', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'java',
+      });
+      migrate = vi.fn(async () => false);
+      const repair = vi.fn(async () => true);
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(repair).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).toHaveBeenCalledWith(file.path);
+    });
+
+    it('Test R5 [migrate=false + repair=false → rerenderPreviewLeaves NOT invoked]', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => false);
+      const repair = vi.fn(async () => false);
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(repair).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).not.toHaveBeenCalled();
+    });
+
+    it('Test R6 [repair rejection → no throw; logDebug records non-fatal failure]', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => false);
+      const repair = vi.fn(async () => {
+        throw new Error('repair boom');
+      });
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+        rerenderPreviewLeaves,
+      });
+
+      expect(() => handler(file)).not.toThrow();
+      await flushPromises();
+
+      expect(repair).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).not.toHaveBeenCalled();
+      // logDebug records a non-fatal failure message.
+      const matched = logDebug.mock.calls.some((call) =>
+        /non-fatal failure/.test(String(call[0])),
+      );
+      expect(matched).toBe(true);
     });
   });
 
