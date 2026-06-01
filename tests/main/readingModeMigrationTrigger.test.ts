@@ -33,7 +33,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { App, TFile } from 'obsidian';
-import { makeReadingModeMigrationHandler } from '../../src/main/readingModeMigrationHook';
+import { MarkdownView } from 'obsidian';
+import {
+  makeReadingModeMigrationHandler,
+  rerenderReadingModePanes,
+} from '../../src/main/readingModeMigrationHook';
 
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
@@ -131,8 +135,10 @@ function wireHook(args: {
   migrate: ReturnType<typeof vi.fn>;
   isMigrationCandidate: ReturnType<typeof vi.fn>;
   logDebug: ReturnType<typeof vi.fn>;
+  rerenderPreviewLeaves?: ReturnType<typeof vi.fn>;
 }): (file: TFile | null) => void {
   const { plugin, migrate, isMigrationCandidate, logDebug } = args;
+  const rerenderPreviewLeaves = args.rerenderPreviewLeaves ?? vi.fn();
   const handler = makeReadingModeMigrationHandler({
     app: plugin.app,
     settings: plugin.settings,
@@ -147,6 +153,9 @@ function wireHook(args: {
     logDebug: logDebug as unknown as Parameters<
       typeof makeReadingModeMigrationHandler
     >[0]['logDebug'],
+    rerenderPreviewLeaves: rerenderPreviewLeaves as unknown as Parameters<
+      typeof makeReadingModeMigrationHandler
+    >[0]['rerenderPreviewLeaves'],
   });
   const ref = (
     plugin.app.workspace as unknown as {
@@ -164,10 +173,12 @@ function wireHook(args: {
 }
 
 async function flushPromises(): Promise<void> {
-  // Two await ticks cover .then chain + .finally + microtask flush.
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  // Several await ticks cover .then → .catch → .finally → trailing .then
+  // (Phase 21 Plan 21-08 added a trailing rerender hop after .finally) plus
+  // microtask flush slack.
+  for (let i = 0; i < 8; i++) {
+    await Promise.resolve();
+  }
 }
 
 const V12_LEGACY_NOTE = [
@@ -404,6 +415,274 @@ describe('Phase 21 Plan 21-05 — Reading-mode workspace.on(file-open) trigger',
     expect(migrate).toHaveBeenCalledTimes(1);
     // The .finally clears the dedupe entry regardless of return value.
     expect(plugin.migrateInFlight.has(file.path)).toBe(false);
+  });
+
+  describe('Reading-mode rerender after auto-migration (Gap 1)', () => {
+    it('Test G1.1 [ON path migrated=true] rerenderPreviewLeaves invoked exactly once with file.path', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => true);
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(rerenderPreviewLeaves).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).toHaveBeenCalledWith(file.path);
+    });
+
+    it('Test G1.2 [ON path migrated=false] rerenderPreviewLeaves NOT invoked', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => false);
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(migrate).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).not.toHaveBeenCalled();
+    });
+
+    it('Test G1.3 [ON path rejection] rerenderPreviewLeaves NOT invoked AND logDebug records non-fatal failure', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => {
+        throw new Error('boom');
+      });
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(migrate).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).not.toHaveBeenCalled();
+      expect(logDebug).toHaveBeenCalled();
+      const matched = logDebug.mock.calls.some((call) =>
+        /non-fatal failure/.test(String(call[0])),
+      );
+      expect(matched).toBe(true);
+    });
+
+    it('Test G1.4 [ON path ordering] rerender invoked AFTER migrateInFlight is cleared', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => true);
+
+      // Observe the state of migrateInFlight at the moment rerender fires.
+      let inFlightWhenRerendered: boolean | null = null;
+      const rerenderPreviewLeaves = vi.fn((_path: string) => {
+        inFlightWhenRerendered = plugin.migrateInFlight.has(file.path);
+      });
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      // The .finally must have run BEFORE rerender (rerender observes the
+      // dedupe entry already cleared) so a re-entrant file-open echo would
+      // not see the lock held.
+      expect(rerenderPreviewLeaves).toHaveBeenCalledTimes(1);
+      expect(inFlightWhenRerendered).toBe(false);
+      expect(plugin.migrateInFlight.has(file.path)).toBe(false);
+    });
+
+    it('Test G1.5 [OFF path] rerenderPreviewLeaves never invoked under autoMigrateOnOpen=OFF', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: false,
+        defaultLanguage: 'python3',
+      });
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(rerenderPreviewLeaves).not.toHaveBeenCalled();
+      expect(migrate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rerenderReadingModePanes (Plan 21-08 Task 2)', () => {
+    // Construct a leaf-shaped object whose `view` is an instance of the
+    // mocked MarkdownView class so the production helper's `instanceof`
+    // gate passes. Each leaf carries a `previewMode.rerender` mock + a
+    // `getMode()` callback + a `file` ref so the (path,mode) filter can
+    // be exercised independently.
+    function makeLeaf(args: {
+      mode: 'preview' | 'source';
+      filePath: string | null;
+      previewModeProvided?: boolean;
+      rerenderThrows?: boolean;
+    }): { view: unknown; rerender: ReturnType<typeof vi.fn> } {
+      // Use the mocked MarkdownView class imported at the top of the
+      // file. vi.mock('obsidian') replaces the module with the
+      // helpers/obsidian-stub export, so `instanceof MarkdownView` will
+      // pass for instances we construct here. The stub class has a
+      // 0-arg constructor; cast to bypass the real Obsidian
+      // MarkdownView(leaf) signature in obsidian.d.ts.
+      const Ctor = MarkdownView as unknown as { new (): unknown };
+      const view = new Ctor() as Record<string, unknown>;
+      const rerender = vi.fn(() => {
+        if (args.rerenderThrows) throw new Error('rerender threw');
+      });
+      view.file =
+        args.filePath !== null
+          ? ({ path: args.filePath } as unknown)
+          : null;
+      view.getMode = () => args.mode;
+      if (args.previewModeProvided !== false) {
+        view.previewMode = { rerender } as unknown;
+      }
+      return { view, rerender };
+    }
+
+    function makeAppWithLeaves(
+      leaves: Array<{ view: unknown }>,
+    ): App {
+      return {
+        workspace: {
+          getLeavesOfType: vi.fn((type: string) => {
+            if (type !== 'markdown') return [];
+            return leaves;
+          }),
+        },
+      } as unknown as App;
+    }
+
+    it('Test T2.1 [happy path] walks leaves, rerenders only matching preview leaves with true', () => {
+      const target = 'LeetCode/two-sum.md';
+      const leafA = makeLeaf({ mode: 'preview', filePath: target });
+      const leafB = makeLeaf({ mode: 'source', filePath: target });
+      const leafC = makeLeaf({ mode: 'preview', filePath: 'LeetCode/other.md' });
+      const app = makeAppWithLeaves([
+        { view: leafA.view },
+        { view: leafB.view },
+        { view: leafC.view },
+      ]);
+
+      rerenderReadingModePanes(app, target);
+
+      expect(leafA.rerender).toHaveBeenCalledTimes(1);
+      expect(leafA.rerender).toHaveBeenCalledWith(true);
+      expect(leafB.rerender).not.toHaveBeenCalled();
+      expect(leafC.rerender).not.toHaveBeenCalled();
+    });
+
+    it('Test T2.2 [defensive] undefined previewMode + throwing rerender swallowed; remaining match still rerenders', () => {
+      const target = 'LeetCode/two-sum.md';
+      // Leaf D: matching path + preview mode, but previewMode is undefined.
+      const leafD = makeLeaf({
+        mode: 'preview',
+        filePath: target,
+        previewModeProvided: false,
+      });
+      // Leaf E: matching path + preview mode, but rerender throws.
+      const leafE = makeLeaf({
+        mode: 'preview',
+        filePath: target,
+        rerenderThrows: true,
+      });
+      // Leaf F: matching path + preview mode + healthy previewMode.
+      const leafF = makeLeaf({ mode: 'preview', filePath: target });
+      const app = makeAppWithLeaves([
+        { view: leafD.view },
+        { view: leafE.view },
+        { view: leafF.view },
+      ]);
+
+      expect(() => rerenderReadingModePanes(app, target)).not.toThrow();
+
+      // Leaf D's rerender mock was never wired (previewMode missing) — so
+      // it cannot have been called.
+      expect(leafD.rerender).not.toHaveBeenCalled();
+      // Leaf E threw but exception was swallowed.
+      expect(leafE.rerender).toHaveBeenCalledTimes(1);
+      // Leaf F still gets its rerender call.
+      expect(leafF.rerender).toHaveBeenCalledTimes(1);
+      expect(leafF.rerender).toHaveBeenCalledWith(true);
+    });
   });
 
   it('Test 8 [registerEvent cleanup contract] hook registered via this.registerEvent(workspace.on(...))', () => {

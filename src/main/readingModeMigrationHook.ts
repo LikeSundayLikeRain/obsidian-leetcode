@@ -37,6 +37,7 @@
 //                            command palette) remains the workaround.
 
 import type { App, TFile } from 'obsidian';
+import { MarkdownView } from 'obsidian';
 
 export interface ReadingModeMigrationHookDeps {
   app: App;
@@ -64,6 +65,15 @@ export interface ReadingModeMigrationHookDeps {
   ) => boolean;
   /** DI for testability — production wires `logger.debug`. */
   logDebug: (msg: string, ...args: unknown[]) => void;
+  /**
+   * Phase 21 Plan 21-08 (Gap 1) — invoked AFTER migrate(...) resolves with
+   * `migrated === true` to force a Reading-mode pane re-render so the v1.3
+   * widget mounts on the SAME open. Production wires the
+   * `rerenderReadingModePanes(app, path)` helper which walks
+   * `getLeavesOfType('markdown')` and calls `view.previewMode.rerender(true)`
+   * on matching preview-mode leaves. No-op for false / rejection / OFF.
+   */
+  rerenderPreviewLeaves: (path: string) => void;
 }
 
 /**
@@ -103,13 +113,29 @@ export function makeReadingModeMigrationHandler(
       // re-evaluate (idempotency in the orchestrator makes the second
       // pass a no-op).
       deps.migrateInFlight.add(file.path);
+      // Phase 21 Plan 21-08 (Gap 1) — capture the resolved `migrated`
+      // boolean and force a Reading-mode pane re-render iff the migration
+      // actually rewrote the fence. Ordering note (per G1.4):
+      //   1. .then captures `migrated`.
+      //   2. .catch handles rejection (rerender skipped).
+      //   3. .finally clears the in-flight lock UNCONDITIONALLY.
+      //   4. AFTER .finally, a trailing .then() observes the captured
+      //      `migrated` value and fires rerenderPreviewLeaves so a
+      //      re-entrant post-processor → file-open echo would NOT see the
+      //      dedupe lock held. Inner try/catch swallows rerender throws so
+      //      the .finally has already run regardless.
+      let migratedFlag = false;
       void deps
         .migrate(deps.app, file, {
           autoMigrateOnOpen: true,
           defaultLanguage:
             deps.settings.getDefaultLanguage?.() ?? 'python3',
         })
+        .then((migrated) => {
+          migratedFlag = migrated === true;
+        })
         .catch((err) => {
+          migratedFlag = false;
           deps.logDebug(
             'migration.fileOpenHook: non-fatal failure',
             err,
@@ -117,7 +143,20 @@ export function makeReadingModeMigrationHandler(
         })
         .finally(() => {
           deps.migrateInFlight.delete(file.path);
+        })
+        .then(() => {
+          if (!migratedFlag) return;
+          try {
+            deps.rerenderPreviewLeaves(file.path);
+          } catch (err) {
+            deps.logDebug(
+              'migration.fileOpenHook: rerenderPreviewLeaves threw (non-fatal)',
+              err,
+            );
+          }
         });
+      // Note: no separate handling needed below — the trailing .then is
+      // attached above. The else branch follows for the OFF path.
     } else {
       // autoMigrateOnOpen=OFF Reading-mode path. The Live Preview
       // ViewPlugin gates the manual-prompt banner mount on
@@ -149,4 +188,65 @@ export function makeReadingModeMigrationHandler(
         });
     }
   };
+}
+
+/**
+ * Phase 21 Plan 21-08 (Gap 1) — Reading-mode pane rerender helper.
+ *
+ * Walks `app.workspace.getLeavesOfType('markdown')`, filters to leaves
+ * whose `view.file?.path === path` AND `view.getMode() === 'preview'`,
+ * and calls `view.previewMode.rerender(true)` on each match. The `true`
+ * argument forces a full rerender (vs. shallow); this is the same API
+ * Obsidian's plugin reload path uses.
+ *
+ * Why this exists: Reading mode has no equivalent of CM6's reactive
+ * `ViewPlugin.update(docChanged)`. After `migrateLegacyFenceIfNeeded`
+ * rewrites the fence opener via `vault.process`, no mechanism asks
+ * Obsidian's preview to re-run post-processors. Without this rerender
+ * the v1.3 widget does not mount on the same file-open — the user has
+ * to close and reopen the note. Test 1 of 21-HUMAN-UAT.md gap.
+ *
+ * Live Preview is unaffected (its CM6 ViewPlugin updates reactively on
+ * docChanged) so the filter explicitly excludes non-preview leaves.
+ *
+ * Defensive: outer + inner try/catch swallow undefined-method, throwing
+ * `rerender`, and any unexpected workspace shape so a failure never
+ * propagates back to the migrate orchestrator. logger.debug records
+ * non-fatal failures at debug level.
+ *
+ * Threat-model + write-path hygiene check: this code path performs ZERO
+ * writes (no fence body, no frontmatter, no CM6 dispatch). It only
+ * triggers Obsidian's preview rerender via a documented API. The
+ * CLAUDE.md "Phase 17 D-05 canonical write-path pattern" does not
+ * apply (no write). The Phase 05.5 `'leetcode.*'` userEvent annotation
+ * rule does not apply (no CM6 dispatch).
+ */
+export function rerenderReadingModePanes(app: App, path: string): void {
+  try {
+    const leaves = app.workspace.getLeavesOfType('markdown');
+    for (const leaf of leaves) {
+      const view = (leaf as { view?: unknown }).view;
+      if (!(view instanceof MarkdownView)) continue;
+      // Narrow once we have an actual MarkdownView.
+      const v = view as unknown as {
+        file?: { path?: string } | null;
+        getMode?: () => string;
+        previewMode?: { rerender?: (full: boolean) => void };
+      };
+      if (v.file?.path !== path) continue;
+      if (typeof v.getMode !== 'function' || v.getMode() !== 'preview') {
+        continue;
+      }
+      try {
+        v.previewMode?.rerender?.(true);
+      } catch {
+        // Inner: swallow per-leaf rerender exception so subsequent
+        // matching leaves still get their rerender. No log here — the
+        // outer catch handles the wider failure mode if it surfaces.
+      }
+    }
+  } catch {
+    // Outer: an unexpected workspace API shape (e.g., getLeavesOfType
+    // missing) must NOT propagate to the migrate orchestrator.
+  }
 }

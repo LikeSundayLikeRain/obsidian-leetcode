@@ -117,7 +117,10 @@ import {
 } from './widget/fenceMigrator';
 // Phase 21 Plan 21-05 Task 2 (CR-01) — extracted factory; tests drive it
 // directly without instantiating the full LeetCodePlugin lifecycle.
-import { makeReadingModeMigrationHandler } from './main/readingModeMigrationHook';
+import {
+  makeReadingModeMigrationHandler,
+  rerenderReadingModePanes,
+} from './main/readingModeMigrationHook';
 // Phase 21 Plan 21-04 Task 1 — 30-day TTL backup cleanup (MIGRATE-05).
 // Fire-and-forget microtask scheduled from Plugin.onload(). Runs
 // UNCONDITIONALLY regardless of useInlineWidget per D-backup-03.
@@ -1561,6 +1564,14 @@ export default class LeetCodePlugin extends Plugin {
           migrate: migrateLegacyFenceIfNeeded,
           isMigrationCandidate,
           logDebug: (msg, ...args) => logger.debug(msg, ...args),
+          // Phase 21 Plan 21-08 (Gap 1) — Reading-mode rerender after
+          // auto-migration. Walks app.workspace.getLeavesOfType('markdown'),
+          // filters to preview-mode leaves whose file.path matches, calls
+          // view.previewMode.rerender(true). Closes UAT Test 1 — the v1.3
+          // widget now mounts on the SAME file-open after the migration
+          // promise resolves with `migrated === true`.
+          rerenderPreviewLeaves: (path: string) =>
+            rerenderReadingModePanes(this.app, path),
         }),
       ),
     );
