@@ -6,9 +6,9 @@ started: 2026-06-01T21:35:00Z
 updated: 2026-06-01T20:55:00Z
 gap_closure_plans: [21-08, 21-09, 21-10, 21-11, 21-12, 21-13]
 gap_closure_status: code_shipped_pending_live_uat
-re_test_complete: 2026-06-01T20:55:00Z
+re_test_complete: 2026-06-01T21:10:00Z
 re_test_passed: 5
-re_test_issues: 3
+re_test_issues: 4
 ---
 
 ## Current Test
@@ -78,6 +78,13 @@ result: pass
 ### R8. shim-validation byte-layout (inherited deferred from 21-02)
 expected: "tests/fixtures/migration/.obsidian-shim-validation.txt records DIFF: empty for live-Obsidian byte-equal validation. Already captured in original UAT Test 3 (result: pass) — included here for completeness."
 result: pass
+
+### R9. Split-pane cursor preservation across edits (post-R7 finding)
+expected: "When the same LC note is open in two split panes, editing in one pane preserves the cursor position in the OTHER pane's widget — cursor does NOT jump to the beginning of the widget."
+result: issue
+reported: "In split-pane mode (two panes, same LC note), editing in one pane causes the cursor in the OTHER pane's widget to jump to the start of the widget. Cursor preservation is broken across split-pane sync."
+severity: minor
+why_human: "Split-pane sync is a multi-leaf timing path that requires real Obsidian Workspace to reproduce. The peer pane's CM6 view should receive an incremental Transaction (with cursor mapping) rather than a full EditorState.create(); current code path resets selection."
 captured: |
   Live dev-vault probe executed interactively 2026-06-01T19:06:45Z (see Test 3 below).
   Pre-migration bytes: 77; post-migration bytes: 103; shim output bytes: 103.
@@ -86,9 +93,9 @@ captured: |
 
 ## Re-Test Summary
 
-total: 8
+total: 9
 passed: 5
-issues: 3
+issues: 4
 pending: 0
 skipped: 0
 blocked: 0
@@ -462,3 +469,22 @@ blocked: 0
     - "Defense-in-depth: drop the line-419 belt-and-suspenders retrofit when useInlineWidget=ON (the wrapper gate already no-ops it; eliminating the call site makes the mount sequence deterministic)."
     - "Live-Preview equivalent: dispatch a no-op view.update after the openLinkText settles so CM6 re-resolves the StateField against the now-fresh buffer."
     - "Integration test: openProblem → assert widget mounts in working state on first render (syntax highlight, editable, action row) without requiring a second open."
+
+- truth: "When the same LC note is open in two Obsidian split panes, editing in one pane does NOT cause the cursor in the other pane's widget to jump to the beginning. Each pane's widget preserves its own cursor position across edits originating in the sibling pane."
+  status: failed
+  reason: "User reported (post-R7, 2026-06-01): In split-pane mode (two panes both showing the same LC note), editing in one pane causes the cursor in the OTHER pane's widget to jump to the beginning of the widget. Cursor preservation is broken across split-pane sync."
+  severity: minor
+  test: R9
+  artifacts:
+    - path: "src/widget/multiPaneCoordinator.ts"
+      issue: "When pane A's widget commits an edit via vault.process, the file modify event reaches pane B's controller. The remount/refresh path in the peer pane discards the existing CM6 EditorState (or full-doc-replace transaction) instead of patching only the changed range — cursor selection is reset to position 0 on the new state."
+    - path: "src/widget/WidgetController.ts"
+      issue: "Mount/remount on file-modify likely calls EditorState.create() with the new doc text instead of dispatching an incremental Transaction with mapped selection. Selection mapping (Transaction.userEvent + mapping cursor through changes) needs to be preserved for sibling panes."
+    - path: "src/main.ts (vault.on('modify') handler at ~lines 1226-1341)"
+      issue: "The modify handler short-circuits when no widget is registered, but when widgets ARE registered for the path on multiple panes, both panes receive the modify event and remount — only the originating pane's cursor is preserved (it never went through remount); the OTHER pane's cursor is lost."
+  missing:
+    - "PRIMARY FIX: in the per-leaf modify handler, when the originating pane is NOT this controller's pane, dispatch an incremental EditorView transaction (with computed ChangeSpec from old vs new doc text) to the peer pane's CM6 view INSTEAD of EditorState.create(). The transaction's selection should be the peer's current selection MAPPED through the change set — not reset."
+    - "Defense-in-depth: add an annotation `'leetcode.peer-sync'` on the transaction so the section-lock filter passes it through (per CLAUDE.md 'leetcode.*' userEvent convention)."
+    - "Skip self-sync: when the modify event originates from this very controller's commit (track via per-controller writeInFlight or via comparing dispatch userEvent against incoming change source), do not dispatch — the originating pane's selection is already correct."
+    - "Integration test: open same file in two panes (synthetic Workspace mocks two leafs); type into pane A; assert pane B's CM6 selection.main.head equals its prior position (mapped if the edit was upstream) — NOT 0."
+    - "Regression check: confirm pane B's StateField recompute (legacy banner / v1.3 widget StateFields from 21-11/21-14) still fires correctly when it should — peer-sync transaction must NOT suppress legitimate decoration recomputes."
