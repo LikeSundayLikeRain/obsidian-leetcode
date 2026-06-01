@@ -718,6 +718,23 @@ export class WidgetController {
    * shape via the real Obsidian Workspace.
    */
   private promoteThisPane(): void {
+    // POST-UAT GAP A — defense-in-depth self-recover (Plan 21-12).
+    //   Even when a future bug recreates a divergent state (visual `'peer'`,
+    //   FSM thinks active), `promoteThisPane` must converge BOTH the FSM and
+    //   the visible state. The historical bug: when the click target leaf is
+    //   ALREADY the active leaf, `setActiveLeaf` short-circuits and Obsidian
+    //   dedupes the focus event — `active-leaf-change` never re-fires, the
+    //   coordinator's `reconcileFocus` is never re-run, and the overlay is
+    //   never removed by the coordinator path.
+    //   Fix: AFTER the `setActiveLeaf` attempt (in BOTH the matched-leaf
+    //   path AND the no-matched-leaf fallthrough path), explicitly call
+    //   `this.setPaneState('active')`. That call is gated by
+    //   `setPaneState`'s built-in idempotency guard (line 645) so the
+    //   production happy path (where the coordinator already flipped state)
+    //   sees a no-op. A user click on the overlay is treated as user intent
+    //   to recover, regardless of whether Obsidian dispatches the event.
+    //   See `.planning/phases/21-v1-2-migration/21-HUMAN-UAT.md` Post-UAT
+    //   Findings (Gap A, severity: major).
     try {
       const ws = this.plugin.app as unknown as {
         workspace?: {
@@ -733,9 +750,17 @@ export class WidgetController {
         const el = leaf.containerEl;
         if (el && el.contains(this.container)) {
           ws.workspace?.setActiveLeaf?.(leaf, { focus: true });
+          // Self-recover the visible state regardless of whether
+          // active-leaf-change fired (Obsidian dedupes when the leaf is
+          // already active). Idempotent when the coordinator already
+          // converged the state.
+          this.setPaneState('active');
           return;
         }
       }
+      // No matching leaf — still treat the click as user intent to recover.
+      // setPaneState is idempotent on already-active state.
+      this.setPaneState('active');
     } catch {
       // Defensive — focus race or teardown. The user can simply click again.
     }

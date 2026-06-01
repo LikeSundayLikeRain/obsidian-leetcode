@@ -135,12 +135,49 @@ export function reconcileFocus(
       continue;
     }
 
-    // Same file path: compare leaf ancestors. Widgets in the same leaf as
-    // the focused view stay active; widgets in other leaves become peers.
+    // Same file path: compare leaf ancestors. Three-way decision:
+    //   (a) ctlLeafEl === activeLeafEl  → 'active' (in-pane, no contention).
+    //   (b) ctlLeafEl === null          → 'active' (POST-UAT GAP A FIX —
+    //       see paragraph below).
+    //   (c) ctlLeafEl !== null && ≠ activeLeafEl → 'peer' (genuine other
+    //       attached pane on the same file — the legitimate take-over case).
+    //
+    // POST-UAT GAP A — null-leaf default is `'active'` (Plan 21-12).
+    //   `findLeafEl` returns null when the controller's container has NO
+    //   `.workspace-leaf` ancestor at all. That happens during three concrete
+    //   windows, NONE of which are "this controller is in a different leaf":
+    //     1. Mid-mount-attach: `widgetRegistry.set(...)` fires synchronously
+    //        inside `mountLeetCodeWidget` (WidgetController.ts:1176-1178)
+    //        BEFORE the host element has been attached to the leaf. If
+    //        `active-leaf-change` fires during this window — which it does on
+    //        every Open #2 (close-tab+reopen, switch-away+back, close-all+
+    //        reopen) — `reconcileFocus` would see `registered controller +
+    //        detached container` and (pre-fix) flip to 'peer'. That mounts a
+    //        phantom overlay whose click handler is dead because clicking it
+    //        calls `setActiveLeaf` on a leaf that is already active, so
+    //        Obsidian dedupes the focus event and `active-leaf-change` never
+    //        re-fires.
+    //     2. Parked controller: container detached from DOM during plugin
+    //        unload / settings reload but registry not yet swept.
+    //     3. Mid-teardown: container removed from DOM but the registry
+    //        cleanup callback hasn't run yet.
+    //   In ALL three cases the correct semantic is `'active'` (no overlay,
+    //   no take-over CTA). The legitimate two-pane peer flow (case (c)
+    //   above) requires BOTH leaves to be attached and distinct — which
+    //   `ctlLeafEl !== null && ctlLeafEl !== activeLeafEl` enforces.
+    //   See `.planning/phases/21-v1-2-migration/21-HUMAN-UAT.md` Post-UAT
+    //   Findings (Gap A, severity: major).
     const ctlLeafEl = findLeafEl(ctl.container ?? null);
-    if (ctlLeafEl && ctlLeafEl === activeLeafEl) {
+    if (ctlLeafEl === activeLeafEl) {
+      // Case (a) — same attached leaf as the active view.
+      ctl.setPaneState('active');
+    } else if (ctlLeafEl == null) {
+      // Case (b) — no leaf ancestor (parked / pre-attach / mid-teardown).
+      // POST-UAT GAP A FIX: must NOT flip to 'peer'.
       ctl.setPaneState('active');
     } else {
+      // Case (c) — controller is in a different attached leaf on the same
+      // file. Legitimate peer / take-over case.
       ctl.setPaneState('peer');
     }
   }
