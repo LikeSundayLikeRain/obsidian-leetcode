@@ -29,6 +29,7 @@ import {
   EditorView,
   ViewPlugin,
   type ViewUpdate,
+  WidgetType,
 } from '@codemirror/view';
 import { editorInfoField, type Plugin, type TFile } from 'obsidian';
 import { findCodeFence, extractFenceBody, computeFenceIndex } from './fenceLocator';
@@ -36,8 +37,74 @@ import { LeetCodeFenceWidget } from './LeetCodeFenceWidget';
 import { djb2 } from './hash';
 import type { WidgetMountHost } from './WidgetController';
 import { syncAnnotation } from './childParentSync';
+// Phase 21 Plan 21-02 Task 3 — Live Preview pre-mount migration trigger.
+// Per Pitfall 6, the ViewPlugin update() is synchronous and CANNOT await
+// the migrator. Fire-and-forget the migration call when fence.kind ===
+// 'legacy'; vault.on('modify') re-fires update() after the migration
+// completes and the v1.3 widget mounts on the rewritten fence in that
+// later cycle. The legacy-kind branch returns the empty decoration set
+// during the ~10–50ms migration window — a 'no widget' transitional
+// state on legacy fences (ASCII fallback in the editor); per CONTEXT
+// D-trigger-01 this is acceptable in Live Preview because Reading mode
+// is the user-visible primary surface.
+import { migrateLegacyFenceIfNeeded } from './fenceMigrator';
+import { mountLegacyFenceBanner } from './legacyFenceBanner';
 
-type PluginHost = Plugin & WidgetMountHost;
+type PluginHost = Plugin & WidgetMountHost & {
+  // Phase 21 — settings consulted by the legacy-kind fire-and-forget gate.
+  // Optional methods so test fixtures that omit settings still typecheck.
+  settings: WidgetMountHost['settings'] & {
+    getUseInlineWidget?(): boolean;
+    getAutoMigrateOnOpen?(): boolean;
+    getDefaultLanguage?(): string;
+  };
+};
+
+// Phase 21 — guard against firing migration on every update() pass for the
+// same file (the migration is idempotent but the read+candidate scan is
+// wasted work). Track in-flight + recently-attempted file paths in a
+// module-level set; entry is cleared after the migration promise settles.
+const migrateInFlight = new Set<string>();
+
+/**
+ * Phase 21 Plan 21-02 Task 3 — Live Preview auto-migrating banner widget.
+ *
+ * Decoration.replace widget that mounts on the legacy fence range during
+ * the migration window so the user never sees a 'no widget' transitional
+ * state per D-trigger-01. Delegates DOM construction to
+ * mountLegacyFenceBanner(... 'auto-migrating'); the banner unmounts when
+ * the post-migration update() cycle replaces this decoration with the
+ * v1.3 widget on the rewritten leetcode-solve fence.
+ */
+class AutoMigratingBannerWidget extends WidgetType {
+  constructor(
+    private readonly plugin: PluginHost,
+    private readonly file: TFile,
+    private readonly source: string,
+  ) {
+    super();
+  }
+
+  toDOM(_view: EditorView): HTMLElement {
+    const host = document.createElement('div');
+    host.classList.add('leetcode-migration-banner-host');
+    mountLegacyFenceBanner(
+      host,
+      this.source,
+      this.file,
+      this.plugin as Parameters<typeof mountLegacyFenceBanner>[3],
+      'auto-migrating',
+    );
+    return host;
+  }
+
+  eq(other: WidgetType): boolean {
+    return (
+      other instanceof AutoMigratingBannerWidget &&
+      other.file.path === this.file.path
+    );
+  }
+}
 
 /**
  * Build the RangeSet covering each `\`\`\`leetcode-solve` fence in the
@@ -74,7 +141,68 @@ function buildLeetCodeFenceRanges(
   // and finds the actual leetcode-solve fence even when it isn't the
   // first fence under ## Code.
   const fence = findCodeFence(view.state, { preferLeetCodeSolve: true });
-  if (!fence || fence.kind !== 'leetcode-solve') {
+  if (!fence) return builder.finish();
+
+  // Phase 21 Plan 21-02 Task 3 — Live Preview pre-mount migration trigger.
+  // When findCodeFence returns kind === 'legacy' AND the master gate +
+  // auto-migrate gate are ON, fire-and-forget migrateLegacyFenceIfNeeded
+  // (Pitfall 6 — update() is synchronous, cannot await). The
+  // vault.on('modify') event re-fires update() after the migration
+  // resolves; on that next pass, fence.kind will be 'leetcode-solve' and
+  // the existing widget mount path takes over.
+  //
+  // Returns the empty decoration set during the ~10–50ms migration window;
+  // the user sees raw markdown for the legacy fence briefly. CONTEXT
+  // D-trigger-01 acknowledges this Live Preview tradeoff (the Reading
+  // mode path is the primary user-visible surface for legacy notes).
+  if (fence.kind === 'legacy') {
+    const settings = plugin.settings;
+    if (
+      settings?.getUseInlineWidget?.() === true &&
+      settings?.getAutoMigrateOnOpen?.() === true
+    ) {
+      // Mount the 'auto-migrating' banner widget on the legacy fence range
+      // BEFORE firing the async migration. Per D-trigger-01 the user must
+      // never see a 'no widget' transitional state on a legacy fence; the
+      // banner is the synchronous bridge while migration runs. Banner
+      // unmounts when the post-migration update() cycle sees
+      // fence.kind === 'leetcode-solve' and the existing widget mount
+      // path takes over.
+      const legacyFrom = view.state.doc.line(fence.openerLine).from;
+      const legacyTo = view.state.doc.line(fence.closerLine).to;
+      const legacySource = extractFenceBody(view.state, fence);
+      builder.add(
+        legacyFrom,
+        legacyTo,
+        Decoration.replace({
+          widget: new AutoMigratingBannerWidget(plugin, file, legacySource),
+        }),
+      );
+      // Fire-and-forget migration (Pitfall 6 — synchronous update()).
+      // Deduped via migrateInFlight so a quick succession of update()
+      // passes during the migration window doesn't enqueue duplicate
+      // I/O.
+      if (!migrateInFlight.has(file.path)) {
+        migrateInFlight.add(file.path);
+        void migrateLegacyFenceIfNeeded(
+          plugin.app as Parameters<typeof migrateLegacyFenceIfNeeded>[0],
+          file,
+          {
+            autoMigrateOnOpen: true,
+            defaultLanguage: settings.getDefaultLanguage?.() ?? 'python3',
+          },
+        )
+          .catch(() => {
+            // Defensive — Pattern S-05 silent-on-failure.
+          })
+          .finally(() => {
+            migrateInFlight.delete(file.path);
+          });
+      }
+    }
+    return builder.finish();
+  }
+  if (fence.kind !== 'leetcode-solve') {
     return builder.finish();
   }
 

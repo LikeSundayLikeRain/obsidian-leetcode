@@ -307,6 +307,24 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         }),
       );
 
+    // Phase 21 MIGRATE-06 — auto-migrate v1.2 notes when opened. Default ON
+    // (D-auto-01). When OFF, the widget mount path renders a legacy banner
+    // with a [Migrate now] CTA (D-auto-02). Live-applies: no reload required
+    // because the next file-open consults the setting fresh from
+    // SettingsStore. The onChange handler ONLY persists; never triggers
+    // workspace.detachLeavesOfType or any reload path.
+    new Setting(expGroup)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'v1.2' is a version identifier (proper noun in this domain).
+      .setName('Auto-migrate v1.2 notes when opened')
+      .setDesc('When opening a LeetCode note from v1.2 or earlier, silently rewrite the fence to the v1.3 format. When off, a banner offers a manual [Migrate now] button.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getAutoMigrateOnOpen())
+        .onChange(async (v) => {
+          await this.plugin.settings.setAutoMigrateOnOpen(v);
+          // No reload needed — live-applies on next file open.
+        }),
+      );
+
     new Setting(expGroup)
       .setName('Save delay')
       .setDesc('Time after typing stops before saving to disk. Lower = snappier; higher = fewer file-watcher events.')
