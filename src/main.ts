@@ -107,7 +107,14 @@ import { countLeetCodeSolveFenceOpeners } from './widget/fenceLocator';
 // Phase 21 Plan 21-02 Task 3 — command palette entry `Migrate current note`
 // dispatches the v1.2 → v1.3 migration with force: true (D-auto-03 escape
 // hatch). Gated via editorCheckCallback on useInlineWidget=ON + lc-slug.
-import { migrateLegacyFenceIfNeeded } from './widget/fenceMigrator';
+//
+// Phase 21 Plan 21-05 Task 2 (CR-01) — workspace.on('file-open') Reading-mode
+// trigger consults `isMigrationCandidate` for the autoMigrateOnOpen=OFF
+// path before logging the documented Reading-mode banner-mount limitation.
+import {
+  isMigrationCandidate,
+  migrateLegacyFenceIfNeeded,
+} from './widget/fenceMigrator';
 // Phase 21 Plan 21-04 Task 1 — 30-day TTL backup cleanup (MIGRATE-05).
 // Fire-and-forget microtask scheduled from Plugin.onload(). Runs
 // UNCONDITIONALLY regardless of useInlineWidget per D-backup-03.
@@ -1509,6 +1516,109 @@ export default class LeetCodePlugin extends Plugin {
         }),
       );
     }
+
+    // ── Phase 21 Plan 21-05 Task 2 (CR-01) ─────────────────────────────
+    // Reading-mode auto-migration trigger for legacy v1.2 notes.
+    //
+    // Gap closure (per .planning/phases/21-v1-2-migration/21-VERIFICATION.md
+    // CR-01): registerMarkdownCodeBlockProcessor at line ~1057 binds the
+    // Reading-mode handler to the tag `'leetcode-solve'` only. Legacy v1.2
+    // notes carry ``` ```python ```, ``` ```java ``` etc. — those fence tags
+    // never invoke the handler in Reading mode, so the migration gate
+    // inside leetCodeBlockProcessor (codeBlockProcessor.ts:142-194) is
+    // dead code on a legacy note in Reading mode. Live Preview is fine
+    // (liveModeViewPlugin.ts:158 branches on fence.kind === 'legacy').
+    //
+    // L5-compliant fix: a workspace.on('file-open', ...) hook fired by
+    // user navigation (NEVER during Plugin.onload — Obsidian docs +
+    // existing Phase 5.2 D-06 + Phase 18 file-open hooks all rely on
+    // this property). Per-file, lazy. Strict-match predicate is
+    // delegated to migrateLegacyFenceIfNeeded (Plan 21-01 Step 2 calls
+    // isMigrationCandidate); non-legacy notes return false silently.
+    //
+    // WR-01 dedupe: this.migrateInFlight is the SAME Set the Live
+    // Preview ViewPlugin consumes (Plan 21-05 Task 1 hoist), so a
+    // file-open + Live-Preview-update race for the same file path is
+    // serialized to a single migration call.
+    //
+    // CLAUDE.md `## Conventions` paragraphs UNCHANGED — Phase 22 boundary.
+    this.registerEvent(
+      this.app.workspace.on('file-open', (file: TFile | null) => {
+        // 1. Workspace transition with no active file (Obsidian fires
+        //    file-open with null when the user closes the last leaf).
+        if (!file) return;
+        // 2. Master gate (L9). useInlineWidget=OFF ⇒ Phase 21 is a no-op
+        //    for everything.
+        if (!this.settings.getUseInlineWidget()) return;
+        // 3. Per-note gate (lc-slug presence). Strict typing — empty
+        //    string or non-string is not a slug.
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+          | Record<string, unknown>
+          | undefined;
+        const slug = fm?.['lc-slug'];
+        if (typeof slug !== 'string' || slug.length === 0) return;
+        // 4. Cross-mode dedupe (WR-01). Guards against the file-open +
+        //    Live-Preview-ViewPlugin race; the first claim wins.
+        if (this.migrateInFlight.has(file.path)) return;
+
+        if (this.settings.getAutoMigrateOnOpen()) {
+          // Auto-path. Claim the dedupe entry BEFORE firing the async
+          // migrator; clear in .finally so a Live-Preview retrigger after
+          // this completes can re-evaluate (idempotency in the orchestrator
+          // makes the second pass a no-op).
+          this.migrateInFlight.add(file.path);
+          void migrateLegacyFenceIfNeeded(this.app, file, {
+            autoMigrateOnOpen: true,
+            defaultLanguage:
+              this.settings.getDefaultLanguage?.() ?? 'python3',
+          })
+            .catch((err) => {
+              logger.debug(
+                'migration.fileOpenHook: non-fatal failure',
+                err,
+              );
+            })
+            .finally(() => {
+              this.migrateInFlight.delete(file.path);
+            });
+        } else {
+          // autoMigrateOnOpen=OFF Reading-mode path. The Live Preview
+          // ViewPlugin gates the manual-prompt banner mount on
+          // autoMigrateOnOpen=ON only (per Plan 21-02), and the Reading-
+          // mode post-processor binding is `'leetcode-solve'`-only — so a
+          // Reading-mode user with autoMigrateOnOpen=OFF on a legacy note
+          // sees Obsidian's stock language-tagged fence with NO banner.
+          //
+          // Per Plan 21-05 behavior block: the keyboard escape hatch
+          // (`LeetCode: Migrate current note` command palette, registered
+          // unconditionally above) remains the documented workaround.
+          // Reading-mode banner-on-OFF is acknowledged as a follow-up
+          // enhancement (NOT a Phase 21 BLOCKER) per VERIFICATION.md.
+          //
+          // We still consult isMigrationCandidate so the debug log only
+          // fires for actual legacy candidates (not every lc-slug note);
+          // greppable for developer diagnosis if a user reports the gap.
+          // No I/O after vault.read, no Notice (D-edge-01 strict-matching
+          // contract).
+          void this.app.vault
+            .read(file)
+            .then((text) => {
+              if (!isMigrationCandidate(text, fm)) return;
+              logger.debug(
+                'migration.fileOpenHook: autoMigrateOnOpen=OFF; ' +
+                  'banner is served by Live Preview pane or command palette',
+                { path: file.path },
+              );
+            })
+            .catch((err) => {
+              logger.debug(
+                'migration.fileOpenHook: vault.read failed (non-fatal)',
+                err,
+              );
+            });
+        }
+      }),
+    );
 
     // Step 6h — Phase 5.2 D-13 python3 → python language-tag alias for
     // Reading-Mode Prism highlighting. Global application (not gated on

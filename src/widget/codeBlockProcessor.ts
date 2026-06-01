@@ -32,6 +32,19 @@ import { LeetCodeWidgetRenderChild, type WidgetMountHost } from './WidgetControl
 // frame the user is already waiting on. autoMigrateOnOpen=OFF surfaces the
 // legacyFenceBanner with a [Migrate now] CTA (D-auto-02). Master gate
 // useInlineWidget=ON is consulted at every call site (L9).
+//
+// Phase 21 Plan 21-05 Task 2 (CR-01) — IMPORTANT: this Reading-mode gate
+// is now a SECONDARY safety net. The PRIMARY trigger for Reading-mode
+// migration of legacy v1.2 notes is the new workspace.on('file-open')
+// hook in Plugin.onload (src/main.ts; search for "Phase 21 Plan 21-05
+// Task 2"). The post-processor below is registered against the fence tag
+// 'leetcode-solve' only, so for a legacy v1.2 note (carrying ``` ```python ```
+// etc.) the post-processor never fires until AFTER the file-open hook
+// has rewritten the fence opener. The inline migration block here is
+// preserved as belt-and-suspenders for the rare race where the
+// post-processor invocation precedes the file-open hook (Obsidian's
+// documented event ordering is file-open → MarkdownPostProcessor, but
+// defensive). See VERIFICATION.md CR-01 for closure rationale.
 import {
   isMigrationCandidate,
   migrateLegacyFenceIfNeeded,
