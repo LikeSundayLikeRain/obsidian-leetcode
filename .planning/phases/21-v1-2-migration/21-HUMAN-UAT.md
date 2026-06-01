@@ -83,6 +83,86 @@ pending: 0
 skipped: 1
 blocked: 0
 
+## Post-UAT Findings
+
+(Reported by user 2026-06-01 after diagnose phase, before plan-fixes completes — captured here so plan-phase can fold in.)
+
+- truth: "On every remount of an LC note (close tab→reopen, switch notes→switch back, close all→reopen), the takeover system mounts in a working state. The 'Click to take over' pill responds to clicks consistently across all mounts."
+  status: triaged
+  severity: major
+  test: "post-UAT (no test number — emerged during diagnose phase)"
+  reproduction: |
+    Confirmed pattern (user reported 2026-06-01 with screenshot):
+    - **Open #1** (first time opening note this session): widget mounts NORMALLY — full LC widget, takeover already active, code area + action row + chevron all responsive.
+    - **Open #2** (any of: close tab → reopen the SAME note in a new tab; switch from the LC note to another note → switch back; close ALL tabs → reopen): widget renders WITH the "Click to take over" pill overlaid on the code area (screenshot attached). Action row (Run / Submit / AI solution / language chevron) IS visible and the code IS rendered. **Clicking the "Click to take over" pill does NOTHING.** Code area is visually marked --NORMAL-- mode but unresponsive.
+    - **Open #3** (recovery action: click the file in the left file-navigation pane to re-open the same note again): widget mounts NORMALLY again, takeover works.
+
+    Reproducible across all three "second-mount" trigger paths (a, b, c — close-tab, switch-away, close-all). Recovery via file-nav click is consistent.
+  symptom_breakdown:
+    - "Code IS rendered (Java starter code visible in screenshot)"
+    - "Action row buttons ARE visible (AI solution / Run / Submit pills)"
+    - "Language chevron IS visible (Java)"
+    - "Vim-mode indicator IS visible (--NORMAL--)"
+    - "ONLY the 'Click to take over' pill click handler is dead on second mount"
+  hypothesis_refined: |
+    On the second mount, the widget renders in a 'pre-takeover-handover' state (the "Click to take over" pill is the visible cue) but the click listener that triggers takeover is NOT attached.
+
+    Likely root cause: the takeover system probably uses a singleton or registry keyed on file path. On Open #1 it registers; on the close+reopen, the OLD widget's registration may not have been torn down (onunload didn't fire, or fired AFTER the new widget tried to register), so the new widget sees the slot as 'taken' and renders the prompt pill — but the pill's click handler points at the OLD widget's takeover function which no longer exists in the DOM. Open #3 succeeds because by then the OLD widget's onunload has finally fired and the slot is clean.
+
+    Alternative hypothesis: there's a takeover lifecycle FSM that has states {un-mounted, mounted-not-taken, mounted-taken-over}. Open #1 lands in mounted-taken-over directly. Close-and-reopen leaves the FSM in mounted-taken-over but the new DOM is in mounted-not-taken — visual state and FSM state diverge. The pill is rendered because visual state says "show takeover pill", but the FSM says "already taken over" so the click is a no-op.
+
+    Either hypothesis points to: investigate the takeover registration's onload + onunload symmetry, AND the FSM transition guard on the takeover-pill click handler.
+  artifacts_to_inspect:
+    - "src/widget/WidgetController.ts (mountLeetCodeWidget — search for 'take over' / 'takeOver' / 'click to take over' click handler registration AND any singleton / registry by file path)"
+    - "src/widget/LeetCodeFenceWidget.ts (toDOM + destroy lifecycle for Live Preview — verify destroy() actually unregisters from any takeover registry)"
+    - "src/widget/codeBlockProcessor.ts (LeetCodeWidgetRenderChild.onload + onunload — Reading-mode lifecycle symmetry)"
+    - "src/widget/childEditorRegistry.ts (or similar — registry by file path; check whether destroy paths actually call delete)"
+    - "src/main/childEditorSync.ts (Phase 17 D-05 child-editor sync — may be the 'takeover' mechanism; check Reset child dispatch pattern)"
+  triage_decision: "Add as Plan 21-12 in the gap-closure wave. Add depends_on: [] to 21-12 — independent of the other 4. Fix may turn out to share infrastructure with Test 1's rerender fix (same mount lifecycle), but route as a distinct plan because the diagnosis path is different."
+  next_step: "After the planner returns the revised 21-09/10/11, dispatch a NEW debug agent for THIS issue + spawn 21-12 plan. Hold off until the current revision iteration completes to avoid concurrent planner conflicts."
+
+- truth: "Opening a new problem from the problem browser renders the LC widget exactly once in the ## Code section."
+  status: triaged
+  severity: major
+  test: "post-UAT (no test number — emerged during diagnose phase)"
+  reproduction: |
+    User reported 2026-06-01 with screenshot:
+    1. Open the problem browser, click 'Open' on a fresh problem (one not already in the vault).
+    2. The new note opens automatically.
+    3. The ## Code section renders TWO code blocks stacked vertically:
+       - Top: plain Obsidian Java code block (corner label 'Java', NO widget chrome — no vim mode, no chevron, no action row)
+       - Bottom: the actual LC widget (vim --NORMAL--, language chevron, action row with AI solution / Run / Submit)
+    Both blocks contain the same starter code.
+  symptom_breakdown:
+    - "Two code-block DOM elements rendered for ONE fence in the source markdown"
+    - "Top block is the standard Prism/markdown renderer's output for a langSlug-tagged fence"
+    - "Bottom block is the LC widget mount (registerMarkdownCodeBlockProcessor for 'leetcode-solve')"
+    - "Implies BOTH renderers ran for the same fence range OR both ran for DIFFERENT fence ranges that haven't been deduplicated in the source"
+  hypothesis_refined: |
+    USER CONFIRMED 2026-06-01: this is NOT a render issue. The note's source on disk actually contains TWO fence blocks. Hypothesis (A) is the correct path; (B) is eliminated.
+
+    (A — CONFIRMED) **Source has two fences.** The 'open from browser' code path writes the new note with TWO fences in ## Code:
+       - First block: langSlug-tagged (```java in screenshot — Prism-rendered as a plain code block, no widget chrome)
+       - Second block: ```leetcode-solve (mounts the LC widget normally)
+
+    Both fences contain the SAME starter code (visible in screenshot — both show `class Solution { public int countRangeSum(int[] nums, int lower, int upper) { ... }`).
+
+    Likely root cause: the new-note emit path runs TWO independent code-emitting steps that both target ## Code without coordinating. Possibilities:
+       1. A recent refactor introduced the leetcode-solve emit path but the original langSlug emitter was not removed. Both run on every new-note creation.
+       2. The starter-code injector runs once on the raw markdown (writing ```java) and then a second step rewrites only the FIRST occurrence to ```leetcode-solve, leaving the second ```java untouched (or vice versa — runs twice and only one rewrites).
+       3. The Phase 21 migrator's frontmatter-injection step (Step 5) emits a fence as a side effect of a logic bug, in addition to the legitimate emitter.
+
+    INVESTIGATION FOCUS: enumerate all call sites that write into ## Code on new-note creation. The duplicate fence emission is a writer bug — the renderer is doing its job (rendering whatever's in source).
+  artifacts_to_inspect:
+    - "src/browse/* (problem browser flow — find the 'open' click handler)"
+    - "src/notes/* (new-note creation paths — search for any code that writes to ## Code section)"
+    - "src/solve/starterCodeInjector.ts (mentioned in CLAUDE.md — known fence-aware injector)"
+    - "src/main.ts:1060-1063 (registerMarkdownCodeBlockProcessor for 'leetcode-solve')"
+    - "src/widget/codeBlockProcessor.ts (Reading-mode handler — verify it replaces vs. appends)"
+    - "Recent commit history for src/browse/ + src/notes/ + src/solve/ — git log -p in those areas for any 'starter code' / 'leetcode-solve' / 'fence' commits in the last 4 weeks"
+  triage_decision: "If hypothesis A (source has 2 fences): the bug is in the new-note emit path — Plan 21-13 fixes the emitter to write exactly one ```leetcode-solve fence. If hypothesis B (one fence, double render): Plan 21-13 fixes the rendering pipeline (likely a stale post-processor not unregistering, or a missing replace-in-place call). The disambiguation step is cheap (cat the new note from disk), do it before planning."
+  next_step: "After the planner returns the revised 21-09/10/11, dispatch a debug agent that FIRST disambiguates A vs B (cat the new note's bytes), then diagnoses the specific path. Plan 21-13 follows."
+
 ## Gaps
 
 - truth: "After auto-migration in Reading mode (autoMigrateOnOpen=ON), the v1.3 widget mounts on the same open."
