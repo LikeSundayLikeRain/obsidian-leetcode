@@ -194,6 +194,102 @@ export function rewriteFenceBody(
 }
 
 /**
+ * Phase 21 Plan 21-01 — swap the FIRST fence opener under `## Code` to
+ * `\`\`\`leetcode-solve`, preserving every other byte of `noteText` exactly.
+ *
+ * Locator semantics (mirrors `findCodeFence` in src/widget/fenceLocator.ts and
+ * `isMigrationCandidate` in src/widget/fenceMigrator.ts):
+ *   - Walk lines forward; toggle `inCodeSection = true` on `^\s*## Code\s*$`
+ *     and `inCodeSection = false` on any other `^\s*## \S` heading.
+ *   - Inside `## Code`, locate the FIRST line matching
+ *     `^\s*\`\`\`(?<tag>[A-Za-z0-9_+#-]*)\s*$`.
+ *   - If the matched tag is `leetcode-solve`, return input unchanged
+ *     (idempotency — D-edge-04 / MIGRATE-04).
+ *   - Otherwise, swap the opener line to `\`\`\`<newOpenerTag>` (preserving
+ *     the original EOL bytes; CRLF round-trips byte-exact via splitPreservingEols).
+ *
+ * Permissiveness: the helper is permissive on miss — when there is no
+ * `## Code` heading, no fence inside `## Code`, or the fence has no closer,
+ * it returns input unchanged. The caller's strict-match predicate
+ * (isMigrationCandidate) is the gate; this helper is the body-preserving
+ * primitive (Pattern S-02 SSoT discipline — single source of truth for the
+ * fence-opener swap).
+ *
+ * Body byte-exactness contract (T-21-bytes / MIGRATE-03):
+ *   - For any input where the located fence body is B (any content including
+ *     nested triple backticks, frontmatter-like `---` lines, CRLF EOLs,
+ *     trailing whitespace, multi-byte unicode, empty body), the body inside
+ *     the resulting `\`\`\`leetcode-solve` fence is also B byte-exact.
+ *   - Property-tested in tests/widget/fenceSerialization.property.test.ts
+ *     over SHELLS_LEGACY × HOSTILE_BODIES (50+ generated cases).
+ *
+ * Frontmatter is NEVER touched (D-edge-04). The locator never crosses an H2
+ * boundary, so frontmatter-like `---` lines OUTSIDE `## Code` cannot match.
+ *
+ * Type narrow on `newOpenerTag`: the parameter is locked to the canonical
+ * v1.3 fence tag `'leetcode-solve'`. Phase 22 cleanup may rename or generalize.
+ */
+export function rewriteFenceOpenerTag(
+  noteText: string,
+  newOpenerTag: 'leetcode-solve',
+): string {
+  const { lines, eols } = splitPreservingEols(noteText);
+  // Locator: walk forward; track `inCodeSection`; find first opener under `## Code`.
+  const H2_CODE_RE = /^\s*##\s+Code\s*$/;
+  const H2_ANY_RE = /^\s*##\s+\S/;
+  const FENCE_OPENER_RE = /^\s*```([A-Za-z0-9_+#-]*)\s*$/;
+  const FENCE_CLOSER_RE = /^\s*```\s*$/;
+  let inCodeSection = false;
+  let openerLineIdx = -1;
+  let openerTag: string | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i] ?? '';
+    if (H2_CODE_RE.test(text)) {
+      inCodeSection = true;
+      continue;
+    }
+    if (H2_ANY_RE.test(text)) {
+      inCodeSection = false;
+      continue;
+    }
+    if (inCodeSection) {
+      const m = FENCE_OPENER_RE.exec(text);
+      if (m) {
+        openerLineIdx = i;
+        openerTag = m[1] ?? '';
+        break;
+      }
+    }
+  }
+  if (openerLineIdx === -1) return noteText; // no opener found — caller's gate
+  // Idempotency: opener already `leetcode-solve` → return input unchanged.
+  if (openerTag === newOpenerTag) return noteText;
+  // Closer check: scan forward for `^\s*```\s*$` before the next H2 heading.
+  // The helper is permissive — return input unchanged when no closer found.
+  let hasCloser = false;
+  for (let j = openerLineIdx + 1; j < lines.length; j++) {
+    const t = lines[j] ?? '';
+    if (H2_ANY_RE.test(t)) break;
+    if (FENCE_CLOSER_RE.test(t)) {
+      hasCloser = true;
+      break;
+    }
+  }
+  if (!hasCloser) return noteText;
+  // Reconstruct: walk lines, replace ONLY the opener line; preserve EOLs.
+  let out = '';
+  for (let i = 0; i < lines.length; i++) {
+    if (i === openerLineIdx) {
+      out += '```' + newOpenerTag;
+    } else {
+      out += lines[i] ?? '';
+    }
+    out += eols[i] ?? '';
+  }
+  return out;
+}
+
+/**
  * Split a string into its constituent lines while preserving each line's
  * original line-ending character(s). Returns parallel arrays:
  *   lines[i] — the line text (no trailing eol)
