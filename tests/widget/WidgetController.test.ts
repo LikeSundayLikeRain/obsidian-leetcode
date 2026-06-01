@@ -196,6 +196,47 @@ describe('mountLeetCodeWidget', () => {
     expect(ctl.container.classList.contains('HyperMD-codeblock')).toBe(true);
   });
 
+  // Phase 20 Plan 20-10 Task 6 (T8 — action row DOM hierarchy).
+  //
+  // mountLeetCodeWidget MUST insert a `.leetcode-widget-codeblock` wrapper
+  // between `.lc-nested-editor` (outer container) and the EditorView's
+  // mount point. The grey codeblock paint moves to the wrapper; the outer
+  // container becomes transparent so the action-row sibling sits on the
+  // parent note background. The MockEditorView in this file appends its
+  // `dom` element to `opts.parent`, so asserting the EditorView mounted
+  // INSIDE the wrapper is equivalent to asserting `parent: codeblockWrap`
+  // was passed to `new EditorView({ … })` at WidgetController.ts:1027.
+  it('Plan 20-10 T8 — inserts .leetcode-widget-codeblock wrapper between .lc-nested-editor and .cm-editor', () => {
+    const ctl = mountLeetCodeWidget(host, 'pass', file as never, plugin as never, false);
+
+    // (1) Wrapper exists as a child of the outer container.
+    const wrapper = ctl.container.querySelector('.leetcode-widget-codeblock');
+    expect(wrapper).not.toBeNull();
+    expect(wrapper!.parentElement).toBe(ctl.container);
+
+    // (2) The MockEditorView's dom (proxy for `.cm-editor`) lives INSIDE
+    // the wrapper — i.e. mountLeetCodeWidget passed `parent: codeblockWrap`
+    // (not `parent: container`) when constructing the EditorView.
+    expect(wrapper!.contains(ctl.view.dom)).toBe(true);
+
+    // (3) The view's dom is NOT a direct child of the outer container —
+    // the wrapper sits between them. (Regression guard against a future
+    // edit reverting the parent change at WidgetController.ts:1027.)
+    expect(ctl.view.dom.parentElement).toBe(wrapper);
+    expect(ctl.view.dom.parentElement).not.toBe(ctl.container);
+  });
+
+  it('Plan 20-10 T8 — EditorView.parent is .leetcode-widget-codeblock (not .lc-nested-editor)', () => {
+    const ctl = mountLeetCodeWidget(host, 'pass', file as never, plugin as never, false);
+    // The MockEditorView captures opts.parent on construction. Reading it
+    // directly is the most precise assertion that the production source
+    // passes the wrapper as the EditorView parent.
+    const opts = (ctl.view as unknown as { opts: { parent: HTMLElement } }).opts;
+    expect(opts).toBeDefined();
+    expect(opts.parent.classList.contains('leetcode-widget-codeblock')).toBe(true);
+    expect(opts.parent.classList.contains('lc-nested-editor')).toBe(false);
+  });
+
   it('readOnly=true → extensions array contains EditorView.editable.of(false)', () => {
     mountLeetCodeWidget(host, 'pass', file as never, plugin as never, /*readOnly=*/true);
     const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];

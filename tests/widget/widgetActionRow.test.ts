@@ -10,6 +10,8 @@
 //   5. AI Debug NOT in widget row (D-action-03); mousedown.preventDefault retained.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
@@ -267,5 +269,118 @@ describe('mountActionRow — D-action-03 lock: AI Debug NOT in widget row', () =
     // No button with class containing 'copy'.
     const copyBtn = row.querySelector('[class*="copy"]');
     expect(copyBtn).toBeNull();
+  });
+});
+
+// Phase 20 Plan 20-10 Task 6 (gap-closure T8) — action-row DOM hierarchy.
+//
+// `mountLeetCodeWidget` (src/widget/WidgetController.ts) inserts an inner
+// `.leetcode-widget-codeblock` wrapper between the outer `.lc-nested-editor`
+// container and the `.cm-editor` mount. The grey codeblock paint moves to
+// the wrapper; the outer shell becomes transparent so the action-row sibling
+// sits on the parent note background (matching the v1.2 Reading-mode layout).
+//
+// The DOM-shape integration test (widget mounted with the wrapper) lives in
+// tests/widget/WidgetController.test.ts (which has the full mountLeetCodeWidget
+// mock harness). Here we cover:
+//   1. The structural contract that `mountActionRow` keeps the action row as
+//      a direct child of `ctl.container` — i.e. a sibling of the wrapper, NOT
+//      a descendant of it. The simulation builds the post-wrapper DOM by hand
+//      to assert the sibling/descendant relationship is preserved by
+//      mountActionRow's `ctl.container.appendChild(row)` discipline.
+//   2. CSS-text-level paint invariant — assert via fs-loaded styles.css that
+//      the grey paint targets `.leetcode-widget-codeblock` and the outer
+//      `.lc-nested-editor` is transparent. This is a regression guard against
+//      a future CSS edit moving the background back to the outer shell
+//      (which would re-open T8 without breaking the structural test).
+describe('Plan 20-10 T8 — action row DOM hierarchy + .leetcode-widget-codeblock', () => {
+  it('action row mounts as DIRECT child of ctl.container (sibling of .leetcode-widget-codeblock — NOT a descendant)', () => {
+    // Simulate the post-Plan-20-10 DOM that mountLeetCodeWidget produces:
+    //   <div class="lc-nested-editor ...">
+    //     <div class="leetcode-widget-codeblock">
+    //       <div class="cm-editor">…</div>
+    //     </div>
+    //     <!-- mountActionRow appends here -->
+    //   </div>
+    const outer = document.createElement('div');
+    outer.className = 'lc-nested-editor HyperMD-codeblock lc-leetcode-solve';
+
+    const codeblockWrap = document.createElement('div');
+    codeblockWrap.className = 'leetcode-widget-codeblock';
+    outer.appendChild(codeblockWrap);
+
+    const cmEditor = document.createElement('div');
+    cmEditor.className = 'cm-editor';
+    codeblockWrap.appendChild(cmEditor);
+
+    const ctl = makeFakeCtl();
+    // Substitute the simulated outer container so mountActionRow appends
+    // there — matching the production path.
+    ctl.container = outer;
+    const file = { path: 'LeetCode/two-sum.md' } as never;
+    const { row } = mountActionRow(ctl as never, file, 'python3', document);
+
+    // (1) Wrapper precedes action row as siblings under outer.
+    expect(row.parentElement).toBe(outer);
+    expect(row.parentElement!.classList.contains('lc-nested-editor')).toBe(true);
+
+    // (2) Action row is NOT a descendant of .leetcode-widget-codeblock.
+    expect(codeblockWrap.contains(row)).toBe(false);
+    expect(row.parentElement!.classList.contains('leetcode-widget-codeblock')).toBe(false);
+
+    // (3) DOM order: .leetcode-widget-codeblock appears BEFORE .leetcode-code-actions.
+    const childArray = Array.from(outer.children);
+    const wrapperIdx = childArray.indexOf(codeblockWrap);
+    const rowIdx = childArray.indexOf(row);
+    expect(wrapperIdx).toBeGreaterThanOrEqual(0);
+    expect(rowIdx).toBeGreaterThanOrEqual(0);
+    expect(wrapperIdx).toBeLessThan(rowIdx);
+
+    // (4) .cm-editor lives INSIDE the wrapper (depth 2 from outer; the
+    // descendant combinator in styles.css `.cm-editor .lc-nested-editor
+    // .cm-content` etc. still matches at any depth).
+    expect(codeblockWrap.querySelector('.cm-editor')).toBe(cmEditor);
+  });
+
+  it('CSS-text-level paint invariant — grey paint targets .leetcode-widget-codeblock; outer .lc-nested-editor is transparent', () => {
+    // Phase 20 Plan 20-10 Task 6 (T8) regression guard. If a future CSS edit
+    // moves the codeblock background back onto the outer .lc-nested-editor
+    // shell, the action row would once again render on the grey surface and
+    // T8 would re-open. The structural test above doesn't catch that — only
+    // a CSS-text-level assertion does.
+    const stylesPath = resolve(__dirname, '..', '..', 'styles.css');
+    const styles = readFileSync(stylesPath, 'utf8');
+
+    // (1) The wrapper's grey-paint rule MUST be present:
+    //     .cm-editor .lc-nested-editor .leetcode-widget-codeblock { background: var(--code-background...
+    const wrapperPaintRule = /\.cm-editor\s+\.lc-nested-editor\s+\.leetcode-widget-codeblock\s*\{[^}]*background\s*:\s*var\(\s*--code-background/;
+    expect(styles).toMatch(wrapperPaintRule);
+
+    // (2) The outer shell's transparent-bg rule MUST be present:
+    //     .cm-editor .lc-nested-editor { background: transparent; }
+    // We assert on the FIRST `.cm-editor .lc-nested-editor { ... }` block
+    // (not the deeper descendant variants) by matching `{ background:
+    // transparent` directly inside an immediate-block boundary.
+    const outerTransparentRule = /\.cm-editor\s+\.lc-nested-editor\s*\{\s*[^}]*background\s*:\s*transparent/;
+    expect(styles).toMatch(outerTransparentRule);
+
+    // (3) The outer shell MUST NOT carry `background: var(--code-background...
+    // directly (regression guard). We scan for the exact pattern that would
+    // be produced by reverting Task 6 — namely `.cm-editor .lc-nested-editor
+    // { ... background: var(--code-background ...` with no further class
+    // segments before the opening brace.
+    const reverterRegression = /\.cm-editor\s+\.lc-nested-editor\s*\{\s*[^}]*background\s*:\s*var\(\s*--code-background/;
+    expect(styles).not.toMatch(reverterRegression);
+  });
+
+  it('CSS-text-level defensive rule — .lc-nested-editor > .leetcode-code-actions is transparent (theme override guard)', () => {
+    const stylesPath = resolve(__dirname, '..', '..', 'styles.css');
+    const styles = readFileSync(stylesPath, 'utf8');
+    // Belt-and-suspenders: in case a community theme paints
+    // .lc-nested-editor from outside, the action-row child still shows the
+    // note background. Asserting the rule's presence here so the defensive
+    // selector is not silently dropped during future cleanups.
+    const defensiveRule = /\.lc-nested-editor\s*>\s*\.leetcode-code-actions\s*\{\s*[^}]*background\s*:\s*transparent/;
+    expect(styles).toMatch(defensiveRule);
   });
 });

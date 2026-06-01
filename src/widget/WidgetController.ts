@@ -936,6 +936,27 @@ export function mountLeetCodeWidget(
   container.setAttribute('data-pane-state', 'active');
   host.appendChild(container);
 
+  // Phase 20 Plan 20-10 Task 6 (gap-closure T8 — action row DOM hierarchy).
+  //
+  // Inner wrapper that owns the grey codeblock paint. The CSS rule
+  // `.cm-editor .lc-nested-editor .leetcode-widget-codeblock` paints the
+  // wrapper; the outer `.lc-nested-editor` becomes transparent so the
+  // action-row sibling sits on the parent note background, matching the
+  // v1.2 Reading-mode layout (codeActionsPostProcessor.ts:17-23
+  // `pre.insertAdjacentElement('afterend', row)`).
+  //
+  // The action row is appended below to ctl.container (the outer transparent
+  // shell) — so DOM order is:
+  //   <div class="lc-nested-editor ...">
+  //     <div class="leetcode-widget-codeblock">  ← grey paint here
+  //       <div class="cm-editor">…</div>
+  //     </div>
+  //     <div class="leetcode-code-actions">…</div>  ← sibling on note bg
+  //   </div>
+  const codeblockWrap = document.createElement('div');
+  codeblockWrap.className = 'leetcode-widget-codeblock';
+  container.appendChild(codeblockWrap);
+
   const slug = resolveLanguageSlug(plugin, file);
 
   // Phase 20 Plan 20-05 + Phase 20-09 (post-mortem) — registry key includes
@@ -999,7 +1020,11 @@ export function mountLeetCodeWidget(
     ),
   });
 
-  const view = new EditorView({ state, parent: container });
+  // Phase 20 Plan 20-10 Task 6 — EditorView mounts INSIDE the
+  // .leetcode-widget-codeblock wrapper (NOT the outer .lc-nested-editor).
+  // The grey codeblock paint moves to the wrapper; the outer container is
+  // transparent so the action row sibling sits on the note background.
+  const view = new EditorView({ state, parent: codeblockWrap });
 
   // CONTEXT D-02: stopPropagation FIRST (raw-source-reveal mitigation), THEN
   // click-to-focus (carry-over from childEditorFactory.ts:405-413). Order

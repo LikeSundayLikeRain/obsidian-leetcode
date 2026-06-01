@@ -1930,11 +1930,38 @@ button.leetcode-language-chevron:hover {
 
 /* Phase 13 — Nested editor container styling. Darker background matching
  * Obsidian code block rendering (D-05). Uses only CSS variables — no
- * hardcoded colors. */
+ * hardcoded colors.
+ *
+ * Phase 20 Plan 20-10 Task 6 (gap-closure T8 — action-row DOM hierarchy):
+ * the grey paint MOVED from `.cm-editor .lc-nested-editor` to its inner
+ * `.leetcode-widget-codeblock` wrapper (introduced in
+ * src/widget/WidgetController.ts mountLeetCodeWidget). The outer container
+ * is now transparent so the action-row sibling sits on the parent note
+ * background, matching the v1.2 Reading-mode layout
+ * (codeActionsPostProcessor.ts:17-23 `pre.insertAdjacentElement('afterend',
+ * row)`). Existing descendant selectors (`.cm-content`, `.cm-gutters`,
+ * `.cm-activeLine`, `.cm-scroller`) below still match because `.cm-editor`
+ * remains a descendant of `.lc-nested-editor` (depth 2 instead of 1) — the
+ * descendant combinator is depth-agnostic.
+ *
+ * REGRESSION GUARD (Plan 20-10 paint-invariant test in
+ * tests/widget/widgetActionRow.test.ts): if a future CSS edit moves the
+ * grey paint back to `.lc-nested-editor`, the assertion fails the build. */
 .cm-editor .lc-nested-editor {
+  background: transparent;
+}
+.cm-editor .lc-nested-editor .leetcode-widget-codeblock {
   background: var(--code-background, var(--background-secondary));
   border-radius: 4px;
   padding: 8px 0;
+}
+/* Defensive — ensure the action row shows the note background even when
+ * an outer theme rule paints `.lc-nested-editor`. The Phase 20 widget
+ * action row is a child of the outer transparent shell (sibling of the
+ * inner .leetcode-widget-codeblock wrapper); a custom theme could
+ * override the shell-transparent rule above. */
+.lc-nested-editor > .leetcode-code-actions {
+  background: transparent;
 }
 .cm-editor .lc-nested-editor .cm-editor {
   background: transparent;
