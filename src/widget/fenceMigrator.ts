@@ -93,6 +93,58 @@ const FENCE_CLOSER_RE = /^\s*```\s*$/;
 const LC_SOLVE_OPENER_RE = /^\s*```leetcode-solve\b/;
 
 /**
+ * Plan 21-07 WR-07 — locate the FIRST `\`\`\`leetcode-solve` opener that
+ * sits INSIDE the `## Code` section, and return its WHOLE-FILE fence-opener
+ * index (suitable for direct consumption by `rewriteFenceBody(noteText,
+ * fenceIndex, ...)`).
+ *
+ * `rewriteFenceBody`'s `fenceIndex` counts ONLY `\`\`\`leetcode-solve` openers
+ * (not all openers — see `locateFenceByIndex` in `./fenceSerialization.ts`).
+ * This helper returns the count of leetcode-solve openers that appear
+ * BEFORE the target opener, so passing the result to `rewriteFenceBody`
+ * targets the correct fence.
+ *
+ * Walks lines forward; tracks `inCodeSection` via H2_CODE_RE / H2_ANY_RE;
+ * counts every `\`\`\`leetcode-solve` opener found OUTSIDE ## Code; when the
+ * first IN-section leetcode-solve opener is encountered, returns the
+ * accumulated count. Returns null when no in-section leetcode-solve opener
+ * exists (caller falls through to the legacy path with a debug log).
+ *
+ * Mirrors `forceInjectCodeSection`'s ## Code-scoped discipline (Phase 20
+ * Plan 20-10 lines 188-208) so multi-fence corner cases — stray
+ * `\`\`\`leetcode-solve` references in `## Problem` or `## Notes` — no longer
+ * cause `injectCodeSection`'s short-circuit to corrupt the wrong fence.
+ *
+ * Pure: no I/O; safe inside vault.process retry semantics.
+ */
+export function findFirstLeetCodeSolveFenceIndexInCodeSection(
+  noteText: string,
+): number | null {
+  const lines = noteText.split(/\r?\n/);
+  let inCodeSection = false;
+  let lcOpenerCount = 0;
+  for (const line of lines) {
+    if (H2_CODE_RE.test(line)) {
+      inCodeSection = true;
+      continue;
+    }
+    if (H2_ANY_RE.test(line)) {
+      inCodeSection = false;
+      continue;
+    }
+    // Only `\`\`\`leetcode-solve` openers participate in the index — the
+    // rewriteFenceBody contract counts only LC_OPENER_RE matches.
+    if (LC_SOLVE_OPENER_RE.test(line)) {
+      if (inCodeSection) {
+        return lcOpenerCount;
+      }
+      lcOpenerCount++;
+    }
+  }
+  return null;
+}
+
+/**
  * Plan 21-07 WR-03 — count `\`\`\`leetcode-solve` opener lines that fall
  * INSIDE the `## Code` section ONLY. Sibling helper to
  * `countLeetCodeSolveFenceOpeners` in `./fenceLocator.ts` (which keeps its
