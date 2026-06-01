@@ -23,7 +23,10 @@ vi.mock('obsidian', async () => {
   return actual;
 });
 
-import { runMigrationBackupGc } from '../../src/widget/migrationBackupGc';
+import {
+  runMigrationBackupGc,
+  BACKUP_FOLDER_RE,
+} from '../../src/widget/migrationBackupGc';
 
 // ───────────────────────────────────────────────────────────────────────────
 // Mock-vault adapter shim. Per PATTERNS §"Mock-vault adapter shim" lines 583-594.
@@ -215,5 +218,120 @@ describe('runMigrationBackupGc — MIGRATE-05 cleanup contract', () => {
     );
     expect(deletedPaths).not.toContain(fresh1);
     expect(deletedPaths).not.toContain(fresh2);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Plan 21-06 CR-03 — tightened BACKUP_FOLDER_RE to LC-slug shape
+  //   /^migration-backup-([a-z0-9][a-z0-9-]*[a-z0-9])-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$/
+  // Slug: starts with [a-z0-9], body [a-z0-9-]*, ends with [a-z0-9].
+  // Multi-segment slugs (foo-bar-baz) accepted; non-LC-shape (uppercase,
+  // mixed-case, single-char, leading/trailing hyphen) rejected.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('CR-03-fix Test A — multi-segment slug (foo-bar-baz) matches and is deleted', async () => {
+    // Sanity: regex shape inspection.
+    expect(
+      BACKUP_FOLDER_RE.test('migration-backup-two-sum-2026-01-01T00-00-00Z'),
+    ).toBe(true);
+    expect(
+      BACKUP_FOLDER_RE.test(
+        'migration-backup-foo-bar-baz-2026-01-01T12-00-00Z',
+      ),
+    ).toBe(true);
+
+    const folderFull = `${BASE_PREFIX}migration-backup-foo-bar-baz-2026-01-01T12-00-00Z`;
+    // 2026-12-01 is much more than 30 days after 2026-01-01.
+    vi.setSystemTime(new Date('2026-12-01T00:00:00.000Z'));
+    const app = makeApp({
+      listImpl: async () => ({ files: [], folders: [folderFull] }),
+    });
+
+    await runMigrationBackupGc(app as never);
+
+    expect(app.vault.adapter.rmdir).toHaveBeenCalledTimes(1);
+    expect(app.vault.adapter.rmdir).toHaveBeenCalledWith(folderFull, true);
+    const deletedPaths = app.vault.adapter.rmdir.mock.calls.map((c) => c[0]);
+    expect(deletedPaths.some((p) => String(p).includes('foo-bar-baz'))).toBe(
+      true,
+    );
+  });
+
+  it('CR-03-fix Test B — uppercase slug rejected (migration-backup-FOO-...)', async () => {
+    expect(
+      BACKUP_FOLDER_RE.test('migration-backup-FOO-2026-01-01T00-00-00Z'),
+    ).toBe(false);
+    const folderFull = `${BASE_PREFIX}migration-backup-FOO-2026-01-01T00-00-00Z`;
+    vi.setSystemTime(new Date('2026-12-01T00:00:00.000Z'));
+    const app = makeApp({
+      listImpl: async () => ({ files: [], folders: [folderFull] }),
+    });
+
+    await runMigrationBackupGc(app as never);
+
+    expect(app.vault.adapter.rmdir).toHaveBeenCalledTimes(0);
+  });
+
+  it('CR-03-fix Test C — mixed-case slug rejected (migration-backup-Test-...)', async () => {
+    expect(
+      BACKUP_FOLDER_RE.test('migration-backup-Test-2026-01-01T00-00-00Z'),
+    ).toBe(false);
+    const folderFull = `${BASE_PREFIX}migration-backup-Test-2026-01-01T00-00-00Z`;
+    vi.setSystemTime(new Date('2026-12-01T00:00:00.000Z'));
+    const app = makeApp({
+      listImpl: async () => ({ files: [], folders: [folderFull] }),
+    });
+
+    await runMigrationBackupGc(app as never);
+
+    expect(app.vault.adapter.rmdir).toHaveBeenCalledTimes(0);
+  });
+
+  it('CR-03-fix Test D — single-char slug rejected (migration-backup-a-...)', async () => {
+    expect(
+      BACKUP_FOLDER_RE.test('migration-backup-a-2026-01-01T00-00-00Z'),
+    ).toBe(false);
+    const folderFull = `${BASE_PREFIX}migration-backup-a-2026-01-01T00-00-00Z`;
+    vi.setSystemTime(new Date('2026-12-01T00:00:00.000Z'));
+    const app = makeApp({
+      listImpl: async () => ({ files: [], folders: [folderFull] }),
+    });
+
+    await runMigrationBackupGc(app as never);
+
+    expect(app.vault.adapter.rmdir).toHaveBeenCalledTimes(0);
+  });
+
+  it('CR-03-fix Test E — leading-hyphen slug rejected', async () => {
+    expect(
+      BACKUP_FOLDER_RE.test(
+        'migration-backup--leading-hyphen-2026-01-01T00-00-00Z',
+      ),
+    ).toBe(false);
+    const folderFull = `${BASE_PREFIX}migration-backup--leading-hyphen-2026-01-01T00-00-00Z`;
+    vi.setSystemTime(new Date('2026-12-01T00:00:00.000Z'));
+    const app = makeApp({
+      listImpl: async () => ({ files: [], folders: [folderFull] }),
+    });
+
+    await runMigrationBackupGc(app as never);
+
+    expect(app.vault.adapter.rmdir).toHaveBeenCalledTimes(0);
+  });
+
+  it('CR-03-fix Test F — trailing-hyphen slug rejected', async () => {
+    expect(
+      BACKUP_FOLDER_RE.test(
+        'migration-backup-trailing-hyphen--2026-01-01T00-00-00Z',
+      ),
+    ).toBe(false);
+    const folderFull = `${BASE_PREFIX}migration-backup-trailing-hyphen--2026-01-01T00-00-00Z`;
+    vi.setSystemTime(new Date('2026-12-01T00:00:00.000Z'));
+    const app = makeApp({
+      listImpl: async () => ({ files: [], folders: [folderFull] }),
+    });
+
+    await runMigrationBackupGc(app as never);
+
+    expect(app.vault.adapter.rmdir).toHaveBeenCalledTimes(0);
   });
 });

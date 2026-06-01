@@ -13,11 +13,15 @@
 //                 30 days. Runs unconditionally.
 //   MIGRATE-05  — 30-day TTL backup cleanup as a release requirement.
 //
-// Threats mitigated (per .planning/phases/21-v1-2-migration/21-04-PLAN.md):
-//   T-21-gc       — strict folder-name regex `^migration-backup-(.+)-\d{4}-\d{2}-
-//                   \d{2}T\d{2}-\d{2}-\d{2}Z$` rejects any non-backup folder
-//                   under the plugin directory; non-backup folders (e.g.
+// Threats mitigated (per .planning/phases/21-v1-2-migration/21-04-PLAN.md +
+//                    .planning/phases/21-v1-2-migration/21-06-PLAN.md):
+//   T-21-gc       — strict folder-name regex (Plan 21-04) rejects any non-backup
+//                   folder under the plugin directory; non-backup folders (e.g.
 //                   `data`, `cache`) are NEVER deleted by this routine.
+//                   Tightened in Plan 21-06 (CR-03) to require LC-slug shape
+//                   `[a-z0-9][a-z0-9-]*[a-z0-9]` — non-LC-shape folders
+//                   (uppercase, mixed-case, single-char, leading/trailing
+//                   hyphen) are guaranteed NEVER to match.
 //   T-21-pitfall-4 — adapter.list rejection (likely first-install: plugin
 //                    folder does not yet exist) caught + debug-logged + return.
 //                    Plugin onload NEVER blocks on a missing-directory throw.
@@ -43,17 +47,33 @@ const BASE_DIR = '.obsidian/plugins/obsidian-leetcode';
 
 /**
  * Strict folder-name regex (T-21-gc mitigation). Captures:
- *   group 1 — the slug (anything that doesn't contain the trailing ISO suffix)
+ *   group 1 — the LC slug (LC-slug-shape: lowercase alphanumeric + hyphens;
+ *             starts AND ends with [a-z0-9]; minimum 2 characters)
  *   group 2 — the sanitized ISO timestamp (`YYYY-MM-DDTHH-MM-SSZ` — `:` was
  *             replaced with `-` for cross-OS filesystem safety per
  *             D-backup-01).
  *
  * Anything that doesn't match — e.g. `data`, `cache`, `migration-backup-foo`
- * (no ISO), `migration-backup-foo-2026-06-01` (no time) — is skipped. The
- * routine NEVER deletes a folder that does not match this regex.
+ * (no ISO), `migration-backup-foo-2026-06-01` (no time), `migration-backup-FOO-...`
+ * (uppercase), `migration-backup-a-...` (single char), `migration-backup--leading-...`
+ * (leading hyphen) — is skipped. The routine NEVER deletes a folder that
+ * does not match this regex.
+ *
+ * EXPORTED — single source of truth (Plan 21-06 CR-02). Reused by
+ * `src/widget/fenceMigrator.ts:backupAlreadyExistsForSlug` to verify
+ * the partial-failure retry path's pre-existence check uses the SAME
+ * shape constraint that the GC sweep enforces. NO regex literal duplication.
+ *
+ * Tightened in Plan 21-06 (CR-03):
+ *   from /^migration-backup-(.+)-(\d{4}-...)Z$/  (greedy, no char class)
+ *   to   /^migration-backup-([a-z0-9][a-z0-9-]*[a-z0-9])-(\d{4}-...)Z$/
+ * The slug character class `[a-z0-9]...[a-z0-9]` enforces the LC slug
+ * convention (per leetcode.com — slugs are lowercase alphanumeric + hyphens,
+ * 2+ chars, no leading/trailing hyphen). Multi-segment slugs (`foo-bar-baz`)
+ * still match because the body class `[a-z0-9-]*` accepts hyphens internally.
  */
-const BACKUP_FOLDER_RE =
-  /^migration-backup-(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$/;
+export const BACKUP_FOLDER_RE =
+  /^migration-backup-([a-z0-9][a-z0-9-]*[a-z0-9])-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$/;
 
 /** 30 days in milliseconds (T-21-pitfall-5 — direction is `now - parsed > TTL_MS`). */
 const TTL_MS = 30 * 24 * 60 * 60 * 1000;
