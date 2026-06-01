@@ -1,0 +1,50 @@
+# Obsidian fileManager.processFrontMatter — Shim Validation Capture
+#
+# Producer (intended): .planning/phases/21-v1-2-migration/21-02-PLAN.md Task 4
+#   Test 7 — dev-vault shim-capture step. Procedure: open
+#   <dev-vault>/leetcode/test-shim-capture.md (synthetic fixture with
+#   `lc-slug: shim-capture-test`, no `lc-language`, Python langSlug fence) in
+#   live Obsidian; trigger migrateLegacyFenceIfNeeded; capture pre/post text
+#   via vault.read; diff post-text against the byte layout produced by the
+#   fixture-runner shim's `applyFrontmatterMutation` reconstruction.
+#
+# Status (Plan 21-02 Task 4 + Plan 21-04 Task 3 inheritance):
+#   skipped_capture_date: 2026-06-01
+#   obsidian_version: deferred
+#   shim_validation: skipped
+#   DIFF: deferred
+#
+# Why skipped: headless executor — no live Obsidian session available during
+# the Phase 21 wave-4 worktree run. Plan 21-02 Task 4 Test 7 recorded
+# `shim_validation=skipped` in 21-02-SUMMARY.md (line 51, line 181, line 291).
+# Plan 21-04 Task 3 inherits the deferral: the `*.expected.md` fixtures and
+# the runner's `applyFrontmatterMutation` are both authored against the
+# convention "new lc-language is appended at the end of the frontmatter
+# block" (the documented convention in 21-04-PLAN.md behavior block). Both
+# sides of the equality check use the same reconstruction logic, so the
+# fixture suite is internally consistent. Empirical validation against live
+# Obsidian remains a follow-up dev-vault session.
+#
+# Re-run protocol when a dev-vault session becomes available:
+#   1. Open the dev vault in Obsidian; create
+#      <dev-vault>/leetcode/test-shim-capture.md with frontmatter
+#      `lc-slug: shim-capture-test` (NO `lc-language`) and a python3 fence.
+#   2. Run the migration command from the command palette (auto path or
+#      `LeetCode: Migrate current note`).
+#   3. After migration completes, read the post-migration file from the
+#      dev-vault filesystem (cat) and compare byte-for-byte against the
+#      fixture-runner shim's expected reconstruction (run the shim against
+#      the same pre-migration text and diff outputs).
+#   4. If diff is empty: replace this file with the captured non-empty
+#      output and set `shim_validation: passed` + `DIFF: empty`.
+#   5. If diff is non-empty: update `applyFrontmatterMutation` in
+#      tests/fixtures/migration/index.test.ts so its reconstruction matches
+#      Obsidian's byte layout, then re-run all 10 fixture-runner tests; any
+#      *.expected.md that no longer matches must be regenerated from the
+#      now-corrected shim. Document the change in this file under DIFF.
+#
+# Plan 21-04 Task 3's ground-truth check is the fixture-runner test —
+# `*.expected.md` files are paired with the shim that produced them, so
+# byte-equal assertions remain meaningful even with deferred validation.
+# A future dev-vault capture that shows divergence will require regenerating
+# all `*.expected.md` from the corrected shim and re-running the suite.
