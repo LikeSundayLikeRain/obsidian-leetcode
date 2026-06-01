@@ -18,8 +18,12 @@ vi.mock('obsidian', async () => {
 
 // vi.mock the migrator so the click handler's dispatch can be observed
 // without actually performing vault writes. The real migrator is exercised
-// by tests/widget/fenceMigrator.test.ts.
-const migrateSpy = vi.fn(async () => true);
+// by tests/widget/fenceMigrator.test.ts. vi.hoisted is required because
+// vi.mock factories are hoisted above import statements; declaring the spy
+// inside hoisted() lets the factory reference it without TDZ.
+const { migrateSpy } = vi.hoisted(() => ({
+  migrateSpy: vi.fn(async () => true),
+}));
 vi.mock('../../src/widget/fenceMigrator', () => ({
   migrateLegacyFenceIfNeeded: migrateSpy,
 }));
@@ -99,7 +103,7 @@ describe('mountLegacyFenceBanner', () => {
     await Promise.resolve();
 
     expect(migrateSpy).toHaveBeenCalledTimes(1);
-    const args = migrateSpy.mock.calls[0]!;
+    const args = migrateSpy.mock.calls[0] as unknown as unknown[];
     // (app, file, opts) — assert force: true and defaultLanguage is threaded.
     expect(args[1]).toBe(file);
     const opts = args[2] as { force?: boolean; defaultLanguage?: string; autoMigrateOnOpen?: boolean };
@@ -203,7 +207,9 @@ describe('mountLegacyFenceBanner', () => {
     button!.click();
     await Promise.resolve();
     await Promise.resolve();
-    const opts = migrateSpy.mock.calls.at(-1)![2] as { defaultLanguage?: string };
+    const lastCall = migrateSpy.mock.calls.at(-1) as unknown as unknown[] | undefined;
+    expect(lastCall).toBeDefined();
+    const opts = lastCall![2] as { defaultLanguage?: string };
     expect(opts.defaultLanguage).toBe('python3');
   });
 });
