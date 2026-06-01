@@ -21,7 +21,7 @@
 // Phase 3 UI-SPEC Notice table and MUST NOT be paraphrased.
 
 import { Notice } from 'obsidian';
-import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
+import type { App, RequestUrlParam, RequestUrlResponse, TFile } from 'obsidian';
 import type { AuthCookies } from '../auth/types';
 import type { DetailCacheEntry } from '../settings/SettingsStore';
 import { setWindowTimeout } from '../shared/timers';
@@ -69,6 +69,28 @@ export interface SubmissionOrchestratorDeps {
    *  NOT at orchestrator construction — so the code sent to LC is the
    *  current content at invocation per SOLVE-09. */
   getCurrentBody: () => string;
+  /**
+   * Phase 21 Plan 21-03 Task 2 (D-extract-01) — when supplied alongside `app`,
+   * the legacy markdown-body path threads
+   * `app.metadataCache.getFileCache(file)?.frontmatter` through to
+   * `extractFirstFencedBlock` so v1.3 `\`\`\`leetcode-solve` fences resolve
+   * the language from `lc-language` frontmatter (source of truth) rather
+   * than the deleted fence tag.
+   *
+   * OPTIONAL — undefined preserves backward-compat with the 1-arg legacy
+   * extractor path. The widget path (getCurrentCode supplied) skips
+   * extraction entirely and never reads this field.
+   */
+  file?: TFile;
+  /**
+   * Phase 21 Plan 21-03 Task 2 — Obsidian App handle, paired with `file` to
+   * read frontmatter via `app.metadataCache.getFileCache(file)?.frontmatter`.
+   * OPTIONAL for the same backward-compat reasons as `file`. Test fixtures
+   * that drive the legacy markdown-body path don't need to set this when
+   * the test fences are legacy (non-leetcode-solve) tags — the fence-tag
+   * Branch C of extractFirstFencedBlock ignores frontmatter regardless.
+   */
+  app?: App;
   /**
    * Phase 20 Plan 20-10 Task 5 (gap-closure T7) — when supplied, the v1.3
    * widget path's raw fence body. The orchestrator uses this value as
@@ -256,8 +278,19 @@ export class SubmissionOrchestrator {
       // supplies getCurrentCode and skips this entirely. See
       // .planning/phases/20-reconciliation-ux-action-row-section-protection/
       //   20-10-PLAN.md Task 5 for the architectural seam.
+      //
+      // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter for
+      // v1.3 leetcode-solve fences (lc-language SSoT). For legacy fences,
+      // codeExtractor's Branch C ignores the frontmatter arg entirely; for
+      // tests/legacy callers that don't supply `file` + `app`, undefined
+      // is passed and Branch C's verbatim behavior runs.
       const body = this.deps.getCurrentBody();
-      const extracted = extractFirstFencedBlock(body);
+      const fm = this.deps.app && this.deps.file
+        ? (this.deps.app.metadataCache.getFileCache(this.deps.file)?.frontmatter as
+            | { 'lc-language'?: string }
+            | undefined)
+        : undefined;
+      const extracted = extractFirstFencedBlock(body, fm);
       if (!extracted) {
 
         new Notice(

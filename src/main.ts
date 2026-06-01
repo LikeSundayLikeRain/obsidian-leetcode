@@ -2312,7 +2312,13 @@ export default class LeetCodePlugin extends Plugin {
     // is scoped to ## Code when the heading exists (CodeExtractor §preference
     // order); locked decision A guarantees ## Notes content can't leak in
     // because the helper rejects fences in other sections.
-    const extracted = extractFirstFencedBlock(body);
+    //
+    // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter so v1.3
+    // leetcode-solve fences resolve language from lc-language SSoT.
+    const fm = this.app.metadataCache.getFileCache(view.file)?.frontmatter as
+      | { 'lc-language'?: string }
+      | undefined;
+    const extracted = extractFirstFencedBlock(body, fm);
     if (!extracted) {
       new Notice('No `## Code` block found. Add a fenced block with your solution.', 6000);
       return;
@@ -2433,8 +2439,13 @@ export default class LeetCodePlugin extends Plugin {
       const problemMd = htmlToMarkdown(problemHtml);
 
       // Step 2 — extract code from the snapshotted body.
+      // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter so v1.3
+      // leetcode-solve fences resolve language from lc-language SSoT.
       const body = snapshotBody;
-      const extracted = extractFirstFencedBlock(body);
+      const fm = this.app.metadataCache.getFileCache(ctx.file)?.frontmatter as
+        | { 'lc-language'?: string }
+        | undefined;
+      const extracted = extractFirstFencedBlock(body, fm);
       const code = extracted?.code ?? '';
       const language = extracted?.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
 
@@ -2578,7 +2589,12 @@ export default class LeetCodePlugin extends Plugin {
     const body = view.editor.getValue();
 
     // Step 3 — extract first fenced code block.
-    const extracted = extractFirstFencedBlock(body);
+    // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter so v1.3
+    // leetcode-solve fences resolve language from lc-language SSoT.
+    const fm = this.app.metadataCache.getFileCache(view.file)?.frontmatter as
+      | { 'lc-language'?: string }
+      | undefined;
+    const extracted = extractFirstFencedBlock(body, fm);
     if (!extracted) {
       new Notice('No `## Code` block found. Add a fenced block with your solution.', 6000);
       return;
@@ -3274,6 +3290,12 @@ export default class LeetCodePlugin extends Plugin {
       slug,
       lcLanguage,
       getCurrentBody,
+      // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread file + app so the
+      // legacy markdown-body path can read lc-language frontmatter as the
+      // SSoT for v1.3 leetcode-solve fences. Widget callers (getCurrentCode
+      // supplied) skip extractFirstFencedBlock entirely and never read these.
+      file,
+      app: this.app,
       // Phase 20 Plan 20-10 Task 5 (gap-closure T7) — widget path passes
       // getCurrentCode so the orchestrator skips extractFirstFencedBlock.
       // Legacy *FromActive callers omit it (undefined) and the orchestrator
@@ -3879,8 +3901,14 @@ export default class LeetCodePlugin extends Plugin {
       // supplies currentCode and skips this entirely. See
       // .planning/phases/20-reconciliation-ux-action-row-section-protection/
       //   20-10-PLAN.md Task 5 for the architectural seam.
+      //
+      // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter so v1.3
+      // leetcode-solve fences resolve language from lc-language SSoT.
       const body = ctx.currentBody();
-      const extracted = extractFirstFencedBlock(body);
+      const fm = this.app.metadataCache.getFileCache(ctx.file)?.frontmatter as
+        | { 'lc-language'?: string }
+        | undefined;
+      const extracted = extractFirstFencedBlock(body, fm);
       if (!extracted) {
 
         new Notice(

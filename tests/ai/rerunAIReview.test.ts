@@ -64,7 +64,10 @@ describe('src/main.ts grep gates — Phase 09 Plan 04 wiring (AIREV-05)', () => 
   it('AIStreamModal is constructed in runAIReview with onStreamComplete callback', () => {
     const idx = SRC_MAIN.indexOf('async runAIReview(');
     expect(idx).toBeGreaterThan(0);
-    const block = SRC_MAIN.slice(idx, idx + 2000);
+    // Phase 21 Plan 21-03 Task 2 — widened from 2000 to 2500 to accommodate
+    // the frontmatter-threading comment + cast added at the extractFirstFencedBlock
+    // call site (D-extract-01).
+    const block = SRC_MAIN.slice(idx, idx + 2500);
     expect(block).toMatch(/onStreamComplete/);
     expect(block).toMatch(/new AIStreamModal\(/);
   });
@@ -72,7 +75,11 @@ describe('src/main.ts grep gates — Phase 09 Plan 04 wiring (AIREV-05)', () => 
   it('onStreamComplete callback uses vault.process with mergeAIReviewSection', () => {
     const idx = SRC_MAIN.indexOf('async runAIReview(');
     expect(idx).toBeGreaterThan(0);
-    const block = SRC_MAIN.slice(idx, idx + 3000);
+    // Phase 21 Plan 21-03 Task 2 — widened from 3000 to 3500 to accommodate
+    // the frontmatter-threading comment + cast added at the extractFirstFencedBlock
+    // call site (D-extract-01). The assertion still scopes to the runAIReview
+    // method body and ends well before the next method's entry point.
+    const block = SRC_MAIN.slice(idx, idx + 3500);
     expect(block).toMatch(/vault\.process/);
     expect(block).toMatch(/mergeAIReviewSection/);
   });
