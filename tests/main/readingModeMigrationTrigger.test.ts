@@ -107,7 +107,7 @@ interface MockPluginShape {
     getDefaultLanguage(): string;
   };
   migrateInFlight: Set<string>;
-  registerEvent: ReturnType<typeof vi.fn>;
+  registerEvent: ReturnType<typeof vi.fn> & ((ref: unknown) => unknown);
 }
 
 function makeMockPlugin(app: App, settings: FakeSettings): MockPluginShape {
@@ -144,7 +144,9 @@ function wireHook(args: {
       isMigrationCandidate as unknown as Parameters<
         typeof makeReadingModeMigrationHandler
       >[0]['isMigrationCandidate'],
-    logDebug,
+    logDebug: logDebug as unknown as Parameters<
+      typeof makeReadingModeMigrationHandler
+    >[0]['logDebug'],
   });
   const ref = (
     plugin.app.workspace as unknown as {
