@@ -1,5 +1,30 @@
 // src/widget/fenceMigrator.ts
 //
+// Phase 21 Plan 21-09 — frontmatter repair path for the asymmetric
+// "v1.3 body + missing lc-language" shape (closes UAT Gap 2 / Test 2).
+//
+// The original migrator (Plan 21-01) was designed for v1.0/v1.1/v1.2 → v1.3
+// BODY migration; lc-language frontmatter injection was bundled in as a
+// side effect of that flow. Notes that already have ` ```leetcode-solve `
+// as the fence opener (body is v1.3) but `lc-language` MISSING from
+// frontmatter slip through `isMigrationCandidate` clause 5 (idempotency
+// short-circuit) and the widget mount path's `resolveLanguageSlug` then
+// emits the Python+Notice fallback.
+//
+// Plan 21-09 adds two new exports:
+//   - isFrontmatterRepairCandidate(noteText, fm) — sibling predicate that
+//     recognizes the asymmetric shape (lc-slug + ## Code +
+//     ```leetcode-solve opener + closer + lc-language missing/empty/
+//     non-string).
+//   - repairFrontmatterIfNeeded(app, file, opts) — orchestrator that
+//     injects `lc-language: <opts.defaultLanguage>` via processFrontMatter
+//     BEFORE the widget mount path fires the Python+Notice. Frontmatter-
+//     only edit; NO body rewrite, NO backup needed (vault.process is
+//     never called — only processFrontMatter, which is reversible via
+//     Obsidian's own undo + metadataCache history). Inner-callback gate
+//     mirrors migrator Step 5 / D-edge-04 — never overwrite a non-empty
+//     existing lc-language.
+//
 // Phase 21 Plan 21-01 — v1.2 → v1.3 fence migration foundation.
 // Plan 21-07 (WR-02 + WR-03) — outer needsLang check removed in
 // migrateLegacyFenceIfNeeded; processFrontMatter is now invoked
@@ -483,6 +508,188 @@ export async function migrateLegacyFenceIfNeeded(
     // and vault.process previously succeeded, the idempotency clause
     // (countLeetCodeSolveFenceOpeners > 0) short-circuits.
     logger.debug('migration.fenceMigrator: non-fatal failure', err);
+    return false;
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Phase 21 Plan 21-09 — frontmatter repair path (closes UAT Gap 2 / Test 2).
+// Sibling to isMigrationCandidate / migrateLegacyFenceIfNeeded — same DI
+// shape, same Pattern S-05 silent-on-failure discipline. NO body rewrite,
+// NO backup. Frontmatter-only edit via processFrontMatter.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Pure predicate — true iff the note has the asymmetric "v1.3 body +
+ * missing lc-language" shape that the original migrator's idempotency
+ * clause 5 rejects.
+ *
+ * Five clauses (mirrors `isMigrationCandidate` in shape, with C3/C5 swapped):
+ *   C1: lc-slug present (non-empty string).
+ *   C2: `## Code` heading exists.
+ *   C3: First fence inside `## Code` is ` ```leetcode-solve ` (NOT a
+ *       langSlug — this is the post-migration shape).
+ *   C4: That fence has a closer (matching `^\s*\`\`\`\s*$`) before the
+ *       next `## ` heading or EOF.
+ *   C5: `fm['lc-language']` is missing OR not a string OR empty string.
+ *
+ * Multi-`## Code` regions: the predicate accepts as long as ANY
+ * `## Code` region has the leetcode-solve opener + closer (mirrors the
+ * `findFirstLeetCodeSolveFenceIndexInCodeSection` permissive scan).
+ *
+ * Pure: no I/O; no captured state; safe inside vault.process retry semantics.
+ */
+export function isFrontmatterRepairCandidate(
+  noteText: string,
+  frontmatter: Record<string, unknown> | undefined,
+): boolean {
+  // Clause 1 — lc-slug present.
+  const lcSlug = frontmatter?.['lc-slug'];
+  if (typeof lcSlug !== 'string' || lcSlug.length === 0) return false;
+
+  // Clause 5 — lc-language missing, non-string, or empty string.
+  const lcLang = frontmatter?.['lc-language'];
+  if (typeof lcLang === 'string' && lcLang.length > 0) return false;
+
+  // Clauses 2, 3, 4 — single forward scan. Find the FIRST in-`## Code`
+  // leetcode-solve opener; verify a closer exists before next H2 / EOF.
+  // Mirrors `findFirstLeetCodeSolveFenceIndexInCodeSection` in scan
+  // structure but inlined here so the closer-presence check shares state.
+  const lines = noteText.split(/\r?\n/);
+  let inCodeSection = false;
+  let sawCodeHeading = false;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i] ?? '';
+    if (H2_CODE_RE.test(text)) {
+      inCodeSection = true;
+      sawCodeHeading = true;
+      continue;
+    }
+    if (H2_ANY_RE.test(text)) {
+      inCodeSection = false;
+      continue;
+    }
+    if (!inCodeSection) continue;
+    if (LC_SOLVE_OPENER_RE.test(text)) {
+      // Clause 4 — scan forward for closer before next H2 / EOF.
+      for (let j = i + 1; j < lines.length; j++) {
+        const t = lines[j] ?? '';
+        if (H2_ANY_RE.test(t)) return false;
+        if (FENCE_CLOSER_RE.test(t)) return true;
+      }
+      return false; // EOF before closer
+    }
+    // Plan 21-09: any other fence opener inside ## Code aborts (e.g.
+    // a legacy ```python fence routes through isMigrationCandidate, not
+    // this repair path). The repair predicate is strict on the FIRST
+    // fence being leetcode-solve.
+    if (FENCE_OPENER_RE.test(text)) return false;
+  }
+  // No leetcode-solve opener inside any `## Code` region — caller falls
+  // through silently. (sawCodeHeading retained for symmetry; result is
+  // false either way.)
+  void sawCodeHeading;
+  return false;
+}
+
+/**
+ * Lazy-on-open frontmatter repair orchestrator. Closes UAT Gap 2 — the
+ * asymmetric "v1.3 body + missing lc-language" shape that
+ * `migrateLegacyFenceIfNeeded` cannot handle (clause 5 idempotency
+ * short-circuit). Called from the widget mount paths (Reading-mode hook,
+ * Reading-mode post-processor, Live Preview ViewPlugin) AFTER the migrator
+ * returns false — when the migrator already injected lc-language, the
+ * repair predicate's clause C5 returns false and the orchestrator no-ops.
+ *
+ * Returns Promise<boolean> — true iff the repair ran (predicate accepted +
+ * processFrontMatter was invoked); false on any skip / failure
+ * (silent-on-failure per Pattern S-05).
+ *
+ * Five-step pipeline (NO backup; NO vault.process):
+ *   0. Settings gate — when opts.force !== true AND opts.autoMigrateOnOpen
+ *      !== true, return false WITHOUT side effects.
+ *   1. Read text + frontmatter via vault.read + metadataCache.getFileCache.
+ *   2. Predicate gate — isFrontmatterRepairCandidate must be true; else
+ *      return false silently.
+ *   3. Backup is NOT taken — frontmatter-only edit, vault.process body is
+ *      NOT touched. Backup is required for body migrations (T-21-backup
+ *      invariant) but frontmatter-only writes are reversible via
+ *      Obsidian's own undo + metadataCache history; per CONTEXT D-edge-04
+ *      the inner gate prevents clobber, so no destructive overwrite is
+ *      possible.
+ *   4. processFrontMatter with INNER GATE (mirrors migrator Step 5 /
+ *      D-edge-04) — only assign when typeof fmObj['lc-language'] !==
+ *      'string' OR fmObj['lc-language'] === ''. Inner gate is the SSoT —
+ *      the metadataCache snapshot may be stale (Pattern 2 / Pitfall 7); the
+ *      inner check sees the REAL frontmatter the callback receives.
+ *   5. Return true.
+ *
+ * Whole orchestrator wrapped in try/catch — debug-log + return false on
+ * any I/O failure. NEVER throw to caller.
+ *
+ * Threat-model + write-path hygiene: this code path performs ONE write —
+ * `processFrontMatter`. Per CLAUDE.md "Phase 17 D-05 canonical write-path
+ * pattern", write-paths that touch the FENCE BODY must dispatch via the
+ * child editor's CM6 instance when registered. Frontmatter writes are
+ * explicitly NOT covered by that rule — `processFrontMatter` is a
+ * vault-layer atomic primitive that bypasses CM6 entirely. The Phase 05.5
+ * `'leetcode.*'` userEvent annotation rule does not apply (no CM6
+ * dispatch).
+ */
+export async function repairFrontmatterIfNeeded(
+  app: App,
+  file: TFile,
+  opts?: {
+    force?: boolean;
+    defaultLanguage?: string;
+    autoMigrateOnOpen?: boolean;
+  },
+): Promise<boolean> {
+  // Step 0 — settings gate (mirrors migrator). Force bypasses
+  // autoMigrateOnOpen (D-auto-03 parity).
+  if (opts?.force !== true && opts?.autoMigrateOnOpen !== true) {
+    return false;
+  }
+  try {
+    // Step 1 — read text + frontmatter.
+    const text = await app.vault.read(file);
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+
+    // Step 2 — predicate gate.
+    if (!isFrontmatterRepairCandidate(text, fm)) {
+      return false;
+    }
+
+    // Step 3 — NO BACKUP. Frontmatter-only edit; vault.process body is
+    // NOT touched.
+
+    // Step 4 — inner-gate processFrontMatter (D-edge-04). The inner gate
+    // is the SSoT; the outer predicate may have matched on a stale
+    // metadataCache snapshot, but the callback receives the REAL
+    // frontmatter so the inner check correctly preserves a non-empty
+    // existing lc-language.
+    const defaultLang = opts?.defaultLanguage ?? 'python3';
+    await app.fileManager.processFrontMatter(
+      file,
+      (fmObj: Record<string, unknown>) => {
+        if (
+          typeof fmObj['lc-language'] !== 'string' ||
+          fmObj['lc-language'] === ''
+        ) {
+          fmObj['lc-language'] = defaultLang;
+        }
+      },
+    );
+
+    // Step 5 — return true.
+    return true;
+  } catch (err) {
+    // Pattern S-05 — silent-on-failure. Repair must NEVER block file
+    // open. The widget mount path's existing Notice + Python fallback
+    // remains the documented behavior for the failure case.
+    logger.debug('migration.fenceMigrator.repair: non-fatal failure', err);
     return false;
   }
 }
