@@ -3,14 +3,17 @@ status: partial
 phase: 21-v1-2-migration
 source: [21-VERIFICATION.md]
 started: 2026-06-01T21:35:00Z
-updated: 2026-06-01T20:30:00Z
+updated: 2026-06-01T20:55:00Z
 gap_closure_plans: [21-08, 21-09, 21-10, 21-11, 21-12, 21-13]
 gap_closure_status: code_shipped_pending_live_uat
+re_test_complete: 2026-06-01T20:55:00Z
+re_test_passed: 5
+re_test_issues: 3
 ---
 
 ## Current Test
 
-[awaiting human re-testing of 8 live-Obsidian items after gap-closure plans 21-08..21-13 shipped]
+[re-test complete — 5 pass, 3 issues]
 
 ## Re-Test Tests (post gap-closure)
 
@@ -18,35 +21,63 @@ Code for all 6 originally diagnosed UAT gaps has shipped via plans 21-08..21-13.
 
 ### R1. Widget mounts on same open after auto-migration (21-08 / MIGRATE-CR-01)
 expected: "Open a v1.2 fixture note in Reading mode in a dev vault with autoMigrateOnOpen=ON. Within ~50ms the legacy fence is rewritten to ```leetcode-solve AND the v1.3 widget mounts ON THE SAME OPEN. Closing+reopening NOT required."
-result: [pending]
+result: pass
 
 ### R2. Frontmatter auto-repair with defaultLanguage=Java (21-09 / MIGRATE-FM-REPAIR-01)
 expected: "Open a note with lc-slug + ```leetcode-solve fence + lc-language MISSING in frontmatter. With defaultLanguage=Java in settings, frontmatter is auto-repaired to lc-language: java BEFORE the widget mounts. NO Notice 'lc-language frontmatter missing; falling back to Python' fires. Widget mounts using Java."
-result: [pending]
+result: issue
+reported: "Frontmatter repair worked (lc-language: java was added), but the widget did NOT mount properly on the same open: no syntax highlighting, not editable, no action row. After a reload (close+reopen, or plugin reload), the widget mounts correctly."
+severity: major
+why_human: "Same shape as R1's resolved bug — repair triggers a frontmatter write but no rerender hand-off, so the widget that mounted before repair stays in a stale/uninitialized state. Symmetric to MIGRATE-CR-01 but for the repair path, not the migrate path."
+diagnosis_hint: |
+  Plan 21-09 wired repairFrontmatterIfNeeded into the readingModeMigrationHook + post-processor + Live Preview StateField. After the processFrontMatter write, we need the SAME post-write rerender that 21-08 added for migrate(). Currently the readingModeMigrationHook only chains rerenderPreviewLeaves after migrate() resolves; the .then() chain after repair() does NOT trigger a rerender — even though processFrontMatter just changed the frontmatter, which is what determines lc-language, which determines what the widget renders. Likely fix: in src/main/readingModeMigrationHook.ts, extend the .then() chain so a `repaired === true` outcome ALSO calls rerenderPreviewLeaves(this.app, file.path). Alternative: the repair candidate's writeback happens via fire-and-forget from inside liveModeBannerStateField (fire-and-forget repairInFlight guard) — that path also lacks a rerender hand-off in the Reading-mode case where the same path was already rendered from stale frontmatter.
 
 ### R3. Reading-mode banner on v1.2 note (21-10 / MIGRATE-BANNER-RM-01)
 expected: "Open a v1.2-shaped note in Reading mode with useInlineWidget=ON AND autoMigrateOnOpen=OFF. The langSlug code block is replaced with the legacy migration banner (copy + [Migrate now] CTA + read-only `<pre><code>` of fence body). Clicking [Migrate now] runs migration and the v1.3 widget mounts on next render."
-result: [pending]
+result: pass
 
 ### R4. Live-Preview banner without CM6 RangeError (21-11 / MIGRATE-BANNER-LP-01)
 expected: "Open a v1.2-shaped note in Live Preview with useInlineWidget=ON AND autoMigrateOnOpen=OFF. The migration banner mounts WITHOUT throwing the CM6 RangeError 'Decorations that replace line breaks may not be specified via plugins'. Console clean. With autoMigrateOnOpen=ON, AutoMigratingBannerWidget mounts cleanly and unmounts on the post-migration update cycle."
-result: [pending]
+result: issue
+reported: "CM6 RangeError is gone (banner mounts), BUT the banner copy + [Migrate now] CTA + the fence body all render inside a single rounded code-block-tinted box. Banner copy/button and the read-only fence body are not visually separated — the whole thing looks like one fence with banner text grafted on top. (Reading mode banner is correctly styled — issue is Live-Preview-only.) Screenshot attached."
+severity: minor
+why_human: "RangeError fix (the actual blocker) succeeded; this is a visual/structural defect in the Live-Preview banner rendering. The legacyBannerStateField uses Decoration.replace({widget: AutoMigratingBannerWidget, block: true}) over the legacy fence range — the AutoMigratingBannerWidget builds a single host element containing copy + button + read-only pre/code, so CM6 sees the entire host as one block decoration replacing the multi-line fence. The host element's outer container picks up the surrounding code-block tint or shares the fence's CSS scope, so the visual separation is lost compared to Reading mode where the banner replaces the rendered code-block element with a freshly-styled host."
+diagnosis_hint: |
+  Compare AutoMigratingBannerWidget.toDOM in src/widget/liveModeViewPlugin.ts (or wherever the legacy banner widget toDOM lives) against the Reading-mode mountLegacyFenceBanner in src/widget/codeBlockProcessor.ts. The Reading-mode path produces a host with explicit class names + a separating border between banner and code preview; the LP host probably reuses the same DOM build helper but ends up nested inside CM6's `.cm-line` / `.cm-block-decoration-replace` wrapper which inherits code-block visual styling.
+
+  Likely fix: in liveModeBannerStateField (or the AutoMigratingBannerWidget host build), add a top-level CSS class scoping the banner host to the leetcode-banner-livepreview namespace so styles from the surrounding code-block container can't bleed in. Cross-check the styles.css rules for `.lc-legacy-fence-banner` (or equivalent) — they may only target the Reading-mode banner shape.
 
 ### R5. Take-Over CTA across all remount triggers (21-12 / TAKEOVER-CTA-01)
 expected: "On every remount of an LC note (close tab→reopen, switch notes→switch back, close all→reopen) the widget mounts in a working state. The 'Click to take over' overlay either does not appear (single-pane focused) OR — if it appears during a transient mid-attach window — clicking it deterministically promotes the pane and the overlay is removed. Existing two-real-pane peer flow preserved."
-result: [pending]
+result: pass
 
 ### R6. No duplicate fence from problem browser (21-13 / NEWNOTE-FENCE-DEDUP-01)
 expected: "With useInlineWidget=ON, opening a fresh problem from the problem browser produces a note whose ## Code section contains EXACTLY ONE ```leetcode-solve fence — ZERO langSlug-tagged sibling fences. Note renders with single LC widget mount."
-result: [pending]
+result: issue
+reported: "Note content on disk is correct (single ```leetcode-solve fence in ## Code, no sibling — Plan 21-13 fix landed). BUT the widget rendering is broken on the first open: no syntax highlighting, no action row, not editable. Same broken-mount shape as R2."
+severity: major
+why_human: "Source-on-disk fix succeeded (single fence — confirms 21-13 retrofit gate works). Defect is downstream: the new-note open flow lands the note in the editor, then writes/retrofits the body, but no rerender hand-off ensures the widget remounts against the now-finalized source. Same family as R2 — post-write rerender missing on the new-note path."
+diagnosis_hint: |
+  The new-note flow likely runs:
+  1. NoteWriter.openProblem creates the file with ```leetcode-solve fence (Plan 21-13 fix correct here).
+  2. Workspace.openLinkText / getLeaf().openFile loads the file in the active leaf.
+  3. The widget mounts against the loaded buffer.
+  4. Some retrofit/post-create step runs on the buffer (NoteWriter.retrofitStarterCode at one of the 4 call sites — probably the line 419 belt-and-suspenders).
+  5. The retrofit path now no-ops correctly (Plan 21-13's wrapper gate), but the editor was already in a partially-mounted state when retrofit ran.
+
+  Two candidate fixes:
+  - Reorder: ensure the file is FULLY WRITTEN to disk (including any retrofit) BEFORE the workspace opens it. The retrofit-after-open dance is the legacy path; with useInlineWidget=ON, retrofit is a guaranteed no-op so it's safe to skip.
+  - Trigger rerender post-write on the new-note path the same way 21-08 does for migrate(): after the openProblem write completes, queue a rerenderPreviewLeaves(this.app, file.path) (Reading) and/or a CM6 view refresh (Live Preview).
+
+  Cross-check: in src/notes/NoteWriter.ts open flow, find where the leaf is opened relative to where the body is finalized. If body is finalized AFTER leaf opens, that's the race.
 
 ### R7. Two-pane peer flow regression check (21-12)
 expected: "When two REAL Obsidian panes both display the same LC note, focusing one pane sets the other to 'peer' state and shows the take-over overlay. The fix to the null-leaf branch (case b) MUST NOT break case (c) two-attached-leaves behavior."
-result: [pending]
+result: pass
 
 ### R8. shim-validation byte-layout (inherited deferred from 21-02)
 expected: "tests/fixtures/migration/.obsidian-shim-validation.txt records DIFF: empty for live-Obsidian byte-equal validation. Already captured in original UAT Test 3 (result: pass) — included here for completeness."
-result: [pending]
+result: pass
 captured: |
   Live dev-vault probe executed interactively 2026-06-01T19:06:45Z (see Test 3 below).
   Pre-migration bytes: 77; post-migration bytes: 103; shim output bytes: 103.
@@ -56,9 +87,9 @@ captured: |
 ## Re-Test Summary
 
 total: 8
-passed: 0
-issues: 0
-pending: 8
+passed: 5
+issues: 3
+pending: 0
 skipped: 0
 blocked: 0
 
@@ -379,3 +410,55 @@ blocked: 0
     - "Integration test: build a multi-line legacy fence in a real EditorView, assert the decoration mounts without throwing"
     - "Integration test: open v1.2-shaped note in Reading mode (autoMigrateOnOpen=OFF), assert banner DOM appears in place of the langSlug code block"
   debug_session: ".planning/debug/banner-mount-path-broken-both-modes.md"
+
+- truth: "After frontmatter auto-repair injects lc-language on a v1.3-shaped note, the widget mounts properly on the same open (syntax highlighting, editable, action row visible) — no reload required."
+  status: failed
+  reason: "User reported (R2 re-test, 2026-06-01): Frontmatter repair worked (lc-language: java was added on first open), but the widget did NOT mount properly on the same open: no syntax highlighting, not editable, no action row. After a reload (close+reopen, or plugin reload), the widget mounts correctly."
+  severity: major
+  test: R2
+  artifacts:
+    - path: "src/main/readingModeMigrationHook.ts"
+      issue: "Plan 21-09 wired repair() into the same Promise chain that Plan 21-08 added rerenderPreviewLeaves to — but rerender only fires after migrate() resolves with migrated=true, NOT after repair() resolves with repaired=true. After processFrontMatter writes lc-language, no Reading-mode rerender is queued, so the widget that mounted from stale frontmatter (no lc-language) stays in its uninitialized state."
+    - path: "src/widget/liveModeBannerStateField.ts"
+      issue: "Live-Preview repair path is fire-and-forget guarded by repairInFlight Set in main.ts; on completion, no CM6 update is dispatched to remount the widget against the now-fresh metadataCache."
+    - path: "src/widget/codeBlockProcessor.ts"
+      issue: "Reading-mode post-processor calls repairFrontmatterIfNeeded after migrate=false but does not chain a rerenderPreviewLeaves on the post-repair branch."
+  missing:
+    - "PRIMARY FIX: Extend the rerenderPreviewLeaves call site so it also fires when repair() resolves with repaired=true. This is the SAME mechanism Plan 21-08 added for migrate(); the wiring was just not extended to the repair path."
+    - "Defense-in-depth: in liveModeBannerStateField, after the fire-and-forget repair completes (release repairInFlight), dispatch an empty/no-op view.update to force the widget mount path to re-resolve language from the now-fresh frontmatter."
+    - "Integration test: open a v1.3-shaped note with lc-language MISSING in Reading mode → assert (a) frontmatter is repaired AND (b) widget mounts correctly on the SAME open, NOT requiring a reload."
+
+- truth: "In Live Preview, the legacy migration banner renders as a visually distinct UI block — the banner copy + [Migrate now] CTA are clearly separated from the read-only fence body preview, parallel to the Reading-mode banner shape."
+  status: failed
+  reason: "User reported (R4 re-test, 2026-06-01, screenshot attached): CM6 RangeError is gone (the actual fix landed), but the banner copy + button + fence body all render inside a single rounded code-block-tinted box. No visual separator between banner UI and fence content. Reading mode (R3) banner is correctly styled — this is Live-Preview-only."
+  severity: minor
+  test: R4
+  artifacts:
+    - path: "src/widget/liveModeBannerStateField.ts"
+      issue: "AutoMigratingBannerWidget.toDOM (or whichever host-build helper the legacyBannerStateField calls) — produces a host element that, once wrapped by CM6's block-decoration container, inherits surrounding code-block visual styling. Banner UI does not have a top-level CSS scope that isolates it from CM6's fence-block style."
+    - path: "src/widget/legacyFenceBanner.ts (host builder, if shared)"
+      issue: "If Reading-mode and Live-Preview banners share this builder, the styling difference is in the WRAPPER CSS — verify whether styles.css has a `.lc-legacy-fence-banner` rule scoped only to Reading mode markdown post-processor parents."
+    - path: "styles.css (or equivalent)"
+      issue: "Banner CSS rules likely target Reading-mode DOM shape; Live-Preview wrapper inherits CM6 cm-line/cm-content code-block styling."
+  missing:
+    - "Add a top-level CSS scope class to the AutoMigratingBannerWidget host (e.g. `lc-legacy-banner--livepreview` plus the existing `lc-legacy-fence-banner`) so styles can target the LP shape distinctly without overriding Reading-mode behavior."
+    - "Cross-check styles.css for the banner rules — ensure visual separation between header (copy + CTA) and body (read-only pre/code) is enforced via explicit margins/borders, not relying on inherited code-block container styles."
+    - "Visual regression test: render the LP banner in a synthetic EditorView and assert the host has both `.lc-legacy-banner--livepreview` and a child element with the read-only pre/code class."
+
+- truth: "When a fresh problem is opened from the problem browser with useInlineWidget=ON, the resulting note's widget mounts in a working state on the first render — syntax highlighting present, action row visible, editor responsive."
+  status: failed
+  reason: "User reported (R6 re-test, 2026-06-01): Note content on disk is correct (single ```leetcode-solve fence — Plan 21-13 fix landed), but the widget rendering is broken on the first open: no syntax highlighting, no action row, not editable. Closing+reopening shows the widget correctly. Same broken-mount shape as R2."
+  severity: major
+  test: R6
+  artifacts:
+    - path: "src/notes/NoteWriter.ts (openProblem flow + retrofit call sites at lines 272, 343, 419, 453)"
+      issue: "openProblem opens the leaf BEFORE the retrofit gate decides whether to no-op; the editor mounts the widget against a buffer that may still be settling. Even though Plan 21-13's wrapper gate makes retrofit a clean no-op when useInlineWidget=ON, the leaf-open ordering is the race source."
+    - path: "src/main.ts (vault.on('modify') handler + Reading-mode post-processor wiring)"
+      issue: "Same short-circuit family as R1's resolved bug — the modify handler returns when no widget is registered for the path; on a brand-new note the widget IS being registered for the first time, but its mount happens against a transient state."
+    - path: "src/widget/codeBlockProcessor.ts AND src/widget/liveModeBannerStateField.ts"
+      issue: "First-mount path needs the SAME post-write rerender hand-off that 21-08 added for migrate() and that R2 needs for repair() — applied to the new-note creation path."
+  missing:
+    - "PRIMARY FIX: After NoteWriter.openProblem fully writes the new note's body, before/after openLinkText, queue a rerenderPreviewLeaves on the file path so the widget remounts against the finalized buffer. Symmetric to Plan 21-08's fix for the migrate path."
+    - "Defense-in-depth: drop the line-419 belt-and-suspenders retrofit when useInlineWidget=ON (the wrapper gate already no-ops it; eliminating the call site makes the mount sequence deterministic)."
+    - "Live-Preview equivalent: dispatch a no-op view.update after the openLinkText settles so CM6 re-resolves the StateField against the now-fresh buffer."
+    - "Integration test: openProblem → assert widget mounts in working state on first render (syntax highlight, editable, action row) without requiring a second open."
