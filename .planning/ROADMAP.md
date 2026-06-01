@@ -198,7 +198,7 @@ Plans:
 - Research flag: LOW for mechanics; MEDIUM for hand-edited note edge cases (e.g., user-modified fence with extra blank lines, malformed frontmatter, missing `## Code` heading).
 - Pitfalls covered: P7, P13.
 
-**Plans:** 13/13 plans complete
+**Plans:** 13/16 plans complete (cycle 2 post-UAT closure pending: 21-14/15/16)
 
 Plans:
 **Wave 1**
@@ -222,6 +222,12 @@ Plans:
 - [x] 21-05-PLAN.md — Reading-mode file-open hook + Plugin-instance migrateInFlight (CR-01 + WR-01; MIGRATE-01, MIGRATE-06)
 - [x] 21-06-PLAN.md — Pre-existence backup check + tightened LC-slug regex + GC concurrency lock (CR-02 + CR-03 + WR-05; MIGRATE-02, MIGRATE-05)
 - [x] 21-07-PLAN.md — Defensive banner DOM + processFrontMatter unconditional + ## Code-scoped helpers (CR-04 + WR-02 + WR-03 + WR-07; MIGRATE-02, MIGRATE-06, MIGRATE-08)
+
+**Post-UAT gap closure (cycle 2)** *(re-test of 21-08..21-13 found 3 new mount-race / styling issues; close UAT R2 + R4 + R6)*
+
+- [ ] 21-14-PLAN.md — Repair-path post-write rerender hand-off (R2): Reading-mode post-processor + Live-Preview StateField annotation-driven recompute (MIGRATE-FM-REPAIR-01)
+- [ ] 21-15-PLAN.md — Live-Preview banner CSS isolation (R4): host scope class + styles.css rules to prevent CM6 fence-block style bleed-through (MIGRATE-BANNER-LP-01)
+- [ ] 21-16-PLAN.md — New-note open-flow rerender hand-off (R6): NoteWriter.openProblem post-leaf-open rerender DI + drop line-440 retrofit when useInlineWidget=ON (NEWNOTE-FENCE-DEDUP-01)
 
 ---
 
