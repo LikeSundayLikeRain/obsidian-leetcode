@@ -223,7 +223,14 @@ import { mergeAIContestAnalysisSection } from './contest/mergeAIContestAnalysisS
 /** Shape returned by getActiveProblemContext — the minimum info every Phase 3
  *  command needs: the TFile (used by RunModal / submit / starter-code paths),
  *  the slug (from lc-slug frontmatter), and a live `currentBody()` getter that
- *  re-reads at invocation time (SOLVE-09). */
+ *  re-reads at invocation time (SOLVE-09).
+ *
+ *  Phase 20 Plan 20-10 Task 5 (gap-closure T7) — adds an optional
+ *  `currentCode()` thunk used by the v1.3 widget path. When supplied,
+ *  `runInterpretedInput` skips `extractFirstFencedBlock(currentBody())` and
+ *  uses the raw code directly. Phase 22 retires the legacy `currentBody`
+ *  field once `*FromActive` is deleted (TODO Phase 22 marker at the
+ *  fall-through site in `runInterpretedInput`). */
 interface ProblemContext {
   view: MarkdownView;
   file: TFile;
@@ -231,6 +238,9 @@ interface ProblemContext {
   title: string;
   lcLanguage: string | null;
   currentBody: () => string;
+  /** Phase 20 Plan 20-10 Task 5 (T7 fix) — when present, the widget path's
+   *  raw fence body. Skips extractFirstFencedBlock in runInterpretedInput. */
+  currentCode?: () => string;
 }
 
 export default class LeetCodePlugin extends Plugin {
@@ -2792,6 +2802,13 @@ export default class LeetCodePlugin extends Plugin {
       // runInterpretedInput only consults file/slug/title/lcLanguage/currentBody,
       // not view. The cast is structurally narrower than the full ProblemContext
       // shape and won't reach the unused `view` field at runtime.
+      //
+      // Phase 20 Plan 20-10 Task 5 (gap-closure T7) — supply `currentCode` so
+      // runInterpretedInput skips extractFirstFencedBlock entirely. Both
+      // currentBody (markdown-shaped, but unused on this path post-currentCode)
+      // and currentCode are kept here for backward-compat: any
+      // not-yet-migrated downstream consumer reading currentBody still gets
+      // a sensible (raw-fence-body) value rather than crashing on undefined.
       return {
         view: undefined as unknown as MarkdownView,
         file,
@@ -2799,6 +2816,7 @@ export default class LeetCodePlugin extends Plugin {
         title: freshTitle,
         lcLanguage: freshLanguage,
         currentBody: () => widget.view.state.doc.toString(),
+        currentCode: () => widget.view.state.doc.toString(),
       };
     };
     await this.runWithCode(file, lcSlug, lcTitle, lcLanguage, () => code, widgetCtxResolver);
@@ -2830,12 +2848,18 @@ export default class LeetCodePlugin extends Plugin {
     // The submitWithCode body re-reads code via getCurrentBody() — close
     // over widget.view.state.doc so the orchestrator picks up any edits made
     // while the verdict modal is open.
+    //
+    // Phase 20 Plan 20-10 Task 5 (gap-closure T7) — supply `getCurrentCode`
+    // alongside `getCurrentBody` so the orchestrator skips
+    // extractFirstFencedBlock (which would fail on raw widget code) and
+    // sends the body directly as typed_code.
     await this.submitWithCode(
       file,
       lcSlug,
       lcTitle,
       lcLanguage,
       () => widget.view.state.doc.toString(),
+      /*getCurrentCode=*/() => widget.view.state.doc.toString(),
     );
     // `code` is captured for completeness; the actual LC API submission body
     // comes from getCurrentBody() at orchestrator-run time. Suppress unused
@@ -3103,6 +3127,11 @@ export default class LeetCodePlugin extends Plugin {
     title: string,
     lcLanguage: string | null,
     getCurrentBody: () => string,
+    /** Phase 20 Plan 20-10 Task 5 (gap-closure T7) — when the widget path
+     *  supplies this, the orchestrator skips extractFirstFencedBlock and
+     *  uses the raw code directly. Optional so the legacy *FromActive
+     *  path stays byte-for-byte unchanged. */
+    getCurrentCode?: () => string,
   ): Promise<void> {
     if (!this.guardSingleFlight()) return;
 
@@ -3174,6 +3203,11 @@ export default class LeetCodePlugin extends Plugin {
       slug,
       lcLanguage,
       getCurrentBody,
+      // Phase 20 Plan 20-10 Task 5 (gap-closure T7) — widget path passes
+      // getCurrentCode so the orchestrator skips extractFirstFencedBlock.
+      // Legacy *FromActive callers omit it (undefined) and the orchestrator
+      // falls through to the existing markdown-body extraction path.
+      ...(getCurrentCode ? { getCurrentCode } : {}),
       // D-21 — login wiring for the sticky session-expired Notice's button.
       login: () => { void this.auth.login(); },
       // Phase 08 Plan 04 (AIDBG-01) — capture non-Accepted verdicts into the
@@ -3746,16 +3780,46 @@ export default class LeetCodePlugin extends Plugin {
   private async runInterpretedInput(ctx: ProblemContext, dataInput: string): Promise<void> {
     if (!this.guardSingleFlight()) return;
 
-    // Gate: fenced block present (D-04).
-    const body = ctx.currentBody();
-    const extracted = extractFirstFencedBlock(body);
-    if (!extracted) {
-       
-      new Notice(
-        'No code block found. Add a fenced block with your solution.',
-        6000,
-      );
-      return;
+    // Phase 20 Plan 20-10 Task 5 (gap-closure T7) — widget path skips the
+    // markdown-body fence extractor entirely. When `ctx.currentCode` is
+    // supplied, the caller has already extracted the raw fence body
+    // (widget.view.state.doc.toString()) and we trust it. Empty / whitespace-
+    // only code fires a user-facing Notice and aborts before the LC API call.
+    let typedCode: string;
+    let extractedLang: string | null;
+    if (ctx.currentCode) {
+      const raw = ctx.currentCode();
+      if (raw.trim().length === 0) {
+
+        new Notice(
+          'Add code to your solution before running.',
+          6000,
+        );
+        return;
+      }
+      typedCode = raw;
+      // No fence opener tag on the widget path — the language must come
+      // from `ctx.lcLanguage` (frontmatter). Fall back to default below.
+      extractedLang = null;
+    } else {
+      // TODO Phase 22: delete this branch after *FromActive removal — only
+      // legacy callers (active-leaf path) use currentBody() + the
+      // extractFirstFencedBlock fence-extractor. The widget path always
+      // supplies currentCode and skips this entirely. See
+      // .planning/phases/20-reconciliation-ux-action-row-section-protection/
+      //   20-10-PLAN.md Task 5 for the architectural seam.
+      const body = ctx.currentBody();
+      const extracted = extractFirstFencedBlock(body);
+      if (!extracted) {
+
+        new Notice(
+          'No code block found. Add a fenced block with your solution.',
+          6000,
+        );
+        return;
+      }
+      typedCode = extracted.code;
+      extractedLang = extracted.lang;
     }
     // Gate: auth cookies.
     const cookies = this.settings.getAuthCookies();
@@ -3765,7 +3829,7 @@ export default class LeetCodePlugin extends Plugin {
       return;
     }
 
-    const lang = ctx.lcLanguage ?? resolveLangSlug(extracted.lang, this.settings.getDefaultLanguage());
+    const lang = ctx.lcLanguage ?? resolveLangSlug(extractedLang, this.settings.getDefaultLanguage());
     const detail = this.settings.getProblemDetail(ctx.slug);
     const questionId = detail?.internalQuestionId ?? (detail ? String(detail.id) : '');
 
@@ -3793,7 +3857,7 @@ export default class LeetCodePlugin extends Plugin {
         cookies,
         lang,
         questionId,
-        typedCode: extracted.code,
+        typedCode,
         dataInput,
       });
       const terminal = await pollSubmission({
