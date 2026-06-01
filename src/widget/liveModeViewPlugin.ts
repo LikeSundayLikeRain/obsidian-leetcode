@@ -58,13 +58,15 @@ type PluginHost = Plugin & WidgetMountHost & {
     getAutoMigrateOnOpen?(): boolean;
     getDefaultLanguage?(): string;
   };
+  // Phase 21 Plan 21-05 (WR-01) — cross-mode dedupe Set, hoisted from this
+  // module to a Plugin-instance field on LeetCodePlugin (src/main.ts). Both
+  // the Plan 21-05 workspace.on('file-open') Reading-mode trigger and this
+  // legacy-kind Live Preview branch consume the SAME Set so a Reading-mode
+  // trigger and a Live Preview trigger for the same file path do not race
+  // (per-file lock, not per-mode lock). Plugin unload + reload starts with
+  // a fresh empty Set on the new instance.
+  migrateInFlight: Set<string>;
 };
-
-// Phase 21 — guard against firing migration on every update() pass for the
-// same file (the migration is idempotent but the read+candidate scan is
-// wasted work). Track in-flight + recently-attempted file paths in a
-// module-level set; entry is cleared after the migration promise settles.
-const migrateInFlight = new Set<string>();
 
 /**
  * Phase 21 Plan 21-02 Task 3 — Live Preview auto-migrating banner widget.
@@ -179,11 +181,13 @@ function buildLeetCodeFenceRanges(
         }),
       );
       // Fire-and-forget migration (Pitfall 6 — synchronous update()).
-      // Deduped via migrateInFlight so a quick succession of update()
-      // passes during the migration window doesn't enqueue duplicate
-      // I/O.
-      if (!migrateInFlight.has(file.path)) {
-        migrateInFlight.add(file.path);
+      // Deduped via plugin.migrateInFlight (Phase 21 Plan 21-05 WR-01: the
+      // Set is owned by the Plugin instance and shared with the
+      // workspace.on('file-open') Reading-mode trigger so a Reading-mode
+      // trigger and this Live Preview trigger for the same file path do
+      // not race).
+      if (!plugin.migrateInFlight.has(file.path)) {
+        plugin.migrateInFlight.add(file.path);
         void migrateLegacyFenceIfNeeded(
           plugin.app as Parameters<typeof migrateLegacyFenceIfNeeded>[0],
           file,
@@ -196,7 +200,7 @@ function buildLeetCodeFenceRanges(
             // Defensive — Pattern S-05 silent-on-failure.
           })
           .finally(() => {
-            migrateInFlight.delete(file.path);
+            plugin.migrateInFlight.delete(file.path);
           });
       }
     }

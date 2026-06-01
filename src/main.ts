@@ -107,7 +107,17 @@ import { countLeetCodeSolveFenceOpeners } from './widget/fenceLocator';
 // Phase 21 Plan 21-02 Task 3 — command palette entry `Migrate current note`
 // dispatches the v1.2 → v1.3 migration with force: true (D-auto-03 escape
 // hatch). Gated via editorCheckCallback on useInlineWidget=ON + lc-slug.
-import { migrateLegacyFenceIfNeeded } from './widget/fenceMigrator';
+//
+// Phase 21 Plan 21-05 Task 2 (CR-01) — workspace.on('file-open') Reading-mode
+// trigger consults `isMigrationCandidate` for the autoMigrateOnOpen=OFF
+// path before logging the documented Reading-mode banner-mount limitation.
+import {
+  isMigrationCandidate,
+  migrateLegacyFenceIfNeeded,
+} from './widget/fenceMigrator';
+// Phase 21 Plan 21-05 Task 2 (CR-01) — extracted factory; tests drive it
+// directly without instantiating the full LeetCodePlugin lifecycle.
+import { makeReadingModeMigrationHandler } from './main/readingModeMigrationHook';
 // Phase 21 Plan 21-04 Task 1 — 30-day TTL backup cleanup (MIGRATE-05).
 // Fire-and-forget microtask scheduled from Plugin.onload(). Runs
 // UNCONDITIONALLY regardless of useInlineWidget per D-backup-03.
@@ -320,6 +330,15 @@ export default class LeetCodePlugin extends Plugin {
 
   // Phase 13 — LRU cache for nested child EditorViews (cap=5, per D-12).
   childEditorRegistry!: ChildEditorRegistry;
+  // Phase 21 Plan 21-05 (WR-01) — cross-mode dedupe Set for the v1.2 → v1.3
+  // migration. Shared between the Plan 21-05 workspace.on('file-open')
+  // Reading-mode trigger (this file) and the liveModeViewPlugin.ts
+  // legacy-kind branch (Live Preview). The Set is a per-Plugin-instance
+  // field (NOT module-level): plugin unload / reload garbage-collects the
+  // instance + its Set, so no leak across reloads. Inline initializer ⇒
+  // the Set is ready BEFORE onload runs and before any consumer of
+  // PluginHost from liveModeViewPlugin.ts dereferences it.
+  migrateInFlight: Set<string> = new Set();
   // Phase 19 Plan 01 — instantiated only when useInlineWidget=ON (D-05
   // hard-gate). Optional field; main.ts onunload uses optional chaining when
   // calling destroyAll() so the v1.2 baseline path remains unaffected.
@@ -1500,6 +1519,51 @@ export default class LeetCodePlugin extends Plugin {
         }),
       );
     }
+
+    // ── Phase 21 Plan 21-05 Task 2 (CR-01) ─────────────────────────────
+    // Reading-mode auto-migration trigger for legacy v1.2 notes.
+    //
+    // Gap closure (per .planning/phases/21-v1-2-migration/21-VERIFICATION.md
+    // CR-01): registerMarkdownCodeBlockProcessor at line ~1057 binds the
+    // Reading-mode handler to the tag `'leetcode-solve'` only. Legacy v1.2
+    // notes carry ``` ```python ```, ``` ```java ``` etc. — those fence tags
+    // never invoke the handler in Reading mode, so the migration gate
+    // inside leetCodeBlockProcessor (codeBlockProcessor.ts:142-194) is
+    // dead code on a legacy note in Reading mode. Live Preview is fine
+    // (liveModeViewPlugin.ts:158 branches on fence.kind === 'legacy').
+    //
+    // L5-compliant fix: a workspace.on('file-open', ...) hook fired by
+    // user navigation (NEVER during Plugin.onload — Obsidian docs +
+    // existing Phase 5.2 D-06 + Phase 18 file-open hooks all rely on
+    // this property). Per-file, lazy. Strict-match predicate is
+    // delegated to migrateLegacyFenceIfNeeded (Plan 21-01 Step 2 calls
+    // isMigrationCandidate); non-legacy notes return false silently.
+    //
+    // WR-01 dedupe: this.migrateInFlight is the SAME Set the Live
+    // Preview ViewPlugin consumes (Plan 21-05 Task 1 hoist), so a
+    // file-open + Live-Preview-update race for the same file path is
+    // serialized to a single migration call.
+    //
+    // CLAUDE.md `## Conventions` paragraphs UNCHANGED — Phase 22 boundary.
+    this.registerEvent(
+      this.app.workspace.on(
+        'file-open',
+        makeReadingModeMigrationHandler({
+          app: this.app,
+          settings: {
+            getUseInlineWidget: () => this.settings.getUseInlineWidget(),
+            getAutoMigrateOnOpen: () =>
+              this.settings.getAutoMigrateOnOpen(),
+            getDefaultLanguage: () =>
+              this.settings.getDefaultLanguage?.() ?? 'python3',
+          },
+          migrateInFlight: this.migrateInFlight,
+          migrate: migrateLegacyFenceIfNeeded,
+          isMigrationCandidate,
+          logDebug: (msg, ...args) => logger.debug(msg, ...args),
+        }),
+      ),
+    );
 
     // Step 6h — Phase 5.2 D-13 python3 → python language-tag alias for
     // Reading-Mode Prism highlighting. Global application (not gated on
