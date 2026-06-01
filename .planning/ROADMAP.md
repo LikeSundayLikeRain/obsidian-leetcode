@@ -198,7 +198,24 @@ Plans:
 - Research flag: LOW for mechanics; MEDIUM for hand-edited note edge cases (e.g., user-modified fence with extra blank lines, malformed frontmatter, missing `## Code` heading).
 - Pitfalls covered: P7, P13.
 
-**Plans:** TBD
+**Plans:** 4 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 21-01-PLAN.md — fenceMigrator core + strict-match predicate + rewriteFenceOpenerTag CRLF helper + property-test corpus (Foundation; MIGRATE-01..04, MIGRATE-07)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 21-02-PLAN.md — Mount integration + autoMigrateOnOpen setting + legacyFenceBanner + command palette entry + dev-vault smoke for vault.process+processFrontMatter ordering probe (UX; MIGRATE-06)
+
+**Wave 3** *(blocked on Wave 1)*
+
+- [ ] 21-03-PLAN.md — codeExtractor frontmatter-source refactor + codeBlockForV13 emitter + injectCodeSection fenceKind dispatch + 5 consumer call-site updates (SSoT refactor; MIGRATE-08, MIGRATE-09)
+
+**Wave 4** *(blocked on Waves 1+2)*
+
+- [ ] 21-04-PLAN.md — migrationBackupGc 30-day TTL microtask + 10 CI fixture pairs (v1.0/v1.1/v1.2) + fixture runner with byte-exact assertion (Polish + Release Gate; MIGRATE-05, MIGRATE-10)
 
 ---
 
@@ -269,7 +286,7 @@ Plans:
 | 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 4/4            | Complete    | 2026-05-26 |
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
 | 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 9/9 | Complete   | 2026-05-31 |
-| 21. v1.2 Migration                          | v1.3      | 0/0            | Not started | -          |
+| 21. v1.2 Migration                          | v1.3      | 0/4            | Planned     | -          |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
 
 ## Backlog

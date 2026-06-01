@@ -827,32 +827,37 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
 
 **Rationale for low risk on A1, A2, A4:** These are Obsidian API contracts that have been exercised by v1.0/v1.1/v1.2 production usage. The Phase 21 dev-vault probe confirms the live behavior; failures fall through to debug-log + best-effort.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`vault.process` + `processFrontMatter` ordering — same render frame or separate frames?**
    - What we know: Both primitives are atomic per-file. Both fire `vault.on('modify')`. Phase 19 PHASE-SUMMARY documents an "A1 modify ordering" empirical probe result that Plan 21-01 inherits.
    - What's unclear: Whether the second event arrives in the same render frame as the first, OR after a settle frame.
    - Recommendation: Plan 21-01 dev-vault probe asks: open a v1.2 note with missing `lc-language`; observe whether the widget's `selfWriteSuppression.tryConsume` returns `'consumed'` for both events (single-arm) or whether the second event escapes (double-arm needed).
+   - **RESOLVED:** Deferred to Plan 21-02 Task 4 dev-vault probe with bounded protocol; default-path is single-frame; if probe shows two-frame, the conditional sub-task in Plan 21-02 (Task 5, added per BLOCKER 3 of the revision pass) wires the Phase 19 C-04 selfWriteSuppression hash-arm fallback. The Plan 21-01 orchestrator ships under the single-frame assumption; the Phase 19 C-04 hash-arm pattern is already in tree (`src/widget/selfWriteSuppression.ts:42-91`) and the conditional Plan 21-02 Task 5 wires it iff Test 2 of the probe shows the two-frame Python+Notice flash.
 
 2. **Backup folder mkdir contract — does `adapter.mkdir` throw on existing directories?**
    - What we know: `obsidian.d.ts:2011` documents `mkdir` without an "already-exists" error contract.
    - What's unclear: Production behavior on macOS / Windows / Linux when the folder already exists.
    - Recommendation: Wrap mkdir in try-catch defensively; if it throws, swallow the error and proceed to `adapter.write` (which creates the file regardless, per `obsidian.d.ts:1958-1963` "If the file exists its content will be overwritten, otherwise the file will be created.").
+   - **RESOLVED:** Wrap `adapter.mkdir(baseDir)` in try/catch in `writeBackup` per Plan 21-01 Task 2 behavior; swallow on error and proceed to `adapter.write` (which creates the file regardless per the obsidian.d.ts contract). Risk LOW.
 
 3. **`useInlineWidget=OFF` cleanup question (Claude's discretion).**
    - What we know: Per L9, migration is a no-op when OFF. Per D-backup-03, cleanup runs unconditionally.
    - What's unclear: Whether a user toggling `useInlineWidget=OFF` for testing should preserve their backups.
    - Recommendation: Cleanup runs always; the 30-day TTL math protects fresh backups regardless of toggle state. No special-case logic.
+   - **RESOLVED:** Cleanup runs unconditionally in `Plugin.onload()` (Plan 21-04 Task 1); 30-day TTL math protects fresh backups regardless of `useInlineWidget` toggle state. No special-case logic introduced.
 
 4. **Reverse-migration command exposure (Claude's discretion).**
    - What we know: Per L7, the command is dev-only. Two implementation options: `process.env.NODE_ENV === 'development'` gate, or always-registered with a "Dev only — do not use" Notice.
    - What's unclear: Which is more robust for in-the-field debugging.
    - Recommendation: Always-registered + Notice — `process.env.NODE_ENV` may not be reliably set in production Obsidian.
+   - **RESOLVED:** Reverse migration is OUT OF SCOPE for Phase 21 plans 21-01..04 — kept as dev-only and deferred per L7. Recovery path for users is the backup sidecar (D-backup-01). Phase 22 may surface the dev-only command behind a `process.env.NODE_ENV` gate or always-registered + Notice if demand arises.
 
 5. **codeExtractor consumer count — exact 5?**
    - What we know: CONTEXT D-extract-01 lists 5 consumers (`runWithCode`, `submitWithCode`, AI Debug, AI Solution, copyToCode, KnowledgeGraphWriter language-write).
    - Verified via grep: `tests/solve/codeExtractor.test.ts`, `tests/main/runFromWidget.test.ts`, `src/main.ts`, `src/solve/submissionOrchestrator.ts`, `src/solve/codeExtractor.ts`, `src/graph/KnowledgeGraphWriter.ts`, `src/ai/buildDebugPrompt.ts` all import / reference `extractFirstFencedBlock`.
    - Plan 21-03 must update each consumer (count: 5 production consumers + 2 test files). TS strict-mode catches missing call sites.
+   - **RESOLVED:** Re-grepped during revision pass on 2026-06-01. Actual call site count is **6** in production code across **3** files (not 5 across 4-5 files): `src/main.ts:2278` (`openAIDebug`, `view.file` in scope), `src/main.ts:2400` (AI Review snapshot path, `ctx.file` in scope from outer ctx with `file: TFile`), `src/main.ts:2544` (`runAIReview` / AI Solution path, `view.file` in scope), `src/main.ts:3846` (`runWithCode` legacy fallback, `ctx.file` in scope per ProblemContext at line 236), `src/solve/submissionOrchestrator.ts:260` (`submitWithCode` legacy fallback — **`file` NOT in `SubmissionDeps` interface (line 71); needs lift via threading new `file: TFile` field into deps**), `src/graph/KnowledgeGraphWriter.ts:217` (`onAccepted` pattern classification, `ctx.file` in scope at line 216). `src/ai/buildDebugPrompt.ts` only references `extractFirstFencedBlock` in comments — not a call site. Plus 2 test files (`tests/solve/codeExtractor.test.ts`, `tests/main/runFromWidget.test.ts`). Plan 21-03 Task 2 enumerates all 6 production sites and documents the lift requirement for `submissionOrchestrator.ts`.
 
 ## Environment Availability
 
