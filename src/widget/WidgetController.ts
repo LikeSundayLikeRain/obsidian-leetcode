@@ -44,6 +44,7 @@ import {
   history,
   defaultKeymap,
   historyKeymap,
+  indentWithTab,
 } from '@codemirror/commands';
 import { closeBracketsKeymap } from '@codemirror/autocomplete';
 // eslint-disable-next-line import/no-extraneous-dependencies -- direct dep
@@ -866,6 +867,13 @@ function buildExtensions(
     vimCompartment.of(
       vimEnabled ? vim({ status: true } as Parameters<typeof vim>[0]) : [],
     ),
+    // Plan 20-10 hotfix part 6 — `indentWithTab` MUST be registered FIRST
+    // (highest priority) so Tab inside the widget inserts indentation
+    // instead of falling through to Obsidian's default focus traversal.
+    // Matches the v1.2 nested-editor convention recorded in CLAUDE.md
+    // (`indentWithTab placed first in keymap for priority; 4-space default
+    // indent`). Without it, Tab moves focus out of the widget.
+    keymap.of([indentWithTab]),
     // closeBracketsKeymap before defaultKeymap (Pitfall D from Phase 16).
     keymap.of(closeBracketsKeymap),
     bracketMatching(),

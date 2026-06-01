@@ -77,6 +77,7 @@ vi.mock('@codemirror/commands', () => ({
   indentLess: vi.fn().mockReturnValue(true),
   defaultKeymap: [{ key: 'mock-default' }],
   historyKeymap: [{ key: 'mock-history' }],
+  indentWithTab: { key: 'Tab', mock: 'indentWithTab' },
   toggleLineComment: vi.fn().mockReturnValue(true),
 }));
 
