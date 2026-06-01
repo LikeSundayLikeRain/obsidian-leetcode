@@ -1,9 +1,10 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.3
-milestone_name: Inline Widget Architecture
+milestone_name: architecture overview, migration docs, sync interaction notes, and Cmd-Z/Cmd-F scoping behavior.
 status: executing
-last_updated: "2026-06-01T15:53:46.082Z"
+stopped_at: Phase 21 context gathered
+last_updated: "2026-06-01T17:57:03.218Z"
 last_activity: 2026-06-01 -- Phase 21 execution started
 progress:
   total_phases: 6
@@ -26,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 
 Phase: 21 (v1-2-migration) — EXECUTING
 Plan: 1 of 4
-Status: Executing Phase 21
+Status: Ready to execute
 Last activity: 2026-06-01 -- Phase 21 execution started
 
 ## Performance Metrics
