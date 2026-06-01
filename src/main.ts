@@ -320,6 +320,15 @@ export default class LeetCodePlugin extends Plugin {
 
   // Phase 13 — LRU cache for nested child EditorViews (cap=5, per D-12).
   childEditorRegistry!: ChildEditorRegistry;
+  // Phase 21 Plan 21-05 (WR-01) — cross-mode dedupe Set for the v1.2 → v1.3
+  // migration. Shared between the Plan 21-05 workspace.on('file-open')
+  // Reading-mode trigger (this file) and the liveModeViewPlugin.ts
+  // legacy-kind branch (Live Preview). The Set is a per-Plugin-instance
+  // field (NOT module-level): plugin unload / reload garbage-collects the
+  // instance + its Set, so no leak across reloads. Inline initializer ⇒
+  // the Set is ready BEFORE onload runs and before any consumer of
+  // PluginHost from liveModeViewPlugin.ts dereferences it.
+  migrateInFlight: Set<string> = new Set();
   // Phase 19 Plan 01 — instantiated only when useInlineWidget=ON (D-05
   // hard-gate). Optional field; main.ts onunload uses optional chaining when
   // calling destroyAll() so the v1.2 baseline path remains unaffected.
