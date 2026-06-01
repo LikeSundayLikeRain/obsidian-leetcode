@@ -95,7 +95,15 @@ import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorEx
 // Phase 20 Plan 20-09 — kind-aware findCodeFence (returns kind: 'leetcode-solve'
 // | 'legacy') for the v1.3 widget paths that must specifically target the
 // leetcode-solve fence and skip stray ```text/```javascript fences.
-import { findCodeFence as findLcCodeFence } from './widget/fenceLocator';
+//
+// Phase 20 Plan 20-10 (gap-closure T9/T10) — countLeetCodeSolveFenceOpeners is
+// the canonical "is there a leetcode-solve fence in this text?" predicate.
+// Used by resolveFenceKind in resetCode (T10 fix) and copyToCode (T9 fix).
+// SSoT discipline: same primitive as the registry-key computation.
+import {
+  findCodeFence as findLcCodeFence,
+  countLeetCodeSolveFenceOpeners,
+} from './widget/fenceLocator';
 import { syncAnnotation } from './widget/childParentSync';
 // Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment.
 // `switchFenceLanguage` dispatches a Compartment.reconfigure on the child
@@ -4039,6 +4047,38 @@ export default class LeetCodePlugin extends Plugin {
         }
         // Priority 3 — let the helper fall back to settings.getDefaultLanguage().
         return undefined;
+      },
+      resolveFenceKind: async (
+        targetFile: TFile,
+      ): Promise<'leetcode-solve' | 'legacy' | null> => {
+        // Phase 20 Plan 20-10 (gap-closure T10 — DATA CORRUPTION).
+        //
+        // DO NOT use `this.app.workspace.getActiveViewOfType(MarkdownView)` —
+        // that is the silent-bail anti-pattern documented as the T3 root
+        // cause in .planning/debug/widget-plugin-handoff-cluster.md. It
+        // returns null in popout windows, returns the wrong view when Reset
+        // is fired from the command palette while focus is on a different
+        // leaf, and returns null when the active view is a non-MarkdownView.
+        // In all of those scenarios returning null would let
+        // forceInjectCodeSection fall through to the legacy path and corrupt
+        // the leetcode-solve fence (T10 NOT CLOSED).
+        //
+        // Pure text scan via vault.read — works regardless of which pane /
+        // popout / leaf is active. Reuses the canonical fence-locator
+        // primitive (countLeetCodeSolveFenceOpeners → src/widget/fenceLocator.ts).
+        try {
+          const text = await this.app.vault.read(targetFile);
+          const count = countLeetCodeSolveFenceOpeners(
+            text,
+            Number.MAX_SAFE_INTEGER,
+          );
+          return count > 0 ? 'leetcode-solve' : 'legacy';
+        } catch {
+          // Defensive — file deleted mid-flight, I/O race, etc. Returning
+          // null routes through the legacy path; safe default for the rare
+          // disk-read failure mode.
+          return null;
+        }
       },
     });
   }

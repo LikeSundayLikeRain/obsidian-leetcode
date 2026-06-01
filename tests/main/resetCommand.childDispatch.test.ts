@@ -537,6 +537,96 @@ describe('Reset code — child-CM6 dispatch (Phase 17 D-03 / D-04 / D-05 / D-06)
     expect(capturedNext!).toContain('class Solution: # PYTHON');
   });
 
+  // ===========================================================================
+  // Phase 20 Plan 20-10 (gap-closure T10 — DATA CORRUPTION) — leetcode-solve
+  // child-dispatch path. The new resolveFenceKind seam threads kind through
+  // forceInjectCodeSection so the dispatched body preserves the v1.3 fence
+  // opener byte-for-byte.
+  // ===========================================================================
+  it('T10 child-dispatch: leetcode-solve fence body replaced via rewriteFenceBody, opener preserved verbatim', async () => {
+    const v13Note = [
+      '---',
+      'lc-slug: two-sum',
+      'lc-language: python3',
+      '---',
+      '',
+      '## Code',
+      '```leetcode-solve',
+      'OLD_CODE',
+      '```',
+      '',
+      '## Notes',
+      NOTES_TEXT,
+      '',
+    ].join('\n');
+    const m = makeMockVaultApp({ [FILE_PATH]: v13Note });
+    const file = m.app.vault.getAbstractFileByPath(FILE_PATH)!;
+    const settings = makeSettings(
+      {
+        codeSnippets: [
+          { lang: 'Python3', langSlug: 'python3', code: 'class S: pass' },
+        ],
+      },
+      'python3',
+    );
+
+    const registry = makeMockRegistry();
+    const childView = makeMockChildView('OLD_CODE');
+    (
+      registry as unknown as { _map: Map<string, unknown> }
+    )._map.set(FILE_PATH, childView);
+
+    let capturedNext: string | undefined;
+    const getDispatchHandle = (targetFile: { path: string }) => {
+      const cv = (
+        registry as unknown as {
+          get(key: string): import('@codemirror/view').EditorView | undefined;
+        }
+      ).get(targetFile.path);
+      if (!cv) return null;
+      return {
+        replaceFullBody: (next: string) => {
+          capturedNext = next;
+          cv.dispatch({
+            changes: { from: 0, to: cv.state.doc.length, insert: next },
+            userEvent: 'leetcode.reset.child',
+          });
+        },
+      };
+    };
+
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm: vi.fn(async () => true),
+      notify: vi.fn(),
+      getDispatchHandle: getDispatchHandle as never,
+      resolveActiveLangSlug: () => 'python3',
+      // Production resolver shape — vault.read + countLeetCodeSolveFenceOpeners
+      // — emulated here via the seeded mock vault.
+      resolveFenceKind: async (f: never) => {
+        const text = await m.app.vault.read(f as never);
+        return text.includes('```leetcode-solve') ? 'leetcode-solve' : 'legacy';
+      },
+    } as never);
+
+    // Child dispatched once with userEvent 'leetcode.reset.child'.
+    expect(childView.dispatch).toHaveBeenCalledTimes(1);
+    const call = (childView.dispatch as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(call.userEvent).toBe('leetcode.reset.child');
+
+    // The full-note string fed to replaceFullBody MUST preserve the
+    // leetcode-solve opener byte-for-byte. The dispatched body (sliced via
+    // extractFenceBodyFromFullNote in production) is the new starter.
+    expect(capturedNext).toBeDefined();
+    expect(capturedNext!).toMatch(/^```leetcode-solve$/m);
+    expect(capturedNext!).not.toMatch(/^```python\d?$/m);
+    expect(capturedNext!).toContain('class S: pass');
+    expect(capturedNext!).not.toContain('OLD_CODE');
+  });
+
   it('Test 8: Reset works WITHOUT resolveActiveLangSlug supplied — backward compat (legacy default-only path)', async () => {
     const m = makeMockVaultApp({ [FILE_PATH]: INITIAL_NOTE });
     const file = m.app.vault.getAbstractFileByPath(FILE_PATH)!;
