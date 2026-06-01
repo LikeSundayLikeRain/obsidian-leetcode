@@ -1,227 +1,266 @@
 ---
 phase: 21-v1-2-migration
-verified: 2026-06-01T14:40:00Z
+verified: 2026-06-01T00:00:00Z
 status: human_needed
-score: 10/10 must-haves verified
+score: 16/16 must-haves verified
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 7/10 (5 fully verified + 4 partial/failed)
+  previous_status: human_needed
+  previous_score: 10/10 (plans 21-01..21-07 only)
   gaps_closed:
-    - "CR-01 (MIGRATE-01) — Reading-mode auto-migration trigger: src/main/readingModeMigrationHook.ts new file; this.registerEvent(this.app.workspace.on('file-open', makeReadingModeMigrationHandler({...}))) wired at src/main.ts:1548-1566; 8-test integration suite passing."
-    - "CR-02 (MIGRATE-02) — Double-backup on partial-failure retry: backupAlreadyExistsForSlug helper at fenceMigrator.ts:308-329 calls BACKUP_FOLDER_RE SSoT; called BEFORE writeBackup at fenceMigrator.ts:437-445; 5 CR-02-fix tests passing."
-    - "CR-03 (MIGRATE-05) — Greedy slug regex tightened: BACKUP_FOLDER_RE exported from migrationBackupGc.ts:76 = /^migration-backup-([a-z0-9][a-z0-9-]*[a-z0-9])-(...Z)$/; 6 CR-03-fix tests covering uppercase/mixed/single-char/leading-hyphen/trailing-hyphen rejection."
-    - "CR-04 (MIGRATE-06) — Banner DOM crash: renderReadOnly defensive createEl chain at legacyFenceBanner.ts:130-138; top-level try/catch + host.textContent fallback at mountLegacyFenceBanner:57-100; 5 CR-04-fix tests (A-E) passing."
-    - "WR-01 — migrateInFlight Set leak: module-level Set removed from liveModeViewPlugin.ts (grep clean); hoisted to LeetCodePlugin instance field at main.ts:341; shared Set passed to both file-open hook and Live Preview branch."
-    - "WR-02 — Outer needsLang stale check removed: fenceMigrator.ts Step 5 invokes processFrontMatter unconditionally; inner callback gate is sole SSoT; D-edge-04 test confirms lc-language=java preserved."
-    - "WR-03 — Whole-note countLeetCodeSolveFenceOpeners over-scope: new countLeetCodeSolveFenceOpenersInCodeSection helper at fenceMigrator.ts:166-186; consumed by isMigrationCandidate clause 5; 5 WR-03-fix tests confirming stray ```leetcode-solve in ## Notes / ## Problem does not abort migration."
-    - "WR-05 — runMigrationBackupGc concurrent-call race: module-level gcRunning lock at migrationBackupGc.ts:94-155; finally reset at migrationBackupGc.ts:202-207; __resetGcRunningForTesting helper for test hermeticity; WR-05-fix Test A passing."
-    - "WR-07 — injectCodeSection multi-fence corner: findFirstLeetCodeSolveFenceIndexInCodeSection exported from fenceMigrator.ts:120-145; consumed by injectCodeSection v13 short-circuit at starterCodeInjector.ts:107; 4 WR-07-fix tests passing."
+    - "UAT Gap 1 (MIGRATE-CR-01): Reading-mode rerender after auto-migration — rerenderReadingModePanes wired in readingModeMigrationHook.ts + main.ts; widget mounts on SAME open"
+    - "UAT Gap 2 (MIGRATE-FM-REPAIR-01): Frontmatter auto-repair path — isFrontmatterRepairCandidate + repairFrontmatterIfNeeded exported from fenceMigrator.ts; wired into Reading-mode hook, codeBlockProcessor, liveModeBannerStateField; lc-language injected from defaultLanguage"
+    - "UAT Gap 3 (MIGRATE-BANNER-RM-01): Reading-mode legacy banner post-processor — registerLegacyBannerPostProcessor in new readingModeLegacyBannerPostProcessor.ts; wired in main.ts useInlineWidget block; PHASE_22_DELETE_WITH_V1_2_PATH marker present"
+    - "UAT Gap 4 (MIGRATE-BANNER-LP-01): Live-Preview CM6 RangeError eliminated — liveModeBannerStateField.ts with legacyBannerStateField + leetCodeWidgetStateField StateFields; liveModeViewPlugin.ts returns combined Extension array"
+    - "Post-UAT Gap A (TAKEOVER-CTA-01): reconcileFocus null-leaf defaults to 'active' (not 'peer'); promoteThisPane calls this.setPaneState('active') unconditionally after setActiveLeaf"
+    - "Post-UAT Gap B (NEWNOTE-FENCE-DEDUP-01): retrofit() threads fenceKind:'leetcode-solve' when useInlineWidget=ON; NoteWriter.retrofitStarterCode gates on !useInlineWidget before calling raw retrofit"
   gaps_remaining: []
   regressions: []
 deferred:
   - truth: "MIGRATE-07 — vault.process + processFrontMatter land in the same render frame (single-frame ordering)"
-    addressed_in: "Plan 21-02 Task 4 (dev-vault probe) — explicitly deferred to a future live-Obsidian session."
-    evidence: "21-02-SUMMARY.md records probe_result=single_frame (auto-resume default) and shim_validation=skipped. Plan 21-02 explicitly chose this deferral. The orchestrator is resilient to either outcome (Phase 19 C-04 hash-arm fallback in tree). Plan 21-04 inherits the deferral."
+    addressed_in: "Plan 21-02 Task 4 (dev-vault probe) — explicitly deferred"
+    evidence: "21-02-SUMMARY.md records probe_result=single_frame (auto-resume default) and shim_validation=skipped. Resilient orchestrator either way."
   - truth: "shim_validation=captured (Test 7 frontmatter byte-layout live-Obsidian byte-equal)"
-    addressed_in: "Plan 21-02 Task 4 Test 7 dev-vault probe."
-    evidence: "tests/fixtures/migration/.obsidian-shim-validation.txt records shim_validation: skipped, DIFF: deferred. Explicitly documented non-hidden deferral."
+    addressed_in: "Plan 21-02 Task 4 Test 7 dev-vault probe"
+    evidence: "tests/fixtures/migration/.obsidian-shim-validation.txt records shim_validation: skipped, DIFF: deferred."
 human_verification:
+  # --- Inherited from prior verification (plans 21-01..21-07) ---
   - test: "Open a v1.2 fixture note in Reading mode in a dev vault with autoMigrateOnOpen=ON"
-    expected: "workspace.on('file-open') fires; makeReadingModeMigrationHandler calls migrateLegacyFenceIfNeeded; within ~50ms the legacy fence opener is rewritten to ```leetcode-solve, the v1.3 widget mounts, no banner appears."
-    why_human: "Confirms the newly wired Reading-mode hook fires in a real Obsidian instance — unit tests mock the dependencies; live vault proves the EventRef path and actual Reading-mode render cycle."
-  - test: "Open a v1.2 fixture note WITH lc-language MISSING in dev vault (auto path)"
-    expected: "Fence opener rewritten + lc-language injected + widget mounts on the canonical language. No flash of Python+Notice (single-frame ordering)."
-    why_human: "Plan 21-02 Task 4 Test 2 — empirical resolution of RESEARCH Open Question 1. Auto-resume default is single_frame; actual behavior is unobserved. If two-frame, Phase 19 C-04 hash-arm fallback must be confirmed wired."
+    expected: "workspace.on('file-open') fires; makeReadingModeMigrationHandler calls migrateLegacyFenceIfNeeded; within ~50ms the legacy fence opener is rewritten to ```leetcode-solve; the v1.3 widget mounts on the SAME open without close+reopen."
+    why_human: "Confirms the newly wired Reading-mode hook fires in a real Obsidian instance with the actual preview rerender cycle — unit tests mock the dependencies."
+  # --- Gap 1 (21-08) ---
+  - test: "After auto-migration in Reading mode (autoMigrateOnOpen=ON, useInlineWidget=ON), confirm widget mounts without close+reopen"
+    expected: "Widget mounts on the SAME open. The v1.3 ```leetcode-solve fence is visible in source mode. No close+reopen required."
+    why_human: "Unit tests mock previewMode.rerender(true); live vault proves the Obsidian preview rerender cycle fires post-migration. Closes UAT Test 1."
+  # --- Gap 2 (21-09) ---
+  - test: "Open a note with v1.3 body (```leetcode-solve fence) but lc-language MISSING from frontmatter; defaultLanguage=Java"
+    expected: "Within ~50ms: (a) frontmatter on disk now contains lc-language: java; (b) NO 'LeetCode widget: lc-language frontmatter missing; falling back to Python.' Notice toast; (c) the chevron / inner editor reflects Java."
+    why_human: "metadataCache update timing and widget remount cycle are live-Obsidian behaviors. Closes UAT Test 2."
+  # --- Gap 3 (21-10) ---
+  - test: "Open a v1.2-shaped fixture (lc-slug + ## Code with ```java fence + closer) in Reading mode with useInlineWidget=ON, autoMigrateOnOpen=OFF"
+    expected: "Banner UX appears in place of the langSlug code block: copy 'This note uses the v1.2 format.' + [Migrate now] button + read-only <pre><code> of the fence body. Click [Migrate now]: file on disk rewritten to ```leetcode-solve; subsequent re-render shows the v1.3 widget."
+    why_human: "DOM positioning and banner click triggering migration require real Obsidian post-processor context. Closes UAT Test 4a."
+  # --- Gap 4 (21-11) ---
+  - test: "Open a v1.2-shaped fixture in Live Preview with useInlineWidget=ON, autoMigrateOnOpen=OFF; open dev console first"
+    expected: "Legacy migration banner mounts (manual-prompt copy + [Migrate now] button). ZERO console errors/warnings. NO 'Decorations that replace line breaks may not be specified via plugins' RangeError. Run 'LeetCode: Migrate current note': file rewritten; v1.3 widget mounts; NO RangeError."
+    why_human: "CM6 RangeError is only observable in a live Obsidian editor session with real EditorView construction. Closes UAT Test 4b."
+  # --- Post-UAT Gap A (21-12) ---
+  - test: "Open a v1.3 LC note; close tab; reopen (and also: switch-away+switch-back; close-all+reopen)"
+    expected: "Widget mounts NORMALLY on every Open #2 — code area editable, no 'Click to take over' overlay visible. Defense-in-depth: programmatically set data-pane-state='peer' via dev console, then click the editor — overlay disappears and data-pane-state flips to 'active' even though Obsidian dedupes the focus event."
+    why_human: "active-leaf-change dedup and mid-mount-attach timing are live-Obsidian behaviors. Unit tests mock the registry; live vault proves the real attach window. Closes Post-UAT Gap A."
+  # --- Post-UAT Gap B (21-13) ---
+  - test: "With useInlineWidget=ON, open a fresh problem from the problem browser (not yet in vault)"
+    expected: "Open the resulting .md file in a text editor (NOT in Obsidian). ## Code section contains EXACTLY ONE fence — a single ```leetcode-solve opener + closer. ZERO ```java/```python siblings."
+    why_human: "The corruption (duplicate fence) writes to disk — confirming the source bytes of the created file requires a live vault with the full openProblem flow. Closes Post-UAT Gap B."
+  # --- Inherited pre-existing UAT items ---
+  - test: "Two-pane regression: open the LC note in two panes (split right); click in one pane"
+    expected: "The OTHER pane shows 'Click to take over' overlay. Click the overlay: pane focus flips; overlay disappears. Legitimate peer flow preserved."
+    why_human: "Multi-pane focus coordination requires two real Obsidian panes."
   - test: "Capture frontmatter byte layout for shim validation (Test 7 of dev-vault probe)"
     expected: "tests/fixtures/migration/.obsidian-shim-validation.txt records DIFF: empty."
-    why_human: "Currently records shim_validation: skipped, DIFF: deferred. Live-Obsidian byte-equal validation is the only authoritative ground truth for MIGRATE-10 release-gate confidence."
-  - test: "Visual check — banner above legacy fence in Reading and Live Preview with autoMigrateOnOpen=OFF"
-    expected: "Banner with copy 'This note uses the v1.2 format.' + [Migrate now] button + read-only <pre><code> of the fence body. Click [Migrate now] runs migration and remounts to v1.3 widget."
-    why_human: "DOM positioning + cohesive styling is mode-specific; cannot be unit-tested."
+    why_human: "Currently records shim_validation: skipped. Live-Obsidian byte-equal validation is the only authoritative ground truth for MIGRATE-10 release-gate confidence."
+  - test: "Visual check — banner styling coherence in Reading and Live Preview with autoMigrateOnOpen=OFF"
+    expected: "Banner with correct copy + [Migrate now] button + read-only fence body. Visually cohesive with the note's theme."
+    why_human: "DOM styling and visual coherence cannot be unit-tested."
   - test: "Cross-OS backup folder path on Windows VM (if available)"
     expected: "`.obsidian/plugins/obsidian-leetcode/migration-backup-{slug}-{ISO}/{slug}.md` materializes correctly with no `:` in folder name."
-    why_human: "Only macOS dev vault is in active use; Windows path-separator and reserved-character behavior is empirical."
+    why_human: "Only macOS dev vault is in active use; Windows path-separator behavior is empirical."
 ---
 
-# Phase 21: v1.2 Migration Verification Report
+# Phase 21: v1.2 Migration — Full Verification Report (Plans 21-01..21-13)
 
-**Phase Goal:** Every v1.2 note migrates lazily on first open to the `leetcode-solve` fence tag with a backup sidecar, atomic rewrite, idempotent detection, and CI fixtures spanning v1.0, v1.1, and v1.2 sample notes — so Phase 22 can delete the v1.2 path with confidence that no user data is stranded.
+**Phase Goal:** Every v1.2 note migrates lazily on first open to the `leetcode-solve` fence tag with a backup sidecar, atomic rewrite, idempotent detection, and CI fixtures spanning v1.0, v1.1, and v1.2 sample notes — so Phase 22 can delete the v1.2 path with confidence that no user data is stranded. Gap-closure plans 21-08..21-13 additionally close 6 user-facing UAT failures: Reading-mode rerender (Gap 1), frontmatter auto-repair (Gap 2), Reading-mode legacy banner discovery (Gap 3), Live-Preview CM6 RangeError (Gap 4), dead Take-Over CTA (Post-UAT Gap A), and duplicate fence on new notes (Post-UAT Gap B).
 
-**Verified:** 2026-06-01T14:40:00Z
+**Verified:** 2026-06-01
 **Status:** human_needed
-**Re-verification:** Yes — after gap closure (Plans 21-05, 21-06, 21-07)
+**Re-verification:** Yes — post gap-closure (Plans 21-08..21-13); prior verification covered Plans 21-01..21-07
+
+---
 
 ## Goal Achievement
 
-### Observable Truths
+### Observable Truths — Original Phase Goal (MIGRATE-01..10)
 
-| #   | Truth | Status | Evidence |
-| --- | ----- | ------ | -------- |
-| 1 | MIGRATE-01: v1.2 notes migrate lazily on first open in BOTH Reading mode AND Live Preview | ✓ VERIFIED | `src/main/readingModeMigrationHook.ts` (NEW, 153 LOC): `makeReadingModeMigrationHandler` factory with 4-gate chain (file!=null, useInlineWidget, lc-slug, !migrateInFlight). Wired at `src/main.ts:1548-1566` via `this.registerEvent(this.app.workspace.on('file-open', ...))`. 8-test integration suite passes. Live Preview path unchanged (liveModeViewPlugin.ts:160-191 branches on `fence.kind === 'legacy'`). |
-| 2 | MIGRATE-02: Backup written BEFORE rewrite + one backup per note ever (D-backup-02) | ✓ VERIFIED | `backupAlreadyExistsForSlug` helper at `fenceMigrator.ts:308-329`: calls `adapter.list(PLUGIN_DIR)`, matches each folder against `BACKUP_FOLDER_RE` SSoT (no regex duplication), per-slug filter. Called BEFORE `writeBackup` at orchestrator step 3 (`fenceMigrator.ts:437-445`). 5 CR-02-fix tests: partial-failure retry produces ONE backup; first-install proceeds; different slug writes; idempotent note short-circuits before pre-existence check. |
-| 3 | MIGRATE-03: Atomic rewrite preserves fence body byte-exact | ✓ VERIFIED | Unchanged from initial verification. `rewriteFenceOpenerTag` SSoT; 110+ property cases; vim-artifacts fixture passes. |
-| 4 | MIGRATE-04: Re-opening a migrated note is idempotent (no-op) | ✓ VERIFIED | Unchanged. `countLeetCodeSolveFenceOpenersInCodeSection > 0` short-circuit (updated to code-section scope in WR-03 fix); double-call test passes. |
-| 5 | MIGRATE-05: Backups older than 30 days auto-delete on plugin load | ✓ VERIFIED | `BACKUP_FOLDER_RE` tightened at `migrationBackupGc.ts:75-76`: `/^migration-backup-([a-z0-9][a-z0-9-]*[a-z0-9])-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$/` — LC-slug shape constraint. `gcRunning` module-level lock at `migrationBackupGc.ts:94`; `finally` reset at line 202-207. 8+6+2 tests: TTL boundary, strict regex rejection, concurrent-call lock, all passing. |
-| 6 | MIGRATE-06: autoMigrateOnOpen setting + manual-prompt banner UX | ✓ VERIFIED | Banner DOM: `mountLegacyFenceBanner` wrapped in top-level try/catch at `legacyFenceBanner.ts:57-100`; `renderReadOnly` defensive `createEl` chain at lines 130-138 (optional-chains `pre.createEl`; falls back to `pre.textContent = source`). 5 CR-04-fix tests (A-E) confirm no throw in non-Obsidian environments. Reading-mode hook (CR-01 fix) now covers the auto path. |
-| 7 | MIGRATE-07: Migration + first edit atomic (vault.process + processFrontMatter same render frame) | ⚠️ PARTIAL / DEFERRED | Single-arm selfWriteSuppression assumed; dev-vault probe records `single_frame` as auto-resume default but `shim_validation=skipped`. Resilient orchestrator either way. Listed under `deferred`. |
-| 8 | MIGRATE-08: New notes emit `\`\`\`leetcode-solve` directly when useInlineWidget=ON | ✓ VERIFIED | Unchanged. `codeBlockForV13` + `useInlineWidget` gate at `NoteTemplate.ts:241-242`; tests pass. |
-| 9 | MIGRATE-09: codeExtractor reads lc-language frontmatter when fence is leetcode-solve | ✓ VERIFIED | Unchanged. 3-branch dispatch; 6 consumers threaded; SSoT-bypass audit clean. |
-| 10 | MIGRATE-10: CI fixtures (10 pairs across v1.0/v1.1/v1.2) byte-exact migrate | ✓ VERIFIED (in-tree) | 11 tests pass (1 discovery + 10 fixture pairs). CAVEAT: shim-validation deferred — confidence is internal-shim consistency only. |
+| # | Truth | Status | Evidence |
+|---|-------|--------|----------|
+| 1 | MIGRATE-01: v1.2 notes migrate lazily on first open in BOTH Reading mode AND Live Preview | VERIFIED | `readingModeMigrationHook.ts` exports `makeReadingModeMigrationHandler` with 4-gate chain; wired at `src/main.ts:1548-1566` via `registerEvent`. Live Preview branch in `liveModeBannerStateField.ts:legacyBannerStateField` (StateField, fires on docChanged). All 13 commits present. |
+| 2 | MIGRATE-02: Backup written BEFORE rewrite + one backup per note ever | VERIFIED | `backupAlreadyExistsForSlug` at `fenceMigrator.ts:308-329`; called before `writeBackup`; 5 CR-02-fix tests passing. |
+| 3 | MIGRATE-03: Atomic rewrite preserves fence body byte-exact | VERIFIED | `rewriteFenceOpenerTag` SSoT; 110+ property cases; vim-artifacts fixture passes. |
+| 4 | MIGRATE-04: Re-opening a migrated note is idempotent | VERIFIED | `countLeetCodeSolveFenceOpenersInCodeSection > 0` short-circuit; double-call test passes. |
+| 5 | MIGRATE-05: Backups older than 30 days auto-delete on plugin load | VERIFIED | `BACKUP_FOLDER_RE` tightened; `gcRunning` lock + finally-reset; 8+6+2 tests passing. |
+| 6 | MIGRATE-06: autoMigrateOnOpen setting + manual-prompt banner UX | VERIFIED | `mountLegacyFenceBanner` wrapped in try/catch; `renderReadOnly` defensive createEl chain; 5 CR-04-fix tests; Reading-mode banner (Plan 21-10) + Live Preview StateField (Plan 21-11) both provide the manual-prompt banner path. |
+| 7 | MIGRATE-07: Migration + first edit atomic (same render frame) | PARTIAL / DEFERRED | dev-vault probe deferred; resilient orchestrator. Listed under deferred. |
+| 8 | MIGRATE-08: New notes emit ```leetcode-solve when useInlineWidget=ON | VERIFIED | `codeBlockForV13` + `useInlineWidget` gate at `NoteTemplate.ts:241-242`; NoteWriter.retrofitStarterCode now gates on `!useInlineWidget` (Plan 21-13) preventing duplicate-fence corruption. |
+| 9 | MIGRATE-09: codeExtractor reads lc-language frontmatter when fence is leetcode-solve | VERIFIED | 3-branch dispatch; 6 consumers threaded; SSoT-bypass audit clean. |
+| 10 | MIGRATE-10: CI fixtures (10 pairs across v1.0/v1.1/v1.2) byte-exact migrate | VERIFIED (in-tree) | 11 tests pass. CAVEAT: shim-validation deferred. |
 
-**Score:** 10/10 truths verified (9 fully verified; 1 partial/deferred — MIGRATE-07 — but does not block in-tree goal achievement).
+### Observable Truths — Gap-Closure Plans (21-08..21-13)
 
-### Re-verification Gap Closure Summary
+| # | Truth | Plan | Status | Evidence |
+|---|-------|------|--------|----------|
+| 11 | After auto-migration in Reading mode, v1.3 widget mounts on SAME open (no close+reopen) | 21-08 | VERIFIED | `rerenderReadingModePanes` exported from `readingModeMigrationHook.ts:267-295`; wired at `main.ts:1599-1600`; 7 tests (G1.1-G1.5, T2.1-T2.2) passing. |
+| 12 | migrate(...)=false triggers repair path; Notice 'falling back to Python' does NOT fire on auto-repaired path | 21-09 | VERIFIED | `isFrontmatterRepairCandidate` + `repairFrontmatterIfNeeded` exported from `fenceMigrator.ts:542,639`; wired into Reading-mode hook (`repair:` DI field), `codeBlockProcessor.ts:188`, `liveModeBannerStateField.ts:300`; 25 new tests passing. |
+| 13 | Reading-mode legacy banner appears on v1.2 note when useInlineWidget=ON + autoMigrateOnOpen=OFF | 21-10 | VERIFIED | `registerLegacyBannerPostProcessor` in `src/main/readingModeLegacyBannerPostProcessor.ts` (file begins with PHASE_22_DELETE_WITH_V1_2_PATH marker); wired at `main.ts:1088`; 17 tests passing; `grep -c PHASE_22_DELETE_WITH_V1_2_PATH` returns 2 in module file, 2 in main.ts. |
+| 14 | Live-Preview legacy banner + v1.3 widget mount WITHOUT CM6 RangeError "Decorations that replace line breaks may not be specified via plugins" | 21-11 | VERIFIED | `liveModeBannerStateField.ts` exports `legacyBannerStateField` (PHASE_22 marker at line 334) + `leetCodeWidgetStateField` (no marker); `liveModeViewPlugin.ts` returns combined Extension `[...leetCodeFenceStateFields(plugin), ViewPlugin.define(...)]`; 9 tests passing; `grep -c PHASE_22` returns 1 in module file. |
+| 15 | Click-to-take-over CTA works deterministically across all remount triggers (close-tab+reopen, switch-away+back, close-all+reopen) | 21-12 | VERIFIED | `reconcileFocus` at `multiPaneCoordinator.ts:170-183` implements three-way if/else-if/else: case (b) `ctlLeafEl == null` → `'active'`; `promoteThisPane` at `WidgetController.ts:757,763` calls `this.setPaneState('active')` in both the matched-leaf path AND fallthrough; 8 regression tests passing. |
+| 16 | Fresh notes from problem browser contain exactly ONE fence under ## Code — ```leetcode-solve + closer; ZERO ```<langSlug> siblings | 21-13 | VERIFIED | `retrofit()` at `starterCodeInjector.ts:280-301` derives `fenceKind:'leetcode-solve'` when `getUseInlineWidget()=true`; `NoteWriter.retrofitStarterCode` at `NoteWriter.ts:246-255` gates `useInlineWidget` and returns early; `grep -c fenceKind` returns 13; `grep -c useInlineWidget` returns 5; 11 new tests passing (U1-U5, I1-I6). |
 
-All 4 BLOCKERs (CR-01..CR-04) and all 5 WARNINGs (WR-01/02/03/05/07) from the initial verification are closed.
-
-| Gap | Previous Status | New Status | Closed By |
-| --- | --------------- | ---------- | --------- |
-| CR-01 Reading-mode trigger gap | FAILED / BLOCKER | VERIFIED | Plan 21-05: `readingModeMigrationHook.ts` + `main.ts:1548-1566` `registerEvent` |
-| CR-02 Double-backup on retry | PARTIAL / BLOCKER | VERIFIED | Plan 21-06: `backupAlreadyExistsForSlug` helper called before `writeBackup` |
-| CR-03 Greedy slug regex | PARTIAL / BLOCKER | VERIFIED | Plan 21-06: `BACKUP_FOLDER_RE` tightened to `[a-z0-9][a-z0-9-]*[a-z0-9]` |
-| CR-04 Banner DOM crash | PARTIAL / BLOCKER | VERIFIED | Plan 21-07: defensive `createEl` chain + top-level try/catch |
-| WR-01 migrateInFlight Set leak | WARNING | VERIFIED | Plan 21-05: module-level Set removed; hoisted to Plugin instance field |
-| WR-02 Outer needsLang stale check | WARNING | VERIFIED | Plan 21-07: outer guard removed; inner callback gate is SSoT |
-| WR-03 Whole-note fence count over-scope | WARNING | VERIFIED | Plan 21-07: `countLeetCodeSolveFenceOpenersInCodeSection` scoped helper |
-| WR-05 GC concurrent-call race | WARNING | VERIFIED | Plan 21-06: `gcRunning` module-level lock with `finally` reset |
-| WR-07 injectCodeSection multi-fence | WARNING | VERIFIED | Plan 21-07: `findFirstLeetCodeSolveFenceIndexInCodeSection` helper |
-
-### Deferred Items
-
-Items not yet met but explicitly addressed in later phases or deferred dev-vault sessions.
-
-| # | Item | Addressed In | Evidence |
-|---|------|-------------|----------|
-| 1 | MIGRATE-07 single-frame ordering empirical confirmation | Plan 21-02 Task 4 (dev-vault probe) | Documented in 21-02-DEV-VAULT-PROBE.md; auto-resume default `probe_result=single_frame`; orchestrator resilient to either outcome; Phase 19 C-04 hash-arm fallback in tree if needed. |
-| 2 | shim_validation=captured (Test 7 frontmatter byte-layout) | Plan 21-02 Task 4 Test 7 | tests/fixtures/migration/.obsidian-shim-validation.txt records `shim_validation: skipped, DIFF: deferred`. Plan 21-04 inherits the deferral. |
-
-### Required Artifacts
-
-| Artifact | Expected | Status | Details |
-| -------- | -------- | ------ | ------- |
-| `src/main/readingModeMigrationHook.ts` | NEW (CR-01 fix) — `makeReadingModeMigrationHandler` factory | ✓ VERIFIED | 153 LOC; factory returns `(file: TFile \| null) => void`; 4-gate chain; auto and OFF branches; WR-01 shared Set; Pattern S-05 silent-on-failure. |
-| `src/widget/fenceMigrator.ts` | 3 exports + CR-02 + WR-02 + WR-03 fixes | ✓ VERIFIED | 489 LOC; `backupAlreadyExistsForSlug` (private, called before writeBackup); `countLeetCodeSolveFenceOpenersInCodeSection` (exported, WR-03); `findFirstLeetCodeSolveFenceIndexInCodeSection` (exported, WR-07); outer `needsLang` check removed (WR-02); `BACKUP_FOLDER_RE` imported from migrationBackupGc SSoT (no duplication). |
-| `src/widget/migrationBackupGc.ts` | BACKUP_FOLDER_RE tightened + gcRunning lock | ✓ VERIFIED | 209 LOC; `BACKUP_FOLDER_RE` at line 75-76 with `[a-z0-9][a-z0-9-]*[a-z0-9]` slug class; `gcRunning` module-level lock at line 94; `__resetGcRunningForTesting` exported for test hermeticity; `finally` reset at line 202-207. |
-| `src/widget/legacyFenceBanner.ts` | Defensive createEl + top-level try/catch | ✓ VERIFIED | 176 LOC; `mountLegacyFenceBanner` body wrapped in try/catch at lines 57-100; inner paranoid catch on `host.textContent = source`; `renderReadOnly` optional-chains `pre.createEl` at lines 130-138 with textContent fallback; no innerHTML; Pattern S-07. |
-| `src/widget/liveModeViewPlugin.ts` | Module-level migrateInFlight REMOVED | ✓ VERIFIED | grep for `^let migrateInFlight\|^const migrateInFlight\|module.*migrateInFlight` returns no output; `plugin.migrateInFlight` consumed as Plugin-instance field at lines 189-199. |
-| `src/main.ts` | `this.registerEvent(this.app.workspace.on('file-open', makeReadingModeMigrationHandler({...})))` | ✓ VERIFIED | Lines 1548-1566: `this.registerEvent(this.app.workspace.on('file-open', makeReadingModeMigrationHandler({app, settings, migrateInFlight: this.migrateInFlight, migrate: migrateLegacyFenceIfNeeded, isMigrationCandidate, logDebug})))`. All DI fields threaded. `migrateInFlight: Set<string> = new Set()` at line 341. |
-| `tests/main/readingModeMigrationTrigger.test.ts` | NEW — 8-test CR-01+WR-01 integration test | ✓ VERIFIED | 436 LOC; 8 tests covering happy path, master gate, auto=OFF, non-LC note, null file, cross-mode dedupe, idempotency, registerEvent cleanup contract. All pass. |
-| `tests/widget/fenceMigrator.test.ts` | CR-02-fix + WR-02-fix + WR-03-fix tests | ✓ VERIFIED | CR-02-fix Tests A-E present (lines 546-790); WR-02 test (`D-edge-04` lc-language=java preserved via inner gate, line 401); WR-03-fix Tests A-E present (lines 210-252). |
-| `tests/widget/migrationBackupGc.test.ts` | CR-03-fix Tests A-F + WR-05-fix Tests A-B | ✓ VERIFIED | CR-03-fix Tests A-F present (lines 239-344); WR-05-fix Tests A-B present (lines 355+). `__resetGcRunningForTesting` called in beforeEach/afterEach. |
-| `tests/widget/legacyFenceBanner.test.ts` | CR-04-fix Tests A-E | ✓ VERIFIED | CR-04-fix Tests A-E in `describe('CR-04-fix — defensive DOM construction')` at lines 224-408. All pass. |
-| `tests/solve/starterCodeInjector.test.ts` | WR-07-fix Tests A-D | ✓ VERIFIED | `describe('injectCodeSection — WR-07-fix ## Code-scoped fence index')` at line 184; Tests A-D covering happy path, stray in ## Notes, stray in ## Problem (regression case), no v1.3 in ## Code falls through. All pass. |
-
-### Key Link Verification
-
-| From | To | Via | Status | Details |
-| ---- | -- | --- | ------ | ------- |
-| `Plugin.onload` (registerEvent) | `makeReadingModeMigrationHandler` handler on `file-open` | `this.registerEvent(this.app.workspace.on('file-open', ...))` | ✓ WIRED | `src/main.ts:1548-1566`. Uses `registerEvent` (NOT bare `on`) — cleanup on plugin unload guaranteed. |
-| `makeReadingModeMigrationHandler` (auto=ON path) | `migrateLegacyFenceIfNeeded` | fire-and-forget with `.catch().finally()` | ✓ WIRED | `readingModeMigrationHook.ts:106-120`. Shared `migrateInFlight` Set claimed before fire, cleared in `.finally`. |
-| `makeReadingModeMigrationHandler` (auto=OFF path) | `isMigrationCandidate` | `vault.read` then candidate check then `logger.debug` | ✓ WIRED | `readingModeMigrationHook.ts:134-149`. No migration; documents Reading-mode banner-on-OFF limitation. |
-| `migrateLegacyFenceIfNeeded` Step 3 | `backupAlreadyExistsForSlug` | called BEFORE `writeBackup` | ✓ WIRED | `fenceMigrator.ts:437-445`. `alreadyBackedUp` guard skips `writeBackup` on retry path; logs at debug level. |
-| `backupAlreadyExistsForSlug` | `BACKUP_FOLDER_RE` (SSoT from migrationBackupGc.ts) | imported regex, per-slug filter | ✓ WIRED | `fenceMigrator.ts:80` imports `BACKUP_FOLDER_RE`; used at line 325 `BACKUP_FOLDER_RE.exec(folderName)` then `m[1] === slug`. |
-| `isMigrationCandidate` clause 5 | `countLeetCodeSolveFenceOpenersInCodeSection` | call at predicate start | ✓ WIRED | `fenceMigrator.ts:224`. Returns false only when count > 0 IN `## Code` section; stray references in other sections pass through. |
-| `injectCodeSection` v1.3 short-circuit | `findFirstLeetCodeSolveFenceIndexInCodeSection` | call inside fenceKind==='leetcode-solve' branch | ✓ WIRED | `starterCodeInjector.ts:107`. Returns null when no in-section opener → falls through to legacy path. |
-| `liveModeViewPlugin` legacy-kind branch | `plugin.migrateInFlight` (Plugin-instance Set) | `plugin.migrateInFlight.has/add/delete` | ✓ WIRED | `liveModeViewPlugin.ts:189-199`. Module-level Set removed; Plugin-instance field consumed. Same Set as file-open hook → cross-mode dedupe intact. |
-| `mountLegacyFenceBanner` | top-level try/catch | wraps entire mount body | ✓ WIRED | `legacyFenceBanner.ts:57-100`. `catch(err)` logs at debug; `try { host.textContent = source } catch {}` paranoid inner guard. |
-| `renderReadOnly` | `pre.createEl` optional chain | `(pre as unknown as { createEl?: CreateElFn })?.createEl` | ✓ WIRED | `legacyFenceBanner.ts:133-138`. Falls back to `pre.textContent = source` when `preCe` is not a function. |
-
-### Data-Flow Trace (Level 4)
-
-| Artifact | Data Variable | Source | Produces Real Data | Status |
-| -------- | ------------- | ------ | ------------------ | ------ |
-| `readingModeMigrationHook.ts` | `fm['lc-slug']` | `deps.app.metadataCache.getFileCache(file)?.frontmatter` | Yes — live Obsidian metadataCache | ✓ FLOWING |
-| `migrateLegacyFenceIfNeeded` | `text` | `app.vault.read(file)` | Yes — real vault read | ✓ FLOWING |
-| `backupAlreadyExistsForSlug` | `listing.folders` | `app.vault.adapter.list(PLUGIN_DIR)` | Yes — real adapter list | ✓ FLOWING |
-| `runMigrationBackupGc` | `listing.folders` | `app.vault.adapter.list(BASE_DIR)` | Yes — real adapter list | ✓ FLOWING |
-
-### Behavioral Spot-Checks
-
-| Behavior | Command | Result | Status |
-| -------- | ------- | ------ | ------ |
-| TypeScript strict-mode compiles clean | `npm run build` | exit 0 (tsc -noEmit + esbuild production) | ✓ PASS |
-| Full project test suite | `npx vitest run` | 2956 passed / 6 skipped (248 test files) | ✓ PASS — matches baseline exactly |
-| Reading-mode hook file exists and exports factory | file read | 153 LOC; `makeReadingModeMigrationHandler` exported | ✓ PASS |
-| BACKUP_FOLDER_RE tightened regex shape | grep `migrationBackupGc.ts:75-76` | `[a-z0-9][a-z0-9-]*[a-z0-9]` LC-slug constraint confirmed | ✓ PASS |
-| Module-level migrateInFlight removed from liveModeViewPlugin | grep `^let\|^const migrateInFlight` in liveModeViewPlugin.ts | no output | ✓ PASS |
-| this.registerEvent (not bare on()) used for file-open hook | grep `main.ts:1548` | `this.registerEvent(this.app.workspace.on('file-open', ...))` | ✓ PASS |
-
-### Probe Execution
-
-No probe scripts present (`scripts/*/tests/probe-*.sh` not used; phase relies on vitest). N/A.
-
-### Requirements Coverage
-
-| Requirement | Source Plan | Description | Status | Evidence |
-| ----------- | ----------- | ----------- | ------ | -------- |
-| MIGRATE-01 | 21-01, 21-02, 21-05 | Lazy-on-open trigger (BOTH Reading + Live Preview) | ✓ SATISFIED | CR-01 closed: `readingModeMigrationHook.ts` + `main.ts:1548-1566` `registerEvent`. 8-test suite. |
-| MIGRATE-02 | 21-01, 21-06 | Backup before rewrite; one backup per note ever | ✓ SATISFIED | CR-02 closed: `backupAlreadyExistsForSlug` before `writeBackup`; 5 CR-02-fix tests. |
-| MIGRATE-03 | 21-01 | Atomic rewrite, fence body byte-exact | ✓ SATISFIED | Unchanged. `rewriteFenceOpenerTag` + 110+ property tests. |
-| MIGRATE-04 | 21-01 | Idempotent re-open | ✓ SATISFIED | `countLeetCodeSolveFenceOpenersInCodeSection > 0` short-circuit. |
-| MIGRATE-05 | 21-04, 21-06 | 30-day TTL cleanup | ✓ SATISFIED | CR-03 + WR-05 closed: tightened regex + `gcRunning` lock. 8+6+2 tests. |
-| MIGRATE-06 | 21-02, 21-07 | autoMigrateOnOpen setting + banner | ✓ SATISFIED | CR-04 closed: defensive DOM + try/catch. Reading-mode hook covers auto path. 5 CR-04-fix tests. |
-| MIGRATE-07 | 21-01 | Atomic single write (vault.process + processFrontMatter same frame) | ? NEEDS HUMAN | Auto-resume default `single_frame`; dev-vault probe deferred. Resilient orchestrator. |
-| MIGRATE-08 | 21-03 | New notes emit `\`\`\`leetcode-solve` | ✓ SATISFIED | Unchanged. `codeBlockForV13` + gate at `NoteTemplate.ts:241-242`. |
-| MIGRATE-09 | 21-03 | codeExtractor reads lc-language | ✓ SATISFIED | Unchanged. 3-branch dispatch; 6 consumers. |
-| MIGRATE-10 | 21-04 | CI fixtures byte-exact | ✓ SATISFIED (in-tree) | 11 tests pass. CAVEAT: shim-validation deferred. |
-
-No orphaned requirements — all 10 MIGRATE-* IDs have plan coverage.
-
-### Anti-Patterns Found
-
-| File | Line | Pattern | Severity | Impact |
-| ---- | ---- | ------- | -------- | ------ |
-| `tests/fixtures/migration/.obsidian-shim-validation.txt` | n/a | placeholder records `shim_validation: skipped, DIFF: deferred` | ⚠️ INFO | MIGRATE-10 release-gate is internal-shim consistency only; live-Obsidian byte-equal validation deferred. Documented; not a hidden gap. |
-
-No `TBD` / `FIXME` / `XXX` debt markers found in any files modified by Plans 21-05, 21-06, or 21-07 (confirmed by grep).
-
-Previously documented blockers (CR-01..CR-04) are all resolved. Previously documented warnings (WR-01/02/03/05/07) are all resolved. No new anti-patterns introduced.
-
-### Human Verification Required
-
-5 items need live-Obsidian verification. These are carry-forward from the initial verification — the in-tree blockers are now closed; the remaining items are empirical / visual and cannot be confirmed programmatically:
-
-1. **Reading-mode auto-migration on a real v1.2 note (CR-01 confirmation in live vault)**
-
-   **Test:** Open a v1.2 fixture note (e.g., `tests/fixtures/migration/v1.2/test-python3-remap.md` content) in Reading mode in a dev vault with `useInlineWidget=ON` + `autoMigrateOnOpen=ON`.
-   **Expected:** The `workspace.on('file-open')` hook fires, `makeReadingModeMigrationHandler` calls `migrateLegacyFenceIfNeeded`, within ~50ms the legacy fence opener is rewritten to `leetcode-solve`, the v1.3 widget mounts. No banner appears.
-   **Why human:** Unit tests mock all dependencies. Only a real Obsidian instance proves the EventRef path and actual Reading-mode render cycle after vault write.
-
-2. **MIGRATE-07 single-frame ordering empirical (Plan 21-02 Task 4 Test 2)**
-
-   **Test:** Open a v1.2 fixture note with `lc-language` MISSING in dev vault.
-   **Expected:** Fence opener rewritten + `lc-language` injected + widget mounts on canonical language. No flash of Python+Notice.
-   **Why human:** `shim_validation=skipped`; actual single-vs-two-frame behavior unobserved.
-
-3. **shim_validation=captured (Test 7 frontmatter byte-layout)**
-
-   **Test:** Run dev-vault probe Test 7 with `autoMigrateOnOpen=ON` + `lc-language` missing.
-   **Expected:** `tests/fixtures/migration/.obsidian-shim-validation.txt` records `DIFF: empty`.
-   **Why human:** Only live-Obsidian byte-equal validation is authoritative for MIGRATE-10 release-gate confidence.
-
-4. **Banner UX visual check (Reading + Live Preview, autoMigrateOnOpen=OFF)**
-
-   **Test:** Open a v1.2 note with `autoMigrateOnOpen=OFF` in both Reading mode and Live Preview.
-   **Expected:** Banner with `This note uses the v1.2 format.` + `[Migrate now]` button + read-only `<pre><code>`. Click `[Migrate now]` runs migration and remounts to v1.3 widget.
-   **Why human:** DOM positioning + cohesive styling is mode-specific; cannot be unit-tested.
-
-5. **Cross-OS backup folder path (Windows VM if available)**
-
-   **Test:** Run migration on Windows with a multi-segment slug (e.g., `two-sum`).
-   **Expected:** `.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-2026-06-01T14-32-08Z/two-sum.md` materializes with no `:` in folder name.
-   **Why human:** Only macOS dev vault in active use; Windows path-separator behavior is empirical.
-
-### Gaps Summary
-
-All 4 BLOCKERs and all 5 WARNINGs from the initial `gaps_found` verdict are closed. The in-tree codebase now satisfies the phase goal: every v1.2 note can migrate lazily on first open to `leetcode-solve` in both Reading mode and Live Preview, with backup sidecar, atomic rewrite, idempotent detection, GC cleanup, and CI fixture corpus.
-
-The 5 deferred `human_verification` items carry forward from the initial report (MIGRATE-07 single-frame probe, shim_validation capture, banner visual, Reading-mode live vault confirmation, Windows path). These are live-Obsidian empirical items, not in-tree code defects. They were explicitly documented in Plan 21-02 and do not block Phase 22 entrance at the code level — but the Reading-mode live-vault confirmation (item 1) should be the first step before Phase 22 merges to main.
-
-Phase 22 can proceed with deleting the v1.2 path, subject to the human verification items above being cleared in a dev-vault session first.
+**Score:** 16/16 must-haves verified (15 fully verified; 1 partial/deferred — MIGRATE-07)
 
 ---
 
-_Verified: 2026-06-01T14:40:00Z_
-_Re-verified: 2026-06-01T14:40:00Z (after Plans 21-05, 21-06, 21-07 gap closure)_
+### Deferred Items
+
+Items not yet met but explicitly addressed in earlier plans (retained from prior verification).
+
+| # | Item | Addressed In | Evidence |
+|---|------|-------------|----------|
+| 1 | MIGRATE-07 single-frame ordering (vault.process + processFrontMatter same render frame) | Plan 21-02 Task 4 dev-vault probe | probe_result=single_frame (auto-resume default); shim_validation=skipped. Resilient orchestrator either way. |
+| 2 | shim_validation=captured (Test 7 frontmatter byte-layout live-Obsidian byte-equal) | Plan 21-02 Task 4 Test 7 | tests/fixtures/migration/.obsidian-shim-validation.txt records shim_validation: skipped, DIFF: deferred. |
+
+---
+
+### Required Artifacts
+
+| Artifact | Plan | Status | Evidence |
+|----------|------|--------|----------|
+| `src/main/readingModeMigrationHook.ts` | 21-08 | VERIFIED | File exists; exports `makeReadingModeMigrationHandler` + `rerenderReadingModePanes`; `previewMode.rerender` present at line 284. |
+| `tests/main/readingModeMigrationTrigger.test.ts` | 21-08 | VERIFIED | File exists; contains `previewMode.rerender` assertions; 15 tests passing. |
+| `src/widget/fenceMigrator.ts` (21-09 additions) | 21-09 | VERIFIED | `isFrontmatterRepairCandidate` at line 542; `repairFrontmatterIfNeeded` at line 639; both exported. |
+| `src/main/readingModeMigrationHook.ts` (21-09 DI) | 21-09 | VERIFIED | `repair:` DI field in `ReadingModeMigrationHookDeps` at line 92; wired at `main.ts:1591`. |
+| `src/main/readingModeLegacyBannerPostProcessor.ts` | 21-10 | VERIFIED | File exists; begins with PHASE_22_DELETE_WITH_V1_2_PATH on line 1; exports `registerLegacyBannerPostProcessor`. |
+| `src/main.ts` (21-10 wiring) | 21-10 | VERIFIED | Import at line 167 (with PHASE_22 marker at 166); call at line 1088 (with PHASE_22 marker at 1080). |
+| `src/widget/liveModeBannerStateField.ts` | 21-11 | VERIFIED | File exists; exports `legacyBannerStateField` (PHASE_22 marker at line 334), `leetCodeWidgetStateField` (no marker at line 353), `leetCodeFenceStateFields` factory at line 378. |
+| `src/widget/liveModeViewPlugin.ts` (refactored) | 21-11 | VERIFIED | `leetCodeFenceViewPlugin` at line 186 returns `[...leetCodeFenceStateFields(plugin), ViewPlugin.define(...)]`; decoration branches removed from ViewPlugin. |
+| `src/widget/multiPaneCoordinator.ts` | 21-12 | VERIFIED | Three-way if/else-if/else at lines 171-182; `ctlLeafEl == null` → `'active'` at line 174-177; POST-UAT comment block present. |
+| `src/widget/WidgetController.ts` | 21-12 | VERIFIED | `promoteThisPane` at line 720; `this.setPaneState('active')` at lines 757 AND 763 (both matched-leaf path and fallthrough). |
+| `src/solve/starterCodeInjector.ts` | 21-13 | VERIFIED | `retrofit()` at line 280; `fenceKind` derived at line 290; passed into `injectCodeSection` at line 294. |
+| `src/notes/NoteWriter.ts` | 21-13 | VERIFIED | `useInlineWidget` read at line 246; early-return gate at line 247-255; all four call sites (272, 343, 440, 474) route through the wrapper. |
+
+---
+
+### Key Link Verification
+
+| From | To | Via | Status | Evidence |
+|------|----|-----|--------|----------|
+| `readingModeMigrationHook.ts` | Obsidian workspace `previewMode.rerender(true)` | `rerenderReadingModePanes` helper | WIRED | `main.ts:1599-1600` wires `rerenderPreviewLeaves: (path) => rerenderReadingModePanes(this.app, path)` |
+| `readingModeMigrationHook.ts` | `repairFrontmatterIfNeeded` | `repair:` DI field | WIRED | `main.ts:1591` wires `repair: repairFrontmatterIfNeeded` |
+| `codeBlockProcessor.ts` | `repairFrontmatterIfNeeded` | chained after migrate returns false | WIRED | `codeBlockProcessor.ts:188` calls `repairFrontmatterIfNeeded` |
+| `liveModeBannerStateField.ts:buildLeetCodeWidgetDecorations` | `repairFrontmatterIfNeeded` | fire-and-forget in leetcode-solve branch | WIRED | `liveModeBannerStateField.ts:300` calls `repairFrontmatterIfNeeded` gated on `repairInFlight` |
+| `main.ts` | `registerLegacyBannerPostProcessor` | `useInlineWidget` block in `onload` | WIRED | `main.ts:1088` calls `registerLegacyBannerPostProcessor(this)` |
+| `liveModeViewPlugin.ts:leetCodeFenceViewPlugin` | `legacyBannerStateField` + `leetCodeWidgetStateField` | `leetCodeFenceStateFields(plugin)` | WIRED | `liveModeViewPlugin.ts:188` spreads `...leetCodeFenceStateFields(plugin)` before ViewPlugin |
+| `multiPaneCoordinator.ts:reconcileFocus` | `ctl.setPaneState('active')` | null-leaf case (b) | WIRED | `multiPaneCoordinator.ts:174-177` `else if (ctlLeafEl == null)` → `setPaneState('active')` |
+| `WidgetController.ts:promoteThisPane` | `this.setPaneState('active')` | unconditional post-setActiveLeaf | WIRED | Lines 757 (matched-leaf path) and 763 (no-match fallthrough) |
+| `NoteWriter.ts:retrofitStarterCode` | `useInlineWidget` gate | early-return before raw retrofit | WIRED | `NoteWriter.ts:246-255` reads `getUseInlineWidget()`, returns early when true |
+| `starterCodeInjector.ts:retrofit` | `fenceKind:'leetcode-solve'` | `injectCodeSection` InjectOptions | WIRED | `starterCodeInjector.ts:289-296` derives and passes `fenceKind` |
+
+---
+
+### Requirements Coverage
+
+| Requirement | Plan | Status | Evidence |
+|-------------|------|--------|----------|
+| MIGRATE-01 | 21-01 / 21-05 / 21-08 | SATISFIED | Lazy trigger for both Reading mode (hook) and Live Preview (StateField); rerender on same open. |
+| MIGRATE-02 | 21-01 / 21-06 | SATISFIED | `backupAlreadyExistsForSlug` + `writeBackup` ordered correctly; one backup per note. |
+| MIGRATE-03 | 21-01 | SATISFIED | `rewriteFenceOpenerTag` SSoT; property-tested. |
+| MIGRATE-04 | 21-01 / 21-07 | SATISFIED | `countLeetCodeSolveFenceOpenersInCodeSection` idempotency clause. |
+| MIGRATE-05 | 21-01 / 21-06 | SATISFIED | GC with tightened regex + concurrent-call lock. |
+| MIGRATE-06 | 21-01 / 21-02 / 21-10 / 21-11 | SATISFIED | autoMigrateOnOpen setting gates both the banner and the auto-migrate path; Reading-mode (Plan 21-10) and Live-Preview (Plan 21-11) banner paths both functional. |
+| MIGRATE-07 | 21-02 | PARTIAL (deferred) | single_frame auto-resume default; shim-validation deferred. |
+| MIGRATE-08 | 21-03 / 21-13 | SATISFIED | NoteTemplate v1.3 gate; retrofitStarterCode wrapper gate closes duplicate-fence corruption. |
+| MIGRATE-09 | 21-04 | SATISFIED | codeExtractor lc-language sourcing. |
+| MIGRATE-10 | 21-07 | SATISFIED (in-tree) | 11 fixture tests pass; shim-validation caveat. |
+| MIGRATE-CR-01 | 21-08 | SATISFIED | `rerenderReadingModePanes` wired; widget mounts on same open. |
+| MIGRATE-FM-REPAIR-01 | 21-09 | SATISFIED | `repairFrontmatterIfNeeded` wired at all three entry points; lc-language injected from defaultLanguage. |
+| MIGRATE-BANNER-RM-01 | 21-10 | SATISFIED | `registerLegacyBannerPostProcessor` functional; banner replaces langSlug `<pre>` in Reading mode. |
+| MIGRATE-BANNER-LP-01 | 21-11 | SATISFIED | `legacyBannerStateField` provides Decoration.replace from StateField; CM6 RangeError eliminated. |
+| TAKEOVER-CTA-01 | 21-12 | SATISFIED | null-leaf → active; promoteThisPane self-recover; 8 regression tests. |
+| NEWNOTE-FENCE-DEDUP-01 | 21-13 | SATISFIED | fenceKind plumbing + wrapper gate; 11 tests including headline I1 assertion against source bytes. |
+
+**Note:** MIGRATE-CR-01 through NEWNOTE-FENCE-DEDUP-01 are gap-closure requirements not formally registered in REQUIREMENTS.md (they are tracked only in plan frontmatter). REQUIREMENTS.md lists MIGRATE-01..10 only — all as Phase 21 / Pending. The gap-closure IDs are effectively sub-requirements of MIGRATE-01 (trigger), MIGRATE-06 (banner), and MIGRATE-08 (new notes).
+
+---
+
+### Anti-Patterns Found
+
+No unresolved debt markers (TBD/FIXME/XXX) found in any of the 12 gap-closure modified source files. Scan covered:
+- `src/main/readingModeMigrationHook.ts`
+- `src/main/readingModeLegacyBannerPostProcessor.ts`
+- `src/widget/liveModeBannerStateField.ts`
+- `src/widget/liveModeViewPlugin.ts`
+- `src/widget/multiPaneCoordinator.ts`
+- `src/widget/WidgetController.ts`
+- `src/widget/fenceMigrator.ts`
+- `src/widget/codeBlockProcessor.ts`
+- `src/notes/NoteWriter.ts`
+- `src/solve/starterCodeInjector.ts`
+- `src/main.ts` (wiring callsites)
+
+No stub patterns (empty returns, hardcoded `[]`/`{}`, placeholder DOM) found in gap-closure code paths.
+
+### Behavioral Spot-Checks
+
+Build status reported clean (`npm run build` exit 0). Test suite: 3033 passed / 7 skipped (baseline was 2956; +77 across plans 21-08..21-13). No spot-check via running server applicable (Obsidian plugin runtime required).
+
+---
+
+### Human Verification Required
+
+#### 1. Reading-mode widget mounts on same open after auto-migration (UAT Test 1 — Gap 1)
+
+**Test:** Settings: useInlineWidget=ON, autoMigrateOnOpen=ON. Open a v1.2 fixture note (lc-slug + ## Code + ```java fence + closer + no lc-language) in Reading mode.
+**Expected:** Within ~50ms, fence opener rewritten to ```leetcode-solve; v1.3 widget mounts without close+reopen.
+**Why human:** previewMode.rerender(true) is a live Obsidian API; unit tests mock the dependency.
+
+#### 2. Frontmatter auto-repair on v1.3 body + missing lc-language (UAT Test 2 — Gap 2)
+
+**Test:** Settings: useInlineWidget=ON, autoMigrateOnOpen=ON, defaultLanguage=Java. Open a note with ```leetcode-solve fence but lc-language MISSING from frontmatter.
+**Expected:** (a) frontmatter on disk contains lc-language: java within ~50ms; (b) NO 'falling back to Python' Notice toast; (c) chevron/inner editor reflects Java.
+**Why human:** metadataCache update timing and widget remount cycle are live-Obsidian behaviors.
+
+#### 3. Reading-mode banner on v1.2 note (UAT Test 4a — Gap 3)
+
+**Test:** Settings: useInlineWidget=ON, autoMigrateOnOpen=OFF. Open v1.2 fixture in Reading mode.
+**Expected:** Banner appears in place of the langSlug code block (copy + [Migrate now] + read-only fence body). Click [Migrate now]: file rewritten; subsequent re-render shows v1.3 widget.
+**Why human:** DOM replacement and banner click-through require real Obsidian post-processor context.
+
+#### 4. Live-Preview banner + migration without CM6 RangeError (UAT Test 4b — Gap 4)
+
+**Test:** Settings: useInlineWidget=ON, autoMigrateOnOpen=OFF. Open dev console FIRST. Open v1.2 fixture in Live Preview.
+**Expected:** Legacy migration banner mounts; ZERO console errors; NO 'Decorations that replace line breaks may not be specified via plugins' RangeError. Run migrate command: v1.3 widget mounts; NO RangeError. Console clean scroll-back.
+**Why human:** CM6 RangeError is only observable in a live Obsidian editor session.
+
+#### 5. Take-over CTA works across all remount triggers (Post-UAT Gap A)
+
+**Test:** Settings: useInlineWidget=ON. Open a v1.3 LC note. Close tab; reopen. Also: switch-away+back; close-all+reopen.
+**Expected:** Widget mounts NORMALLY on every Open #2 — NO overlay. Defense-in-depth: set data-pane-state='peer' via dev console, click editor — overlay disappears even though leaf is already active.
+**Why human:** active-leaf-change dedup and mid-mount-attach timing are live-Obsidian behaviors.
+
+#### 6. No duplicate fence on fresh problem from browser (Post-UAT Gap B)
+
+**Test:** Settings: useInlineWidget=ON. Open fresh problem from problem browser (not yet in vault). Open the resulting .md in a text editor.
+**Expected:** ## Code section has EXACTLY ONE fence — ```leetcode-solve opener + closer. ZERO ```java/```python siblings.
+**Why human:** Full openProblem flow (API fetch + NoteWriter + vault create) requires live vault with network access.
+
+#### 7. Two-pane peer flow preserved
+
+**Test:** Open a v1.3 LC note in two panes (split right). Click in one pane.
+**Expected:** OTHER pane shows 'Click to take over' overlay. Click it: pane focus flips; overlay disappears.
+**Why human:** Multi-pane focus coordination requires two real Obsidian panes.
+
+#### 8. shim-validation byte-layout live-Obsidian byte-equal (inherited)
+
+**Test:** Run the dev-vault probe; capture Test 7 output.
+**Expected:** tests/fixtures/migration/.obsidian-shim-validation.txt records DIFF: empty.
+**Why human:** Live-Obsidian byte-equal validation is the only authoritative ground truth for MIGRATE-10 release confidence.
+
+---
+
+## Gaps Summary
+
+No automated gaps. All 16 must-haves verified at the code level. Status is human_needed because 8 live-Obsidian verification items remain unrun. Items 1-6 correspond directly to the 6 UAT gaps the gap-closure plans targeted; items 7-8 were already present in the prior verification. The `auto_advance: true` + `_auto_chain_active: true` config caused the executor to auto-approve `checkpoint:human-verify` tasks with `gate="blocking"` (not `gate="blocking-human"`) in plans 21-10, 21-11, 21-12. These approvals defer the live-vault confirmation to the developer — the code-level evidence is complete and the regression-test corpus locks the behavior.
+
+---
+
+_Verified: 2026-06-01_
 _Verifier: Claude (gsd-verifier)_

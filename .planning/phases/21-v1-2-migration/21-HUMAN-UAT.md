@@ -1,14 +1,70 @@
 ---
-status: diagnosed
+status: partial
 phase: 21-v1-2-migration
 source: [21-VERIFICATION.md]
 started: 2026-06-01T21:35:00Z
-updated: 2026-06-01T22:50:00Z
+updated: 2026-06-01T20:30:00Z
+gap_closure_plans: [21-08, 21-09, 21-10, 21-11, 21-12, 21-13]
+gap_closure_status: code_shipped_pending_live_uat
 ---
 
 ## Current Test
 
-[testing complete]
+[awaiting human re-testing of 8 live-Obsidian items after gap-closure plans 21-08..21-13 shipped]
+
+## Re-Test Tests (post gap-closure)
+
+Code for all 6 originally diagnosed UAT gaps has shipped via plans 21-08..21-13. The following 8 live-Obsidian items must be re-tested to confirm the fixes work in a real Obsidian instance:
+
+### R1. Widget mounts on same open after auto-migration (21-08 / MIGRATE-CR-01)
+expected: "Open a v1.2 fixture note in Reading mode in a dev vault with autoMigrateOnOpen=ON. Within ~50ms the legacy fence is rewritten to ```leetcode-solve AND the v1.3 widget mounts ON THE SAME OPEN. Closing+reopening NOT required."
+result: [pending]
+
+### R2. Frontmatter auto-repair with defaultLanguage=Java (21-09 / MIGRATE-FM-REPAIR-01)
+expected: "Open a note with lc-slug + ```leetcode-solve fence + lc-language MISSING in frontmatter. With defaultLanguage=Java in settings, frontmatter is auto-repaired to lc-language: java BEFORE the widget mounts. NO Notice 'lc-language frontmatter missing; falling back to Python' fires. Widget mounts using Java."
+result: [pending]
+
+### R3. Reading-mode banner on v1.2 note (21-10 / MIGRATE-BANNER-RM-01)
+expected: "Open a v1.2-shaped note in Reading mode with useInlineWidget=ON AND autoMigrateOnOpen=OFF. The langSlug code block is replaced with the legacy migration banner (copy + [Migrate now] CTA + read-only `<pre><code>` of fence body). Clicking [Migrate now] runs migration and the v1.3 widget mounts on next render."
+result: [pending]
+
+### R4. Live-Preview banner without CM6 RangeError (21-11 / MIGRATE-BANNER-LP-01)
+expected: "Open a v1.2-shaped note in Live Preview with useInlineWidget=ON AND autoMigrateOnOpen=OFF. The migration banner mounts WITHOUT throwing the CM6 RangeError 'Decorations that replace line breaks may not be specified via plugins'. Console clean. With autoMigrateOnOpen=ON, AutoMigratingBannerWidget mounts cleanly and unmounts on the post-migration update cycle."
+result: [pending]
+
+### R5. Take-Over CTA across all remount triggers (21-12 / TAKEOVER-CTA-01)
+expected: "On every remount of an LC note (close tab→reopen, switch notes→switch back, close all→reopen) the widget mounts in a working state. The 'Click to take over' overlay either does not appear (single-pane focused) OR — if it appears during a transient mid-attach window — clicking it deterministically promotes the pane and the overlay is removed. Existing two-real-pane peer flow preserved."
+result: [pending]
+
+### R6. No duplicate fence from problem browser (21-13 / NEWNOTE-FENCE-DEDUP-01)
+expected: "With useInlineWidget=ON, opening a fresh problem from the problem browser produces a note whose ## Code section contains EXACTLY ONE ```leetcode-solve fence — ZERO langSlug-tagged sibling fences. Note renders with single LC widget mount."
+result: [pending]
+
+### R7. Two-pane peer flow regression check (21-12)
+expected: "When two REAL Obsidian panes both display the same LC note, focusing one pane sets the other to 'peer' state and shows the take-over overlay. The fix to the null-leaf branch (case b) MUST NOT break case (c) two-attached-leaves behavior."
+result: [pending]
+
+### R8. shim-validation byte-layout (inherited deferred from 21-02)
+expected: "tests/fixtures/migration/.obsidian-shim-validation.txt records DIFF: empty for live-Obsidian byte-equal validation. Already captured in original UAT Test 3 (result: pass) — included here for completeness."
+result: [pending]
+captured: |
+  Live dev-vault probe executed interactively 2026-06-01T19:06:45Z (see Test 3 below).
+  Pre-migration bytes: 77; post-migration bytes: 103; shim output bytes: 103.
+  diff /tmp/obsidian-actual.txt /tmp/shim-output.txt → empty (byte-equal).
+  Plan 21-04 Task 3 BLOCKER 4 acceptance criterion satisfied.
+
+## Re-Test Summary
+
+total: 8
+passed: 0
+issues: 0
+pending: 8
+skipped: 0
+blocked: 0
+
+---
+
+## Original Tests (status: diagnosed → resolved by gap-closure plans 21-08..21-13)
 
 ## Tests
 
@@ -88,7 +144,7 @@ blocked: 0
 (Reported by user 2026-06-01 after diagnose phase, before plan-fixes completes — captured here so plan-phase can fold in.)
 
 - truth: "On every remount of an LC note (close tab→reopen, switch notes→switch back, close all→reopen), the takeover system mounts in a working state. The 'Click to take over' pill responds to clicks consistently across all mounts."
-  status: diagnosed
+  status: resolved_pending_uat
   root_cause: |
     TWO compounding bugs in the multi-pane "Take over" affordance produce the deterministic Open #1-fine / Open #2-dead / Open #3-fine pattern.
 
@@ -157,7 +213,7 @@ blocked: 0
   next_step: "After the planner returns the revised 21-09/10/11, dispatch a NEW debug agent for THIS issue + spawn 21-12 plan. Hold off until the current revision iteration completes to avoid concurrent planner conflicts."
 
 - truth: "Opening a new problem from the problem browser renders the LC widget exactly once in the ## Code section."
-  status: diagnosed
+  status: resolved_pending_uat
   root_cause: |
     The post-create "belt-and-suspenders" retrofit in NoteWriter.openProblem (src/notes/NoteWriter.ts:419) calls into starterCodeInjector.retrofit (src/solve/starterCodeInjector.ts:256-271), which calls injectCodeSection(current, { starterCode, langSlug }) WITHOUT passing fenceKind.
 
@@ -237,7 +293,7 @@ blocked: 0
 ## Gaps
 
 - truth: "After auto-migration in Reading mode (autoMigrateOnOpen=ON), the v1.3 widget mounts on the same open."
-  status: diagnosed
+  status: resolved_pending_uat
   reason: "User reported: First-open: migration runs and the fence is rewritten, but the widget does not mount. Closing and reopening the note shows the widget correctly."
   severity: minor
   test: 1
@@ -261,7 +317,7 @@ blocked: 0
   debug_session: ".planning/debug/reading-mode-migration-mount-race.md"
 
 - truth: "When a note has the v1.3 ```leetcode-solve fence opener but is missing lc-language in frontmatter, lc-language is auto-injected using the user's default-language setting before the widget mounts (no Python+Notice fallback)."
-  status: diagnosed
+  status: resolved_pending_uat
   reason: "User reported (clarified 2026-06-01): the failing repro is NOT a v1.2-shaped legacy fence — it is a note that ALREADY has ```leetcode-solve as its fence opener (i.e. body is already v1.3-shaped) but lc-language is MISSING from frontmatter. Notice 'lc-language missing, falling back to Python' fires from the widget mount path; default-language=java in settings is NOT honored (Python is used instead); chevron updates locally but lc-language is NEVER written to frontmatter. Test 3 (interactive shim probe) succeeded on a different shape (lc-slug + langSlug fence with NO leetcode-solve opener) — a different code path, not contradictory."
   severity: major
   test: 2
@@ -289,7 +345,7 @@ blocked: 0
   diagnosis_correction: "Initial debug agent (adb3925) analyzed the Step-4-vs-Step-5 race assuming the migrator runs. User clarified post-diagnosis that the actual repro has the body already at v1.3 (```leetcode-solve), so isMigrationCandidate short-circuits at clause 5 and the migrator never executes. The Step-4/Step-5 race diagnosis is correct for v1.2 → v1.3 migrations but does NOT explain THIS bug. The real bug is a scope gap: no code path injects lc-language into a v1.3-shaped note with missing frontmatter."
 
 - truth: "v1.2-shaped notes show the banner UX (copy + [Migrate now] button + read-only `<pre><code>` source) when autoMigrateOnOpen=OFF in BOTH Reading mode and Live Preview."
-  status: diagnosed
+  status: resolved_pending_uat
   reason: "User reported: Reading mode silently renders a plain Obsidian java code block (no banner, no button, no widget); Live Preview emits a CM6 RangeError 'Decorations that replace line breaks may not be specified via plugins' from the banner mount path during migrate-command execution. Migration logic itself is correct (file rewritten on disk to ```leetcode-solve verified post-test) — the banner UX is broken in both modes."
   severity: major
   test: 4
