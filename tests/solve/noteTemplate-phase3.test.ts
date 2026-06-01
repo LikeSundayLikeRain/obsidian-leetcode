@@ -4,6 +4,7 @@ import {
   CUSTOM_TESTS_HEADING_LINE,
   CASE_HEADING_PREFIX,
   codeBlockFor,
+  codeBlockForV13,
   buildNoteBody,
 } from '../../src/notes/NoteTemplate';
 
@@ -97,5 +98,86 @@ describe('NoteTemplate Phase 3 schema additions (CONTEXT D-06, D-18, D-20)', () 
       expect(body).toContain('Problem statement.');
       expect(body).not.toContain('   Problem statement.');
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 21 Plan 21-03 Task 3 — codeBlockForV13 emitter + buildNoteBody
+// transition gate (D-emit-01, MIGRATE-08).
+//
+// codeBlockForV13(starter) emits ```leetcode-solve directly for v1.3 notes.
+// buildNoteBody gains a `useInlineWidget` arg that gates the emit:
+//   - useInlineWidget=true  → ```leetcode-solve fence (codeBlockForV13)
+//   - useInlineWidget=false → legacy ```<langSlug> fence (codeBlockFor)
+// Phase 22 deletes the gate and renames codeBlockForV13 → codeBlockFor.
+// ─────────────────────────────────────────────────────────────────────────
+describe('codeBlockForV13 emitter (Plan 21-03 v13-emit, D-emit-01, MIGRATE-08)', () => {
+  it('v13-emit: emits ```leetcode-solve fence with starter body', () => {
+    const result = codeBlockForV13('def f():\n    return 1');
+    expect(result).toBe('```leetcode-solve\ndef f():\n    return 1\n```');
+  });
+
+  it('v13-emit: trims leading/trailing whitespace, preserves internal whitespace (mirrors codeBlockFor)', () => {
+    const result = codeBlockForV13('  \n  class Solution { }  \n  ');
+    expect(result).toBe('```leetcode-solve\nclass Solution { }\n```');
+  });
+
+  it('v13-emit: handles empty starter (round-trips to empty fence body)', () => {
+    const result = codeBlockForV13('');
+    expect(result).toBe('```leetcode-solve\n\n```');
+  });
+
+  it('v13-emit: takes NO langSlug arg — language lives in lc-language frontmatter (D-emit-01)', () => {
+    // The emitter signature is intentionally (starter: string) only. The
+    // fence opener is fixed at ```leetcode-solve regardless of language.
+    // Phase 22 cleanup boundary: this matches what codeBlockFor will become
+    // after the legacy emitter is deleted.
+    const a = codeBlockForV13('a');
+    const b = codeBlockForV13('a');
+    expect(a).toBe(b);
+    expect(a).not.toContain('python');
+    expect(a).not.toContain('java');
+  });
+});
+
+describe('buildNoteBody — useInlineWidget transition gate (Plan 21-03 v13-emit, MIGRATE-08)', () => {
+  it('v13-emit: useInlineWidget=true emits ```leetcode-solve fence (NOT ```<langSlug>)', () => {
+    const body = buildNoteBody({
+      problemMarkdown: 'P',
+      langSlug: 'python3',
+      starterCode: 'def f(): pass',
+      useInlineWidget: true,
+    });
+    expect(body).toContain('```leetcode-solve\n');
+    // Pitfall 9 spot-check: useInlineWidget=ON path MUST NOT emit a langSlug
+    // fence opener — only the v1.3 leetcode-solve marker.
+    expect(body).not.toMatch(/^```python\s*$/m);
+    expect(body).not.toMatch(/^```java\s*$/m);
+    expect(body).not.toMatch(/^```cpp\s*$/m);
+  });
+
+  it('v13-emit: useInlineWidget=false emits legacy ```<langSlug> fence (Phase 22 boundary preserved)', () => {
+    // useInlineWidget=OFF is the milestone default through Phase 21; this
+    // path stays byte-for-byte unchanged so existing v1.2-creation tests
+    // continue to pass.
+    const body = buildNoteBody({
+      problemMarkdown: 'P',
+      langSlug: 'python3',
+      starterCode: 'def f(): pass',
+      useInlineWidget: false,
+    });
+    // Phase 5.3 D-04: codeBlockFor remaps python3 → python at the fence opener.
+    expect(body).toContain('```python\n');
+    expect(body).not.toContain('```leetcode-solve');
+  });
+
+  it('v13-emit: useInlineWidget omitted defaults to legacy emit (back-compat for existing callers)', () => {
+    const body = buildNoteBody({
+      problemMarkdown: 'P',
+      langSlug: 'java',
+      starterCode: 'class S {}',
+    });
+    expect(body).toContain('```java\n');
+    expect(body).not.toContain('```leetcode-solve');
   });
 });
