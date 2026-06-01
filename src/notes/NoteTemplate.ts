@@ -121,6 +121,24 @@ export function codeBlockFor(langSlug: string, starterCode: string): string {
 }
 
 /**
+ * Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08) — v1.3 emitter.
+ *
+ * Emits a `\`\`\`leetcode-solve` fence directly. Language metadata lives in
+ * `lc-language` frontmatter (canonical v1.3 source of truth per Phase 19 C-01).
+ * Used by new-note creation paths when `useInlineWidget=ON` (gated at the
+ * `buildNoteBody` call site below).
+ *
+ * Trim semantics mirror `codeBlockFor` byte-for-byte (leading/trailing
+ * whitespace stripped; internal whitespace preserved). Phase 22 cleanup
+ * deletes `codeBlockFor` and renames this function back to `codeBlockFor`,
+ * making the v1.3 emitter the only one in tree.
+ */
+export function codeBlockForV13(starterCode: string): string {
+  const code = starterCode.trim();
+  return '```leetcode-solve\n' + code + '\n```';
+}
+
+/**
  * Vocabulary for the `lc-status` frontmatter field. Single source of truth (D-03).
  * Phase 2 writes 'untouched' or 'attempted' on first open; Phase 4 will flip to
  * 'accepted' on first Accepted submission. GAP-2a lets Phase 2 also write
@@ -194,6 +212,14 @@ export function mapStatusDisplay(
  * callers that pass only `{ problemMarkdown }` continue to compile and render
  * the same shape (with an additional `## Code` section containing an empty
  * python3 fenced block).
+ *
+ * Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08): when `useInlineWidget=true`,
+ * the `## Code` block emits a `\`\`\`leetcode-solve` fence directly via
+ * `codeBlockForV13` instead of the legacy `\`\`\`<langSlug>` opener. This
+ * prevents Pitfall 9 (new notes shipping with langSlug fences that would
+ * re-trigger the migrator on next open). The flag is OPTIONAL and defaults
+ * to `false` to keep existing v1.2 callers byte-for-byte unchanged. Phase 22
+ * cleanup deletes the gate and the legacy emitter.
  */
 export function buildNoteBody(input: {
   problemMarkdown: string;
@@ -203,10 +229,18 @@ export function buildNoteBody(input: {
    *  When provided, output starts with `# {Title}\n\n## Problem`. When omitted,
    *  output starts with `## Problem` (backward-compat for existing callers). */
   title?: string;
+  /** Phase 21 Plan 21-03 (D-emit-01) — when true, emits a v1.3
+   *  `\`\`\`leetcode-solve` fence (codeBlockForV13). When false/omitted,
+   *  emits the legacy `\`\`\`<langSlug>` fence (codeBlockFor). The caller
+   *  should pass `settings.getUseInlineWidget()`. Phase 22 deletes this
+   *  gate and the legacy branch. */
+  useInlineWidget?: boolean;
 }): string {
   const langSlug = input.langSlug ?? 'python3';
   const starter = input.starterCode ?? '';
-  const codeBlock = codeBlockFor(langSlug, starter);
+  const codeBlock = input.useInlineWidget
+    ? codeBlockForV13(starter)
+    : codeBlockFor(langSlug, starter);
   const h1 = input.title ? `# ${input.title}\n` : '';
   return `${h1}## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
 }

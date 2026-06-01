@@ -94,6 +94,14 @@ export interface NoteWriterSettings {
   getDefaultLanguage(): string;
   getProblemDetail(slug: string): DetailCacheEntry | null;
   setProblemDetail(slug: string, detail: DetailCacheEntry): Promise<void>;
+  /** Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08) — read at new-note creation
+   *  to gate the fence emitter. ON → `\`\`\`leetcode-solve` (codeBlockForV13);
+   *  OFF → legacy `\`\`\`<langSlug>` (codeBlockFor). Optional to preserve
+   *  back-compat for test fixtures that construct a minimal settings port
+   *  (test fixtures predate this field — they exercise legacy emit paths and
+   *  don't need to opt into v1.3 emission). Falls back to false (legacy) when
+   *  the port omits the getter. Phase 22 deletes this gate. */
+  getUseInlineWidget?(): boolean;
 }
 
 /** Minimal file-like shape the mocked Vault returns; real Obsidian returns TFile. */
@@ -354,11 +362,16 @@ export class NoteWriter {
     // Create the file with body; frontmatter comes on a separate pass via processFrontMatter.
     const defaultLang = this.settings.getDefaultLanguage();
     const starterCode = pickStarterCode(newEntry, defaultLang);
+    // Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08) — gate the fence emitter on
+    // `useInlineWidget`. ON emits `\`\`\`leetcode-solve`; OFF (the milestone
+    // default through Phase 21) emits the legacy `\`\`\`<langSlug>` opener.
+    // Phase 22 deletes the gate and the legacy branch.
     const body = buildNoteBody({
       problemMarkdown: htmlToMarkdown(newEntry.contentHtml),
       langSlug: defaultLang || undefined,
       starterCode,
       title: newEntry.title,
+      useInlineWidget: this.settings.getUseInlineWidget?.() ?? false,
     });
     const createdRaw = await this.app.vault.create(filePath, body);
     const file = narrowToTFile(createdRaw);
