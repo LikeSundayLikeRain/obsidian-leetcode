@@ -253,18 +253,17 @@ export function buildLanguageChevron(
     doc.addEventListener('keydown', escKeyHandler, true);
   };
 
-  // Phase 20 Plan 20-08 — capture each item so the refresh closure can
-  // re-target `.is-current` without DOM walks. The map is keyed by slug
-  // (matches LC_CHEVRON_LANG_ORDER iteration order); refresh() reads
-  // it via .get(newSlug). NB: `currentSlug` is captured by the per-item
-  // click handler closure; subsequent refresh() calls update DOM but the
-  // click-handler's same-slug no-op compares against the ORIGINAL
-  // currentSlug — that's intentional: clicks always trigger
-  // switchLanguage when the user picks anything other than the
-  // mount-time language, even if the chevron was refreshed in between.
-  // The plugin's switchLanguage path is itself idempotent (compares
-  // against fresh frontmatter), so the worst case is one redundant
-  // processFrontMatter call which is a no-op write.
+  // Phase 20 Plan 20-10 hotfix — `mountedSlug` is the chevron's live state
+  // (mount-time slug, kept in sync by `refresh()`). The per-item click
+  // handlers MUST compare against `mountedSlug`, not the captured
+  // `currentSlug` — otherwise a Java→Python→Java sequence finds the Java
+  // item's handler still seeing closure `currentSlug = 'java'`, trips the
+  // same-slug no-op, and the user can't switch back to the original
+  // language. Hoisting the declaration above the loop closes that bug
+  // (the original "intentional" comment at this site was wrong: the
+  // plugin's switchLanguage path is NOT a same-slug no-op, so a redundant
+  // call mattered for parser-state reconfiguration too).
+  let mountedSlug = currentSlug;
   const items = new Map<string, HTMLButtonElement>();
   for (const slug of LC_CHEVRON_LANG_ORDER) {
     const item = doc.createElement('button');
@@ -285,7 +284,10 @@ export function buildLanguageChevron(
       closeDropdown();
       // No-op when the user picks the current language (UI-SPEC §"State machine"
       // — "click current language item → back to CLOSED, no further action").
-      if (slug !== currentSlug) {
+      // Compare against the LIVE `mountedSlug`, not the closure-captured
+      // `currentSlug`, so a refreshed chevron reflects the user's actual
+      // current selection.
+      if (slug !== mountedSlug) {
         void plugin.switchLanguage(file, slug);
       }
     });
@@ -302,7 +304,6 @@ export function buildLanguageChevron(
   // metadataCache 'changed' listener AFTER the existing
   // languageCompartment.reconfigure dispatch so the chevron's visible
   // state reflects the parser swap.
-  let mountedSlug = currentSlug;
   const refresh = (newSlug: string): void => {
     if (newSlug === mountedSlug) return;
     mountedSlug = newSlug;
