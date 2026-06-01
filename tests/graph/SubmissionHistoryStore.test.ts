@@ -113,6 +113,96 @@ describe('SubmissionHistoryStore', () => {
     expect(fetchHistory).toHaveBeenCalledTimes(2);
   });
 
+  // ===========================================================================
+  // Phase 20 Plan 20-10 (gap-closure T9 surface layer) — short TTL on empty
+  // results. Empty rows[] cache for 5 seconds (vs 60 s for non-empty). Closes
+  // the documented 60-second blackout window after the D-02 prefetch race
+  // without amplifying per-note-open prefetch into a fetch storm against
+  // LC's 20 req / 10 s throttle.
+  // ===========================================================================
+  it('T9: empty rows[] cache uses short EMPTY_TTL_MS (5 s); refetches after 6 s', async () => {
+    const fetchHistory = vi.fn<(slug: string) => Promise<SubmissionRow[]>>(
+      async () => [],
+    );
+    let currentTime = 1000;
+    const store = new SubmissionHistoryStore({
+      fetchHistory,
+      freshnessMs: 60_000,
+      now: () => currentTime,
+    });
+
+    // First call — populates cache with empty rows.
+    const r1 = await store.get('two-sum');
+    expect(r1).toEqual([]);
+    expect(fetchHistory).toHaveBeenCalledTimes(1);
+
+    // Within 5 s — cache hit, no refetch.
+    currentTime += 1_000;
+    const r2 = await store.get('two-sum');
+    expect(r2).toEqual([]);
+    expect(fetchHistory).toHaveBeenCalledTimes(1);
+
+    // After 6 s total — cache expired, refetch fires.
+    currentTime += 5_000;
+    const r3 = await store.get('two-sum');
+    expect(r3).toEqual([]);
+    expect(fetchHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('T9: non-empty rows[] keep the standard 60-s TTL (no regression)', async () => {
+    const rows = [makeRow('1')];
+    const fetchHistory = vi.fn<(slug: string) => Promise<SubmissionRow[]>>(
+      async () => rows,
+    );
+    let currentTime = 1000;
+    const store = new SubmissionHistoryStore({
+      fetchHistory,
+      freshnessMs: 60_000,
+      now: () => currentTime,
+    });
+
+    await store.prefetch('two-sum');
+    expect(fetchHistory).toHaveBeenCalledTimes(1);
+
+    // 30 s later — within 60 s TTL, cache hit.
+    currentTime += 30_000;
+    await store.get('two-sum');
+    expect(fetchHistory).toHaveBeenCalledTimes(1);
+
+    // 70 s total — past 60 s TTL, refetch.
+    currentTime += 40_000;
+    await store.get('two-sum');
+    expect(fetchHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('T9: empty → non-empty refresh — empty result expires fast and is replaced by populated rows', async () => {
+    // Simulates the documented D-02 prefetch race: first fetch returns
+    // empty (auth not yet wired / throttle blip), then 6 s later the user
+    // clicks Retrieve and gets fresh rows from LC.
+    let attempt = 0;
+    const fetchHistory = vi.fn<(slug: string) => Promise<SubmissionRow[]>>(
+      async () => {
+        attempt++;
+        return attempt === 1 ? [] : [makeRow('99')];
+      },
+    );
+    let currentTime = 1000;
+    const store = new SubmissionHistoryStore({
+      fetchHistory,
+      freshnessMs: 60_000,
+      now: () => currentTime,
+    });
+
+    const first = await store.get('two-sum');
+    expect(first).toEqual([]);
+
+    currentTime += 6_000; // past EMPTY_TTL_MS
+    const second = await store.get('two-sum');
+    expect(second).toHaveLength(1);
+    expect(second[0]!.id).toBe('99');
+    expect(fetchHistory).toHaveBeenCalledTimes(2);
+  });
+
   it('SubmissionPickerModal accepts the store via submissionHistoryStore field', async () => {
     // Integration check — the picker's resolveRows path prefers the store when
     // both store and fetchHistory are present. Lock the Plan 05 field name.

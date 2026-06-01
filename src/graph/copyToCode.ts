@@ -25,6 +25,10 @@
 import type { App, TFile } from 'obsidian';
 import { forceInjectCodeSection } from '../solve/starterCodeInjector';
 import { LC_LANG_SLUGS } from '../solve/languages';
+// Phase 20 Plan 20-10 (gap-closure T9 underlying layer) — REUSE the canonical
+// fence-locator predicate; do NOT inline a private detector. SSoT keeps the
+// regex semantics in one place across reset, retrieve, and copyToCode paths.
+import { countLeetCodeSolveFenceOpeners } from '../widget/fenceLocator';
 
 /**
  * Rewrite the ## Code fenced block in `file` with the submitted code + lang.
@@ -70,12 +74,25 @@ export async function copyToCode(
   langSlug: string,
 ): Promise<void> {
   // Step 1 — fence body rewrite (existing contract; CF-06 vault.process).
-  await app.vault.process(file, (current) =>
-    forceInjectCodeSection(current, {
+  //
+  // Phase 20 Plan 20-10 (gap-closure T9 underlying layer) — kind-aware:
+  // when the note already contains a v1.3 leetcode-solve fence, signal
+  // 'leetcode-solve' so forceInjectCodeSection short-circuits to
+  // rewriteFenceBody and the fence opener stays verbatim (no sibling
+  // ```python fence grafted). When no v1.3 fence is present, the omitted
+  // fenceKind keeps the existing v1.2 path running byte-for-byte.
+  // SSoT: REUSES countLeetCodeSolveFenceOpeners (src/widget/fenceLocator.ts).
+  await app.vault.process(file, (current) => {
+    const fenceKind: 'leetcode-solve' | undefined =
+      countLeetCodeSolveFenceOpeners(current, Number.MAX_SAFE_INTEGER) > 0
+        ? 'leetcode-solve'
+        : undefined;
+    return forceInjectCodeSection(current, {
       starterCode: code,
       langSlug,
-    }),
-  );
+      ...(fenceKind ? { fenceKind } : {}),
+    });
+  });
 
   // Step 2 — G-COPY-TO-CODE-LANG-DRIFT lc-language sync. Skip when the slug
   // is not a canonical LC slug (defensive — the LC API dispatch contract

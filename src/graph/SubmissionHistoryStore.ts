@@ -39,6 +39,19 @@ import type { SubmissionRow } from './submissionHistoryClient';
 
 const DEFAULT_FRESHNESS_MS = 60 * 1000;  // 60 s — matches "just-opened the note" UX.
 
+/**
+ * Phase 20 Plan 20-10 (gap-closure T9 surface layer) — short TTL on empty
+ * results. Empty `rows[]` arrays cache for only 5 seconds (vs 60 s for
+ * non-empty), bounding the documented 60-second blackout window after the
+ * D-02 prefetch race at src/main.ts:449. The 5 s floor still bounds the
+ * per-note-open prefetch fetch storm to at most 1 LC API call per slug per
+ * 5 s — LC's 20 req / 10 s throttle is preserved even when the user opens
+ * many unsubmitted problems in rapid succession.
+ *
+ * See .planning/debug/widget-plugin-handoff-cluster.md T9 surface layer.
+ */
+const EMPTY_TTL_MS = 5 * 1000;
+
 /** Network shim — production wires this to
  *  `(slug) => listSubmissionsForSlug(slug, cookies)`. Tests pass a vi.fn. */
 export type SubmissionHistoryFetcher =
@@ -56,6 +69,12 @@ export interface SubmissionHistoryStoreDeps {
 interface CachedEntry {
   fetchedAt: number;
   rows: SubmissionRow[];
+  /**
+   * Phase 20 Plan 20-10 (gap-closure T9) — empty-result flag drives the
+   * short-TTL gate. `true` → entry expires after EMPTY_TTL_MS; `false` →
+   * entry expires after the standard freshnessMs (60 s).
+   */
+  isEmpty: boolean;
 }
 
 export class SubmissionHistoryStore {
@@ -132,9 +151,19 @@ export class SubmissionHistoryStore {
 
   private async getOrFetch(slug: string): Promise<SubmissionRow[]> {
     // 1. Fresh cache hit — return immediately, no network.
+    //
+    // Phase 20 Plan 20-10 (gap-closure T9) — empty results use the short
+    // EMPTY_TTL_MS (5 s); non-empty results keep the existing freshnessMs
+    // (60 s default). Closes the 60-second blackout window after a
+    // transient empty fetch (D-02 prefetch race / throttle blip / auth
+    // not yet wired) without amplifying per-note-open prefetch into a
+    // fetch storm against LC's 20 req / 10 s throttle.
     const cached = this.cache.get(slug);
-    if (cached && this.now() - cached.fetchedAt < this.freshnessMs) {
-      return cached.rows;
+    if (cached) {
+      const ttl = cached.isEmpty ? EMPTY_TTL_MS : this.freshnessMs;
+      if (this.now() - cached.fetchedAt < ttl) {
+        return cached.rows;
+      }
     }
 
     // 2. In-flight for same slug — share the promise.
@@ -145,7 +174,11 @@ export class SubmissionHistoryStore {
     const promise = (async () => {
       try {
         const rows = await this.fetchHistory(slug);
-        this.cache.set(slug, { fetchedAt: this.now(), rows });
+        this.cache.set(slug, {
+          fetchedAt: this.now(),
+          rows,
+          isEmpty: rows.length === 0,
+        });
         return rows;
       } finally {
         this.inflight.delete(slug);

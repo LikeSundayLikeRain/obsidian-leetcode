@@ -2687,6 +2687,18 @@ export default class LeetCodePlugin extends Plugin {
    */
   private async retrieveLastSubmissionWithSlug(file: TFile, slug: string): Promise<void> {
     try {
+      // Phase 20 Plan 20-10 (gap-closure T9) — user-initiated retrieve
+      // always invalidates the slug entry before fetching. Belt-and-
+      // suspenders with the EMPTY_TTL_MS short-TTL change in
+      // SubmissionHistoryStore: the in-store TTL bounds the empty-result
+      // blackout; this invalidate covers the case where a non-empty cache
+      // entry has gone stale (e.g., the user submitted from leetcode.com
+      // between the cache fill and this retrieve). Same primitive as the
+      // existing post-AC invalidate (this file's submitWithCode path).
+      // The contract is well-defined: invalidate drops the cache entry
+      // but does not cancel in-flight fetches, so concurrent prefetches
+      // still resolve correctly.
+      this.submissionHistory.invalidate(slug);
       const rows = await this.submissionHistory.get(slug);
       if (!rows || rows.length === 0) {
         new Notice('No past submissions found for this problem.', 4000);
