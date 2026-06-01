@@ -63,7 +63,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 
 - [x] **Phase 19: Widget Foundation + One-Way Sync** — Self-contained inline `leetcode-solve` widget mounted in both Reading and Live Preview, debounced one-way sync to disk, state persistence, hash-based echo suppression — completed 2026-05-29
 - [x] **Phase 20: Reconciliation, UX, Action Row, Section Protection** — External-edit reconciliation + conflict modal, action row inside widget, language switching via metadataCache, narrowed `sectionProtectionExtension`, vim live-reconfigure (completed 2026-05-30)
-- [ ] **Phase 21: v1.2 Migration** — Lazy-on-open atomic migration of v1.2 fence tags → `leetcode-solve`, backup sidecar with 30-day retention, idempotent detection, CI fixtures across v1.0/v1.1/v1.2 sample notes
+- [x] **Phase 21: v1.2 Migration** — Lazy-on-open atomic migration of v1.2 fence tags → `leetcode-solve`, backup sidecar with 30-day retention, idempotent detection, CI fixtures across v1.0/v1.1/v1.2 sample notes (completed 2026-06-01)
 - [ ] **Phase 22: v1.2 Path Removal + Polish** — Hard cutover; delete 5 legacy files (~2,400 LOC net), drop `'leetcode.*'` userEvent convention, theme regression gate, BRAT alpha, plugin-store re-review
 
 </details>
@@ -198,7 +198,7 @@ Plans:
 - Research flag: LOW for mechanics; MEDIUM for hand-edited note edge cases (e.g., user-modified fence with extra blank lines, malformed frontmatter, missing `## Code` heading).
 - Pitfalls covered: P7, P13.
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 **Wave 1**
@@ -215,7 +215,7 @@ Plans:
 
 **Wave 4** *(blocked on Waves 1+2)*
 
-- [ ] 21-04-PLAN.md — migrationBackupGc 30-day TTL microtask + 10 CI fixture pairs (v1.0/v1.1/v1.2) + fixture runner with byte-exact assertion (Polish + Release Gate; MIGRATE-05, MIGRATE-10)
+- [x] 21-04-PLAN.md — migrationBackupGc 30-day TTL microtask + 10 CI fixture pairs (v1.0/v1.1/v1.2) + fixture runner with byte-exact assertion (Polish + Release Gate; MIGRATE-05, MIGRATE-10)
 
 ---
 
@@ -286,7 +286,7 @@ Plans:
 | 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 4/4            | Complete    | 2026-05-26 |
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
 | 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 9/9 | Complete   | 2026-05-31 |
-| 21. v1.2 Migration                          | v1.3      | 3/4 | In Progress|  |
+| 21. v1.2 Migration                          | v1.3      | 4/4 | Complete   | 2026-06-01 |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
 
 ## Backlog
