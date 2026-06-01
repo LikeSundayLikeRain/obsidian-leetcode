@@ -31,6 +31,7 @@ interface MockState {
   vaultProcessSpy: ReturnType<typeof vi.fn>;
   adapterWriteSpy: ReturnType<typeof vi.fn>;
   adapterMkdirSpy: ReturnType<typeof vi.fn>;
+  adapterListSpy: ReturnType<typeof vi.fn>;
   processFrontMatterSpy: ReturnType<typeof vi.fn>;
   vaultReadSpy: ReturnType<typeof vi.fn>;
 }
@@ -44,6 +45,7 @@ function makeApp(state: MockState): { app: any; file: any } {
       adapter: {
         write: state.adapterWriteSpy,
         mkdir: state.adapterMkdirSpy,
+        list: state.adapterListSpy,
       },
     },
     metadataCache: {
@@ -60,6 +62,7 @@ function makeState(opts: {
   fileText: string;
   frontmatter?: Record<string, unknown>;
   adapterWriteImpl?: () => Promise<void>;
+  adapterListImpl?: () => Promise<{ files: string[]; folders: string[] }>;
   vaultProcessImpl?: (file: unknown, fn: (text: string) => string) => Promise<void>;
   processFrontMatterImpl?: (file: unknown, fn: (fm: Record<string, unknown>) => void) => Promise<void>;
 }): MockState {
@@ -78,6 +81,10 @@ function makeState(opts: {
     ),
     adapterWriteSpy: vi.fn(opts.adapterWriteImpl ?? (async () => {})),
     adapterMkdirSpy: vi.fn(async () => {}),
+    // Default: empty plugin folder (no prior backups). Tests override per case.
+    adapterListSpy: vi.fn(
+      opts.adapterListImpl ?? (async () => ({ files: [], folders: [] })),
+    ),
     processFrontMatterSpy: vi.fn(
       opts.processFrontMatterImpl ??
         (async (_f: unknown, fn: (fm: Record<string, unknown>) => void) => {
@@ -465,5 +472,174 @@ describe('migrateLegacyFenceIfNeeded', () => {
     expect(r).toBe(false);
     expect(state.adapterWriteSpy).not.toHaveBeenCalled();
     expect(state.vaultProcessSpy).not.toHaveBeenCalled();
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Plan 21-06 CR-02 — pre-existence backup check protects D-backup-02
+  // invariant ("one backup per note ever") on the partial-failure retry
+  // path. Before writeBackup runs, the orchestrator lists
+  // .obsidian/plugins/obsidian-leetcode/ and skips the backup write if a
+  // `migration-backup-{slug}-*` folder already exists for THIS slug.
+  // ───────────────────────────────────────────────────────────────────────
+
+  it('CR-02-fix Test A — partial-failure retry produces ONE backup folder, not two', async () => {
+    const slug = 'two-sum';
+    let processCallCount = 0;
+    let priorBackupFolder: string | null = null;
+    let currentText = v12Note;
+
+    const adapterWriteSpy = vi.fn(async (path: string, _content: string) => {
+      // Capture the prior-backup folder path written on the first call so
+      // adapter.list can surface it on the second call.
+      if (priorBackupFolder === null) {
+        // path looks like '.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-{ISO}/two-sum.md'
+        const dir = path.replace(/\/[^/]+$/, '');
+        priorBackupFolder = dir;
+      }
+    });
+
+    const vaultProcessSpy = vi.fn(
+      async (_f: unknown, fn: (text: string) => string) => {
+        processCallCount++;
+        if (processCallCount === 1) {
+          // First call: simulate vault.process throwing AFTER writeBackup
+          // succeeded (the partial-failure shape). The orchestrator's outer
+          // try/catch swallows this and returns false.
+          throw new Error('vault locked — simulated partial failure');
+        }
+        // Second call: rewrite proceeds normally.
+        currentText = fn(currentText);
+      },
+    );
+
+    // adapter.list returns the prior backup folder iff one was captured.
+    const adapterListSpy = vi.fn(async () => {
+      if (priorBackupFolder === null) {
+        return { files: [], folders: [] };
+      }
+      return { files: [], folders: [priorBackupFolder] };
+    });
+
+    const file = { path: 'LeetCode/two-sum.md', name: 'two-sum.md', extension: 'md' };
+    const frontmatter = { 'lc-slug': slug, 'lc-language': 'python3' };
+    const app = {
+      vault: {
+        read: vi.fn(async () => currentText),
+        process: vaultProcessSpy,
+        adapter: {
+          write: adapterWriteSpy,
+          mkdir: vi.fn(async () => {}),
+          list: adapterListSpy,
+        },
+      },
+      metadataCache: {
+        getFileCache: (_f: unknown) => ({ frontmatter }),
+      },
+      fileManager: { processFrontMatter: vi.fn(async () => {}) },
+    };
+
+    // First invocation: vault.process throws; orchestrator returns false.
+    const r1 = await migrateLegacyFenceIfNeeded(app as never, file as never, {
+      autoMigrateOnOpen: true,
+    });
+    expect(r1).toBe(false);
+    expect(adapterWriteSpy).toHaveBeenCalledTimes(1);
+    expect(priorBackupFolder).not.toBeNull();
+
+    // Second invocation: vault.process succeeds. Orchestrator's pre-existence
+    // check finds the prior backup → writeBackup is SKIPPED.
+    const r2 = await migrateLegacyFenceIfNeeded(app as never, file as never, {
+      autoMigrateOnOpen: true,
+    });
+    expect(r2).toBe(true);
+
+    // D-backup-02 invariant: exactly ONE backup write across both calls.
+    expect(adapterWriteSpy.mock.calls.length === 1).toBe(true);
+    expect(adapterWriteSpy).toHaveBeenCalledTimes(1);
+
+    // vault.process was called twice (once threw, once succeeded).
+    expect(vaultProcessSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('CR-02-fix Test B — happy path (no prior backup) writes a single backup', async () => {
+    const state = makeState({
+      fileText: v12Note,
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
+      adapterListImpl: async () => ({ files: [], folders: [] }),
+    });
+    const { app, file } = makeApp(state);
+    const r = await migrateLegacyFenceIfNeeded(app, file, { autoMigrateOnOpen: true });
+    expect(r).toBe(true);
+    expect(state.adapterWriteSpy).toHaveBeenCalledTimes(1);
+    expect(state.vaultProcessSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('CR-02-fix Test C — first-install (adapter.list rejects) — migration proceeds; backup written', async () => {
+    const state = makeState({
+      fileText: v12Note,
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
+      adapterListImpl: async () => {
+        throw new Error('ENOENT — plugin folder does not yet exist');
+      },
+    });
+    const { app, file } = makeApp(state);
+    const r = await migrateLegacyFenceIfNeeded(app, file, { autoMigrateOnOpen: true });
+    expect(r).toBe(true);
+    // Pre-existence check rejected → defensive false → backup IS written.
+    expect(state.adapterWriteSpy).toHaveBeenCalledTimes(1);
+    expect(state.vaultProcessSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('CR-02-fix Test D — different slug, same plugin folder — backup IS written', async () => {
+    // Plugin folder contains a backup folder for OTHER-SLUG; current
+    // migration is for `two-sum`. Per-slug filter must distinguish.
+    const state = makeState({
+      fileText: v12Note,
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
+      adapterListImpl: async () => ({
+        files: [],
+        folders: [
+          '.obsidian/plugins/obsidian-leetcode/migration-backup-other-slug-2026-01-01T00-00-00Z',
+        ],
+      }),
+    });
+    const { app, file } = makeApp(state);
+    const r = await migrateLegacyFenceIfNeeded(app, file, { autoMigrateOnOpen: true });
+    expect(r).toBe(true);
+    expect(state.adapterWriteSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('CR-02-fix Test E — second-open of an already-migrated note short-circuits BEFORE pre-existence check', async () => {
+    const state = makeState({
+      fileText: v12Note,
+      frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
+    });
+    const { app, file } = makeApp(state);
+
+    // First call: full migration runs; one backup write; one vault.process.
+    const r1 = await migrateLegacyFenceIfNeeded(app, file, { autoMigrateOnOpen: true });
+    expect(r1).toBe(true);
+    expect(state.adapterWriteSpy).toHaveBeenCalledTimes(1);
+
+    // Now mock adapter.list to return the prior backup (in case it gets called).
+    state.adapterListSpy.mockResolvedValue({
+      files: [],
+      folders: [
+        '.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-2026-06-01T14-32-08Z',
+      ],
+    });
+
+    const listCallsBefore = state.adapterListSpy.mock.calls.length;
+
+    // Second call: idempotency check (predicate clause 5) returns false →
+    // orchestrator skips Step 3 entirely; pre-existence check NEVER fires.
+    const r2 = await migrateLegacyFenceIfNeeded(app, file, { autoMigrateOnOpen: true });
+    expect(r2).toBe(false);
+
+    // Still only one backup write across both calls.
+    expect(state.adapterWriteSpy).toHaveBeenCalledTimes(1);
+    // Pre-existence check was NOT called on the second invocation
+    // (idempotency short-circuited first).
+    expect(state.adapterListSpy.mock.calls.length).toBe(listCallsBefore);
   });
 });
