@@ -17,8 +17,10 @@ vi.mock('obsidian', async () => {
 
 import {
   countLeetCodeSolveFenceOpenersInCodeSection,
+  isFrontmatterRepairCandidate,
   isMigrationCandidate,
   migrateLegacyFenceIfNeeded,
+  repairFrontmatterIfNeeded,
   writeBackup,
 } from '../../src/widget/fenceMigrator';
 
@@ -751,6 +753,245 @@ describe('migrateLegacyFenceIfNeeded', () => {
     expect(captured[0]?.['lc-language']).toBe('java');
   });
 
+  it.skip('__placeholder__', () => {});
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Phase 21 Plan 21-09 — isFrontmatterRepairCandidate predicate (truth-table)
+// + repairFrontmatterIfNeeded orchestrator coverage.
+//
+// Closes UAT Gap 2 (Test 2): asymmetric "v1.3 body + missing lc-language"
+// shape. The note already has ` ```leetcode-solve ` as the fence opener
+// (so isMigrationCandidate clause 5 short-circuits) but `lc-language` is
+// missing from frontmatter — `resolveLangSlug` then emits the Python +
+// Notice fallback at widget mount. The repair path injects
+// `lc-language: <plugin.settings.getDefaultLanguage()>` BEFORE mount.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('isFrontmatterRepairCandidate — Plan 21-09 truth-table', () => {
+  // C1: lc-slug present + C2: ## Code + C3: leetcode-solve opener + C4: closer
+  const v13Note =
+    '## Code\n\n```leetcode-solve\ndef solve(): pass\n```\n';
+  const v13NoteWithNotes =
+    '## Code\n\n```leetcode-solve\ndef solve(): pass\n```\n\n## Notes\n\nuser content\n';
+
+  it('Test 1 — lc-slug + ## Code + leetcode-solve opener + closer + lc-language MISSING → true', () => {
+    expect(
+      isFrontmatterRepairCandidate(v13NoteWithNotes, { 'lc-slug': 'two-sum' }),
+    ).toBe(true);
+  });
+
+  it("Test 2 — lc-slug + ## Code + leetcode-solve opener + closer + lc-language='java' → false (D-edge-04 no clobber)", () => {
+    expect(
+      isFrontmatterRepairCandidate(v13NoteWithNotes, {
+        'lc-slug': 'two-sum',
+        'lc-language': 'java',
+      }),
+    ).toBe(false);
+  });
+
+  it("Test 3 — lc-slug + ## Code + leetcode-solve opener + closer + lc-language='' (empty string) → true", () => {
+    expect(
+      isFrontmatterRepairCandidate(v13NoteWithNotes, {
+        'lc-slug': 'two-sum',
+        'lc-language': '',
+      }),
+    ).toBe(true);
+  });
+
+  it('Test 4 — lc-slug MISSING → false', () => {
+    expect(isFrontmatterRepairCandidate(v13NoteWithNotes, {})).toBe(false);
+    expect(isFrontmatterRepairCandidate(v13NoteWithNotes, undefined)).toBe(
+      false,
+    );
+  });
+
+  it('Test 5 — no ## Code heading → false', () => {
+    const note = '## Notes\n\n```leetcode-solve\nbody\n```\n';
+    expect(isFrontmatterRepairCandidate(note, { 'lc-slug': 'two-sum' })).toBe(
+      false,
+    );
+  });
+
+  it('Test 6 — ## Code present but first fence is ```python (legacy shape) → false (routes through isMigrationCandidate, not repair)', () => {
+    const note = '## Code\n\n```python\nbody\n```\n';
+    expect(isFrontmatterRepairCandidate(note, { 'lc-slug': 'two-sum' })).toBe(
+      false,
+    );
+  });
+
+  it('Test 7 — ## Code + ```leetcode-solve opener but NO closer before next H2 → false', () => {
+    const note = '## Code\n\n```leetcode-solve\nbody\n## Notes\n';
+    expect(isFrontmatterRepairCandidate(note, { 'lc-slug': 'two-sum' })).toBe(
+      false,
+    );
+  });
+
+  it('Test 8 — ## Code present (no fence) + ```leetcode-solve only under ## Notes → false', () => {
+    const note =
+      '## Code\n\nplain prose\n\n## Notes\n\n```leetcode-solve\nstray\n```\n';
+    expect(isFrontmatterRepairCandidate(note, { 'lc-slug': 'two-sum' })).toBe(
+      false,
+    );
+  });
+
+  it('Test 9 — Multiple ## Code regions; second ## Code has the leetcode-solve opener + closer → true', () => {
+    const note =
+      '## Code\n\nplain prose\n\n## Notes\n\nuser\n\n## Code\n\n```leetcode-solve\nbody\n```\n';
+    expect(isFrontmatterRepairCandidate(note, { 'lc-slug': 'two-sum' })).toBe(
+      true,
+    );
+  });
+
+  it('Test 10 — lc-language is a number (123) → true (per spec: not a string OR empty)', () => {
+    expect(
+      isFrontmatterRepairCandidate(v13Note, {
+        'lc-slug': 'two-sum',
+        'lc-language': 123,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('repairFrontmatterIfNeeded — Plan 21-09 orchestrator', () => {
+  const v13Note = '## Code\n\n```leetcode-solve\ndef solve(): pass\n```\n';
+  const legacyNote = '## Code\n\n```python\ncode\n```\n';
+
+  it('Test 11 — gate (neither force nor autoMigrateOnOpen) → false; no I/O', async () => {
+    const state = makeState({
+      fileText: v13Note,
+      frontmatter: { 'lc-slug': 'two-sum' },
+    });
+    const { app, file } = makeApp(state);
+    const r = await repairFrontmatterIfNeeded(app, file, {
+      autoMigrateOnOpen: false,
+      force: false,
+    });
+    expect(r).toBe(false);
+    expect(state.vaultReadSpy).not.toHaveBeenCalled();
+    expect(state.processFrontMatterSpy).not.toHaveBeenCalled();
+  });
+
+  it("Test 12 — candidate + opts.defaultLanguage='java' → callback writes 'java'; resolves true", async () => {
+    let captured: Record<string, unknown> | null = null;
+    const state = makeState({
+      fileText: v13Note,
+      frontmatter: { 'lc-slug': 'two-sum' },
+      processFrontMatterImpl: async (_f, fn) => {
+        const fm: Record<string, unknown> = { 'lc-slug': 'two-sum' };
+        fn(fm);
+        captured = fm;
+      },
+    });
+    const { app, file } = makeApp(state);
+    const r = await repairFrontmatterIfNeeded(app, file, {
+      autoMigrateOnOpen: true,
+      defaultLanguage: 'java',
+    });
+    expect(r).toBe(true);
+    expect(state.processFrontMatterSpy).toHaveBeenCalledTimes(1);
+    expect(captured).toEqual({ 'lc-slug': 'two-sum', 'lc-language': 'java' });
+  });
+
+  it("Test 13 — candidate but inner-gate finds lc-language already 'cpp' → callback NO-OP; resolves true", async () => {
+    let captured: Record<string, unknown> | null = null;
+    const state = makeState({
+      fileText: v13Note,
+      // metadataCache snapshot says missing — predicate accepts.
+      frontmatter: { 'lc-slug': 'two-sum' },
+      processFrontMatterImpl: async (_f, fn) => {
+        // Real frontmatter has lc-language='cpp' — inner gate must preserve.
+        const fm: Record<string, unknown> = {
+          'lc-slug': 'two-sum',
+          'lc-language': 'cpp',
+        };
+        fn(fm);
+        captured = fm;
+      },
+    });
+    const { app, file } = makeApp(state);
+    const r = await repairFrontmatterIfNeeded(app, file, {
+      autoMigrateOnOpen: true,
+      defaultLanguage: 'java',
+    });
+    expect(r).toBe(true);
+    expect(state.processFrontMatterSpy).toHaveBeenCalledTimes(1);
+    // Inner gate (SSoT) preserved 'cpp' — NO clobber.
+    expect(captured?.['lc-language']).toBe('cpp');
+  });
+
+  it('Test 14 — vault.read rejects → resolves false; no processFrontMatter; debug log called (Pattern S-05)', async () => {
+    const state = makeState({
+      fileText: v13Note,
+      frontmatter: { 'lc-slug': 'two-sum' },
+    });
+    state.vaultReadSpy = vi.fn(async () => {
+      throw new Error('disk read failed');
+    });
+    const { app, file } = makeApp(state);
+    const r = await repairFrontmatterIfNeeded(app, file, {
+      autoMigrateOnOpen: true,
+    });
+    expect(r).toBe(false);
+    expect(state.processFrontMatterSpy).not.toHaveBeenCalled();
+  });
+
+  it('Test 15 — not a candidate (legacy fence shape) → resolves false; processFrontMatter never invoked', async () => {
+    const state = makeState({
+      fileText: legacyNote,
+      frontmatter: { 'lc-slug': 'two-sum' },
+    });
+    const { app, file } = makeApp(state);
+    const r = await repairFrontmatterIfNeeded(app, file, {
+      autoMigrateOnOpen: true,
+    });
+    expect(r).toBe(false);
+    expect(state.processFrontMatterSpy).not.toHaveBeenCalled();
+  });
+
+  it("Test 16 — opts.defaultLanguage undefined → falls back to 'python3' (matches migrator)", async () => {
+    let captured: Record<string, unknown> | null = null;
+    const state = makeState({
+      fileText: v13Note,
+      frontmatter: { 'lc-slug': 'two-sum' },
+      processFrontMatterImpl: async (_f, fn) => {
+        const fm: Record<string, unknown> = { 'lc-slug': 'two-sum' };
+        fn(fm);
+        captured = fm;
+      },
+    });
+    const { app, file } = makeApp(state);
+    const r = await repairFrontmatterIfNeeded(app, file, {
+      autoMigrateOnOpen: true,
+    });
+    expect(r).toBe(true);
+    expect(captured?.['lc-language']).toBe('python3');
+  });
+
+  it('Test 17 — force=true bypasses autoMigrateOnOpen=false (D-auto-03 parity); candidate + force → runs repair', async () => {
+    let captured: Record<string, unknown> | null = null;
+    const state = makeState({
+      fileText: v13Note,
+      frontmatter: { 'lc-slug': 'two-sum' },
+      processFrontMatterImpl: async (_f, fn) => {
+        const fm: Record<string, unknown> = { 'lc-slug': 'two-sum' };
+        fn(fm);
+        captured = fm;
+      },
+    });
+    const { app, file } = makeApp(state);
+    const r = await repairFrontmatterIfNeeded(app, file, {
+      autoMigrateOnOpen: false,
+      force: true,
+      defaultLanguage: 'java',
+    });
+    expect(r).toBe(true);
+    expect(captured?.['lc-language']).toBe('java');
+  });
+});
+
+describe('migrateLegacyFenceIfNeeded — Plan 21-09 dummy block (kept for symmetry)', () => {
+  const v12Note = '## Code\n\n```python\ndef f():\n    return 1\n```\n';
   it('CR-02-fix Test E — second-open of an already-migrated note short-circuits BEFORE pre-existence check', async () => {
     const state = makeState({
       fileText: v12Note,
