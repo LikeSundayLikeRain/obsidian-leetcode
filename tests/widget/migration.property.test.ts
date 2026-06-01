@@ -21,6 +21,7 @@ vi.mock('obsidian', async () => {
   return actual;
 });
 
+import type { App, TFile } from 'obsidian';
 import { migrateLegacyFenceIfNeeded } from '../../src/widget/fenceMigrator';
 import { extractFenceBody } from '../../src/widget/fenceSerialization';
 
@@ -91,8 +92,8 @@ function makeMockApp(initialText: string, initialFm: Record<string, unknown>) {
       },
     ),
   };
-  const file = { path: 'LeetCode/test.md', name: 'test.md', extension: 'md' };
-  const app = {
+  const file = ({ path: 'LeetCode/test.md', name: 'test.md', extension: 'md' } as unknown) as TFile;
+  const app = ({
     vault: {
       read: state.vaultReadSpy,
       process: state.vaultProcessSpy,
@@ -107,7 +108,7 @@ function makeMockApp(initialText: string, initialFm: Record<string, unknown>) {
     fileManager: {
       processFrontMatter: state.processFrontMatterSpy,
     },
-  };
+  } as unknown) as App;
   return { app, file, state };
 }
 
