@@ -44,11 +44,13 @@ import {
   history,
   defaultKeymap,
   historyKeymap,
-  indentWithTab,
+  indentMore,
+  indentLess,
+  insertTab,
 } from '@codemirror/commands';
 import { closeBracketsKeymap } from '@codemirror/autocomplete';
 // eslint-disable-next-line import/no-extraneous-dependencies -- direct dep
-import { vim } from '@replit/codemirror-vim';
+import { vim, getCM } from '@replit/codemirror-vim';
 import {
   MarkdownRenderChild,
   Notice,
@@ -867,13 +869,42 @@ function buildExtensions(
     vimCompartment.of(
       vimEnabled ? vim({ status: true } as Parameters<typeof vim>[0]) : [],
     ),
-    // Plan 20-10 hotfix part 6 — `indentWithTab` MUST be registered FIRST
-    // (highest priority) so Tab inside the widget inserts indentation
-    // instead of falling through to Obsidian's default focus traversal.
-    // Matches the v1.2 nested-editor convention recorded in CLAUDE.md
-    // (`indentWithTab placed first in keymap for priority; 4-space default
-    // indent`). Without it, Tab moves focus out of the widget.
-    keymap.of([indentWithTab]),
+    // Plan 20-10 hotfix part 7 — Tab/Shift-Tab handler. Behavior:
+    //   - When vim is active and NOT in Insert mode (Normal/Visual/etc.),
+    //     return false so the keystroke falls through to vim's own
+    //     bindings — preserves native vim Tab semantics.
+    //   - When there is a non-empty selection, indent (Tab) or outdent
+    //     (Shift-Tab) every line touched by the selection.
+    //   - When the selection is empty, insert a Tab (4 spaces, since
+    //     `indentUnit.of('    ')` is configured below) at the cursor —
+    //     does NOT shift the rest of the line, so Tab in the middle of a
+    //     line behaves like a normal text editor.
+    // Registered FIRST so it wins over Obsidian's default Tab traversal.
+    keymap.of([
+      {
+        key: 'Tab',
+        run: (view) => {
+          const cm5 = getCM(view);
+          if (cm5 && !cm5.state.vim?.insertMode) return false;
+          const sel = view.state.selection.main;
+          // Cast around a tsc-only nominal-type quirk: @codemirror/commands
+          // ships its own pinned @codemirror/state in node_modules, so its
+          // EditorView and ours have separate declarations of a private
+          // SelectionRange.flags field. Runtime types are identical.
+          const target = view as unknown as Parameters<typeof insertTab>[0];
+          if (!sel.empty) return indentMore(target);
+          return insertTab(target);
+        },
+      },
+      {
+        key: 'Shift-Tab',
+        run: (view) => {
+          const cm5 = getCM(view);
+          if (cm5 && !cm5.state.vim?.insertMode) return false;
+          return indentLess(view as unknown as Parameters<typeof indentLess>[0]);
+        },
+      },
+    ]),
     // closeBracketsKeymap before defaultKeymap (Pitfall D from Phase 16).
     keymap.of(closeBracketsKeymap),
     bracketMatching(),
