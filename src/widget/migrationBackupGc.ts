@@ -79,6 +79,36 @@ export const BACKUP_FOLDER_RE =
 const TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
+ * Plan 21-06 WR-05 — module-level concurrency lock.
+ *
+ * Second concurrent call to `runMigrationBackupGc` returns immediately at
+ * debug level; the lock is reset in `finally` so transient errors don't
+ * permanently disable the GC. The lock is module-scoped (not instance-
+ * scoped) because there is at most one cleanup routine across the plugin
+ * lifetime — a single in-flight sweep is sufficient to satisfy MIGRATE-05's
+ * TTL contract.
+ *
+ * On plugin reload (module re-import), the lock resets to `false` naturally
+ * — no leak.
+ */
+let gcRunning = false;
+
+/**
+ * Test-only helper. Resets the module-level `gcRunning` lock to `false`.
+ * Used by vitest `beforeEach` / `afterEach` to ensure hermeticity between
+ * tests (the lock is module-scoped, so a test that holds it open must not
+ * bleed into the next test).
+ *
+ * NOT for production use. Production code MUST NOT call this — the lock
+ * is reset automatically by the `finally` block in `runMigrationBackupGc`.
+ *
+ * Plan 21-06 WR-05.
+ */
+export function __resetGcRunningForTesting(): void {
+  gcRunning = false;
+}
+
+/**
  * Reverse the `:` → `-` substitution in the captured ISO suffix so
  * `Date.parse(iso)` succeeds. The captured suffix has shape
  *   `YYYY-MM-DDTHH-MM-SSZ`
@@ -116,48 +146,64 @@ function parseSanitizedIso(captured: string): number {
  * + `vi.setSystemTime`).
  */
 export async function runMigrationBackupGc(app: App): Promise<void> {
-  // Step 1 — defensive list. First-install vaults reject here (Pitfall 4).
-  let listing: { files: string[]; folders: string[] };
-  try {
-    listing = await app.vault.adapter.list(BASE_DIR);
-  } catch (err) {
-    logger.debug(
-      'migrationBackupGc: adapter.list failed (likely first-install)',
-      err,
-    );
+  // Plan 21-06 WR-05 — module-level concurrency lock. Entry guard before any
+  // I/O so a re-entry during the `adapter.list` await also short-circuits.
+  if (gcRunning) {
+    logger.debug('migrationBackupGc: skipping concurrent invocation', {});
     return;
   }
+  gcRunning = true;
 
-  const now = Date.now();
+  try {
+    // Step 1 — defensive list. First-install vaults reject here (Pitfall 4).
+    let listing: { files: string[]; folders: string[] };
+    try {
+      listing = await app.vault.adapter.list(BASE_DIR);
+    } catch (err) {
+      logger.debug(
+        'migrationBackupGc: adapter.list failed (likely first-install)',
+        err,
+      );
+      return;
+    }
 
-  // Step 2 — iterate folders.
-  for (const folderFull of listing.folders ?? []) {
-    // Strip the BASE_DIR prefix to get the bare folder name.
-    // adapter.list returns paths relative to the vault root, e.g.
-    //   '.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-...'
-    // We want just 'migration-backup-two-sum-...' for regex matching.
-    const prefix = `${BASE_DIR}/`;
-    const folderName = folderFull.startsWith(prefix)
-      ? folderFull.slice(prefix.length)
-      : folderFull;
+    const now = Date.now();
 
-    const m = BACKUP_FOLDER_RE.exec(folderName);
-    if (!m) continue; // T-21-gc mitigation — strict regex skips non-backups.
+    // Step 2 — iterate folders.
+    for (const folderFull of listing.folders ?? []) {
+      // Strip the BASE_DIR prefix to get the bare folder name.
+      // adapter.list returns paths relative to the vault root, e.g.
+      //   '.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-...'
+      // We want just 'migration-backup-two-sum-...' for regex matching.
+      const prefix = `${BASE_DIR}/`;
+      const folderName = folderFull.startsWith(prefix)
+        ? folderFull.slice(prefix.length)
+        : folderFull;
 
-    // Step 3 — parse ISO timestamp.
-    const captured = m[2] ?? '';
-    const ts = parseSanitizedIso(captured);
-    if (Number.isNaN(ts)) continue;
+      const m = BACKUP_FOLDER_RE.exec(folderName);
+      if (!m) continue; // T-21-gc mitigation — strict regex skips non-backups.
 
-    // Step 4 — TTL check (T-21-pitfall-5 direction).
-    if (now - ts > TTL_MS) {
-      try {
-        await app.vault.adapter.rmdir(folderFull, true);
-      } catch (err) {
-        logger.debug('migrationBackupGc: rmdir failed', err);
-        // Continue iterating — partial cleanup failure must not abort the
-        // remaining sweep.
+      // Step 3 — parse ISO timestamp.
+      const captured = m[2] ?? '';
+      const ts = parseSanitizedIso(captured);
+      if (Number.isNaN(ts)) continue;
+
+      // Step 4 — TTL check (T-21-pitfall-5 direction).
+      if (now - ts > TTL_MS) {
+        try {
+          await app.vault.adapter.rmdir(folderFull, true);
+        } catch (err) {
+          logger.debug('migrationBackupGc: rmdir failed', err);
+          // Continue iterating — partial cleanup failure must not abort
+          // the remaining sweep.
+        }
       }
     }
+  } finally {
+    // Plan 21-06 WR-05 — reset lock so transient errors don't permanently
+    // disable the GC. The inner try/catches around adapter.list +
+    // adapter.rmdir already implement Pattern S-05; this outer try/finally
+    // exists ONLY to reset the lock (no `catch` here).
+    gcRunning = false;
   }
 }

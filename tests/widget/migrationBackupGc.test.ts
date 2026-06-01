@@ -26,7 +26,9 @@ vi.mock('obsidian', async () => {
 import {
   runMigrationBackupGc,
   BACKUP_FOLDER_RE,
+  __resetGcRunningForTesting,
 } from '../../src/widget/migrationBackupGc';
+import { logger } from '../../src/shared/logger';
 
 // ───────────────────────────────────────────────────────────────────────────
 // Mock-vault adapter shim. Per PATTERNS §"Mock-vault adapter shim" lines 583-594.
@@ -76,11 +78,17 @@ describe('runMigrationBackupGc — MIGRATE-05 cleanup contract', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-01T00:00:00.000Z'));
+    // Plan 21-06 WR-05 — reset module-level gcRunning lock between tests for
+    // hermeticity. The lock is module-scoped, so a test that holds it open
+    // (e.g. WR-05-fix Test A simulating a concurrent in-flight call) must
+    // not bleed into the next test.
+    __resetGcRunningForTesting();
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    __resetGcRunningForTesting();
   });
 
   it('Test 1 (MIGRATE-05 happy path) — deletes 62-day-old, keeps 2-day-old', async () => {
@@ -333,5 +341,105 @@ describe('runMigrationBackupGc — MIGRATE-05 cleanup contract', () => {
     await runMigrationBackupGc(app as never);
 
     expect(app.vault.adapter.rmdir).toHaveBeenCalledTimes(0);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Plan 21-06 WR-05 — module-level gcRunning concurrency lock.
+  //   - Entry guard short-circuits second concurrent call at debug level.
+  //   - finally resets the lock so transient errors don't permanently
+  //     disable the GC.
+  //   - Lock is module-scoped (one in-flight sweep per plugin lifetime
+  //     is sufficient).
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('WR-05-fix Test A — concurrent invocation skipped at lock', async () => {
+    const debugSpy = vi.spyOn(logger, 'debug');
+
+    // First call: adapter.list returns a slow promise (never resolves until
+    // we manually resolve it) — the call stays "in flight" while we issue
+    // the second.
+    let slowResolve: ((value: { files: string[]; folders: string[] }) => void) | undefined;
+    const slowPromise = new Promise<{ files: string[]; folders: string[] }>(
+      (resolve) => {
+        slowResolve = resolve;
+      },
+    );
+    const app1 = makeApp({
+      listImpl: () => slowPromise,
+    });
+
+    // Kick off the first call (don't await — let it stall on the slow list).
+    const inFlight = runMigrationBackupGc(app1 as never);
+
+    // Now invoke a second call concurrently with a different App.
+    const app2 = makeApp({
+      listImpl: async () => ({ files: [], folders: [] }),
+    });
+    await runMigrationBackupGc(app2 as never);
+
+    // app2's adapter.list MUST NOT have been called — second call short-
+    // circuited at the lock.
+    expect(app2.vault.adapter.list).not.toHaveBeenCalled();
+
+    // Debug log records the skip. Match the message substring.
+    const skippedLog = debugSpy.mock.calls.some((c) =>
+      String(c[0] ?? '').includes('skipping concurrent invocation'),
+    );
+    expect(skippedLog).toBe(true);
+
+    // Cleanup — resolve the slow promise so the in-flight call completes
+    // and releases the lock.
+    slowResolve?.({ files: [], folders: [] });
+    await inFlight;
+  });
+
+  it('WR-05-fix Test B — finally resets the lock on success', async () => {
+    const app = makeApp({
+      listImpl: async () => ({ files: [], folders: [] }),
+    });
+
+    // First call — completes normally.
+    await runMigrationBackupGc(app as never);
+    expect(app.vault.adapter.list).toHaveBeenCalledTimes(1);
+
+    // Second call AFTER first completes — lock was reset in finally;
+    // the body executes again.
+    await runMigrationBackupGc(app as never);
+    expect(app.vault.adapter.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('WR-05-fix Test C — finally resets the lock on failure path (adapter.list throws)', async () => {
+    let throwOnce = true;
+    const app = makeApp({
+      listImpl: async () => {
+        if (throwOnce) {
+          throwOnce = false;
+          throw new Error('ENOENT — first install');
+        }
+        return { files: [], folders: [] };
+      },
+    });
+
+    // First call — list throws; orchestrator silently returns; finally must
+    // reset the lock.
+    await expect(runMigrationBackupGc(app as never)).resolves.toBeUndefined();
+    expect(app.vault.adapter.list).toHaveBeenCalledTimes(1);
+
+    // Second call AFTER failure — lock should NOT be stuck. Body executes;
+    // adapter.list called a second time.
+    await runMigrationBackupGc(app as never);
+    expect(app.vault.adapter.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('WR-05-fix Test D — sequential happy paths each fully execute (lock toggled per-call)', async () => {
+    const app = makeApp({
+      listImpl: async () => ({ files: [], folders: [] }),
+    });
+
+    await runMigrationBackupGc(app as never);
+    await runMigrationBackupGc(app as never);
+    await runMigrationBackupGc(app as never);
+
+    expect(app.vault.adapter.list).toHaveBeenCalledTimes(3);
   });
 });
