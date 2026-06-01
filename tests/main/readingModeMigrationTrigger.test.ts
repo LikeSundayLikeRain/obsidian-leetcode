@@ -33,7 +33,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { App, TFile } from 'obsidian';
-import { makeReadingModeMigrationHandler } from '../../src/main/readingModeMigrationHook';
+import { MarkdownView } from 'obsidian';
+import {
+  makeReadingModeMigrationHandler,
+  rerenderReadingModePanes,
+} from '../../src/main/readingModeMigrationHook';
 
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
@@ -577,6 +581,107 @@ describe('Phase 21 Plan 21-05 — Reading-mode workspace.on(file-open) trigger',
 
       expect(rerenderPreviewLeaves).not.toHaveBeenCalled();
       expect(migrate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rerenderReadingModePanes (Plan 21-08 Task 2)', () => {
+    // Construct a leaf-shaped object whose `view` is an instance of the
+    // mocked MarkdownView class so the production helper's `instanceof`
+    // gate passes. Each leaf carries a `previewMode.rerender` mock + a
+    // `getMode()` callback + a `file` ref so the (path,mode) filter can
+    // be exercised independently.
+    function makeLeaf(args: {
+      mode: 'preview' | 'source';
+      filePath: string | null;
+      previewModeProvided?: boolean;
+      rerenderThrows?: boolean;
+    }): { view: unknown; rerender: ReturnType<typeof vi.fn> } {
+      // Use the mocked MarkdownView class imported at the top of the
+      // file. vi.mock('obsidian') replaces the module with the
+      // helpers/obsidian-stub export, so `instanceof MarkdownView` will
+      // pass for instances we construct here. The stub class has a
+      // 0-arg constructor; cast to bypass the real Obsidian
+      // MarkdownView(leaf) signature in obsidian.d.ts.
+      const Ctor = MarkdownView as unknown as { new (): unknown };
+      const view = new Ctor() as Record<string, unknown>;
+      const rerender = vi.fn(() => {
+        if (args.rerenderThrows) throw new Error('rerender threw');
+      });
+      view.file =
+        args.filePath !== null
+          ? ({ path: args.filePath } as unknown)
+          : null;
+      view.getMode = () => args.mode;
+      if (args.previewModeProvided !== false) {
+        view.previewMode = { rerender } as unknown;
+      }
+      return { view, rerender };
+    }
+
+    function makeAppWithLeaves(
+      leaves: Array<{ view: unknown }>,
+    ): App {
+      return {
+        workspace: {
+          getLeavesOfType: vi.fn((type: string) => {
+            if (type !== 'markdown') return [];
+            return leaves;
+          }),
+        },
+      } as unknown as App;
+    }
+
+    it('Test T2.1 [happy path] walks leaves, rerenders only matching preview leaves with true', () => {
+      const target = 'LeetCode/two-sum.md';
+      const leafA = makeLeaf({ mode: 'preview', filePath: target });
+      const leafB = makeLeaf({ mode: 'source', filePath: target });
+      const leafC = makeLeaf({ mode: 'preview', filePath: 'LeetCode/other.md' });
+      const app = makeAppWithLeaves([
+        { view: leafA.view },
+        { view: leafB.view },
+        { view: leafC.view },
+      ]);
+
+      rerenderReadingModePanes(app, target);
+
+      expect(leafA.rerender).toHaveBeenCalledTimes(1);
+      expect(leafA.rerender).toHaveBeenCalledWith(true);
+      expect(leafB.rerender).not.toHaveBeenCalled();
+      expect(leafC.rerender).not.toHaveBeenCalled();
+    });
+
+    it('Test T2.2 [defensive] undefined previewMode + throwing rerender swallowed; remaining match still rerenders', () => {
+      const target = 'LeetCode/two-sum.md';
+      // Leaf D: matching path + preview mode, but previewMode is undefined.
+      const leafD = makeLeaf({
+        mode: 'preview',
+        filePath: target,
+        previewModeProvided: false,
+      });
+      // Leaf E: matching path + preview mode, but rerender throws.
+      const leafE = makeLeaf({
+        mode: 'preview',
+        filePath: target,
+        rerenderThrows: true,
+      });
+      // Leaf F: matching path + preview mode + healthy previewMode.
+      const leafF = makeLeaf({ mode: 'preview', filePath: target });
+      const app = makeAppWithLeaves([
+        { view: leafD.view },
+        { view: leafE.view },
+        { view: leafF.view },
+      ]);
+
+      expect(() => rerenderReadingModePanes(app, target)).not.toThrow();
+
+      // Leaf D's rerender mock was never wired (previewMode missing) — so
+      // it cannot have been called.
+      expect(leafD.rerender).not.toHaveBeenCalled();
+      // Leaf E threw but exception was swallowed.
+      expect(leafE.rerender).toHaveBeenCalledTimes(1);
+      // Leaf F still gets its rerender call.
+      expect(leafF.rerender).toHaveBeenCalledTimes(1);
+      expect(leafF.rerender).toHaveBeenCalledWith(true);
     });
   });
 
