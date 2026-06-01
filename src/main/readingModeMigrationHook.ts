@@ -74,6 +74,30 @@ export interface ReadingModeMigrationHookDeps {
    * on matching preview-mode leaves. No-op for false / rejection / OFF.
    */
   rerenderPreviewLeaves: (path: string) => void;
+  /**
+   * Phase 21 Plan 21-09 (UAT Gap 2) — DI for `repairFrontmatterIfNeeded`.
+   * Invoked AFTER `migrate(...)` resolves with `migrated === false` (i.e.,
+   * not a v1.2-shape migration candidate). Targets the asymmetric "v1.3
+   * body + missing lc-language" shape: the note already has
+   * ```leetcode-solve as the fence opener but `lc-language` is missing,
+   * so the migrator's idempotency clause 5 short-circuits without
+   * filling frontmatter. The repair path injects
+   * `lc-language: <defaultLanguage>` via processFrontMatter BEFORE the
+   * widget mount path emits the Python+Notice fallback.
+   *
+   * Pattern S-05 silent-on-failure: rejection logs at debug + skips
+   * rerender. Inner gate (D-edge-04) preserves any non-empty existing
+   * lc-language race-set between the outer predicate and the callback.
+   */
+  repair: (
+    app: App,
+    file: TFile,
+    opts: {
+      autoMigrateOnOpen?: boolean;
+      defaultLanguage?: string;
+      force?: boolean;
+    },
+  ) => Promise<boolean>;
 }
 
 /**
@@ -125,17 +149,36 @@ export function makeReadingModeMigrationHandler(
       //      dedupe lock held. Inner try/catch swallows rerender throws so
       //      the .finally has already run regardless.
       let migratedFlag = false;
+      // Plan 21-09 — when migrate resolves false (not a v1.2-shape
+      // candidate), chain a repair attempt for the asymmetric "v1.3
+      // body + missing lc-language" shape. `repairedFlag` is captured
+      // alongside `migratedFlag` so the trailing rerender hop fires
+      // when EITHER write actually changed the file.
+      let repairedFlag = false;
+      const defaultLanguage =
+        deps.settings.getDefaultLanguage?.() ?? 'python3';
       void deps
         .migrate(deps.app, file, {
           autoMigrateOnOpen: true,
-          defaultLanguage:
-            deps.settings.getDefaultLanguage?.() ?? 'python3',
+          defaultLanguage,
         })
-        .then((migrated) => {
+        .then(async (migrated) => {
           migratedFlag = migrated === true;
+          if (migratedFlag) return;
+          // Migrator already injected lc-language (Step 5) on its true
+          // branch; only fall through to repair when the migrator
+          // bailed out (predicate false / orchestrator failure). Any
+          // throw from repair is captured by the outer .catch so the
+          // .finally still clears the in-flight lock.
+          const repaired = await deps.repair(deps.app, file, {
+            autoMigrateOnOpen: true,
+            defaultLanguage,
+          });
+          repairedFlag = repaired === true;
         })
         .catch((err) => {
           migratedFlag = false;
+          repairedFlag = false;
           deps.logDebug(
             'migration.fileOpenHook: non-fatal failure',
             err,
@@ -145,7 +188,7 @@ export function makeReadingModeMigrationHandler(
           deps.migrateInFlight.delete(file.path);
         })
         .then(() => {
-          if (!migratedFlag) return;
+          if (!migratedFlag && !repairedFlag) return;
           try {
             deps.rerenderPreviewLeaves(file.path);
           } catch (err) {

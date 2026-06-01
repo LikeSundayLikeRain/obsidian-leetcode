@@ -65,7 +65,10 @@ import { findCodeFence, extractFenceBody, computeFenceIndex } from './fenceLocat
 import { LeetCodeFenceWidget } from './LeetCodeFenceWidget';
 import { djb2 } from './hash';
 import type { WidgetMountHost } from './WidgetController';
-import { migrateLegacyFenceIfNeeded } from './fenceMigrator';
+import {
+  migrateLegacyFenceIfNeeded,
+  repairFrontmatterIfNeeded,
+} from './fenceMigrator';
 import { mountLegacyFenceBanner } from './legacyFenceBanner';
 
 /**
@@ -79,6 +82,8 @@ export type StateFieldPluginHost = Plugin & WidgetMountHost & {
     getDefaultLanguage?(): string;
   };
   migrateInFlight: Set<string>;
+  /** Plan 21-09 — sibling dedupe Set for the frontmatter-repair path. */
+  repairInFlight?: Set<string>;
 };
 
 /**
@@ -268,6 +273,47 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
   const fence = findCodeFence(state, { preferLeetCodeSolve: true });
   if (!fence) return Decoration.none;
   if (fence.kind !== 'leetcode-solve') return Decoration.none;
+
+  // Phase 21 Plan 21-09 (UAT Gap 2) — fire-and-forget repair when this
+  // file has the asymmetric "v1.3 body + missing lc-language" shape.
+  // The repair path injects `lc-language: <defaultLanguage>` via
+  // processFrontMatter so the widget mount path's resolveLanguageSlug
+  // picks up the user's setting (Java/etc.) instead of falling back to
+  // Python+Notice. Deduped via plugin.repairInFlight to avoid retriggering
+  // processFrontMatter on every docChange-driven StateField rebuild.
+  // Side-effect inside StateField.create / update is acceptable here for
+  // the same reason the legacy banner branch fires migrate (idempotent,
+  // gated, pure return value independent of side-effect result).
+  // fm is guaranteed defined when slug check passed, but TS can't infer
+  // that across the narrowing — read defensively.
+  const lcLang = fm?.['lc-language'];
+  const needsRepair =
+    typeof lcLang !== 'string' || lcLang.length === 0;
+  if (
+    needsRepair &&
+    isInlineWidgetEnabled(plugin) &&
+    isAutoMigrateEnabled(plugin)
+  ) {
+    const repairInFlight = plugin.repairInFlight;
+    if (repairInFlight && !repairInFlight.has(file.path)) {
+      repairInFlight.add(file.path);
+      void repairFrontmatterIfNeeded(
+        plugin.app as Parameters<typeof repairFrontmatterIfNeeded>[0],
+        file,
+        {
+          autoMigrateOnOpen: true,
+          defaultLanguage:
+            plugin.settings.getDefaultLanguage?.() ?? 'python3',
+        },
+      )
+        .catch(() => {
+          // Pattern S-05 silent-on-failure.
+        })
+        .finally(() => {
+          repairInFlight.delete(file.path);
+        });
+    }
+  }
 
   const from = state.doc.line(fence.openerLine).from;
   const to = state.doc.line(fence.closerLine).to;

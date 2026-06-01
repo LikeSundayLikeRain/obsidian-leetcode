@@ -48,6 +48,7 @@ import { LeetCodeWidgetRenderChild, type WidgetMountHost } from './WidgetControl
 import {
   isMigrationCandidate,
   migrateLegacyFenceIfNeeded,
+  repairFrontmatterIfNeeded,
 } from './fenceMigrator';
 import { mountLegacyFenceBanner } from './legacyFenceBanner';
 
@@ -158,13 +159,14 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
       settings?.getAutoMigrateOnOpen?.() === true
     ) {
       try {
+        const defaultLanguage =
+          settings?.getDefaultLanguage?.() ?? 'python3';
         const migrated = await migrateLegacyFenceIfNeeded(
           plugin.app as Parameters<typeof migrateLegacyFenceIfNeeded>[0],
           file,
           {
             autoMigrateOnOpen: true,
-            defaultLanguage:
-              settings?.getDefaultLanguage?.() ?? 'python3',
+            defaultLanguage,
           },
         );
         if (migrated) {
@@ -175,8 +177,31 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
           renderStaticFallback(el, source);
           return;
         }
+        // Plan 21-09 — when the migrator bailed out (idempotency clause
+        // 5 / non-candidate), the note may still be the asymmetric
+        // "v1.3 body + missing lc-language" shape that needs the repair
+        // path. The repair injects `lc-language: <defaultLanguage>` via
+        // processFrontMatter so the widget mount path's
+        // resolveLanguageSlug picks up the user's setting (instead of
+        // falling back to Python+Notice). Same try/catch shape as the
+        // migration block — silent on failure.
+        const repaired = await repairFrontmatterIfNeeded(
+          plugin.app as Parameters<typeof repairFrontmatterIfNeeded>[0],
+          file,
+          {
+            autoMigrateOnOpen: true,
+            defaultLanguage,
+          },
+        );
+        if (repaired) {
+          // metadataCache.changed will refire the post-processor with the
+          // repaired frontmatter — the widget mounts on the next cycle.
+          renderStaticFallback(el, source);
+          return;
+        }
       } catch {
-        // Defensive — migration failures fall through to the existing path.
+        // Defensive — migration / repair failures fall through to the
+        // existing path.
       }
     }
     if (
