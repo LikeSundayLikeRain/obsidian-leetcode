@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Determine if prerelease
+        id: meta
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Patch manifest.json version from tag
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          jq --arg v "$TAG" '.version = $v' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          ASSETS=(main.js manifest.json)
+          if [[ -f styles.css ]]; then
+            ASSETS+=(styles.css)
+          fi
+
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --title "v${{ steps.meta.outputs.tag }}" \
+            --generate-notes \
+            $PRERELEASE_FLAG \
+            "${ASSETS[@]}"

@@ -40,6 +40,15 @@ export interface FakeSettings {
   // Phase 10 Plan 07 — auto AI contest analysis toggle round-trip.
   getAutoAIContestAnalysis(): boolean;
   setAutoAIContestAnalysis(v: boolean): Promise<void>;
+  // Phase 16 INDENT-04 — indent size override.
+  getIndentSizeOverride(): 'auto' | 2 | 4 | 8;
+  setIndentSizeOverride(v: 'auto' | 2 | 4 | 8): Promise<void>;
+  // Phase 18 Plan 03 D-35 — relative line numbers toggle.
+  getShowRelativeLineNumbers(): boolean;
+  setShowRelativeLineNumbers(v: boolean): Promise<void>;
+  // Phase 19 vq4 — nested-editor master toggle (reload-required).
+  getUseNestedEditor(): boolean;
+  setUseNestedEditor(v: boolean): Promise<void>;
 }
 
 /** Optional seed values for `makeFakeSettingsStore`. Any field left undefined
@@ -145,6 +154,28 @@ export function makeFakeSettingsStore(overrides: FakeSettingsOverrides = {}): Fa
       return false;
     },
     async setAutoAIContestAnalysis(_v: boolean) {
+      // no-op in fake
+    },
+    // Phase 16 INDENT-04 — indent size override.
+    getIndentSizeOverride() {
+      return 'auto' as const;
+    },
+    async setIndentSizeOverride(_v: 'auto' | 2 | 4 | 8) {
+      // no-op in fake
+    },
+    // Phase 18 Plan 03 D-35 — relative line numbers toggle.
+    getShowRelativeLineNumbers() {
+      return false;
+    },
+    async setShowRelativeLineNumbers(_v: boolean) {
+      // no-op in fake
+    },
+    // Phase 19 vq4 — nested-editor master toggle. Default true mirrors the
+    // production default and keeps existing tests' behavior byte-identical.
+    getUseNestedEditor() {
+      return true;
+    },
+    async setUseNestedEditor(_v: boolean) {
       // no-op in fake
     },
   };

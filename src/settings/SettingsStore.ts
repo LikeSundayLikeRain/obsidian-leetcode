@@ -57,6 +57,26 @@ export interface PluginData {
   isPremium: boolean | null;
   problemsFolder: string;  // D-10: default 'LeetCode' (stored without trailing slash)
   defaultLanguage: string; // D-10: default 'python3' (LC's Python slug)
+  /** Phase 16 INDENT-04 D-06 — user-visible override for the code-editor
+   *  indent unit. `'auto'` defers to the per-language default
+   *  (`childEditorLanguage.ts:effectiveIndent`); a numeric literal forces that
+   *  many spaces for every language EXCEPT Go, which always uses tab regardless
+   *  (gofmt is non-negotiable — exception is enforced by the consumer, not
+   *  this field). Strict-equality shape-guard at load: anything that isn't
+   *  literally the number 2/4/8 collapses to `'auto'` (string '4', null,
+   *  missing field, typo, etc.) — mirrors the `previewClickBehavior`
+   *  posture (Phase 06 PREVIEW-02). */
+  indentSizeOverride: 'auto' | 2 | 4 | 8;
+  showRelativeLineNumbers: boolean;
+  /** Phase 19 vq4 — master toggle for the nested CM6 child-editor stack.
+   *  Default true (existing-user behavior preserved). When false, onload
+   *  skips registerEditorExtension(buildNestedEditorExtension), skips
+   *  registerVaultModifyRepairTrigger, and skips the file-open repair hook.
+   *  Reload-required apply mode — toggling persists immediately but does
+   *  NOT live-destroy children; user is prompted via Notice to reload.
+   *  Shape-guard at load collapses non-boolean raw to true (preserves
+   *  current behavior for every existing user). */
+  useNestedEditor: boolean;
   problemIndex: ProblemIndex | null;
   /** Compound filter rules from the filter modal. Null = no filter active.
    *  Persisted so filter survives plugin reload / Obsidian restart. */
@@ -213,7 +233,7 @@ const DEFAULT_PROVIDER_CONFIGS: Record<AIProvider, ProviderConfig | BedrockProvi
     model: '',
     disclosureAcknowledged: false,
     region: 'us-east-1',
-    modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    modelId: 'us.anthropic.claude-sonnet-4-6',
     authMethod: 'default-chain',
     accessKeyId: '',
     secretAccessKey: '',
@@ -230,6 +250,14 @@ const DEFAULT_DATA: PluginData = {
   isPremium: null,
   problemsFolder: 'LeetCode',
   defaultLanguage: 'python3',
+  // Phase 16 INDENT-04 D-06 — 'auto' = per-language default applies. Go
+  // always uses '\t' regardless of override (gofmt non-negotiable);
+  // exception is enforced by the consumer (childEditorLanguage.ts).
+  indentSizeOverride: 'auto',
+  showRelativeLineNumbers: false,
+  // Phase 19 vq4 — default true preserves Phase 13–18 nested-editor behavior
+  // for every existing user. Toggle is reload-required.
+  useNestedEditor: true,
   problemIndex: null,
   filter: null,
   problemDetails: {},
@@ -627,6 +655,26 @@ export class SettingsStore {
       defaultLanguage: (typeof raw.defaultLanguage === 'string' && raw.defaultLanguage.trim())
         ? raw.defaultLanguage
         : DEFAULT_DATA.defaultLanguage,
+      // Phase 16 INDENT-04 D-06 — strict-equality shape-guard. Only literal
+      // numbers 2/4/8 pass; everything else (missing field, wrong type,
+      // string '4', invalid number 3, null, the literal string 'auto')
+      // collapses to 'auto'. Mirrors the previewClickBehavior strict-true
+      // posture (RESEARCH §7) — corrupt data.json never silently flips the
+      // user away from the language default.
+      indentSizeOverride: (raw.indentSizeOverride === 2 ||
+                           raw.indentSizeOverride === 4 ||
+                           raw.indentSizeOverride === 8)
+        ? raw.indentSizeOverride
+        : 'auto',
+      showRelativeLineNumbers: typeof raw.showRelativeLineNumbers === 'boolean'
+        ? raw.showRelativeLineNumbers
+        : false,
+      // Phase 19 vq4 — non-boolean raw / missing field / corrupt data.json all
+      // collapse to DEFAULT_DATA.useNestedEditor (= true), which preserves
+      // Phase 13–18 nested-editor behavior for every existing user.
+      useNestedEditor: typeof raw.useNestedEditor === 'boolean'
+        ? raw.useNestedEditor
+        : DEFAULT_DATA.useNestedEditor,
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
       filter: isValidCompoundFilter(raw.filter)
         ? sanitizeCompoundFilter(raw.filter)
@@ -757,6 +805,44 @@ export class SettingsStore {
   getDefaultLanguage(): string { return this.data.defaultLanguage; }
   async setDefaultLanguage(v: string): Promise<void> {
     this.data.defaultLanguage = v;
+    await this.persist();
+  }
+
+  /** Phase 16 INDENT-04 D-06 — read the user's code-editor indent override.
+   *  `'auto'` defers to the per-language default (4 for Python/Java/C/C++/Rust,
+   *  2 for JS/TS, tab for Go); a numeric literal forces that many spaces.
+   *  NOTE: Go always uses tab regardless of this override (gofmt is
+   *  non-negotiable). The exception is enforced by the consumer
+   *  (`childEditorLanguage.ts:effectiveIndent`), not this field. */
+  getIndentSizeOverride(): 'auto' | 2 | 4 | 8 {
+    return this.data.indentSizeOverride;
+  }
+
+  /** Phase 16 INDENT-04 D-06 — persist the indent override. UI bound to the
+   *  Settings tab "Code editor → Indent size" dropdown. */
+  async setIndentSizeOverride(v: 'auto' | 2 | 4 | 8): Promise<void> {
+    this.data.indentSizeOverride = v;
+    await this.persist();
+  }
+
+  getShowRelativeLineNumbers(): boolean {
+    return this.data.showRelativeLineNumbers;
+  }
+
+  async setShowRelativeLineNumbers(v: boolean): Promise<void> {
+    this.data.showRelativeLineNumbers = v;
+    await this.persist();
+  }
+
+  /** Phase 19 vq4 — read the nested-editor master toggle. Read once at
+   *  onload time in main.ts; toggling at runtime does NOT live-apply. */
+  getUseNestedEditor(): boolean { return this.data.useNestedEditor; }
+
+  /** Phase 19 vq4 — persist the nested-editor master toggle. Reload-required:
+   *  the SettingsTab onChange handler shows a `Reload Obsidian to apply`
+   *  Notice; this setter only persists. */
+  async setUseNestedEditor(v: boolean): Promise<void> {
+    this.data.useNestedEditor = v;
     await this.persist();
   }
 

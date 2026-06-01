@@ -42,3 +42,87 @@
 
 - `.planning/milestones/v1.0-ROADMAP.md` — full phase + plan list
 - `.planning/milestones/v1.0-REQUIREMENTS.md` — requirements traceability with outcomes
+
+---
+
+## v1.1 Contest, AI Coach, and Preview (Shipped: 2026-05-20)
+
+**Phases completed:** 9 phases, 41 plans
+**Timeline:** 2026-05-15 → 2026-05-20 (5 days)
+**Stats:** 206 files changed, 37,219 insertions, 2,141 deletions. 1,450 tests passing. Bundle: 1.155 MB.
+
+**Delivered:** AI-powered coaching + contest training + non-destructive preview. The v1.0 "solve and capture" plugin becomes a practice + coaching + AI-curated knowledge graph — preview problems without creating notes, run virtual past contests with timer and scoring, get AI debug suggestions on failed submissions, receive AI-generated 3-dimension reviews on Accepted solutions, and have AI maintain a 22-pattern knowledge graph with hub notes, difficulty-progression edges, cross-cluster Related Variants, and look-ahead wikilinks to unsolved problems.
+
+### Key accomplishments
+
+1. **Preview mode** (Phase 06) — Click-to-preview replaces click-to-create as default. Sticky header with difficulty + topic chips, "Start Problem" / "Open Problem" buttons, right-click context menu, tab-reuse semantics. CI bundle-size gate + eslint-plugin-obsidianmd@^0.3.0 lint baseline.
+
+2. **AI Provider Foundation** (Phase 07) — `AIClient` facade with 5 provider adapters (Anthropic, OpenAI, OpenRouter, Ollama, Bedrock), `obsidianFetch(mode)` transport layer, masked key input, one-time data-flow disclosure modal, Test Connection probe matrix, Clear AI Key command, README network disclosure.
+
+3. **AI Debug** (Phase 08 + 08.1 + 08.2) — User-triggered "AI: Debug" button on failed submissions. Token-by-token streaming via native `window.fetch()` primary tier with 2 fallback tiers. AWS Bedrock as full 5th provider with canonical credential chain (`AWS_PROFILE`, `credential_process`, auto-refresh). AIStreamModal with live render, Thinking indicator, Cancel + Copy.
+
+4. **AI ACed Review** (Phase 09) — Opt-in auto-review on Accepted: 3-dimension LLM call (Approach + Efficiency + Code Style) writes to locked `## AI Review` section. Idempotent on re-AC. Manual re-run from command palette. Section-lock enforced.
+
+5. **Contest mode** (Phase 10) — Past contest picker + "Surprise me" random. Virtual timer (90/100 min) with persistent epoch-baseline. 4-problem solve view with Run/Submit. Active contest header (countdown + verdict badges + pause/abort). ContestFinalizer writes summary note with solved/missed, per-problem time, score, technique tags, #revisit auto-tagging.
+
+6. **AI Knowledge Graph** (Phase 11) — 22-pattern classifier (18 NeetCode + 4 additional). Cluster hub notes at `LeetCode/Patterns/{Cluster}.md` with difficulty-progression edges. Lazy-on-AC migration from v1.0 lc-tag wikilinks. Cross-cluster `## Related Variants` (capped at 2). Feature-flagged look-ahead edges to unsolved problems.
+
+7. **Polish + release** (Phase 12) — Pattern chip on verdict modal, wikilink-to-preview navigation, H1 titles in notes, contest bug fixes (scratch files, tab idempotency, finish lifecycle), lazy AIClient construction, manifest v1.1.0, README audit.
+
+### Tech stack additions (over v1.0)
+
+- Vercel AI SDK 6.x (`ai`, `@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, `@ai-sdk/amazon-bedrock`)
+- Native `window.fetch()` for streaming AI (confined to `src/ai/` via prelint + fs-walk gates)
+- In-plugin AWS credential chain (INI parser, `credential_process` spawnSync, cache + auto-refresh)
+- 1,450 tests passing (up from 652 in v1.0)
+
+### Archived artifacts
+
+- `.planning/milestones/v1.1-ROADMAP.md` — full phase + plan list
+- `.planning/milestones/v1.1-REQUIREMENTS.md` — requirements traceability with outcomes
+
+---
+
+## v1.2 Code Editor Experience (Shipped: 2026-05-26)
+
+**Phases completed:** 6 phases, 31 plans
+**Timeline:** 2026-05-21 → 2026-05-26 (6 days)
+**Stats:** 47 files changed, 9,800 insertions. 1,713 tests passing. Bundle: 1.71 MB (raw) / 459 KB (gzip).
+
+**Delivered:** A nested CM6 EditorView replaces the raw fence body with a proper code editor — syntax highlighting, auto-indent, bracket matching, comment toggling, and vim mode for all 8 LeetCode languages. Bidirectional sync keeps the child editor and parent markdown document in lock-step. Fence auto-recovery handles non-CM6 edits (vim, external tools). Optional relative line numbers provide vim-native navigation feedback.
+
+### Key accomplishments
+
+1. **Nested Editor Foundation** (Phase 13) — Child CM6 EditorView mounted via Decoration.widget + CSS-hidden fence lines. Plugin-level EditorView registry for lifecycle management. Python syntax highlighting proof-of-concept.
+
+2. **Bidirectional Sync** (Phase 14) — Child↔parent sync protocol using CM6 split-view pattern with sync annotations to prevent echo loops. Offset derivation via findCodeFence(). Section lock coexistence verified (no input.* userEvent on sync dispatches).
+
+3. **Focus, Undo & Cursor** (Phase 15) — Focus model (child/parent/Obsidian transitions), Tab/Shift-Tab indent via indentWithTab keymap, undo stack isolation with addToHistory:false, auto-grow CSS, Escape to return to parent.
+
+4. **Language Packs & Switching** (Phase 16) — All 8 LC languages with full LanguageSupport (Lezer grammars). Compartment-based language switching via chevron. closeBrackets, bracketMatching, comment toggling all active. Indent size override setting.
+
+5. **Polish & Edge Cases** (Phase 17) — Paste/clipboard (raw code only from any source), IME/CJK input, Source/Live Preview parity, themed HighlightStyle with Obsidian CSS variable tracking, vim mode integration, fence auto-recovery via parent-side updateListener.
+
+6. **Vim, Recovery & Ship Close** (Phase 18) — Scope-based vim keystroke routing (Normal-mode keys stay in child). vault.on('modify') fence repair for non-CM6 edits. Relative line numbers setting. Bundle audit + heap snapshot both PASS.
+
+### Requirements outcome
+
+All 16 v1.2 requirements complete. BRACKET-05 (triple-backtick template literal) deferred to v1.3 — CM6's stock closeBrackets doesn't cover triple-quote sequences.
+
+### Tech stack additions (over v1.1)
+
+- 8 Lezer language grammars (@codemirror/lang-python, lang-java, lang-cpp, lang-javascript, lang-rust, @lezer/highlight)
+- @replit/codemirror-vim 6.3.0 for vim mode
+- CM6 Compartment-based language switching
+- Custom ViewPlugin for vim isolation (Scope-based intercept pattern)
+- 1,713 tests passing (up from 1,450 in v1.1)
+
+### Known gaps at close
+
+- 17-UAT.md status: partial (2 skipped — no Japanese/Korean IME available)
+- Milestone audit not run (alpha shipped, user accepted gaps)
+
+### Archived artifacts
+
+- `.planning/milestones/v1.2-ROADMAP.md` — full phase + plan list
+- `.planning/milestones/v1.2-REQUIREMENTS.md` — requirements traceability with outcomes

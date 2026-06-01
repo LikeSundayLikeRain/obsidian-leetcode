@@ -120,16 +120,35 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // =============================
     //   Manual cookie (fallback) — D-05 first-class, inside Auth section per D-09
     // =============================
-    new Setting(containerEl)
-      .setName('Manual cookie (fallback)')
-       
-      .setDesc("Paste your LeetCode session cookies if the embedded login doesn't work on your system.")
-      .setHeading();
-
     let sessionVal = '';
     let csrfVal = '';
 
     new Setting(containerEl)
+      .setName('Manual cookie (fallback)')
+      .setDesc("Paste your LeetCode session cookies if the embedded login doesn't work on your system.")
+      .setHeading()
+      .addButton((b) => {
+        b.setIcon('save')
+          .setTooltip('Save cookies')
+          .onClick(async () => {
+            const session = sessionVal.trim();
+            const csrf = csrfVal.trim();
+            if (!session || !csrf) {
+              new Notice('Both fields are required.', 3000);
+              return;
+            }
+            const cookies: AuthCookies = {
+              LEETCODE_SESSION: session,
+              csrftoken: csrf,
+            };
+            await this.plugin.auth.loginManual(cookies);
+            this.display();
+          });
+        b.buttonEl.addClass('clickable-icon');
+      });
+
+    const cookieGroup = containerEl.createDiv('lc-settings-group');
+    new Setting(cookieGroup)
       .setName('LEETCODE_SESSION')
       .addText((t) => {
         t.inputEl.type = 'password';
@@ -137,8 +156,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         t.onChange((v) => { sessionVal = v; });
       });
 
-    new Setting(containerEl)
-       
+    new Setting(cookieGroup)
       .setName('csrftoken')
       .addText((t) => {
         t.inputEl.type = 'password';
@@ -146,39 +164,17 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         t.onChange((v) => { csrfVal = v; });
       });
 
-    new Setting(containerEl)
-      .addButton((b) => b
-        .setButtonText('Save cookies')
-        .onClick(async () => {
-          // WR-06: trim BEFORE validating so a whitespace-only paste (trailing
-          // newline or spaces from copy-paste) is rejected instead of being
-          // persisted verbatim and silently failing every subsequent API call
-          // while the user sees a misleading "Logged in." confirmation.
-          const session = sessionVal.trim();
-          const csrf = csrfVal.trim();
-          if (!session || !csrf) {
-            new Notice('Both fields are required.', 3000);
-            return;
-          }
-          const cookies: AuthCookies = {
-            LEETCODE_SESSION: session,
-            csrftoken: csrf,
-          };
-          await this.plugin.auth.loginManual(cookies);
-          this.display();
-        }),
-      );
-
     // =============================
     //   Notes section
     // =============================
     new Setting(containerEl).setName('Notes').setHeading();
 
-    new Setting(containerEl)
+    const notesGroup = containerEl.createDiv('lc-settings-group');
+    new Setting(notesGroup)
       .setName('Problems folder')
       .setDesc('Vault folder where problem notes are created.')
       .addText((t) => t
-         
+
         .setPlaceholder('LeetCode/')
         .setValue(this.plugin.settings.getProblemsFolder())
         .onChange(async (v) => {
@@ -187,7 +183,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         }),
       );
 
-    new Setting(containerEl)
+    new Setting(notesGroup)
       .setName('Default language')
       .setDesc('Starter code language for new problems.')
       .addDropdown((d) => d
@@ -198,18 +194,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         }),
       );
 
-    // =============================
-    //   Preview section (Phase 06 PREVIEW-02)
-    // =============================
-    // Click-behavior toggle for ProblemBrowserView rows. CONTEXT.md decision A:
-    // 'preview' is the single default for fresh installs and v1.1 upgraders;
-    // shift-click always opens the note directly regardless of this setting.
-    // Copy is locked verbatim by 06-UI-SPEC §Copywriting Contract — paraphrasing
-    // is forbidden. Two-option `addOption(value, label)` chain (NOT `addOptions`
-    // with a Record literal) per the locked precedent in 06-UI-SPEC §Layout.
-    new Setting(containerEl).setName('Preview').setHeading();
-
-    new Setting(containerEl)
+    new Setting(notesGroup)
       .setName('Click behavior')
       .setDesc('What happens when you click a problem in the LeetCode browser. Shift-click always opens the note directly.')
       .addDropdown((d) => d
@@ -220,6 +205,72 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           await this.plugin.settings.setPreviewClickBehavior(v as 'preview' | 'open');
         }),
       );
+
+    // =============================
+    //   Code editor section (Phase 16 INDENT-04 D-06)
+    // =============================
+    // User-visible override for the code-editor indent unit. 'auto' defers to
+    // the per-language default (4 for Java/Python/C/C++/Rust, 2 for JS/TS,
+    // tab for Go); a numeric literal forces that many spaces for every
+    // language EXCEPT Go (gofmt non-negotiable; exception lives in the
+    // consumer at childEditorLanguage.ts:effectiveIndent).
+    //
+    // Four-option dropdown using addOption(value, label) chain (NOT
+    // addOptions Record literal) per the locked precedent for explicit-order
+    // dropdowns in this file (Preview section). Dropdown values are strings
+    // in Obsidian's API; coerce back to 'auto' | 2 | 4 | 8 in onChange.
+    new Setting(containerEl).setName('Code editor').setHeading();
+
+    const codeEditorGroup = containerEl.createDiv('lc-settings-group');
+    new Setting(codeEditorGroup)
+      .setName('Indent size')
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Auto" is the verbatim option key value (a UI cross-reference); Java/Python/C++/JS/TS/Go are programming language names (proper nouns).
+      .setDesc('Number of spaces per indent level in the code editor. "Auto" uses the language default (4 for Java/Python/C++, 2 for JS/TS, tab for Go).')
+      .addDropdown((d) => d
+        .addOption('auto', 'Auto (language default)')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "2 spaces" is sentence-case English; the rule false-positives on number-prefixed phrases (demands '2 Spaces' which is wrong English).
+        .addOption('2', '2 spaces')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- See note above.
+        .addOption('4', '4 spaces')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- See note above.
+        .addOption('8', '8 spaces')
+        .setValue(String(this.plugin.settings.getIndentSizeOverride()))
+        .onChange(async (v) => {
+          const val: 'auto' | 2 | 4 | 8 =
+            v === '2' ? 2 :
+            v === '4' ? 4 :
+            v === '8' ? 8 :
+            'auto';
+          await this.plugin.settings.setIndentSizeOverride(val);
+        }),
+      );
+
+    new Setting(codeEditorGroup)
+      .setName('Show relative line numbers in code editor')
+      .setDesc('When enabled, the code editor gutter shows distance from cursor line. Toggle takes effect on next note open.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getShowRelativeLineNumbers())
+        .onChange(async (v) => {
+          await this.plugin.settings.setShowRelativeLineNumbers(v);
+        }),
+      );
+
+    // Phase 19 vq4 — master toggle for the nested CM6 child-editor stack.
+    // Reload-required apply mode: persists immediately but does NOT live-
+    // destroy children. The Notice prompts the user to reload Obsidian.
+    new Setting(codeEditorGroup)
+      .setName('Use nested code editor')
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- '## Code' is the literal Markdown heading rendered inside locked LC notes (proper noun in this domain); 'Obsidian' is the host application brand.
+      .setDesc('When enabled, the ## Code fence renders as an embedded code editor with syntax highlighting. Disable to use Obsidian\'s native markdown editor instead. Reload Obsidian to apply changes.')
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.getUseNestedEditor())
+        .onChange(async (v) => {
+          await this.plugin.settings.setUseNestedEditor(v);
+          // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'Obsidian' is the host application brand (proper noun).
+          new Notice('Reload Obsidian to apply', 5000);
+        }),
+      );
+
 
     // =============================
     //   AI section (Phase 07 Plan 03 — AIPROV-01 / AIPROV-02)
@@ -237,91 +288,106 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // ZERO setCta() calls — the Test connection button stays neutral. The
     // disclosure modal's Continue button (Plan 07-05) will be the only new
     // setCta() invocation in v1.1, in src/ai/disclosure.ts.
-    new Setting(containerEl).setName('AI').setHeading();
-
     const active = this.plugin.settings.getActiveAIProvider();
+    const aiEnabled = active !== null;
 
-    new Setting(containerEl)
-      .setName('Active AI provider')
-      .setDesc("Pick the provider for AI features. Switching providers preserves keys you've already entered for other providers.")
-      .addDropdown((d) => d
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- 07-UI-SPEC locks "— Not configured —" verbatim as the null-state dropdown label.
-        .addOption('',           '— Not configured —')
-        .addOption('anthropic',  'Anthropic')
-        .addOption('openai',     'OpenAI')
-        .addOption('openrouter', 'OpenRouter')
-        .addOption('ollama',     'Ollama')
-        .addOption('custom',     'Custom (OpenAI-compatible)')
-        // Phase 08.1 Plan 02 — AWS Bedrock joins the locked dropdown order
-        // after 'custom' (alphabetical-by-add-time precedent — Bedrock is
-        // the 6th provider added to the union). 'AWS Bedrock' is in the
-        // sentence-case allowlist (see eslint.config.mts AWS extension).
-        .addOption('bedrock',    'AWS Bedrock')
-        .setValue(active ?? '')
-        .onChange(async (v) => {
-          const next = v === '' ? null : (v as AIProvider);
-          await this.plugin.settings.setActiveAIProvider(next);
+    new Setting(containerEl).setName('AI coach').setHeading()
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "AI" is a brand/acronym.
+      .setDesc('AI-powered debug, review, and pattern classification.')
+      .addButton((b) => {
+        b.setIcon('refresh-cw')
+          .setTooltip('Test connection')
+          .onClick(async () => {
+            b.setIcon('loader');
+            b.setDisabled(true);
+            try {
+              await this.plugin.testActiveAIConnection();
+            } finally {
+              b.setIcon('refresh-cw');
+              b.setDisabled(false);
+            }
+          });
+        b.buttonEl.addClass('clickable-icon');
+      })
+      .addToggle((toggle) => toggle
+        .setValue(aiEnabled)
+        .onChange(async (value) => {
+          if (value) {
+            await this.plugin.settings.setActiveAIProvider('anthropic');
+          } else {
+            await this.plugin.settings.setActiveAIProvider(null);
+          }
           this.display();
         }),
       );
 
-    if (active !== null) {
-      this.renderAIProviderForm(containerEl, active);
+    if (aiEnabled) {
+      const aiConnGroup = containerEl.createDiv('lc-settings-group');
+
+      new Setting(aiConnGroup)
+        .setName('Provider')
+        .setDesc("Switching providers preserves keys you've already entered.")
+        .addDropdown((d) => d
+          .addOption('anthropic',  'Anthropic')
+          .addOption('openai',     'OpenAI')
+          .addOption('openrouter', 'OpenRouter')
+          .addOption('ollama',     'Ollama')
+          .addOption('custom',     'Custom (OpenAI-compatible)')
+          .addOption('bedrock',    'AWS Bedrock')
+          .setValue(active)
+          .onChange(async (v) => {
+            await this.plugin.settings.setActiveAIProvider(v as AIProvider);
+            this.display();
+          }),
+        );
+
+      this.renderAIProviderForm(aiConnGroup, active);
+
+      const aiFeatGroup = containerEl.createDiv('lc-settings-group');
+
+      new Setting(aiFeatGroup)
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accepted" is the LC verdict name (proper noun in this domain).
+        .setName('Review on Accepted')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accepted" is the LC verdict name (proper noun in this domain).
+        .setDesc('Generate a review (approach, efficiency, style) each time you get Accepted.')
+        .addToggle((toggle) => toggle
+          .setValue(this.plugin.settings.getAutoAIReviewOnAC())
+          .onChange(async (value) => {
+            await this.plugin.settings.setAutoAIReviewOnAC(value);
+          }),
+        );
+
+      new Setting(aiFeatGroup)
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accepted" is the LC verdict name (proper noun in this domain).
+        .setName('Pattern classification on Accepted')
+        .setDesc('Classify solutions into algorithmic patterns and maintain hub notes.')
+        .addToggle((toggle) => toggle
+          .setValue(this.plugin.settings.getAutoAIKnowledgeGraph())
+          .onChange(async (value) => {
+            await this.plugin.settings.setAutoAIKnowledgeGraph(value);
+          }),
+        );
+
+      new Setting(aiFeatGroup)
+        .setName('Look-ahead edges')
+        .setDesc('Suggest unsolved problems related to the pattern in hub notes.')
+        .addToggle((toggle) => toggle
+          .setValue(this.plugin.settings.getFeatureFlags().lookAheadEdges)
+          .onChange(async (value) => {
+            await this.plugin.settings.setFeatureFlag('lookAheadEdges', value);
+          }),
+        );
+
+      new Setting(aiFeatGroup)
+        .setName('Contest analysis')
+        .setDesc('Generate a performance summary when a virtual contest ends.')
+        .addToggle((toggle) => toggle
+          .setValue(this.plugin.settings.getAutoAIContestAnalysis())
+          .onChange(async (value) => {
+            await this.plugin.settings.setAutoAIContestAnalysis(value);
+          }),
+        );
     }
-
-    new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accept" / "Accepted" is the LC verdict name (proper noun in this domain).
-      .setName('Auto AI review on Accept')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accepted" is the LC verdict name (proper noun in this domain).
-      .setDesc('When enabled, an AI review is generated automatically each time you get Accepted.')
-      .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.getAutoAIReviewOnAC())
-        .onChange(async (value) => {
-          await this.plugin.settings.setAutoAIReviewOnAC(value);
-        }),
-      );
-
-    // Phase 11 Plan 03 — AI Knowledge Graph toggles. Position: after
-    // autoAIReviewOnAC, before Contest section. Sentence-case names per
-    // eslint-plugin-obsidianmd ui/sentence-case rule.
-    new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accept" is the LC verdict name (proper noun in this domain).
-      .setName('AI pattern classification on Accept')
-      .setDesc('When enabled, AI classifies accepted solutions into algorithmic patterns and maintains hub notes.')
-      .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.getAutoAIKnowledgeGraph())
-        .onChange(async (value) => {
-          await this.plugin.settings.setAutoAIKnowledgeGraph(value);
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName('Look-ahead edges (experimental)')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "## Related Variants" is a verbatim section heading reference.
-      .setDesc('When enabled, AI may suggest unsolved problems related to the pattern. Adds wikilinks to unsolved problems in ## Related Variants.')
-      .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.getFeatureFlags().lookAheadEdges)
-        .onChange(async (value) => {
-          await this.plugin.settings.setFeatureFlag('lookAheadEdges', value);
-        }),
-      );
-
-    // =============================
-    //   Contest section (Phase 10 Plan 07 — UI-SPEC §Settings)
-    // =============================
-    // Position: after AI section, before Knowledge Graph (per 10-UI-SPEC).
-    // Single toggle: Auto AI contest analysis (D-20, default OFF).
-    new Setting(containerEl).setName('Contest').setHeading();
-
-    new Setting(containerEl)
-      .setName('Auto AI contest analysis')
-      .setDesc('Automatically generate AI performance analysis when a virtual contest ends. Requires an active AI provider.')
-      .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.getAutoAIContestAnalysis())
-        .onChange(async (value) => {
-          await this.plugin.settings.setAutoAIContestAnalysis(value);
-        }),
-      );
 
     // =============================
     //   Knowledge Graph section (Phase 5 POLISH-01 D-14)
@@ -332,11 +398,12 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // button above — see the top-of-file grep gate).
     new Setting(containerEl).setName('Knowledge graph').setHeading();
 
+    const kgGroup = containerEl.createDiv('lc-settings-group');
     // D-15: technique folder visible override with derived default. Placeholder
     // is computed LIVE from the current `problemsFolder` setting so users see
     // e.g. `LeetCode/Techniques` when no override is set, their typed value
     // otherwise. Empty value preserves Phase 4 derived-default behavior.
-    new Setting(containerEl)
+    new Setting(kgGroup)
       .setName('Technique folder override')
       .setDesc('Vault folder for technique stub notes. Leave empty to use {Problems folder}/Techniques.')
       .addText((t) => t
@@ -352,7 +419,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
 
     // D-16 / D-32: auto-backlink toggle (behavior-first copy LOCKED).
     // Bound to the Phase 4 D-21 persistence field.
-    new Setting(containerEl)
+    new Setting(kgGroup)
       .setName('Auto-create technique backlinks on accepted')
 
       .setDesc('When enabled, an Accepted submission writes a ## Techniques section and creates stub notes for each LC topic tag. When disabled, only frontmatter tags (lc/{slug}) are written; no ## Techniques heading, no stubs.')
@@ -479,8 +546,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         // Model ID row (replaces the generic Model row for Bedrock).
         new Setting(containerEl)
           .setName('Model ID')
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- Bedrock model IDs are dotted-namespace lowercase identifiers (e.g. 'anthropic.claude-3-5-sonnet...'); the rule mistakes the model-name parts for sentence-start words.
-          .setDesc('Bedrock model identifier (e.g. anthropic.claude-3-5-sonnet-20241022-v2:0).')
+          // eslint-disable-next-line obsidianmd/ui/sentence-case -- Bedrock model IDs are dotted-namespace lowercase identifiers (e.g. 'anthropic.claude-sonnet-4-6...'); the rule mistakes the model-name parts for sentence-start words.
+          .setDesc('Bedrock model identifier (e.g. us.anthropic.claude-sonnet-4-6).')
           .addText((t) => {
             t.inputEl.addClass('lc-ai-input');
             t.setValue(bcfg.modelId);
@@ -493,7 +560,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         // Auth method dropdown — onChange triggers a re-render so the
         // conditional secret rows below swap atomically.
         new Setting(containerEl)
-          .setName('Auth method')
+          .setName('Credential source')
           .setDesc('How the plugin obtains AWS credentials for Bedrock calls.')
           .addDropdown((d) => d
             .addOption('default-chain', 'Default credential chain (recommended)')
@@ -613,31 +680,5 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         });
     }
 
-    // ─── Test connection button (wired to AIClient.probe via plugin) ────
-    // Stays NEUTRAL — NO setCta() per 07-UI-SPEC §"Color". The disclosure
-    // modal's Continue button (Plan 07-05) is the only new accent invocation
-    // in v1.1.
-    //
-    // The handler delegates to the plugin's shared probe entry point so
-    // the palette command (`test-ai-connection`) and this button share the
-    // same probe path + debounce map + Notice copy. Button-label flip and
-    // disable-while-in-flight are local UX polish — only this surface needs
-    // them; the palette command's feedback is the Notice itself.
-    new Setting(containerEl)
-      .setName('Test connection')
-      .setDesc('Verify your provider credentials and model access.')
-      .addButton((b) => b
-        .setButtonText('Test connection')
-        .onClick(async () => {
-          b.setButtonText('Testing...');
-          b.setDisabled(true);
-          try {
-            await this.plugin.testActiveAIConnection();
-          } finally {
-            b.setButtonText('Test connection');
-            b.setDisabled(false);
-          }
-        }),
-      );
   }
 }

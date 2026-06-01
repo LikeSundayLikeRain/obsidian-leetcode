@@ -4,6 +4,80 @@ All notable changes to **LeetCode for Obsidian** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0-alpha.4] - 2026-05-29
+
+### Added
+- Settings → Code editor → **Use nested code editor** toggle. When OFF, the plugin skips registering the nested CM6 child-editor at onload — Run/Submit/Reset/Retrieve/AI commands still work via the markdown fallback path. Reload Obsidian to apply.
+- AI solution prompt now includes the LeetCode starter code so the generated solution matches the expected class/method signature.
+
+### Fixed
+- Sync corruption when the parent document and child editor diverged (manifested as reversed/interleaved text after focus changes). Added a divergence guard that does a full-replace sync when offsets diverge.
+- Reset code occasionally produced `}````` ``` (fence closer merged with the last brace). All full-replace sync paths now normalize trailing newlines.
+- Fence closer disappearing when deleting trailing empty lines inside the code editor.
+- Cursor visibility on re-focus in non-vim mode after Obsidian's `addProperty` (Cmd+;) hotkey stole focus.
+
+## [1.2.0-alpha.1] - 2026-05-26
+
+### Added
+
+#### Nested code editor
+- Full nested CM6 EditorView inside the `## Code` fence with language-aware syntax highlighting, auto-indent, bracket matching, and comment toggling for all 8 LeetCode languages (Python, Java, C++, C, JavaScript, TypeScript, Go, Rust).
+- Bidirectional sync between the code editor and the parent markdown document — edits flow both ways with echo-loop prevention.
+- Language switching via the chevron dropdown instantly reconfigures indent rules, bracket behavior, comment syntax, and highlighting without reopening the note.
+- Tab/Shift-Tab indents/dedents code; Cmd-Z undoes within the code editor independently of the parent document.
+- Paste from VS Code, StackOverflow, or LeetCode web produces raw code (no markdown formatting injected).
+- IME input (Chinese Pinyin, Japanese, Korean) works correctly without duplication or composition interruption.
+- Code editor renders correctly in both Source Mode and Live Preview.
+
+#### Vim mode
+- Vim navigation keys (j/k/h/l/dd/yy/p/x/o/i/a/s) execute inside the code editor when focused — never leak to the parent document.
+- Scope-based keystroke intercept activates on focus and deactivates on blur.
+- Insert-mode keys pass through unchanged (no interference with i/a/o/Esc transitions).
+
+#### Fence auto-recovery
+- `vault.on('modify')` listener detects when the fence closer is deleted by vim (`dd`) or external tools and re-inserts it automatically within ~100ms — no reload required.
+
+#### Settings
+- New "Show relative line numbers" toggle in Settings → Code editor. Renders cursor-relative line numbers in the code editor gutter. Read-once-at-mount semantic (toggle takes effect after note remount).
+- New "Indent size" override for the code editor (default: 4 spaces).
+
+### Changed
+- Bundle size increased from ~800 KB to ~1.71 MB due to language packs (8 Lezer grammars + @replit/codemirror-vim). Hard ceiling raised to 1.8 MB.
+- Release workflow now patches `manifest.json` version from the git tag — `manifest-beta.json` removed (BRAT no longer requires it).
+
+### Fixed
+- Cursor invisible in non-vim mode — vim cursor CSS now scoped with `:has(.cm-vimCursorLayer)`.
+- Tab in Problem Browser and Contest views no longer causes idempotency issues.
+
+---
+
+## [1.1.0] - 2026-05-20
+
+### Added
+
+#### Problem preview
+- Single-click previews problems in a read-only tab before committing to a note. Shift-click opens the note directly.
+- Right-click context menu with "Preview problem" option.
+- Sticky "Start Problem" button at the top of preview tabs.
+- Settings toggle for click behavior (preview first vs. open note directly).
+
+#### AI features
+- AI Provider foundation with support for Anthropic, OpenAI, OpenRouter, Ollama, Custom (OpenAI-compatible), and AWS Bedrock.
+- AI Debug — streaming analysis of wrong-answer or TLE verdicts with actionable suggestions.
+- AI Review — opt-in review of accepted solutions with improvement suggestions.
+- AI Knowledge Graph classification — automatic pattern/technique classification on accepted problems.
+- AWS Bedrock provider with SSO credential process support.
+
+#### Contest mode
+- Virtual contest practice — solve past contest problems under timed conditions.
+- Contest analysis with AI-powered performance summary.
+- Contest scratch manager for temporary working space during contests.
+
+### Changed
+- Plugin store re-submission with full compliance audit.
+
+---
+
 ## [1.0.0] - 2026-05-14
 
 Initial public release.
@@ -70,4 +144,6 @@ These decisions are intentional v1.0 choices, documented here so future versions
 - `turndown` for HTML → Markdown conversion
 - `vitest` for unit testing — 652 tests passing, ~163 KB production bundle
 
+[1.2.0-alpha.1]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.2.0-alpha.1
+[1.1.0]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.1.0-alpha.2
 [1.0.0]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.0.0

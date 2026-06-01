@@ -26,7 +26,7 @@ function makeMockPlugin(initial: unknown = null) {
 }
 
 const DEFAULT_REGION = 'us-east-1';
-const DEFAULT_MODEL_ID = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
+const DEFAULT_MODEL_ID = 'us.anthropic.claude-sonnet-4-6';
 
 describe('Phase 08.1 SettingsStore — bedrock defaults (T-08.1-shape-guard)', () => {
   it('load: missing providerConfigs.bedrock hydrates with locked defaults', async () => {

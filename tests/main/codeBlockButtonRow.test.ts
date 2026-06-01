@@ -15,12 +15,16 @@ import { createFakePlugin } from '../solve/mocks/fakeWorkspace';
 type HostPlugin = Parameters<typeof buildCodeBlockButtonRow>[1];
 
 function withHostMethods(overrides?: {
+  resetFromActive?: ReturnType<typeof vi.fn>;
+  retrieveLastSubmissionFromActive?: ReturnType<typeof vi.fn>;
   runFromActive?: ReturnType<typeof vi.fn>;
   submitFromActive?: ReturnType<typeof vi.fn>;
   aiDebugFromActive?: ReturnType<typeof vi.fn>;
   aiSolutionFromActive?: ReturnType<typeof vi.fn>;
 }): HostPlugin {
   const plugin = createFakePlugin() as unknown as Record<string, unknown>;
+  plugin.resetFromActive = overrides?.resetFromActive ?? vi.fn();
+  plugin.retrieveLastSubmissionFromActive = overrides?.retrieveLastSubmissionFromActive ?? vi.fn();
   plugin.runFromActive = overrides?.runFromActive ?? vi.fn();
   plugin.submitFromActive = overrides?.submitFromActive ?? vi.fn();
   plugin.aiDebugFromActive = overrides?.aiDebugFromActive ?? vi.fn();
@@ -29,15 +33,17 @@ function withHostMethods(overrides?: {
 }
 
 describe('buildCodeBlockButtonRow without opts.prefix (Reading-Mode)', () => {
-  it('produces a row with 3 children: AI Solution, Run, Submit', () => {
+  it('produces a row with 5 children: Retrieve, Reset, AI Solution, Run, Submit', () => {
     const plugin = withHostMethods();
     const row = buildCodeBlockButtonRow(document, plugin);
 
     expect(row.classList.contains('leetcode-code-actions')).toBe(true);
-    expect(row.children.length).toBe(3);
-    expect(row.children[0]!.classList.contains('leetcode-code-action-ai-solution')).toBe(true);
-    expect(row.children[1]!.classList.contains('leetcode-code-action-run')).toBe(true);
-    expect(row.children[2]!.classList.contains('leetcode-code-action-submit')).toBe(true);
+    expect(row.children.length).toBe(5);
+    expect(row.children[0]!.classList.contains('leetcode-code-action-icon')).toBe(true);
+    expect(row.children[1]!.classList.contains('leetcode-code-action-icon')).toBe(true);
+    expect(row.children[2]!.classList.contains('leetcode-code-action-ai-solution')).toBe(true);
+    expect(row.children[3]!.classList.contains('leetcode-code-action-run')).toBe(true);
+    expect(row.children[4]!.classList.contains('leetcode-code-action-submit')).toBe(true);
   });
 
   it('Run button click invokes plugin.runFromActive', () => {
@@ -106,8 +112,52 @@ describe('buildCodeBlockButtonRow without opts.prefix (Reading-Mode)', () => {
   });
 });
 
+describe('button focus retention (D-02)', () => {
+  it('Run button mousedown preventDefault', () => {
+    const plugin = withHostMethods();
+    const row = buildCodeBlockButtonRow(document, plugin);
+
+    const runBtn = row.querySelector<HTMLButtonElement>('button.leetcode-code-action-run')!;
+    const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    let defaultPrevented = false;
+    const origPD = evt.preventDefault.bind(evt);
+    evt.preventDefault = () => { defaultPrevented = true; origPD(); };
+    runBtn.dispatchEvent(evt);
+
+    expect(defaultPrevented).toBe(true);
+  });
+
+  it('Submit button mousedown preventDefault', () => {
+    const plugin = withHostMethods();
+    const row = buildCodeBlockButtonRow(document, plugin);
+
+    const submitBtn = row.querySelector<HTMLButtonElement>('button.leetcode-code-action-submit')!;
+    const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    let defaultPrevented = false;
+    const origPD = evt.preventDefault.bind(evt);
+    evt.preventDefault = () => { defaultPrevented = true; origPD(); };
+    submitBtn.dispatchEvent(evt);
+
+    expect(defaultPrevented).toBe(true);
+  });
+
+  it('AI Solution button mousedown preventDefault', () => {
+    const plugin = withHostMethods();
+    const row = buildCodeBlockButtonRow(document, plugin);
+
+    const aiBtn = row.querySelector<HTMLButtonElement>('button.leetcode-code-action-ai-solution')!;
+    const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    let defaultPrevented = false;
+    const origPD = evt.preventDefault.bind(evt);
+    evt.preventDefault = () => { defaultPrevented = true; origPD(); };
+    aiBtn.dispatchEvent(evt);
+
+    expect(defaultPrevented).toBe(true);
+  });
+});
+
 describe('buildCodeBlockButtonRow with opts.prefix (Edit-Mode chevron)', () => {
-  it('produces a row with 4 children: prefix, AI Solution, Run, Submit', () => {
+  it('produces a row with 6 children: prefix, Retrieve, Reset, AI Solution, Run, Submit', () => {
     const plugin = withHostMethods();
     const prefixEl = document.createElement('span');
     prefixEl.className = 'leetcode-language-chevron-wrapper';
@@ -115,11 +165,13 @@ describe('buildCodeBlockButtonRow with opts.prefix (Edit-Mode chevron)', () => {
       prefix: () => prefixEl,
     });
 
-    expect(row.children.length).toBe(4);
+    expect(row.children.length).toBe(6);
     expect(row.children[0]).toBe(prefixEl);
-    expect(row.children[1]!.classList.contains('leetcode-code-action-ai-solution')).toBe(true);
-    expect(row.children[2]!.classList.contains('leetcode-code-action-run')).toBe(true);
-    expect(row.children[3]!.classList.contains('leetcode-code-action-submit')).toBe(true);
+    expect(row.children[1]!.classList.contains('leetcode-code-action-icon')).toBe(true);
+    expect(row.children[2]!.classList.contains('leetcode-code-action-icon')).toBe(true);
+    expect(row.children[3]!.classList.contains('leetcode-code-action-ai-solution')).toBe(true);
+    expect(row.children[4]!.classList.contains('leetcode-code-action-run')).toBe(true);
+    expect(row.children[5]!.classList.contains('leetcode-code-action-submit')).toBe(true);
   });
 
   it('all click handlers wired correctly with prefix present', () => {

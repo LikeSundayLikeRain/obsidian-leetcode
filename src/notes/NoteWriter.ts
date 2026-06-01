@@ -32,7 +32,7 @@
 // value typed as `TFile` so call sites avoid `as TFile` casts (which the
 // obsidianmd/no-tfile-tfolder-cast rule rejects).
 
-import { Notice, TFile } from 'obsidian';
+import { Notice, TFile, MarkdownView } from 'obsidian';
 import type { App } from 'obsidian';
 import { isSessionExpired } from '../api/LeetCodeClient';
 import { logger } from '../shared/logger';
@@ -188,6 +188,27 @@ export class NoteWriter {
   }
 
   /**
+   * Phase 18 — tab idempotency helper. If a markdown leaf is already open
+   * for `filePath`, reveal it and return true. Otherwise return false so
+   * the caller can proceed with openLinkText.
+   */
+  private revealExistingLeaf(filePath: string): boolean {
+    if (typeof this.app.workspace.getLeavesOfType !== 'function') return false;
+    const existing = this.app.workspace.getLeavesOfType('markdown')
+      .find(l => {
+        const v = l.view;
+        if (v instanceof MarkdownView && v.file?.path === filePath) return true;
+        const stateFile = (l.getViewState()?.state as { file?: string })?.file;
+        return stateFile === filePath;
+      });
+    if (existing) {
+      void this.app.workspace.revealLeaf(existing);
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Phase 3 Plan 07 — retrofit wrapper with D-09 pre-guards.
    *
    * starterCodeInjector.retrofit is silent-on-failure internally, but it is
@@ -226,7 +247,10 @@ export class NoteWriter {
 
     if (existingFile) {
       // Reveal immediately — no await on any network (D-11).
-      await this.app.workspace.openLinkText(existingFile.path, '', false);
+      // Phase 18: tab idempotency — reuse existing leaf if already open.
+      if (!this.revealExistingLeaf(existingFile.path)) {
+        await this.app.workspace.openLinkText(existingFile.path, '', false);
+      }
       // Phase 4 Plan 05 (D-02) — fire the on-open hook after reveal so the
       // submission history prefetch runs in parallel with the rest of the
       // reveal chain. Fire-and-forget; hook owns its own error handling.
@@ -298,7 +322,10 @@ export class NoteWriter {
     const existingAtCanonical = narrowToTFile(this.app.vault.getAbstractFileByPath(filePath));
     if (existingAtCanonical) {
       // Treat as re-open: reveal + retrofit + refresh frontmatter.
-      await this.app.workspace.openLinkText(existingAtCanonical.path, '', false);
+      // Phase 18: tab idempotency — reuse existing leaf if already open.
+      if (!this.revealExistingLeaf(existingAtCanonical.path)) {
+        await this.app.workspace.openLinkText(existingAtCanonical.path, '', false);
+      }
       // Phase 4 Plan 05 (D-02) — fire on-open hook after recovered reveal.
       this.fireOnNoteOpen(slug);
       await ensureLeetcodeBase(this.app, folder).catch((err) => {
@@ -384,7 +411,10 @@ export class NoteWriter {
     });
 
     // Reveal the newly-created note.
-    await this.app.workspace.openLinkText(file.path, '', false);
+    // Phase 18: tab idempotency — reuse existing leaf if already open.
+    if (!this.revealExistingLeaf(file.path)) {
+      await this.app.workspace.openLinkText(file.path, '', false);
+    }
     // Phase 4 Plan 05 (D-02) — fire on-open hook after new-note reveal.
     this.fireOnNoteOpen(slug);
   }

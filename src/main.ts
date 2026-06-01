@@ -85,13 +85,19 @@ import { EphemeralTabStore } from './solve/ephemeralTabStore';
 import { deriveArity } from './solve/runArity';
 import { registerRunCommand } from './solve/runCommandRegistration';
 import { retrofit as retrofitStarterCode } from './solve/starterCodeInjector';
-import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
+import { resetCodeWithConfirm, extractFenceBodyFromFullNote } from './solve/resetCodeWithConfirm';
 import { makeFileOpenHandler } from './main/fileOpenHook';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug, lcSlugToFenceTag, LC_LANG_DISPLAY_LABELS } from './solve/languages';
 // Phase 5.3 D-13 parity — chevron's atomic dispatch reuses Phase 5.1's exported
 // `findCodeFence` so fence detection has one source of truth.
 import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorExtension';
+// Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment.
+// `switchFenceLanguage` dispatches a Compartment.reconfigure on the child
+// (when present) immediately after the parent CM6 dispatch, so the child's
+// parser, indent unit, closeBrackets, and Cmd-/ keymap binding switch in
+// lock-step with the visible fence-tag flip.
+import { languageCompartment, buildLanguageExtensions } from './main/childEditorLanguage';
 // @codemirror/view is a transitive peer of obsidian@1.12.3; external in esbuild.
 // `view.editor.cm as EditorView` is the canonical (undocumented internal) path
 // for plugins reaching CM6 from a click handler — RESEARCH §Pitfall 6 +
@@ -115,8 +121,12 @@ import { buildCodeActionsEditorExtension } from './main/codeActionsEditorExtensi
 // Phase 05.5 (POLISH) — section locking for lc-slug notes. Hard read-only
 // enforcement on plugin-owned regions via CM6 EditorState.changeFilter.
 import { buildSectionLockExtension } from './main/sectionLockExtension';
+// Phase 13 — nested child EditorView for ## Code fence (Plans 01-03).
+import { ChildEditorRegistry } from './main/childEditorRegistry';
+import { buildNestedEditorExtension, nestedEditorRebuildEffect } from './main/nestedEditorExtension';
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
+import { registerVaultModifyRepairTrigger } from './main/childEditorSync';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { PatternClusterEngine } from './graph/PatternClusterEngine';
@@ -172,6 +182,7 @@ interface ProblemContext {
   file: TFile;
   slug: string;
   title: string;
+  lcLanguage: string | null;
   currentBody: () => string;
 }
 
@@ -241,6 +252,32 @@ export default class LeetCodePlugin extends Plugin {
   // contest mode and the `start-random-contest` palette command.
   contestListService!: ContestListService;
   contestScratch!: ContestScratchManager;
+
+  // Phase 13 — LRU cache for nested child EditorViews (cap=5, per D-12).
+  childEditorRegistry!: ChildEditorRegistry;
+
+  /**
+   * Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12) — per-child
+   * slug tracker. Records the language slug currently applied to each child
+   * editor's `languageCompartment`. Updated whenever a Compartment.reconfigure
+   * dispatch lands (chevron switch path AND fm-reactivity listener path).
+   *
+   * Gate 3 of the fm-reactivity listener
+   * (`handleFmChangeForLanguageReactivity`) reads from this tracker — NOT
+   * from the parent fence opener tag — because per D-14 the listener does
+   * not rewrite the opener, so reading "current applied child language" from
+   * the opener is unsound and produces the asymmetric round-trip bug
+   * described in 17-UAT.md Issue 3 (Java → Python3 swaps but Python3 → Java
+   * silently no-ops).
+   *
+   * WeakMap auto-GCs entries when the EditorView is destroyed (registry
+   * destroy + browser GC) — no explicit cleanup needed. Pre-mount or
+   * pre-first-dispatch the tracker has no entry; Gate 3 treats absent
+   * entries as "unknown current" and proceeds to dispatch (idempotent —
+   * Compartment.reconfigure with an equal LanguageSupport is a no-op
+   * visually but updates the tracker for the next swap).
+   */
+  childLanguageTracker: WeakMap<EditorView, string> = new WeakMap();
 
   // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
   // AIProvider; values are the in-flight probe Promise. Cleared in the
@@ -778,6 +815,9 @@ export default class LeetCodePlugin extends Plugin {
     // executeCommandById (Pitfall 14); idempotent per Pitfall 3.
     registerCodeBlockActionProcessor(this);
 
+    // Phase 13 — child editor registry (must exist before extensions fire).
+    this.childEditorRegistry = new ChildEditorRegistry(5);
+
     // Step 6f — Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) edit-mode Run/Submit buttons.
     // Registers a CM6 StateField<DecorationSet> that paints an inline widget below
     // the `## Code` fence in Live Preview + Source Mode. Gated on `lc-slug`
@@ -785,6 +825,18 @@ export default class LeetCodePlugin extends Plugin {
     // Click handlers call plugin.runFromActive() / submitFromActive() directly
     // (D-05 — avoids editorCheckCallback gate regression from 05-05 live smoke).
     this.registerEditorExtension(buildCodeActionsEditorExtension(this));
+
+    // Phase 19 vq4 — read once: the nested-editor toggle is reload-apply-only.
+    const useNestedEditor = this.settings.getUseNestedEditor();
+
+    // Step 6f-nested — Phase 13: nested child EditorView for ## Code fence.
+    // Mounts a block widget containing a child CM6 EditorView with Python
+    // syntax highlighting; hides raw fence lines via CSS Decoration.line.
+    // Registered BETWEEN code-actions and section-lock so the cursor-redirect
+    // transactionFilter processes before section-lock's cursor snap (Pitfall 3).
+    if (useNestedEditor) {
+      this.registerEditorExtension(buildNestedEditorExtension(this));
+    }
 
     // Step 6f-bis — Phase 05.5 (POLISH) section locking for lc-slug notes.
     // Hard read-only enforcement via CM6 EditorState.changeFilter; gated on
@@ -856,6 +908,87 @@ export default class LeetCodePlugin extends Plugin {
       ),
     );
 
+    // Step 6g.5 — Phase 17 Plan 04 (D-13/D-14, Wave 2) — external `lc-language`
+    // frontmatter reactivity. When a user (or another plugin) writes a
+    // different `lc-language` value to the frontmatter of an open `lc-slug`
+    // note, the child editor reconfigures its language Compartment to match —
+    // reusing the Phase 16 chevron-switch plumbing (`languageCompartment` +
+    // `buildLanguageExtensions`). The listener does NOT rewrite the fence
+    // opener tag (D-14 — frontmatter is the source of truth in this passive-
+    // listener scenario; users who want the fence opener to flip use the
+    // chevron). Pitfall 3 (recursive metadataCache.changed during the plugin's
+    // own processFrontMatter writes) is dedupe-prevented by Gate 3 (slug
+    // equality check inside `handleFmChangeForLanguageReactivity`).
+    //
+    // Analog: src/main/codeActionsEditorExtension.ts:329-359 (parent-side
+    // chevron metadataCache subscription). This block adds the CHILD-side
+    // reactivity dispatching Compartment.reconfigure on the registered child.
+    this.registerEvent(
+      this.app.metadataCache.on('changed', (file, _data, cache) => {
+        this.handleFmChangeForLanguageReactivity(file, cache);
+        // Phase 18: when metadataCache populates lc-slug for the first time
+        // (newly-created note, first open), the parent's nested-editor
+        // StateField needs a transaction to rebuild decorations. Without
+        // this, Gate 2 in buildNestedDecorations short-circuits because
+        // frontmatter wasn't available at initial StateField.create time.
+        if (cache?.frontmatter?.['lc-slug']) {
+          const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+          if (view?.file?.path === file.path) {
+            const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
+            if (cm) {
+              cm.dispatch({ effects: nestedEditorRebuildEffect.of(null) });
+            }
+          }
+        }
+      }),
+    );
+
+    // Phase 18 Plan 02 (D-33) — vault.on('modify') runtime repair trigger.
+    // Closes the gap where vim's `dd` Normal-mode keystroke on the fence
+    // closer line edits the doc via Obsidian's vault layer, bypassing the
+    // CM6 transactions that `createParentRepairExtension` observes. Three
+    // short-circuit gates (lc-slug, active-view, findCodeFence === null)
+    // prevent firing during chevron mid-flight (the chevron-blank-on-python3-c
+    // regression that the previous Phase 18 attempt produced). See
+    // `src/main/childEditorSync.ts:registerVaultModifyRepairTrigger` and
+    // `.planning/phases/18-vim-recovery-polish/18-02-PLAN.md`.
+    if (useNestedEditor) {
+      registerVaultModifyRepairTrigger(this);
+    }
+
+    // Phase 18: file-open repair — when switching to a broken-fence LC note,
+    // the nested editor widget won't mount (findCodeFence returns null), so
+    // createParentRepairExtension never gets installed. This file-open hook
+    // catches that case: after a short delay (CM6 state needs to hydrate),
+    // check if the active note has a damaged fence and repair it directly.
+    if (useNestedEditor) {
+      const FILE_OPEN_REPAIR_DELAY_MS = 100; // estimated Obsidian file→CM6 hydration time
+      this.registerEvent(
+        this.app.workspace.on('file-open', (file) => {
+          if (!file) return;
+          window.setTimeout(() => {
+            const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+            if (typeof fm?.['lc-slug'] !== 'string') return;
+            const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+            if (!view || view.file?.path !== file.path) return;
+            const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
+            if (!cm) return;
+            cm.dispatch({ effects: nestedEditorRebuildEffect.of(null) });
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { findCodeFence: findFence } = require('./main/codeActionsEditorExtension') as
+              typeof import('./main/codeActionsEditorExtension');
+            if (findFence(cm.state) !== null) return;
+            const lcLang: unknown = fm['lc-language'];
+            const slug = typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { repairFenceStructure: repair } = require('./main/childEditorSync') as
+              typeof import('./main/childEditorSync');
+            repair(cm, slug);
+          }, FILE_OPEN_REPAIR_DELAY_MS);
+        }),
+      );
+    }
+
     // Step 6h — Phase 5.2 D-13 python3 → python language-tag alias for
     // Reading-Mode Prism highlighting. Global application (not gated on
     // lc-slug) so any note with a ```python3 fence benefits. Synchronous
@@ -912,6 +1045,9 @@ export default class LeetCodePlugin extends Plugin {
     // No subscriptions/timers to detach (Map-only), but dispose() resets the
     // in-memory Map so plugin reload starts with a clean slate.
     this.lastVerdictStore?.dispose();
+
+    // Phase 13 — destroy all child EditorViews (D-12 cleanup).
+    this.childEditorRegistry?.destroyAll();
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
@@ -1009,9 +1145,15 @@ export default class LeetCodePlugin extends Plugin {
       file = await this.contestScratch.createOrUpdate(problem, contentHtml);
     }
 
-    // D-07: Tab idempotency — reuse existing leaf if already open for this scratch file
+    // D-07: Tab idempotency — reuse existing leaf if already open for this scratch file.
+    // Check both view.file (populated after view loads) and leaf state (populated immediately on restore).
     const existingLeaf = this.app.workspace.getLeavesOfType('markdown')
-      .find(l => (l.view as { file?: { path: string } }).file?.path === file.path);
+      .find(l => {
+        const viewFile = (l.view as { file?: { path: string } }).file?.path;
+        if (viewFile === file.path) return true;
+        const stateFile = (l.getViewState()?.state as { file?: string })?.file;
+        return stateFile === file.path;
+      });
     if (existingLeaf) {
       void this.app.workspace.revealLeaf(existingLeaf);
       return;
@@ -1322,12 +1464,14 @@ export default class LeetCodePlugin extends Plugin {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
     const slug = fm?.['lc-slug'];
     const title = fm?.['lc-title'];
+    const lcLanguage = typeof fm?.['lc-language'] === 'string' ? fm['lc-language'] : null;
     if (!isValidSlug(slug)) return null;
     return {
       view,
       file,
       slug,
       title: typeof title === 'string' ? title : slug,
+      lcLanguage,
       currentBody: () => view.editor.getValue(),
     };
   }
@@ -2013,6 +2157,49 @@ export default class LeetCodePlugin extends Plugin {
     await this.openAISolution(slug);
   }
 
+  async resetFromActive(): Promise<void> {
+    const ctx = this.getActiveProblemContext();
+    if (!ctx) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    await this.resetCode(ctx.file, ctx.slug);
+  }
+
+  async retrieveLastSubmissionFromActive(): Promise<void> {
+    const ctx = this.getActiveProblemContext();
+    if (!ctx) {
+      new Notice('Open a LeetCode problem note first.', 4000);
+      return;
+    }
+    try {
+      const rows = await this.submissionHistory.get(ctx.slug);
+      if (!rows || rows.length === 0) {
+        new Notice('No past submissions found for this problem.', 4000);
+        return;
+      }
+      const latest = rows[0]!;
+      const cookies = this.settings.getAuthCookies();
+      if (!cookies) {
+        new Notice('Not logged in.', 4000);
+        return;
+      }
+      const { detailForSubmission } = await import('./graph/submissionHistoryClient');
+      const detail = await detailForSubmission(latest.id, cookies);
+      if (!detail?.code) {
+        new Notice('Could not retrieve submission code.', 4000);
+        return;
+      }
+      const { copyToCode } = await import('./graph/copyToCode');
+      await copyToCode(this.app, ctx.file, detail.code, detail.lang.name);
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "## Code" is a verbatim section heading.
+      new Notice('Last submission copied to ## Code.', 3000);
+    } catch (err) {
+      new Notice('Failed to retrieve submission.', 4000);
+      console.error('[leetcode] retrieveLastSubmission:', err);
+    }
+  }
+
   private async openAISolution(slug: string): Promise<void> {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view || !view.file) {
@@ -2042,8 +2229,10 @@ export default class LeetCodePlugin extends Plugin {
     }
     const problemMd = htmlToMarkdown(problemHtml);
     const language = (fm?.['lc-language'] as string) ?? this.settings.getDefaultLanguage() ?? 'python3';
+    const starterCode = cached?.codeSnippets?.find(s => s.langSlug === language)?.code ?? '';
+    const starterSection = starterCode ? `\n\n## Starter Code\n\n\`\`\`${language}\n${starterCode}\n\`\`\`\n\nYour solution MUST use the exact same class/method signature as the starter code above.` : '';
 
-    const prompt = `You are a LeetCode expert. Given the problem below, provide:\n\n1. **Approach** — Explain the optimal algorithm and data structures to use. Include time and space complexity.\n2. **Solution** — Write a clean, well-commented solution in ${language}.\n\n## Problem\n\n${problemMd}\n\nRespond with the approach explanation first, then the complete solution code in a fenced code block.`;
+    const prompt = `You are a LeetCode expert. Given the problem below, provide:\n\n1. **Approach** — Explain the optimal algorithm and data structures to use. Include time and space complexity.\n2. **Solution** — Write a clean, well-commented solution in ${language}.${starterSection}\n\n## Problem\n\n${problemMd}\n\nRespond with the approach explanation first, then the complete solution code in a fenced code block.`;
 
     const provider = this.settings.getActiveAIProvider();
     if (provider === null) {
@@ -2140,6 +2329,7 @@ export default class LeetCodePlugin extends Plugin {
         getProblemDetail: (s) => this.settings.getProblemDetail(s),
       },
       slug: ctx.slug,
+      lcLanguage: ctx.lcLanguage,
       getCurrentBody: ctx.currentBody,
       // D-21 — login wiring for the sticky session-expired Notice's button.
       login: () => { void this.auth.login(); },
@@ -2283,13 +2473,28 @@ export default class LeetCodePlugin extends Plugin {
    *   Step B — Single CM6 `view.dispatch({ changes: [openerChange, bodyChange],
    *            userEvent: 'leetcode.lang-switch' })`. ONE transaction → ONE
    *            Cmd-Z reverts opener + body atomically (D-08).
+   *   Step B′ — Phase 16 Plan 04 (LANG-01, D-12). If a child EditorView is
+   *            registered for `file.path`, dispatch
+   *            `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(
+   *            newSlug, getIndentSizeOverride())), userEvent: 'leetcode.lang-switch' }`
+   *            on the CHILD so its parser, indent unit, closeBrackets, and
+   *            Cmd-/ keymap switch in lock-step with the parent fence-tag
+   *            flip. Effects-only — `childEditorSync.ts:89` `docChanged`
+   *            guard skips it for child→parent propagation; the parent's
+   *            nestedEditor StateField never sees it (the dispatch goes to
+   *            the child, not the parent). userEvent is the CLAUDE.md
+   *            `'leetcode.*'` convention. Silent no-op when no child is
+   *            registered. Wrapped in try/catch matching the project
+   *            convention in `childEditorSync.ts` (child may be in teardown).
    *   Step C — `await app.fileManager.processFrontMatter(file, fm => { … })`.
    *            Lands on Obsidian's vault undo stack — separate from CM6's
    *            editor undo (Pitfall 1; accepted divergence).
    *
    * Order matters: doing C before B opens a 5–20 ms window where `lc-language`
    * says the new language but the fence still has the old one (Run during
-   * that window dispatches mismatched language to LC).
+   * that window dispatches mismatched language to LC). Step B′ between B and
+   * C keeps the visible fence-tag flip first; the child reconfigure is
+   * effects-only and idempotent w.r.t. ordering.
    *
    * Silent no-ops:
    *   - Active leaf moved off `file` between click and execution → bail.
@@ -2373,6 +2578,16 @@ export default class LeetCodePlugin extends Plugin {
       userEvent: 'leetcode.lang-switch',
     });
 
+    // Step B′ — Phase 16 Plan 04 (LANG-01, D-12). Child editor language
+    // Compartment reconfigure. Effects-only dispatch carries the CLAUDE.md
+    // 'leetcode.lang-switch' userEvent so the child sync extension's
+    // docChanged guard at childEditorSync.ts:89 short-circuits without
+    // echoing back to the parent. The dispatch goes to the CHILD; the
+    // parent's nestedEditor StateField never sees it, so no widget rebuild.
+    // Silent no-op when no child is registered. Reads the live override at
+    // dispatch time so a settings change is picked up on the next switch.
+    this.dispatchChildLanguageReconfigure(file.path, newSlug);
+
     // Step C — frontmatter write (separate undo stack — Pitfall 1 accepted).
     // The metadataCache `'changed'` listener will fire later and dispatch a
     // second `languageRefreshEffect.of(undefined)` once the cache is fresh;
@@ -2382,6 +2597,230 @@ export default class LeetCodePlugin extends Plugin {
     await this.app.fileManager.processFrontMatter(file, (fmObj: Record<string, unknown>) => {
       fmObj['lc-language'] = newSlug;
     });
+  }
+
+  /**
+   * Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment
+   * reconfigure helper extracted from `switchFenceLanguage` Step B′ for unit
+   * testability (see tests/main/switchFenceLanguage.test.ts).
+   *
+   * Dispatch shape:
+   *   `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(
+   *     newSlug, override)), userEvent: 'leetcode.lang-switch' }`
+   *
+   * Invariants:
+   *   - Effects-only — no `changes`, no `selection`. The child sync
+   *     extension's `if (!update.docChanged) return` guard at
+   *     `childEditorSync.ts:89` skips this transaction, so it cannot echo
+   *     back to the parent as a content edit (RESEARCH §6, VERIFIED).
+   *   - userEvent `'leetcode.lang-switch'` matches the CLAUDE.md
+   *     `'leetcode.*'` convention; identical to the parent-side annotation.
+   *   - Silent no-op when `childEditorRegistry.get(filePath)` returns
+   *     undefined (no open child for that file) — many notes can be
+   *     switched via the chevron without ever opening a child editor.
+   *   - try/catch matches `childEditorSync.ts:115` defensive convention —
+   *     the child may be in teardown when the chevron handler runs.
+   *   - `getIndentSizeOverride()` is read at dispatch time so the user's
+   *     current preference (D-06, Phase 16 Plan 02) is picked up on every
+   *     switch.
+   */
+  private dispatchChildLanguageReconfigure(filePath: string, newSlug: string): void {
+    const childView = this.childEditorRegistry?.get(filePath);
+    if (!childView) return; // silent no-op — no open child for this file
+    const indentOverride = this.settings.getIndentSizeOverride();
+    try {
+      childView.dispatch({
+        effects: languageCompartment.reconfigure(
+          buildLanguageExtensions(newSlug, indentOverride),
+        ),
+        userEvent: 'leetcode.lang-switch',
+      });
+      // Phase 17 Plan 09 — record the slug now applied to this child's
+      // languageCompartment. Gate 3 of the fm-reactivity listener consults
+      // this tracker (NOT the parent fence opener tag) so round-trip fm
+      // swaps (Java → Python3 → Java) dispatch symmetrically.
+      this.childLanguageTracker.set(childView, newSlug);
+    } catch {
+      // Silently ignore — child may be in teardown (defensive per project
+      // convention; mirrors childEditorSync.ts:115).
+    }
+  }
+
+  /**
+   * Phase 17 Plan 04 (D-13 / D-14, Wave 2) — external frontmatter reactivity
+   * listener body. Extracted from the inline `metadataCache.on('changed')`
+   * callback in `onload` for unit testability (see
+   * tests/main/fmReactivity.test.ts).
+   *
+   * Gates (in order — short-circuit on first miss):
+   *
+   *   Gate 1 (lc-slug). The note must carry `lc-slug` in frontmatter.
+   *           Non-LC notes never receive a dispatch.
+   *   Gate 2 (child registered). A child EditorView must be present in
+   *           `childEditorRegistry` for `file.path`. Notes that are not
+   *           open in a MarkdownView have no child to reconfigure.
+   *   Gate 3 (slug equality / Pitfall 3 dedupe). The new `lc-language`
+   *           value must differ from the slug currently applied to the
+   *           parent fence opener. This is the canonical dedupe — when
+   *           the plugin's own `processFrontMatter` writes a slug that
+   *           the fence opener already reflects (e.g., chevron switch
+   *           Step C reaches metadataCache after Step B has already
+   *           reconfigured the child), Gate 3 trips and the listener
+   *           short-circuits.
+   *
+   * On all three gates passing, dispatches the same Compartment payload
+   * the chevron switch path (D-12) uses on the child:
+   *
+   *   `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(
+   *     fmLang, getIndentSizeOverride())) }`
+   *
+   * The dispatch is INTENTIONALLY effect-only — no `changes:` payload, no
+   * `userEvent` annotation. Effect-only dispatches are not subject to the
+   * section-lock changeFilter (CLAUDE.md §Conventions), so the convention
+   * `'leetcode.<verb>'` userEvent is not required here. See Plan 17-04
+   * Task 1 Test 6 (the inline guard comment that codifies this).
+   *
+   * D-14 invariant: the listener does NOT rewrite the fence opener tag.
+   * In passive-listener mode, frontmatter is the source of truth for the
+   * child editor's language; the visible fence opener stays whatever it
+   * currently says (users who want the fence opener flipped use the
+   * chevron). The unit test asserts neither `vault.process` nor
+   * `fileManager.processFrontMatter` is called from this code path.
+   *
+   * Defensive try/catch wraps the dispatch — the child may be in teardown
+   * when the listener fires (mirrors the `dispatchChildLanguageReconfigure`
+   * convention at lines ~2473-2476).
+   */
+  private handleFmChangeForLanguageReactivity(
+    file: { path: string },
+    cache: { frontmatter?: Record<string, unknown> } | null | undefined,
+  ): void {
+    // Gate 1 — lc-slug note only.
+    const slugRaw = cache?.frontmatter?.['lc-slug'];
+    if (typeof slugRaw !== 'string' || slugRaw.length === 0) return;
+
+    // Gate 2 — child registered for this file path.
+    const childView = this.childEditorRegistry?.get(file.path);
+    if (!childView) return;
+
+    // Gate 3 — Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12):
+    // read the child's currently-applied language from the per-child
+    // `childLanguageTracker`, NOT from the parent fence opener tag. Per
+    // D-14 the listener does not rewrite the opener, so reading from
+    // `readActiveFenceSlug` makes round-trip swaps (Java → Python3 → Java)
+    // silently asymmetric: after the first swap the opener still says
+    // `java`, so the second swap reads `currentSlug = 'java'` from the
+    // unchanged opener, matches the new fm `java`, and trips Gate 3 early
+    // — no dispatch fires, child syntax stays Python3.
+    //
+    // The tracker is populated by both dispatch sites — chevron switch
+    // (`dispatchChildLanguageReconfigure`) AND the fm-reactivity dispatch
+    // below — so subsequent fm changes always see the freshest applied
+    // slug. Pitfall 3 dedupe still holds: when the plugin's own
+    // `processFrontMatter` writes lc-language during chevron switch /
+    // Reset, the chevron path's tracker.set has already recorded the new
+    // slug, and Gate 3 trips on tracker equality.
+    //
+    // Empty-tracker case (e.g., first metadataCache.changed event after
+    // note open, before any chevron or fm dispatch has seeded it):
+    // tracker.get returns undefined, undefined !== fmLangRaw, so the
+    // listener proceeds to dispatch. This is safe because
+    // Compartment.reconfigure with an equal LanguageSupport is idempotent
+    // (visually a no-op) but updates the tracker — the next fm change
+    // sees the correct current.
+    const fmLangRaw = cache?.frontmatter?.['lc-language'];
+    if (typeof fmLangRaw !== 'string' || fmLangRaw.length === 0) return;
+    const currentSlug = this.childLanguageTracker.get(childView);
+    if (currentSlug === fmLangRaw) return;
+
+    // All gates passed — dispatch Compartment.reconfigure on the child.
+    // Effect-only dispatches (no changes: payload) are not subject to the
+    // section-lock changeFilter per CLAUDE.md §Conventions, so the dispatch
+    // does NOT carry a 'leetcode.*' userEvent annotation.
+    try {
+      childView.dispatch({
+        effects: languageCompartment.reconfigure(
+          buildLanguageExtensions(
+            fmLangRaw,
+            this.settings.getIndentSizeOverride(),
+          ),
+        ),
+        // Per D-14: NO `changes:` payload. Frontmatter is the source of
+        // truth in passive-listener mode; the fence opener tag is not
+        // rewritten.
+      });
+      // Phase 17 Plan 09 — record the slug now applied to this child's
+      // languageCompartment. Placed inside the try block so a failed
+      // dispatch leaves the tracker untouched (next fm change retries).
+      this.childLanguageTracker.set(childView, fmLangRaw);
+    } catch {
+      // Silently ignore — child may be in teardown (defensive per project
+      // convention; mirrors childEditorSync.ts:115 and
+      // dispatchChildLanguageReconfigure above).
+    }
+  }
+
+  /**
+   * Phase 17 Plan 04 (D-13 helper) — read the language slug currently
+   * applied to the parent fence opener for `file`.
+   *
+   * NOTE (Phase 17 Plan 09 / 17-UAT.md Issue 3): No longer consumed by
+   * `handleFmChangeForLanguageReactivity` Gate 3 — the listener now reads
+   * from the per-child `childLanguageTracker` because per D-14 the
+   * listener does not rewrite the fence opener, so the opener tag is an
+   * unsound proxy for "current applied child language" (it never changes
+   * on the listener path, producing the asymmetric round-trip bug). The
+   * helper is retained because (a) the production caller in 17-08's
+   * `resetCode` resolver may still consult fence-opener slugs and (b)
+   * future work may need a "what does the parent fence opener currently
+   * say?" primitive. If a future refactor confirms zero callers, the
+   * helper can be removed.
+   *
+   * Strategy:
+   *   1. If the active MarkdownView is showing this file, parse its CM6
+   *      state via `findCodeFence` and extract the slug from the opener
+   *      line. This is the freshest source of truth — the chevron switch
+   *      path updates the parent doc atomically via CM6 dispatch BEFORE
+   *      `processFrontMatter` lands.
+   *   2. Fallback to the metadataCache's `lc-language` value when no
+   *      active CM6 view is available (e.g., note open in a background
+   *      leaf). This is sufficient for Gate 3 because in non-active
+   *      contexts the child editor cannot exist either (Gate 2 already
+   *      tripped).
+   *   3. Return undefined if neither source yields a slug — Gate 3 will
+   *      then proceed to dispatch (treats unknown current as a forced
+   *      reconfigure rather than a silent skip; safe given Gates 1-2
+   *      already gated this path).
+   */
+  private readActiveFenceSlug(file: { path: string }): string | undefined {
+    try {
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      if (view && view.file && view.file.path === file.path) {
+        const cm = (view.editor as unknown as { cm: EditorView }).cm;
+        const fence = findCodeFence(cm.state);
+        if (fence) {
+          const openerText = cm.state.doc.line(fence.openerLine).text;
+          // Match the opener tag: ```python3 or ```python or ```\tjava etc.
+          const m = /^\s*```\s*(\S+)\s*$/.exec(openerText);
+          if (m && m[1]) return m[1];
+        }
+      }
+    } catch {
+      // defensive — fall through to metadataCache fallback.
+    }
+    // Fallback: read lc-language from the metadataCache directly. Mirrors
+    // the source-of-truth used by Phase 16 D-12 when the chevron is
+    // re-rendered for a non-active leaf.
+    try {
+      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+      const fm = this.app.metadataCache.getFileCache(file as TFile)
+        ?.frontmatter as Record<string, unknown> | undefined;
+      const fmLang = fm?.['lc-language'];
+      if (typeof fmLang === 'string' && fmLang.length > 0) return fmLang;
+    } catch {
+      // defensive — return undefined.
+    }
+    return undefined;
   }
 
   /**
@@ -2452,7 +2891,7 @@ export default class LeetCodePlugin extends Plugin {
       return;
     }
 
-    const lang = resolveLangSlug(extracted.lang, this.settings.getDefaultLanguage());
+    const lang = ctx.lcLanguage ?? resolveLangSlug(extracted.lang, this.settings.getDefaultLanguage());
     const detail = this.settings.getProblemDetail(ctx.slug);
     const questionId = detail?.internalQuestionId ?? (detail ? String(detail.id) : '');
 
@@ -2642,7 +3081,21 @@ export default class LeetCodePlugin extends Plugin {
    *  `resetCodeWithConfirm` helper. Opens ConfirmOverwriteModal (D-11)
    *  when the existing fence is non-empty; bypasses the modal when the
    *  fence is empty or absent. Success Notice copy is locked to
-   *  "Code reset to starter." per UI-SPEC §Copywriting. */
+   *  "Code reset to starter." per UI-SPEC §Copywriting.
+   *
+   *  Phase 17 D-03 / D-05 — `getDispatchHandle` looks up the child editor
+   *  via `this.childEditorRegistry?.get(file.path)`; when a child is
+   *  registered, the helper routes the write through the child's CM6
+   *  instance (userEvent `'leetcode.reset.child'`) so the undo entry
+   *  lands on the child. The existing `createChildSyncExtension` mirror
+   *  in `src/main/childEditorSync.ts:82-121` propagates the change to the
+   *  parent with `addToHistory.of(false)`. When no child is registered
+   *  (note not open in a MarkdownView), the helper falls back to
+   *  `app.vault.process(...)` per D-04. This restores the Phase 15 D-05
+   *  cm-z scope isolation invariant for Reset — Cmd-Z after Reset never
+   *  inserts the prior solution body into adjacent sections. The chevron
+   *  switch wiring at `dispatchChildLanguageReconfigure` is the
+   *  structural template for this lookup pattern. */
   private async resetCode(file: TFile, slug: string): Promise<void> {
     await resetCodeWithConfirm({
       app: this.app,
@@ -2659,6 +3112,85 @@ export default class LeetCodePlugin extends Plugin {
         }),
       notify: (message) => {
         new Notice(message, 3000);
+      },
+      getDispatchHandle: (targetFile: TFile) => {
+        // Phase 17 D-03 — child-first lookup. The chevron switch at
+        // `dispatchChildLanguageReconfigure` (~line 2462) is the
+        // structural template — same `childEditorRegistry?.get` pattern,
+        // same `userEvent: 'leetcode.<verb>'` convention, same null-guard
+        // semantics. When a child is registered, return a handle that
+        // dispatches a full-body replace on the child; when not, return
+        // null so the helper falls back to vault.process (D-04).
+        const childView = this.childEditorRegistry?.get(targetFile.path);
+        if (!childView) return null;
+        return {
+          replaceFullBody: (next: string) => {
+            // The child's doc IS the fence body — slice the body-only
+            // payload out of the full-note string produced by
+            // forceInjectCodeSection. Defensive fallback in
+            // extractFenceBodyFromFullNote keeps the dispatch a no-op-ish
+            // identity when fence detection fails (should never happen
+            // since forceInjectCodeSection just produced it).
+            const bodyOnly = extractFenceBodyFromFullNote(next);
+            try {
+              childView.dispatch({
+                changes: {
+                  from: 0,
+                  to: childView.state.doc.length,
+                  insert: bodyOnly,
+                },
+                userEvent: 'leetcode.reset.child',
+                // NOTE: NO Transaction.addToHistory.of(false) here. Reset
+                // is a normal child edit and deserves a child undo entry;
+                // the existing parent-side mirror in
+                // childEditorSync.ts:108-114 carries
+                // addToHistory.of(false) so the parent never picks up
+                // the Reset entry — that's the Phase 15 D-05 invariant.
+              });
+            } catch {
+              // Silent — child may be in teardown; vault on disk still
+              // gets updated by the next sync mirror dispatch when the
+              // child re-attaches. Mirrors the defensive try/catch in
+              // dispatchChildLanguageReconfigure / childEditorSync.ts.
+            }
+          },
+        };
+      },
+      resolveActiveLangSlug: (targetFile: TFile): string | undefined => {
+        // Phase 17 gap-closure (17-08, 17-UAT.md Issue 2 / Test 10) — restore
+        // Phase 16 D-06 canonical priority chain: lc-language frontmatter >
+        // fence opener tag > settings.getDefaultLanguage(). The Phase 17 D-03
+        // dispatch path swap (Plan 17-01) inadvertently dropped this chain
+        // because the helper hardcoded settings.getDefaultLanguage() — see
+        // .planning/debug/reset-code-language-regression.md for the original
+        // fix. We do NOT call this.readActiveFenceSlug(file) here because
+        // that helper's internal metadataCache fallback collapses the
+        // priority distinction by treating fence-opener-fallback and
+        // fm-fallback as the same source. The resolver's Priority 1 must be
+        // EXPLICIT-fm-only so unset fm correctly drops to fence opener.
+        try {
+          // Priority 1 — lc-language frontmatter (canonical, chevron's SoT).
+          const fm = this.app.metadataCache.getFileCache(targetFile)
+            ?.frontmatter as Record<string, unknown> | undefined;
+          const fmLang = fm?.['lc-language'];
+          if (typeof fmLang === 'string' && fmLang.length > 0) return fmLang;
+
+          // Priority 2 — active fence opener tag. Active MarkdownView only.
+          const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+          if (view && view.file && view.file.path === targetFile.path) {
+            const cm = (view.editor as unknown as { cm: EditorView }).cm;
+            const fence = findCodeFence(cm.state);
+            if (fence) {
+              const openerText = cm.state.doc.line(fence.openerLine).text;
+              const m = /^\s*```\s*(\S+)\s*$/.exec(openerText);
+              if (m && m[1]) return m[1];
+            }
+          }
+        } catch {
+          // Defensive — fall through to undefined → helper uses default.
+        }
+        // Priority 3 — let the helper fall back to settings.getDefaultLanguage().
+        return undefined;
       },
     });
   }
