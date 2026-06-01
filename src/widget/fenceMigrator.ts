@@ -1,0 +1,309 @@
+// src/widget/fenceMigrator.ts
+//
+// Phase 21 Plan 21-01 — v1.2 → v1.3 fence migration foundation.
+//
+// Three exported functions:
+//   1. isMigrationCandidate(noteText, frontmatter) — pure 5-clause strict-match
+//      predicate (D-edge-01). True iff lc-slug present + `## Code` heading +
+//      first fence inside has recognized LC langSlug + has closer + note
+//      does NOT already contain a `\`\`\`leetcode-solve` fence.
+//   2. writeBackup(app, file, slug, fileText) — async; writes a per-note
+//      sidecar to .obsidian/plugins/obsidian-leetcode/migration-backup-{slug}-
+//      {ISO}/{slug}.md via app.vault.adapter.write. Returns the backup path.
+//   3. migrateLegacyFenceIfNeeded(app, file, opts?) — async orchestrator.
+//      6-step pipeline: settings gate → read → predicate → backup →
+//      vault.process → processFrontMatter (only when lc-language is missing/
+//      empty). Returns true iff migration ran.
+//
+// Decision references (locked per .planning/phases/21-v1-2-migration/21-CONTEXT.md):
+//   L1 — canonical v1.3 fence tag = `\`\`\`leetcode-solve`; language metadata
+//        lives in `lc-language` frontmatter.
+//   L3 — migration + first-edit are atomic; single render-frame.
+//   L4 — idempotency: re-opening a migrated note is a no-op.
+//   L5 — NEVER call from Plugin.onload(). Lazy-on-first-open only.
+//   L8 — vault.process is the ONLY vault mutation primitive (CF-06).
+//   D-trigger-01 — orchestrator shape: file-open → strict-match gate →
+//                  backup → atomic two-write.
+//   D-edge-01 — 5-clause strict-match predicate (lc-slug + ## Code +
+//               recognized langSlug + closer + idempotency).
+//   D-edge-02 — mixed-state notes (legacy + leetcode-solve both present)
+//               skip migration; idempotency wins.
+//   D-edge-03 — fill `lc-language` ONLY when missing/empty; same atomic flow.
+//   D-edge-04 — frontmatter NEVER overwritten when lc-language is already set.
+//   D-backup-01 — backup folder: migration-backup-{slug}-{ISO} with sanitized
+//                 ISO (no `:`, no millis); file inside named {slug}.md.
+//   D-backup-02 — one backup per note ever; idempotency short-circuits before
+//                 the backup writer runs on subsequent re-opens.
+//
+// Threats mitigated (per .planning/phases/21-v1-2-migration/21-01-PLAN.md):
+//   T-21-bytes — body byte-exact via SSoT delegation to rewriteFenceOpenerTag
+//                (CRLF-tolerant; property-tested).
+//   T-21-backup — backup BEFORE rewrite; if adapter.write throws, vault.process
+//                 is never called.
+//   T-21-atom — atomic vault.process + processFrontMatter pair; queued serially
+//               per-file by Obsidian.
+//   T-21-strict — exhaustive predicate clause coverage in unit tests.
+//   T-21-load — pure module; NO Plugin.onload import; NO registerEvent.
+//
+// Pattern S-04 (`'leetcode.*'` userEvent annotation) is NOT applicable to this
+// module: migration runs at the vault layer (vault.process + processFrontMatter)
+// BEFORE widget mount. There is no CM6 dispatch involved — the section lock's
+// changeFilter operates on CM6 transactions; vault-layer writes never hit
+// the editor's transaction filter.
+//
+// Settings gating discipline: `useInlineWidget=ON` is the master gate (L9).
+// This module does NOT inspect useInlineWidget — the gate is the caller's
+// responsibility (Plan 21-02 wires it in the mount paths). The internal
+// `autoMigrateOnOpen` gate is dependency-injected via opts (Pattern S-06):
+// callers thread the boolean in rather than reaching into
+// app.plugins.plugins['obsidian-leetcode']. Pure DI keeps the migrator
+// unit-testable in isolation.
+
+import type { App, TFile } from 'obsidian';
+import { LC_LANG_SLUGS, resolveLangSlug } from '../solve/languages';
+import { countLeetCodeSolveFenceOpeners } from './fenceLocator';
+import { rewriteFenceOpenerTag } from './fenceSerialization';
+import { logger } from '../shared/logger';
+
+// Sentinel string for resolveLangSlug — fenceTag → sentinel means unknown tag.
+const SLUG_SENTINEL = '__sentinel__';
+
+const H2_CODE_RE = /^\s*##\s+Code\s*$/;
+const H2_ANY_RE = /^\s*##\s+\S/;
+const FENCE_OPENER_RE = /^\s*```([A-Za-z0-9_+#-]*)\s*$/;
+const FENCE_CLOSER_RE = /^\s*```\s*$/;
+
+/**
+ * Pure predicate — true iff the note is a v1.2 LC plugin-owned note that
+ * MUST be migrated to the v1.3 `\`\`\`leetcode-solve` fence.
+ *
+ * Five clauses (D-edge-01) — ALL must hold:
+ *   C1: lc-slug present in frontmatter (non-empty string).
+ *   C5: idempotency — note does NOT already contain `\`\`\`leetcode-solve`.
+ *       (Evaluated EARLY for cheap short-circuit; D-edge-02 mixed-state.)
+ *   C2: `## Code` heading exists.
+ *   C3: First fence inside `## Code` has a recognized LC langSlug
+ *       (resolveLangSlug returns a value in LC_LANG_SLUGS — both base slugs
+ *       and FENCE_TAG_ALIASES qualify).
+ *   C4: That fence has a closer (matching `^\s*\`\`\`\s*$`) before the next
+ *       `## ` heading or EOF.
+ *
+ * All other shapes — note without `## Code`, fence with unrecognized tag
+ * (text/bash/pseudo/empty), fence with no closer, fence under `## Notes`
+ * only — return false. Caller (migrateLegacyFenceIfNeeded) treats false as
+ * "skip silently". No Notice; debug-level logging only at the orchestrator
+ * level.
+ *
+ * Pure: no I/O; no captured state; safe inside vault.process retry semantics
+ * (Pattern S-08).
+ */
+export function isMigrationCandidate(
+  noteText: string,
+  frontmatter: Record<string, unknown> | undefined,
+): boolean {
+  // Clause 1 — lc-slug present.
+  const lcSlug = frontmatter?.['lc-slug'];
+  if (typeof lcSlug !== 'string' || lcSlug.length === 0) return false;
+
+  // Clause 5 — idempotency early-out (D-edge-02). Cheap short-circuit before
+  // the linear scan; SSoT via countLeetCodeSolveFenceOpeners.
+  if (countLeetCodeSolveFenceOpeners(noteText, Number.MAX_SAFE_INTEGER) > 0) {
+    return false;
+  }
+
+  // Clauses 2, 3, 4 — single forward scan.
+  const lines = noteText.split(/\r?\n/);
+  let inCodeSection = false;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i] ?? '';
+    if (H2_CODE_RE.test(text)) {
+      inCodeSection = true;
+      continue;
+    }
+    if (H2_ANY_RE.test(text)) {
+      inCodeSection = false;
+      continue;
+    }
+    if (!inCodeSection) continue;
+    const m = FENCE_OPENER_RE.exec(text);
+    if (!m) continue;
+    const tag = (m[1] ?? '').toLowerCase();
+    // Clause 3 — empty tag (bare ```) is NOT a recognized langSlug.
+    if (!tag) return false;
+    // Sentinel-trick recognition (mirrors sectionHasRecognizedFence in
+    // src/solve/starterCodeInjector.ts:251-267).
+    const resolved = resolveLangSlug(tag, SLUG_SENTINEL);
+    if (resolved === SLUG_SENTINEL) return false;
+    if (!LC_LANG_SLUGS.has(resolved)) return false;
+    // Clause 4 — scan forward for closer before next H2 / EOF.
+    for (let j = i + 1; j < lines.length; j++) {
+      const t = lines[j] ?? '';
+      if (H2_ANY_RE.test(t)) return false;
+      if (FENCE_CLOSER_RE.test(t)) return true;
+    }
+    return false; // EOF before closer
+  }
+  // No fence found inside `## Code` (or no `## Code` heading at all).
+  return false;
+}
+
+/**
+ * Build the canonical backup folder path:
+ *   .obsidian/plugins/obsidian-leetcode/migration-backup-{slug}-{ts}
+ * where {ts} is the current ISO timestamp sanitized for cross-OS filesystem
+ * safety: `:` → `-`, milliseconds stripped (D-backup-01; Pitfall 3).
+ *
+ * Result regex (verified shape):
+ *   /^migration-backup-(.+)-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/
+ */
+function buildBackupPaths(slug: string): { dir: string; file: string } {
+  // toISOString() => '2026-06-01T14:32:08.123Z'
+  // Replace `:` with `-` (Windows-illegal in filenames) and strip the
+  // millisecond fragment so the regex is `\d{2}-\d{2}-\d{2}Z` not
+  // `\d{2}-\d{2}-\d{2}\.\d{3}Z`.
+  const ts = new Date()
+    .toISOString()
+    .replace(/:/g, '-')
+    .replace(/\.\d{3}Z$/, 'Z');
+  const dir = `.obsidian/plugins/obsidian-leetcode/migration-backup-${slug}-${ts}`;
+  const file = `${dir}/${slug}.md`;
+  return { dir, file };
+}
+
+/**
+ * Write a backup sidecar of the pre-migration note text. Used by
+ * `migrateLegacyFenceIfNeeded` BEFORE any rewrite (T-21-backup invariant).
+ *
+ * Path shape (D-backup-01):
+ *   .obsidian/plugins/obsidian-leetcode/migration-backup-{slug}-{ISO}/{slug}.md
+ *
+ * Uses app.vault.adapter.write (raw filesystem) rather than app.vault.create
+ * — backups are plugin-internal, NOT vault-visible. The `:` in the ISO
+ * timestamp is replaced with `-` for cross-OS filesystem safety.
+ *
+ * Defensive mkdir wrap (Open Question §2 — adapter.mkdir contract on
+ * existing dir is unclear). The folder name carries an ISO timestamp so
+ * collisions are not realistic; the try/catch simply guards against any
+ * platform-specific mkdir-on-existing throw.
+ *
+ * If adapter.write throws, the rejection propagates; the orchestrator's
+ * try/catch (Pattern S-05) treats this as "no rewrite without successful
+ * backup" — vault.process is never called.
+ */
+export async function writeBackup(
+  app: App,
+  _file: TFile,
+  slug: string,
+  fileText: string,
+): Promise<string> {
+  const { dir, file: backupPath } = buildBackupPaths(slug);
+  // Defensive mkdir — RESEARCH Open Question §2 + Pitfall 4.
+  try {
+    await app.vault.adapter.mkdir(dir);
+  } catch {
+    // Best-effort — folder may already exist; adapter.write below is the
+    // operation that MUST succeed for the backup to be valid.
+  }
+  await app.vault.adapter.write(backupPath, fileText);
+  return backupPath;
+}
+
+/**
+ * Lazy-on-open atomic migration orchestrator. Called from the widget mount
+ * path (Plan 21-02 wires it). Returns Promise<boolean> — true iff migration
+ * ran; false on any skip / failure (silent-on-failure per Pattern S-05).
+ *
+ * Six-step pipeline:
+ *   0. Settings gate — when opts.force !== true AND opts.autoMigrateOnOpen
+ *      !== true, return false WITHOUT side effects (no read, no backup,
+ *      no write). Defensive — caller should have already gated, but this
+ *      double-checks.
+ *   1. Read text + frontmatter via vault.read + metadataCache.getFileCache.
+ *   2. Strict-match gate — isMigrationCandidate must be true.
+ *   3. Backup BEFORE rewrite (T-21-backup): writeBackup throws iff the
+ *      filesystem write fails; the wrapping try/catch returns false and
+ *      logs at debug level — vault.process is NEVER called when backup
+ *      fails. (No rewrite without successful backup.)
+ *   4. Atomic body-touching write via vault.process — SSoT delegation to
+ *      rewriteFenceOpenerTag. The pure helper is property-tested
+ *      (T-21-bytes mitigation).
+ *   5. Fill lc-language ONLY when missing/empty (D-edge-03). The inner
+ *      re-check inside the processFrontMatter callback protects against
+ *      race conditions where the user (or the chevron) writes
+ *      lc-language between the metadataCache read and the
+ *      processFrontMatter call (Pattern 2 + Pitfall 7).
+ *   6. Return true.
+ *
+ * Whole orchestrator wrapped in try/catch — debug-log + return false on
+ * any I/O failure. NEVER throw to caller. Per Pattern S-05.
+ */
+export async function migrateLegacyFenceIfNeeded(
+  app: App,
+  file: TFile,
+  opts?: {
+    force?: boolean;
+    defaultLanguage?: string;
+    autoMigrateOnOpen?: boolean;
+  },
+): Promise<boolean> {
+  // Step 0 — settings gate. Force bypasses autoMigrateOnOpen (D-auto-03).
+  if (opts?.force !== true && opts?.autoMigrateOnOpen !== true) {
+    return false;
+  }
+  try {
+    // Step 1 — read text + frontmatter.
+    const text = await app.vault.read(file);
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined;
+
+    // Step 2 — strict-match gate.
+    if (!isMigrationCandidate(text, fm)) {
+      return false;
+    }
+
+    // The predicate confirms lc-slug is a non-empty string.
+    const slug = fm!['lc-slug'] as string;
+
+    // Step 3 — backup BEFORE rewrite. Throws propagate to the outer catch;
+    // when they do, vault.process is NEVER called (T-21-backup invariant).
+    await writeBackup(app, file, slug, text);
+
+    // Step 4 — atomic body-touching write via vault.process. SSoT delegation
+    // to rewriteFenceOpenerTag (CRLF-tolerant; body byte-exact).
+    await app.vault.process(file, (current) =>
+      rewriteFenceOpenerTag(current, 'leetcode-solve'),
+    );
+
+    // Step 5 — fill lc-language ONLY when missing/empty (D-edge-03 +
+    // D-edge-04). Inner re-check inside processFrontMatter callback for
+    // race-safety (Pattern 2 + Pitfall 7).
+    const needsLang =
+      typeof fm?.['lc-language'] !== 'string' || fm['lc-language'] === '';
+    if (needsLang) {
+      const defaultLang = opts?.defaultLanguage ?? 'python3';
+      await app.fileManager.processFrontMatter(
+        file,
+        (fmObj: Record<string, unknown>) => {
+          if (
+            typeof fmObj['lc-language'] !== 'string' ||
+            fmObj['lc-language'] === ''
+          ) {
+            fmObj['lc-language'] = defaultLang;
+          }
+        },
+      );
+    }
+
+    return true;
+  } catch (err) {
+    // Pattern S-05 — silent-on-failure. Migration must NEVER block file
+    // open. The user retains their note unchanged (or with the fence
+    // already swapped, depending on which step threw). The next file-open
+    // re-runs the orchestrator; if the backup step previously succeeded
+    // and vault.process previously succeeded, the idempotency clause
+    // (countLeetCodeSolveFenceOpeners > 0) short-circuits.
+    logger.debug('migration.fenceMigrator: non-fatal failure', err);
+    return false;
+  }
+}
