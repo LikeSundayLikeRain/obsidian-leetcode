@@ -103,6 +103,17 @@ export const LOCKED_HEADINGS = [
  * in Edit Mode (e.g., `python3` slug → ` ```python` opener; `golang` → ` ```go`;
  * `c` → ` ```cpp`). Unsupported LC slugs pass through verbatim and render plain
  * monospace — same UX as the pre-Phase-5.3 baseline.
+ *
+ * Phase 20 Plan 20-10 (gap-closure T10) — IMPORTANT: this function emits a
+ * `\`\`\`<lcSlugToFenceTag(langSlug)>` opener (e.g., `\`\`\`python`,
+ * `\`\`\`java`). It is NOT the v1.3 `\`\`\`leetcode-solve` emitter. v1.3
+ * fence body replacement happens UPSTREAM in `forceInjectCodeSection` via the
+ * `fenceKind === 'leetcode-solve'` short-circuit which uses
+ * `rewriteFenceBody` (src/widget/fenceSerialization.ts:141) instead — that
+ * primitive preserves the `\`\`\`leetcode-solve` opener byte-for-byte. Future
+ * readers must NOT teach this function to emit a `\`\`\`leetcode-solve`
+ * opener — the v1.3 path is structurally body-only-replace and never re-emits
+ * the opener marker.
  */
 export function codeBlockFor(langSlug: string, starterCode: string): string {
   const code = starterCode.trim();

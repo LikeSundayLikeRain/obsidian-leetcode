@@ -135,3 +135,20 @@ export function computeFenceIndex(
   }
   return count;
 }
+
+/**
+ * Phase 20 Plan 20-10 (gap-closure T9 underlying / T10 — DATA CORRUPTION) —
+ * caller-ergonomics alias for `computeFenceIndex`. Same primitive, named so
+ * call-sites that ask "is there a leetcode-solve fence in this text?" read
+ * cleanly. Pass `Number.MAX_SAFE_INTEGER` (or `fileText.length`, whichever is
+ * larger) as the second argument and check `> 0` for the existence predicate.
+ *
+ * Used by:
+ *   - src/solve/starterCodeInjector.ts (kind-aware short-circuit gate)
+ *   - src/main.ts resolveFenceKind closure (T10 fence-kind resolver)
+ *   - src/graph/copyToCode.ts (kind-threading wiring for retrieve path)
+ *
+ * SSoT discipline: alias only — DO NOT inline a separate scan loop in callers.
+ * The Plan 19-04 closer-resolution rule and CRLF tolerance live here.
+ */
+export const countLeetCodeSolveFenceOpeners = computeFenceIndex;
