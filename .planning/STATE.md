@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.3
-milestone_name: architecture overview, migration docs, sync interaction notes, and Cmd-Z/Cmd-F scoping behavior.
+milestone_name: Inline Widget Architecture
 status: executing
-last_updated: "2026-06-01T15:52:41.791Z"
-last_activity: 2026-06-01 -- Phase 21 planning complete
+last_updated: "2026-06-01T15:53:46.082Z"
+last_activity: 2026-06-01 -- Phase 21 execution started
 progress:
   total_phases: 6
   completed_phases: 1
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** Phase 20 — reconciliation-ux-action-row-section-protection
+**Current focus:** Phase 21 — v1-2-migration
 
 ## Current Position
 
-Phase: 20 (reconciliation-ux-action-row-section-protection) — EXECUTING
-Plan: 10 of 10 — Plan 20-10 (gap closure) shipped + UAT-approved 2026-05-31
-Status: Ready to execute
-Last activity: 2026-06-01 -- Phase 21 planning complete
+Phase: 21 (v1-2-migration) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 21
+Last activity: 2026-06-01 -- Phase 21 execution started
 
 ## Performance Metrics
 
