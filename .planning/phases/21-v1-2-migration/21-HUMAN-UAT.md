@@ -88,7 +88,42 @@ blocked: 0
 (Reported by user 2026-06-01 after diagnose phase, before plan-fixes completes — captured here so plan-phase can fold in.)
 
 - truth: "On every remount of an LC note (close tab→reopen, switch notes→switch back, close all→reopen), the takeover system mounts in a working state. The 'Click to take over' pill responds to clicks consistently across all mounts."
-  status: triaged
+  status: diagnosed
+  root_cause: |
+    TWO compounding bugs in the multi-pane "Take over" affordance produce the deterministic Open #1-fine / Open #2-dead / Open #3-fine pattern.
+
+    PRIMARY BUG — `reconcileFocus` mis-classifies detached containers as peers (src/widget/multiPaneCoordinator.ts:140-145):
+       const ctlLeafEl = findLeafEl(ctl.container ?? null);
+       if (ctlLeafEl && ctlLeafEl === activeLeafEl) {
+         ctl.setPaneState('active');
+       } else {
+         ctl.setPaneState('peer');   // ← fires when ctlLeafEl is null
+       }
+    When findLeafEl(ctl.container) returns null (controller mid-mount-attach window, parked under document.body, or mid-teardown), the else branch wins and the controller flips to 'peer'. Mounts the overlay (WidgetController.setPaneState, WidgetController.ts:632-705) on the lone widget for the active file.
+
+    SECONDARY BUG — promoteThisPane cannot self-recover when click is on the active leaf (WidgetController.ts:720-742):
+    By the time the user clicks the pill, the container IS attached to the (already-active) leaf. promoteThisPane walks getLeavesOfType('markdown'), finds the leaf containing this.container, calls setActiveLeaf(leaf). Obsidian dedupes redundant focus changes — active-leaf-change does NOT re-fire — so reconcileFocus never re-runs and the controller stays stuck in 'peer' with the overlay forever.
+
+    DETERMINISM EXPLAINED:
+    - Open #1: leaf hosting note is already focused before widget mounts. Container attached when reconcileFocus runs → 'active' → no overlay.
+    - Open #2: widgetRegistry.set(...) at WidgetController.ts:1176-1178 runs synchronously inside mountLeetCodeWidget BEFORE the host is attached to the leaf (CM6 attaches after toDOM returns; Reading-mode containerEl moves into leaf after post-processor returns). active-leaf-change for the new pane fires DURING this attach window. Reconcile sees registered controller + detached container → flips to 'peer'.
+    - Open #3 (file-nav click): workspace.openLinkText / getLeaf().openFile fires active-leaf-change AFTER the leaf is fully populated. reconcileFocus runs against attached container → 'active' → overlay removed.
+  artifacts:
+    - path: "src/widget/multiPaneCoordinator.ts:140-145"
+      issue: "PRIMARY: else branch flips controller to 'peer' whenever findLeafEl returns null, including the legitimate mid-attach window. A controller with a single widget for the active file plus null leaf must NOT be peer."
+    - path: "src/widget/WidgetController.ts:720-742"
+      issue: "SECONDARY: promoteThisPane cannot self-correct when target leaf is already active (Obsidian dedupes the focus event, no reconcile re-runs)."
+    - path: "src/widget/WidgetController.ts:1176-1178"
+      issue: "Timing-load-bearing: widgetRegistry.set(...) happens synchronously inside mountLeetCodeWidget BEFORE the host is attached. Source of the mid-attach race window."
+    - path: "src/widget/WidgetController.ts:632-705"
+      issue: "setPaneState('peer') is correct in isolation; it's the upstream input that is wrong."
+  missing:
+    - "PRIMARY FIX: in reconcileFocus, change else branch (multiPaneCoordinator.ts:140-145) so a null ctlLeafEl defaults to setPaneState('active') (or skip — leave state unchanged). Controllers with no leaf ancestor are parked/pre-attach/mid-teardown — none of those states should show a takeover overlay."
+    - "DEFENSE-IN-DEPTH: in promoteThisPane (WidgetController.ts:720-742), add an explicit setPaneState('active') on `this` after setActiveLeaf so single-pane click-to-recover works when Obsidian dedupes the focus event."
+    - "Regression test: reconcileFocus with a controller whose container has no .workspace-leaf ancestor → assert setPaneState('active') (or no-op), NOT 'peer'."
+    - "Integration test: open LC note, switch away+back, assert no overlay visible AND that the click handler succeeds at takeover."
+  debug_session: ".planning/debug/take-over-cta-singleton-pane-asymmetric.md"
+  triage
   severity: major
   test: "post-UAT (no test number — emerged during diagnose phase)"
   reproduction: |
@@ -122,7 +157,43 @@ blocked: 0
   next_step: "After the planner returns the revised 21-09/10/11, dispatch a NEW debug agent for THIS issue + spawn 21-12 plan. Hold off until the current revision iteration completes to avoid concurrent planner conflicts."
 
 - truth: "Opening a new problem from the problem browser renders the LC widget exactly once in the ## Code section."
-  status: triaged
+  status: diagnosed
+  root_cause: |
+    The post-create "belt-and-suspenders" retrofit in NoteWriter.openProblem (src/notes/NoteWriter.ts:419) calls into starterCodeInjector.retrofit (src/solve/starterCodeInjector.ts:256-271), which calls injectCodeSection(current, { starterCode, langSlug }) WITHOUT passing fenceKind.
+
+    With useInlineWidget=ON, buildNoteBody has just emitted a ```leetcode-solve fence into the new note (src/notes/NoteTemplate.ts:241-243 → codeBlockForV13). Because the retrofit chain never threads fenceKind: 'leetcode-solve', the v1.3 short-circuit at injectCodeSection lines 106-112 is never taken. The legacy path then walks ## Code looking for a recognized-langSlug fence — 'leetcode-solve' is NOT a member of LC_LANG_SLUGS, so neither sectionHasRecognizedFence (line 123) nor the FENCE_OPENER_CHECK loop (lines 131-140) matches. Falls into the lines 141-146 "insert starter immediately after heading" branch and PREPENDS a fresh ```<defaultLanguage> (e.g. ```java) starter block at the top of ## Code. The original ```leetcode-solve fence is preserved verbatim below it as part of sectionBody.
+
+    Net result: TWO fence blocks in ## Code on every fresh problem-browser open with useInlineWidget=ON.
+
+    Git evidence: commit 466f7bf (2026-06-01, "feat(21-03): add codeBlockForV13 emitter + fenceKind on injectCodeSection + buildNoteBody useInlineWidget gate") added the v1.3 emit AND fenceKind option but did NOT thread fenceKind through the retrofit wrapper. The follow-up ee8ffb9 (Plan 21-07 WR-07) hardened the v1.3 short-circuit's index but did not close the wrapper gap. Pre-existing comment block at src/main.ts:1421-1428 already documents this exact corruption pattern (Phase 20 Plan 20-09) — that earlier fix only gated the file-open handler (`if (!useInlineWidget)` at main.ts:1429); did not gate any of NoteWriter's four internal retrofitStarterCode call sites.
+
+    Scope: fresh-only on every problem-browser open with useInlineWidget=ON. Re-opens of existing v1.3 notes do NOT re-corrupt because the file-open handler is already gated by Phase 20 Plan 20-09. However, THREE OTHER NoteWriter paths inherit the same defect and would corrupt under their respective triggers:
+       - NoteWriter.ts:272 (re-open with cached detail)
+       - NoteWriter.ts:343 (cache cleared but file exists — recovered path)
+       - NoteWriter.ts:453 (backgroundRefresh after 7-day TTL elapses on re-open)
+    The new-note path (line 419) is the one that fires cleanly on every fresh problem-browser open.
+  artifacts:
+    - path: "src/solve/starterCodeInjector.ts:256-271"
+      issue: "PRIMARY ROOT CAUSE: retrofit() calls injectCodeSection without fenceKind — the precise location of the missing plumbing"
+    - path: "src/notes/NoteWriter.ts:230-241"
+      issue: "retrofitStarterCode wrapper that does not pass fenceKind through — the seam where the missing argument originates"
+    - path: "src/notes/NoteWriter.ts:414-419"
+      issue: "second emitter call site (post-create belt-and-suspenders retrofit) — the redundant one for v1.3 notes"
+    - path: "src/notes/NoteWriter.ts:369-375"
+      issue: "first emitter call site (buildNoteBody emits the correct ```leetcode-solve fence)"
+    - path: "src/solve/starterCodeInjector.ts:93-146"
+      issue: "injectCodeSection legacy path runs because fenceKind is missing; lines 141-146 prepend the duplicate langSlug fence"
+    - path: "src/notes/NoteWriter.ts:272, 343, 453"
+      issue: "THREE LATENT CALL SITES with the same defect — must be fixed in the same plan to prevent corruption under cache-clear / re-open / background-refresh triggers"
+    - path: "src/main.ts:1421-1428"
+      issue: "pre-existing comment block already documents the same corruption pattern from Phase 20 Plan 20-09 — fix scope was incomplete"
+  missing:
+    - "PRIMARY FIX (option a — minimal): extend retrofit's settings parameter to include the optional getUseInlineWidget?(): boolean getter and pass fenceKind: settings.getUseInlineWidget?.() ? 'leetcode-solve' : 'legacy' into the injectCodeSection call at starterCodeInjector.ts:266. NoteWriter.this.settings already exposes getUseInlineWidget?(), so no caller-side change."
+    - "PRIMARY FIX (option b): add explicit fenceKind?: 'leetcode-solve' | 'legacy' parameter to retrofit() and have NoteWriter pass it from this.settings.getUseInlineWidget?.()."
+    - "DEFENSE-IN-DEPTH: in NoteWriter.openProblem, drop the line 419 belt-and-suspenders call when useInlineWidget=ON (mirroring the main.ts:1429 file-open gate). Also gate the analogous calls at lines 272, 343, 453."
+    - "Test coverage gap: Phase 21-03 unit tests verified injectCodeSection directly with explicit fenceKind, but no integration test exercises retrofit (or end-to-end openProblem path) with useInlineWidget=ON and asserts a single-fence output. Add such a test alongside the fix."
+  debug_session: ".planning/debug/duplicate-fence-on-new-problem-from-browser.md"
+  triage
   severity: major
   test: "post-UAT (no test number — emerged during diagnose phase)"
   reproduction: |
