@@ -2190,54 +2190,70 @@ button.leetcode-language-chevron:hover {
  * is the grep anchor.
  */
 
-.lc-legacy-banner--livepreview {
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
+/*
+ * Plan 21-15 cycle-2 follow-up — UAT R4 expects visual parity with
+ * Reading mode (R3 passes). Reading mode renders the banner inline in
+ * the post-processor's `el` with no plugin-specific CSS, picking up
+ * Obsidian's defaults (loose copy, neutral default button, single dark
+ * code block). Cycle-1's LP-scoped rules wrapped everything in an extra
+ * rounded box and gave the button blue-accent styling — visually
+ * different from Reading mode.
+ *
+ * Cycle-2 minimum: ONLY neutralize CM6's block-decoration container
+ * contamination so the inner banner DOM renders as if it were inline
+ * (matching Reading mode). NO outer wrapper background/border, NO
+ * button accent override.
+ */
+
+/* Plan 21-15 cycle-2 — accent-color [Migrate now] button. Applies in
+ * BOTH Reading mode and Live Preview (selector is unscoped to the
+ * banner CTA class). Uses Obsidian's interactive-accent CSS variables
+ * so the button respects the user's theme. */
+button.leetcode-migration-banner__cta,
+.leetcode-migration-banner__cta {
+  background-color: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  border: none !important;
   border-radius: var(--radius-s);
-  padding: var(--size-4-3);
-  margin: var(--size-4-2) 0;
-  font-family: var(--font-text);
+  padding: var(--size-4-1) var(--size-4-3);
+  cursor: pointer;
 }
 
-.lc-legacy-banner--livepreview .leetcode-migration-banner__copy {
-  font-family: var(--font-text);
-  font-size: var(--font-ui-small);
-  margin: 0 0 var(--size-4-2) 0;
-  color: var(--text-normal);
+button.leetcode-migration-banner__cta:hover,
+.leetcode-migration-banner__cta:hover {
+  background-color: var(--interactive-accent-hover) !important;
 }
 
+/* LP-specific within-fence layout. CM6's block-decoration-replace
+ * container always wraps the host in a code-block-tinted box when the
+ * range spans line breaks; we work WITH that constraint rather than
+ * fighting it. Within the outer fence, separate the banner header
+ * (copy + CTA) from the read-only source preview using a horizontal
+ * rule + spacing so the structure reads clearly. The host itself stays
+ * transparent so it inherits CM6's natural background. */
+.lc-legacy-banner--livepreview {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+}
+
+/* CM6 fence-block descendants inherit monospace + fence font-size in
+ * Live Preview; restore Obsidian UI font on the banner header so the
+ * copy + CTA read as plugin chrome rather than as code content. The
+ * inner `<pre>` source preview keeps monospace by Obsidian default. */
+.lc-legacy-banner--livepreview .leetcode-migration-banner__copy,
 .lc-legacy-banner--livepreview .leetcode-migration-banner__cta {
   font-family: var(--font-text);
   font-size: var(--font-ui-small);
-  padding: var(--size-4-1) var(--size-4-3);
-  border-radius: var(--radius-s);
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border: none;
-  cursor: pointer;
-  margin-bottom: var(--size-4-3);
 }
 
-.lc-legacy-banner--livepreview .leetcode-migration-banner__cta:hover {
-  background: var(--interactive-accent-hover);
-}
-
-.lc-legacy-banner--livepreview pre {
-  margin: 0;
-  padding: var(--size-4-2);
-  background: var(--code-background);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  font-family: var(--font-monospace);
-  font-size: var(--font-ui-smaller);
-  overflow-x: auto;
-}
-
-.lc-legacy-banner--livepreview pre code {
-  background: transparent;
-  padding: 0;
-}
-
-.lc-legacy-banner--livepreview .leetcode-migration-banner--auto-migrating {
-  padding: var(--size-4-1) 0;
+/* Visual separator between the banner header (copy + CTA) and the
+ * read-only source preview, so the two zones read distinctly within
+ * CM6's outer fence container. */
+.lc-legacy-banner--livepreview .leetcode-migration-banner {
+  padding-bottom: var(--size-4-2);
+  margin-bottom: var(--size-4-2);
+  border-bottom: 1px solid var(--background-modifier-border);
 }
