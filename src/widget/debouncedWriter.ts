@@ -67,6 +67,15 @@ export class DebouncedWriter {
    *  edit, open ConflictModal) reads this via `hasPending()`. */
   private pending = false;
 
+  /** Plan 21-17 — optional registryKey of the owning WidgetController.
+   *  Passed as the third argument to selfWriteSuppression.arm(...) so the
+   *  modify-handler peer-sync fan-out can identify the originating pane
+   *  (and skip it — its caret is already correct because its own typing
+   *  produced the new doc state). Optional to preserve backward compat
+   *  with existing test fixtures that construct DebouncedWriter without
+   *  threading a registryKey through. */
+  private readonly registryKey?: string;
+
   constructor(
     private readonly app: App,
     private readonly file: TFile,
@@ -74,8 +83,10 @@ export class DebouncedWriter {
     private readonly getFenceIndex: () => number,
     private readonly suppression: SelfWriteSuppression,
     delayMs: number,
+    registryKey?: string,
   ) {
     this.delayMs = delayMs;
+    this.registryKey = registryKey;
     this.deb = debounce(() => { void this.flush(); }, this.delayMs, /*resetTimer=*/true);
   }
 
@@ -199,7 +210,10 @@ export class DebouncedWriter {
 
       // Arm BEFORE vault.process (CONTEXT C-04; probe-confirmed safe per
       // Plan 19-02 Task 1's modifyEventOrdering.probe.test.ts).
-      this.suppression.arm(this.file.path, expectedHash);
+      // Plan 21-17 — thread registryKey when provided so the modify-handler
+      // peer-sync fan-out can identify the originating pane via
+      // selfWriteSuppression.peekOriginator(path) and skip it.
+      this.suppression.arm(this.file.path, expectedHash, this.registryKey);
 
       // Write through vault.process. Idempotent — if `body !== currentDisk`
       // due to a race, the suppression entry won't consume and external-edit

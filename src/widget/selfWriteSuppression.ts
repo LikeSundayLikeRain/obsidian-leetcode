@@ -36,6 +36,13 @@
 interface SuppressionEntry {
   expectedHash: string;
   expiresAt: number;
+  /** Plan 21-17 — registryKey of the WidgetController whose DebouncedWriter
+   *  armed this entry. Used by the modify-handler peer-sync fan-out to
+   *  identify the originating pane (so it can be skipped — its caret is
+   *  already correct). Optional for backward compatibility with any caller
+   *  that has not yet been threaded; legacy callers continue to set this
+   *  field as `undefined` and are read-back as `null` via peekOriginator. */
+  originatingRegistryKey?: string;
 }
 
 export class SelfWriteSuppression {
@@ -44,12 +51,38 @@ export class SelfWriteSuppression {
 
   /** Arm a per-path entry. Subsequent tryConsume calls with the matching
    *  hash will return 'consumed' (self-write); calls past the 2s TTL return
-   *  'stale'. Replaces any existing entry for this path. */
-  arm(path: string, expectedHash: string): void {
-    this.map.set(path, {
+   *  'stale'. Replaces any existing entry for this path.
+   *
+   *  Plan 21-17 — optional `originatingRegistryKey` records the writing
+   *  controller's registryKey so the modify-handler can fan out peer-sync
+   *  updates while skipping the originator. The originator field is
+   *  informational and NEVER affects tryConsume's match logic. */
+  arm(path: string, expectedHash: string, originatingRegistryKey?: string): void {
+    const entry: SuppressionEntry = {
       expectedHash,
       expiresAt: Date.now() + this.TTL_MS,
-    });
+    };
+    if (originatingRegistryKey !== undefined) {
+      entry.originatingRegistryKey = originatingRegistryKey;
+    }
+    this.map.set(path, entry);
+  }
+
+  /** Plan 21-17 — read-only accessor for the originator registryKey of an
+   *  unexpired entry. Returns the registryKey passed to arm(), or `null`
+   *  when (a) no entry exists for the path, (b) the entry has expired (past
+   *  TTL — no defensive delete here; tryConsume owns that), or (c) the
+   *  entry was armed without the originator (legacy 2-arg call shape).
+   *
+   *  CRITICAL: peekOriginator is READ-ONLY. It does NOT consume / drop the
+   *  entry — tryConsume is the only mutator. The modify-handler captures
+   *  the originator BEFORE calling tryConsume so the routing decision is
+   *  made on the live entry; the subsequent tryConsume drops it. */
+  peekOriginator(path: string): string | null {
+    const entry = this.map.get(path);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) return null;
+    return entry.originatingRegistryKey ?? null;
   }
 
   /** Attempt to consume a suppression entry. Always deletes the entry on

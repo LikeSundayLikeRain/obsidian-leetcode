@@ -1191,6 +1191,10 @@ export function mountLeetCodeWidget(
       () => ctl.fenceIndex,
       plugin.selfWriteSuppression,
       delay,
+      // Plan 21-17 — thread the controller's registryKey so the modify-
+      // handler peer-sync fan-out can identify the originating pane via
+      // selfWriteSuppression.peekOriginator(file.path) and skip it.
+      ctl.registryKey,
     );
   }
 
