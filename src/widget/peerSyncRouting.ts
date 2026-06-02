@@ -37,7 +37,16 @@ export interface PeerSyncRouteInput {
   originatingRegistryKey: string | null;
   /** Result of selfWriteSuppression.tryConsume(path, observedHash). */
   consumeResult: 'consumed' | 'stale' | 'miss';
-  /** All controllers in the registry (the helper filters by filePath). */
+  /** Controllers visible to the routing decision.
+   *
+   *  WR-06 (Phase 21 cycle-2 review-fix) — contract: callers MAY pass any
+   *  superset of controllers (the entire registry is acceptable). The
+   *  helper filters by `filePath` internally; callers do NOT need to
+   *  pre-filter and SHOULD NOT rely on a pre-filtered shape (the
+   *  decision tree depends on the post-filter view). The current
+   *  main.ts call site happens to pre-filter via `allMatching`; this is
+   *  redundant but harmless. A future caller passing the entire registry
+   *  directly remains correct. */
   controllers: PeerSyncControllerLike[];
 }
 
