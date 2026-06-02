@@ -1,19 +1,32 @@
 ---
-status: partial
+status: testing
 phase: 21-v1-2-migration
 source: [21-VERIFICATION.md]
 started: 2026-06-01T21:35:00Z
-updated: 2026-06-01T20:55:00Z
-gap_closure_plans: [21-08, 21-09, 21-10, 21-11, 21-12, 21-13]
-gap_closure_status: code_shipped_pending_live_uat
+updated: 2026-06-01T22:30:00Z
+gap_closure_plans: [21-08, 21-09, 21-10, 21-11, 21-12, 21-13, 21-14, 21-15, 21-16, 21-17]
+gap_closure_status: cycle_2_code_shipped_pending_live_uat
 re_test_complete: 2026-06-01T21:10:00Z
 re_test_passed: 5
 re_test_issues: 4
+cycle_2_re_test_started: 2026-06-01T22:30:00Z
 ---
 
 ## Current Test
 
-[re-test complete — 5 pass, 3 issues]
+number: R4
+name: Live-Preview banner CSS isolation (cycle-2 fix from plan 21-15)
+expected: |
+  Open a v1.2-shaped note in Live Preview with useInlineWidget=ON AND
+  autoMigrateOnOpen=OFF. The migration banner mounts as a visually
+  distinct UI block — banner copy + [Migrate now] CTA visually separated
+  from the read-only fence body preview, parallel to the Reading-mode
+  banner shape (no single rounded code-block-tinted box wrapping
+  everything).
+awaiting: user response
+
+cycle_2_results_so_far:
+  - R2: passed (cycle-2 fix d6e41d0 — metadataCache wait + fall-through to mount)
 
 ## Re-Test Tests (post gap-closure)
 
@@ -25,9 +38,22 @@ result: pass
 
 ### R2. Frontmatter auto-repair with defaultLanguage=Java (21-09 / MIGRATE-FM-REPAIR-01)
 expected: "Open a note with lc-slug + ```leetcode-solve fence + lc-language MISSING in frontmatter. With defaultLanguage=Java in settings, frontmatter is auto-repaired to lc-language: java BEFORE the widget mounts. NO Notice 'lc-language frontmatter missing; falling back to Python' fires. Widget mounts using Java."
-result: issue
-reported: "Frontmatter repair worked (lc-language: java was added), but the widget did NOT mount properly on the same open: no syntax highlighting, not editable, no action row. After a reload (close+reopen, or plugin reload), the widget mounts correctly."
-severity: major
+result: pass
+cycle_2_status: resolved
+cycle_2_fix_commit: d6e41d0
+cycle_2_fix_summary: |
+  Root cause: processFrontMatter resolves before metadataCache.changed
+  fires. Plan 21-14's rerenderReadingModePanes hand-off only handled
+  Reading-mode panes (getMode() === 'preview' filter); Live-Preview leaves
+  no-op'd that helper, leaving the widget stuck on the pre-repair stale
+  Python+Notice fallback DOM.
+  Fix: codeBlockProcessor's repaired-branch now awaits a bounded poll
+  (16 ticks @ ~50ms = ~800ms ceiling) for metadataCache to reflect
+  lc-language, then falls through to the existing addChild path so the
+  widget mounts with the freshly-written language. Belt-and-suspenders
+  same wait pattern in the LP StateField repair branch.
+  Verified pass 2026-06-01 in dev vault on
+  LeetCode/11-container-with-most-water.md (autoMigrate=ON, default=java).
 why_human: "Same shape as R1's resolved bug — repair triggers a frontmatter write but no rerender hand-off, so the widget that mounted before repair stays in a stale/uninitialized state. Symmetric to MIGRATE-CR-01 but for the repair path, not the migrate path."
 diagnosis_hint: |
   Plan 21-09 wired repairFrontmatterIfNeeded into the readingModeMigrationHook + post-processor + Live Preview StateField. After the processFrontMatter write, we need the SAME post-write rerender that 21-08 added for migrate(). Currently the readingModeMigrationHook only chains rerenderPreviewLeaves after migrate() resolves; the .then() chain after repair() does NOT trigger a rerender — even though processFrontMatter just changed the frontmatter, which is what determines lc-language, which determines what the widget renders. Likely fix: in src/main/readingModeMigrationHook.ts, extend the .then() chain so a `repaired === true` outcome ALSO calls rerenderPreviewLeaves(this.app, file.path). Alternative: the repair candidate's writeback happens via fire-and-forget from inside liveModeBannerStateField (fire-and-forget repairInFlight guard) — that path also lacks a rerender hand-off in the Reading-mode case where the same path was already rendered from stale frontmatter.
@@ -78,6 +104,18 @@ result: pass
 ### R8. shim-validation byte-layout (inherited deferred from 21-02)
 expected: "tests/fixtures/migration/.obsidian-shim-validation.txt records DIFF: empty for live-Obsidian byte-equal validation. Already captured in original UAT Test 3 (result: pass) — included here for completeness."
 result: pass
+
+### R10. Typing flicker on body flush with autoMigrateOnOpen=ON (NEW — found during R2 cycle-2 verification)
+expected: "When typing into a v1.3 LC widget in Live Preview, the child editor flushes to parent disk via vault.process every ~500ms (DebouncedWriter cadence). The widget should remain visually stable across each flush — no unmount/remount visible to the user."
+result: issue
+reported: "On every body-flush during typing, the widget briefly disappears and reappears. The flicker is timed with the DebouncedWriter cadence (~500ms after stopping typing). Reproduced at baseline 4bca4c4 (BEFORE the cycle-2 gap-closure work shipped) AND with autoMigrateOnOpen=ON; not reproduced with autoMigrateOnOpen=OFF, suggesting the auto-migrate fire-and-forget side-effect path is involved (possibly the StateField rebuild triggered by isMigrationCandidate / isFrontmatterRepairCandidate side-effects re-firing on every parent docChange when autoMigrate=ON)."
+severity: minor
+why_human: "Pre-existing bug surfaced during R2 cycle-2 testing. Bisected: present at 4bca4c4 baseline (before any cycle-2 work). NOT introduced by plans 21-14..17 nor cycle-2 review-fix commits. Probable mechanism: when autoMigrateOnOpen=ON, the LP StateField buildLeetCodeWidgetDecorations runs side-effects (migrate / repair fire-and-forget) on every parent docChange, which interacts badly with the parent→child sync push path during keystroke flushes."
+diagnosis_hint: |
+  - Investigate buildLeetCodeWidgetDecorations side-effects (migrate / repair fire-and-forget calls inside StateField.update) — these are gated on `isAutoMigrateEnabled(plugin)` so only fire when autoMigrate=ON.
+  - Cross-check whether the codeBlockProcessor re-fire on body change in Live Preview is producing a fresh LeetCodeWidgetRenderChild on each flush (Obsidian post-processor lifecycle behavior).
+  - Check whether peer-sync fan-out's applyPeerSync path (Plan 21-17) is being invoked even in single-pane scenarios (it shouldn't — single-pane-consumed should be the routing decision).
+  - Likely fix: dedupe the StateField side-effect via a per-path "already-attempted-this-session" Set so migrate/repair only run once per file-open, not on every parent docChange.
 
 ### R9. Split-pane cursor preservation across edits (post-R7 finding)
 expected: "When the same LC note is open in two split panes, editing in one pane preserves the cursor position in the OTHER pane's widget — cursor does NOT jump to the beginning of the widget."
