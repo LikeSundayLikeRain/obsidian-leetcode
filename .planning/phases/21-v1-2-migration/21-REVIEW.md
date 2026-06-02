@@ -1,369 +1,339 @@
 ---
 phase: 21-v1-2-migration
-reviewed: 2026-06-01T18:00:00Z
+reviewed: 2026-06-01T00:00:00Z
 depth: deep
-files_reviewed: 19
+files_reviewed: 16
 files_reviewed_list:
   - src/main.ts
-  - src/main/readingModeLegacyBannerPostProcessor.ts
-  - src/main/readingModeMigrationHook.ts
   - src/notes/NoteWriter.ts
-  - src/solve/starterCodeInjector.ts
   - src/widget/codeBlockProcessor.ts
-  - src/widget/fenceMigrator.ts
+  - src/widget/debouncedWriter.ts
   - src/widget/liveModeBannerStateField.ts
-  - src/widget/liveModeViewPlugin.ts
-  - src/widget/multiPaneCoordinator.ts
+  - src/widget/peerSyncRouting.ts
+  - src/widget/selfWriteSuppression.ts
   - src/widget/WidgetController.ts
-  - tests/main/readingModeLegacyBannerPostProcessor.test.ts
+  - styles.css
   - tests/main/readingModeMigrationTrigger.test.ts
   - tests/notes/NoteWriter.starter-retrofit.test.ts
-  - tests/solve/starterCodeInjector.test.ts
   - tests/widget/codeBlockProcessor.phase21.test.ts
-  - tests/widget/fenceMigrator.test.ts
+  - tests/widget/debouncedWriter.test.ts
   - tests/widget/liveModeBannerStateField.test.ts
-  - tests/widget/multiPaneCoordinator.test.ts
+  - tests/widget/selfWriteSuppression.test.ts
+  - tests/widget/splitPaneCursorPreservation.test.ts
 findings:
-  critical: 2
+  critical: 4
   warning: 7
-  info: 4
-  total: 13
+  info: 5
+  total: 16
 status: issues_found
 ---
 
-# Phase 21: Code Review Report (Gap-Closure Plans 21-08..21-13)
+# Phase 21 Cycle-2 Code Review Report
 
-**Reviewed:** 2026-06-01T18:00:00Z
+**Reviewed:** 2026-06-01
 **Depth:** deep
-**Files Reviewed:** 19
+**Files Reviewed:** 16
 **Status:** issues_found
 
 ## Summary
 
-Gap-closure plans 21-08..21-13 target six post-UAT findings (Reading-mode rerender after auto-migration, frontmatter auto-repair, Reading-mode legacy banner post-processor, Live-Preview StateField migration of `Decoration.replace`, multi-pane `reconcileFocus` null-leaf branch + `promoteThisPane` self-recover, retrofit fence dedup gate). The diff is well-tested overall (~150 new test cases across the 7 new test files), and the project conventions are honored: no `innerHTML`, vault writes via `app.vault.process` / `app.fileManager.processFrontMatter`, no plugin CM6 dispatch into locked ranges that lacks a `'leetcode.*'` userEvent.
+This review targets the cycle-2 gap closures landed for UAT post-finding R2 (mount-race after frontmatter repair / Plan 21-14), R4 (LP banner CSS isolation / Plan 21-15), R6 (stale widget mount on fresh problem open / Plan 21-16), and R9 (split-pane cursor preservation / Plan 21-17). The shipped surface adds three new pure helpers (`peerSyncRouting`, `liveModeBannerStateField`, `readingModeMigrationHook`), threads `originatingRegistryKey` through `SelfWriteSuppression`/`DebouncedWriter`/`WidgetController`, adds a post-write rerender hand-off in `NoteWriter`, and isolates the LP banner under a new CSS scope class. The implementation is substantial, well-tested at the unit level, and correctly closes the named UAT gaps.
 
-The two **Critical** findings are correctness regressions the unit tests don't catch:
+Deep cross-file analysis surfaced four BLOCKER-class defects in the multi-pane peer-sync path: a peer-clobber on concurrent typing, an iteration-order-dependent `firstMatch` selection that defeats the Pitfall P2 + conflict-modal gates, a dead-code defensive `require()` shim that risks bundler-induced silent breakage, and a mount-vs-dispatch race on the new R6 post-write rerender callback. None of these regressions are exercised by the unit tests in scope; only end-to-end Obsidian-process validation would surface them.
 
-1. **CR-01** — `repairInFlight` is documented as a cross-mode dedupe Set but only the Live-Preview StateField mutates it; the Reading-mode hook fires `repair` without claiming the lock, so a Reading-pane + LP-pane combo can fire two concurrent `processFrontMatter` calls on the same file.
-2. **CR-02** — `readingModeLegacyBannerPostProcessor` performs `pre.replaceWith(host)` BEFORE `mountLegacyFenceBanner`. If banner mount throws after the replace, the original `<pre>` is gone and the user sees a blank gap. Test 12 only forces `replaceWith` itself to throw, not the post-replace mount path.
+## Structural Findings (fallow)
 
-The seven **Warning** findings cover: StateField side-effects firing on every `tr.docChanged` rather than first-mount; missing destroyed-view check in `pushParentToChild`; the `liveModeBannerStateField` repair side-effect violating CM6's "StateField update should be pure" contract; redundant `getUseInlineWidget` reads in `NoteWriter.retrofitStarterCode` exposing a settings-toggle race; multi-`## Code` corner-case behavior of `findFirstLeetCodeSolveFenceIndexInCodeSection` that is correct but undocumented and untested; and full-registry `O(N)` filter in `LeetCodeWidgetRenderChild.onload`.
+No structural pre-pass was supplied for this review.
+
+## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01: `repairInFlight` cross-mode dedupe is documented but only the Live-Preview path mutates the Set
+### CR-01: applyPeerSync silently overwrites pane B's in-flight uncommitted typing — **BLOCKER**
 
-**File:** `src/main/readingModeMigrationHook.ts:160-200`, `src/main.ts:357`, `src/widget/liveModeBannerStateField.ts:297-314`
-**Issue:**
-The `LeetCodePlugin` instance owns two dedupe Sets — `migrateInFlight` (line 347 in `main.ts`) and `repairInFlight` (line 357). Plan 21-09's design comment at `liveModeBannerStateField.ts:282-285` documents `repairInFlight` as the dedupe gate for the frontmatter-repair path, and the Live-Preview StateField correctly adds/deletes entries (lines 299, 313).
+**File:** `src/widget/WidgetController.ts:474-553`
+**Issue:** Plan 21-17's `applyPeerSync` is called by the modify handler (`src/main.ts:1442-1452`) on every editable peer when pane A flushes. It dispatches an incremental ChangeSpec computed against the disk body — but **does not check whether the peer (`this`) is itself mid-typing**. If pane B has its own `DebouncedWriter` with `pending=true` (200-500ms typical debounce window), the post-peer-sync state on pane B replaces pane B's in-memory uncommitted edits. Pane B's `getDoc()` closure (passed to its own DebouncedWriter at `WidgetController.ts:1326`) then sees the post-applyPeerSync doc, so the next flush of pane B writes pane A's typing PLUS the loss of B's edits.
 
-The Reading-mode hook factory (`makeReadingModeMigrationHandler`) accepts only `migrateInFlight` (interface line 50, gate at 132 and 139). The hook invokes `deps.repair(...)` on line 173 with NO repair-side dedupe — neither claim nor release. So when a user opens a v1.3-body+missing-lc-language note in a workspace with both a Reading-mode pane and a Live-Preview pane visible, both paths can call `processFrontMatter` concurrently for the same file. The inner gate inside `repairFrontmatterIfNeeded` (clause C5: only assign when `lc-language` is empty) prevents data clobber, but the documented invariant ("dedupe Set shared between consumers") is silently violated.
+Worse: `applyPeerSync` step (6) refreshes `this.currentDocHash` to match the post-peer-sync body — so B's own DebouncedWriter, when it eventually flushes, sets `currentDocHash` correctly for its NEW doc. The Pitfall P2 hash gate in main.ts:1387-1393 then absorbs B's flush echo as well — there is no recovery mechanism. The user will see B's last 100-500ms of typing vanish on every A-flush.
 
-The 21-VERIFICATION trail and the test suite do not exercise the cross-mode race because each test file mocks the other mode away. The next reviewer (or the Phase 22 author tearing out v1.2 scaffolding) will read the JSDoc, trust it, and miss the race.
+This regression is not caught by `splitPaneCursorPreservation.test.ts` because all P1..P6 tests construct a fresh CM6 view with no concurrent writer; the race only manifests when **both** panes have armed DebouncedWriters with overlapping debounce windows.
 
 **Fix:**
-Thread `repairInFlight` into `ReadingModeMigrationHookDeps` and gate the repair call symmetrically with `migrateInFlight`:
-
 ```ts
-// src/main/readingModeMigrationHook.ts
-export interface ReadingModeMigrationHookDeps {
-  // ...existing fields...
-  /** Plan 21-09 — sibling dedupe Set for repair path. Mirrors migrateInFlight. */
-  repairInFlight: Set<string>;
-}
-
-// inside the .then() that invokes repair (replacing line 173-177):
-.then(async (migrated) => {
-  migratedFlag = migrated === true;
-  if (migratedFlag) return;
-  if (deps.repairInFlight.has(file.path)) return;
-  deps.repairInFlight.add(file.path);
-  try {
-    const repaired = await deps.repair(deps.app, file, {
-      autoMigrateOnOpen: true,
-      defaultLanguage,
-    });
-    repairedFlag = repaired === true;
-  } finally {
-    deps.repairInFlight.delete(file.path);
+// In WidgetController.applyPeerSync, BEFORE step 1:
+applyPeerSync(newBody: string): void {
+  // Plan 21-17 peer-sync MUST NOT clobber the peer's own pending typing.
+  // When the peer is mid-flight, defer the sync — its own flush will
+  // eventually carry both bodies' edits forward via OT-style merge, OR
+  // route through the conflict modal if the in-memory bodies diverge.
+  if (this.writer?.hasPending() === true) {
+    // Conservative: skip the sync. The originator's flush already wrote
+    // the canonical disk state; pane B's flush (when it fires) will
+    // see disk drift and route through the existing fail-safe (the
+    // selfWriteSuppression hash mismatch path drops the entry, which
+    // promotes the next modify event to 'reload-silent' or conflict-modal).
+    return;
   }
-})
+  // ... existing step 1..6 unchanged
+}
 ```
+A more principled fix would queue B's pending edits as a follow-up ChangeSpec applied AFTER the peer-sync, but the conservative skip preserves user intent.
 
-Then in `src/main.ts:1576-1602`, pass `repairInFlight: this.repairInFlight` into the deps object.
+### CR-02: `firstMatch` selection in modify handler is iteration-order-dependent and breaks Pitfall P2 + conflict-modal gates — **BLOCKER**
 
-### CR-02: Reading-mode legacy banner post-processor irreversibly mutates the DOM before banner mount
+**File:** `src/main.ts:1374, 1387-1393, 1484-1497`
+**Issue:** The Plan 21-17 amendment collects `allMatching` via `for (const ctl of this.widgetRegistry.values())` (line 1366) but then picks `firstMatch = allMatching[0]` (line 1374) for both the Pitfall P2 hash check (line 1387) and — more critically — the external-edit conflict path (line 1484, `firstMatch.writer?.hasPending()`).
 
-**File:** `src/main/readingModeLegacyBannerPostProcessor.ts:200-204`
-**Issue:**
-The handler executes:
+Map iteration order is insertion order. With a Reading-mode read-only widget registered BEFORE the editable LP widget on the same file (e.g., split pane: Reading on left registered first, LP on right registered second), `firstMatch` is the read-only widget. The read-only widget has `writer === undefined` (set only on `!readOnly` mounts at WidgetController.ts:1314-1335), so `hasPending()` returns `false`, the code falls through to `reloadFromDisk('silent')` (line 1487) — and the conflict modal that Plan 20-03 was supposed to open NEVER fires. The user's in-flight typing in the LP pane is silently overwritten by the external-edit reload.
 
-```ts
-const ownerDoc = target.pre.ownerDocument;
-const host = ownerDoc.createElement('div');
-host.classList.add('leetcode-migration-banner-host');
-target.pre.replaceWith(host);                       // ← original <pre> is now detached
-mountLegacyFenceBanner(host, source, file, plugin as never, 'manual-prompt');
-```
-
-The outer try/catch at line 99-108 logs at debug and returns — so when `mountLegacyFenceBanner` throws AFTER `replaceWith` has already executed, the user is left with an empty `<div class="leetcode-migration-banner-host">` in place of their rendered code block. There is no recovery: the `<pre>` is detached and not retained by the function, the silent-on-failure log gives no surface to the user, and the next paint shows a blank gap.
-
-`mountLegacyFenceBanner` is non-trivial DOM construction (CTAs, icon glyphs, click handlers, label text); throws can come from any of `createEl`, `setIcon`, or click-handler closure capture. Test 12 in `tests/main/readingModeLegacyBannerPostProcessor.test.ts:525-549` only forces `replaceWith` itself to throw — it does NOT cover the post-replace banner-mount throw path, so the regression hides.
-
-The CLAUDE.md "Pattern S-05 silent-on-failure" intent is "leave the rendered DOM untouched" — line 46 of `readingModeLegacyBannerPostProcessor.ts` describes the intent verbatim. The implementation's order-of-operations betrays the intent: the moment `replaceWith` runs, the DOM IS touched.
+The Pitfall P2 check at lines 1387-1393 also reads `firstMatch.currentDocHash`. Read-only widgets initialize `currentDocHash = ''` and the refresh path at WidgetController.ts:1292-1296 is gated on `!readOnly` — the hash stays empty forever. The early-return is dead for any file whose `firstMatch` is a Reading-mode pane.
 
 **Fix:**
-Mount the banner into the detached host BEFORE attaching to the document. If banner mount throws, the original `<pre>` stays in place:
-
 ```ts
-const host = ownerDoc.createElement('div');
-host.classList.add('leetcode-migration-banner-host');
-// Mount banner FIRST into the detached host. Throws here leave the
-// rendered <pre> intact in the DOM (pre.replaceWith never ran).
-mountLegacyFenceBanner(host, source, file, plugin as never, 'manual-prompt');
-// Atomic swap — runs ONLY if mount succeeded.
-target.pre.replaceWith(host);
+// Pick an editable representative for the gate inputs, falling back to
+// the first match only when no editable widget exists.
+const editableMatching = allMatching.filter(c => !c.readOnly && !c.isEmbed);
+const firstMatch = editableMatching[0] ?? allMatching[0]!;
 ```
+Apply throughout the modify handler. The `peerLikes` array passed to `routePeerSync` (line 1415) already filters correctly inside the helper, so only the `firstMatch` consumers need patching.
 
-This requires `mountLegacyFenceBanner` to be safe to call on a detached host — it should be (it appends children to whatever host it gets). Add a regression test that throws from inside `mountLegacyFenceBanner` and asserts `root.contains(pre) === true && root.querySelector('.leetcode-migration-banner-host') === null` (meaning the original pre was preserved).
+### CR-03: `leetcodeRefreshAnnotation` dynamic `require()` in main.ts is dead-code defense that breaks under esbuild — **BLOCKER**
 
-## Warnings
+**File:** `src/main.ts:549-563`
+**Issue:** The post-write rerender callback resolves `leetcodeRefreshAnnotation` via:
+```ts
+const mod = require('./widget/liveModeBannerStateField') as { ... };
+leetcodeRefreshAnnotation = mod.leetcodeRefreshAnnotation;
+```
+inside a try/catch with the comment "Plan 21-14 not landed". But `liveModeBannerStateField.ts` IS landed in this branch and exports `leetcodeRefreshAnnotation` (verified at line 127 of that file). The dynamic require is purely defensive against a hypothetical state that does not exist.
 
-### WR-01: Live-Preview StateField migration / repair side-effects re-fire on every docChanged transaction, not just first mount
-
-**File:** `src/widget/liveModeBannerStateField.ts:225-247, 290-316`
-**Issue:**
-The two StateField `update` callbacks call `buildLegacyBannerDecorations(tr.state)` / `buildLeetCodeWidgetDecorations(tr.state)` on every transaction with `tr.docChanged === true`. Both build helpers contain a fire-and-forget side-effect (migrate / repair) gated only by the per-path `migrateInFlight` / `repairInFlight` Set.
-
-Once the in-flight Set is cleared by `.finally`, the very next `docChanged` transaction (e.g., a single keystroke after the migration completed) re-evaluates the predicate. If metadataCache is still cold (a real possibility — `app.metadataCache` updates are async and can lag the file write by tens of ms), the predicate STILL matches and a second `processFrontMatter` invocation fires. Rapid typing during the initial mount window can produce a small burst of repair invocations.
-
-In practice the inner gate inside `repairFrontmatterIfNeeded` (clause C5) makes each subsequent call short-circuit. But the design implies "fire ONCE per file-open," and the observable disk I/O traffic disagrees.
+Three problems:
+1. **esbuild + CommonJS interop:** the project uses esbuild bundling; a top-level `require()` of a TypeScript file that ships ESM-shaped exports is not guaranteed to resolve identically to a static import. esbuild's output for `require('./widget/liveModeBannerStateField')` depends on whether the target file has been transformed to CJS or kept as ESM in the bundle. If the bundler inlines the require to a `__require()` shim, the `.leetcodeRefreshAnnotation` property access could yield `undefined` even though the export exists — silently disabling the entire LP rerender path.
+2. **Disclaimer mismatch:** the eslint-disable comment claims "Plan 21-14 not landed" but Plan 21-14 IS the plan that introduced this code. The disclaimer is self-contradictory — the comment was copied from a draft that predated the actual landing.
+3. **Static import is risk-free:** main.ts already statically imports from `liveModeBannerStateField`'s sibling modules (the `WidgetRegistry`, `leetCodeBlockProcessor`, etc.). A static import of `leetcodeRefreshAnnotation` is zero risk and zero runtime cost, and a future refactor that deletes the StateField will produce a compile error pointing at this consumer — exactly the behavior code review wants.
 
 **Fix:**
-Add a per-session "already ran for this file" Set distinct from the in-flight gate:
-
 ```ts
-// In LeetCodePlugin (main.ts):
-repairCompletedThisSession: Set<string> = new Set();
+// Replace lines 549-616 with a static import:
+import { leetcodeRefreshAnnotation } from './widget/liveModeBannerStateField';
 
-// In buildLeetCodeWidgetDecorations:
-if (
-  needsRepair &&
-  !plugin.repairCompletedThisSession?.has(file.path) &&
-  isInlineWidgetEnabled(plugin) &&
-  isAutoMigrateEnabled(plugin)
-) {
-  // ... existing in-flight gate ...
-  void repairFrontmatterIfNeeded(...).finally(() => {
-    plugin.repairCompletedThisSession?.add(file.path);
-    repairInFlight.delete(file.path);
+this.notes.setRerenderAfterNoteWritten((path: string) => {
+  try {
+    rerenderReadingModePanes(this.app, path);
+  } catch (err) {
+    logger.debug('main.rerenderAfterNoteWritten: rerenderReadingModePanes threw (non-fatal)', err);
+  }
+  try {
+    const leaves = this.app.workspace.getLeavesOfType('markdown');
+    for (const leaf of leaves) {
+      const view = leaf.view;
+      if (!(view instanceof MarkdownView)) continue;
+      if (view.file?.path !== path) continue;
+      const cm = (view.editor as unknown as { cm?: { dispatch?: (spec: unknown) => void } }).cm;
+      if (!cm || typeof cm.dispatch !== 'function') continue;
+      try {
+        cm.dispatch({ annotations: [leetcodeRefreshAnnotation.of(true)] });
+      } catch (err) {
+        logger.debug('main.rerenderAfterNoteWritten: cm.dispatch threw', err);
+      }
+    }
+  } catch (err) {
+    logger.debug('main.rerenderAfterNoteWritten: leaf walk threw', err);
+  }
+});
+```
+
+### CR-04: NoteWriter post-write rerender races `view.editor.cm` hydration on freshly-opened leaves — **BLOCKER**
+
+**File:** `src/notes/NoteWriter.ts:518-531`, `src/main.ts:582-602`
+**Issue:** Plan 21-16's flow on the new-note path is:
+1. `vault.create(filePath, body)` (line 451) — body written.
+2. `applyFrontmatter(...)` (line 466) — frontmatter written.
+3. `openLinkText(file.path, '', false)` (line 519) — leaf opens.
+4. `fireOnNoteOpen(slug)` (line 522).
+5. `fireRerenderAfterNoteWritten(file.path)` (line 530).
+
+The rerender callback in main.ts:582-602 walks `getLeavesOfType('markdown')`, finds the matching leaf, and dispatches `leetcodeRefreshAnnotation.of(true)` against `view.editor.cm`. **But Obsidian's `openLinkText` resolves AS SOON AS the leaf is created — not when CM6 is fully hydrated.** On a brand-new leaf, `view.editor.cm` is either undefined for several frames or points at a CM6 instance that has not yet evaluated its initial StateField factory.
+
+A dispatch against a half-hydrated CM6 either:
+- Silently no-ops (the typeof cm.dispatch check at line 591 bails out — the rerender hand-off is dead on the new-note path it was added for).
+- Or fires before the StateField has been seeded, and the `tr.annotation(leetcodeRefreshAnnotation)` predicate in `liveModeBannerStateField.ts:451, 471` is checked against a transaction that ALSO has `tr.docChanged === false` (no init transaction is dispatched yet). The annotation update collapses to a no-op because the StateField is at its initial state with no decorations to refresh.
+
+The R6.1 test (`tests/notes/NoteWriter.starter-retrofit.test.ts:457-487`) passes because it asserts call ORDERING via tick counters, not call EFFECT — the dispatch landing on a hydrated view is not exercised.
+
+The same race exists for `rerenderReadingModePanes`: a Reading-mode preview that hasn't completed its initial `previewMode.rerender(false)` cycle will silently swallow the explicit `previewMode.rerender(true)` call (Obsidian's preview render path debounces on `requestAnimationFrame`).
+
+**Fix:** Defer the rerender to the next animation frame after the leaf has been activated:
+```ts
+private fireRerenderAfterNoteWritten(filePath: string): void {
+  if (!this.rerenderAfterNoteWritten) return;
+  // Defer until CM6 has hydrated and Obsidian's preview pipeline has
+  // run its initial requestAnimationFrame cycle. Without this, the
+  // dispatch lands on a half-mounted view and is silently swallowed.
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      try {
+        this.rerenderAfterNoteWritten?.(filePath);
+      } catch (err) {
+        logger.debug('notes.rerenderAfterNoteWritten: callback threw', err);
+      }
+    });
   });
 }
 ```
+Two rAF ticks is the canonical cross-browser pattern for "next paint" — the first tick aligns with browser layout, the second guarantees the CM6 initial transaction has flushed. Verify by adding an integration test that asserts `view.editor.cm` is non-null at callback fire time.
 
-Mirror the same on the legacy migrate path. Reset both on `vault.on('rename')` and `Plugin.onunload`.
+## Warnings
 
-### WR-02: `liveModeViewPlugin.pushParentToChild` does not check `view.destroyed` before dispatching
+### WR-01: SelfWriteSuppression `peekOriginator` does not delete TTL-expired entries — orphans linger until next `tryConsume` — **WARNING**
 
-**File:** `src/widget/liveModeViewPlugin.ts:107-165`
-**Issue:**
-The function iterates `widgetRegistry.valuesForPath(file.path)` (or full `values()` fallback) and calls `childView.dispatch(...)`. If a widget is being destroyed concurrently (e.g., the user closes the tab while typing in another pane), `childView` may be torn down between the registry read at line 140 and the dispatch at line 153.
+**File:** `src/widget/selfWriteSuppression.ts:81-86`
+**Issue:** `peekOriginator(path)` returns `null` on TTL expiry (line 84) but does NOT delete the orphan from the map — only `tryConsume` does (line 95). If `tryConsume` is never called for an armed entry — for example, when the modify event fires on a different fence in the same file (so `observedHash` mismatches and the modify handler's tryConsume drops it) OR when the writing pane gets unmounted before its echo lands (file rename, plugin teardown, fast tab close) — the entry persists until plugin onunload's `clear()`.
 
-The dispatch is wrapped in try/catch (lines 152-163) which catches the throw, but the catch swallows silently. Other code paths in this codebase (`WidgetController.ts:1492-1496`, the BL-02 alive-check in the adoption predicate) explicitly check `view.destroyed === true` before consuming an EditorView — that discipline is missing here. A destroyed-view dispatch is benign (the catch absorbs it) but the contract is asymmetric.
+Combined with the modify handler's `routePeerSync` decision tree, an armed-but-unconsumed entry's STALE registryKey is exposed to a NEXT modify event when peekOriginator is called within TTL. The defensive delete at tryConsume:99-101 fires on hash mismatch, eventually clearing the orphan — but only if a subsequent matching modify event arrives.
 
 **Fix:**
 ```ts
-const childView = candidate.view;
-if (!childView) continue;
-const destroyed = (childView as unknown as { destroyed?: boolean }).destroyed;
-if (destroyed === true) continue;
-// ... rest of loop body ...
-```
-
-### WR-03: `repairFrontmatterIfNeeded` invoked from a CM6 StateField violates "StateField update should be pure"
-
-**File:** `src/widget/liveModeBannerStateField.ts:259-316`
-**Issue:**
-The build helper acknowledges (lines 285-287) that side-effects in `StateField.create / update` are "unusual but acceptable here." For the existing legacy-banner migrate path (lines 229-247), this was a defensible compromise. For repair, however, `processFrontMatter` writes to disk, which fires `vault.on('modify')`, which may or may not arrive at the parent CM6 as a `docChanged` transaction (frontmatter-only edits sometimes do, sometimes don't, depending on whether the YAML changed length).
-
-If the modify event lands as `docChanged`, the StateField update fires AGAIN, re-evaluates `needsRepair`, and the inner gate of `repairFrontmatterIfNeeded` saves the day — but disk I/O during transaction processing remains a CM6 contract violation. Doubling the contract violation surface (legacy-banner migrate AND v1.3-widget repair) increases the chance of a hard-to-trace future regression.
-
-**Fix:**
-Move the repair side-effect out of the StateField:
-- **Option A** (preferred): Add a `metadataCache.on('changed')` subscriber that fires `repairFrontmatterIfNeeded` when `lc-slug` is present and `lc-language` is missing. Less constrained execution context than transaction processing.
-- **Option B**: Extend the `workspace.on('file-open')` Reading-mode hook (already invoked unconditionally in main.ts:1573-1603) to also handle the Live-Preview path. The hook is already wired to the same `migrate` + `repair` deps.
-
-Either avoids the contract violation while preserving the closure of UAT Gap 2.
-
-### WR-04: `NoteWriter.retrofitStarterCode` reads `getUseInlineWidget` at the wrapper, then again inside `retrofitStarterCodeRaw`, exposing a settings-toggle race
-
-**File:** `src/notes/NoteWriter.ts:242-262`, `src/solve/starterCodeInjector.ts:280-301`
-**Issue:**
-The wrapper at NoteWriter:246 reads `getUseInlineWidget?.() ?? false` and short-circuits when ON. For the OFF path, it falls through to `retrofitStarterCodeRaw(this.app, file, detail, this.settings)`. The raw retrofit at `starterCodeInjector.ts:289-290` reads `getUseInlineWidget` AGAIN to derive `fenceKind: 'leetcode-solve' | 'legacy'`.
-
-When the wrapper let the call through (`useInlineWidget=OFF/undefined`), the second read should always yield `'legacy'`. But because the wrapper passes the LIVE `this.settings` reference (not a frozen snapshot), if `getUseInlineWidget` is a closure that toggles between calls — settings reload mid-`openProblem`, or the user clicking "Insert starter" in a settings tab during a slow LC fetch — the second read can yield `true`. That sends `fenceKind: 'leetcode-solve'` into `injectCodeSection` even though the wrapper let the call through under the legacy gate. Result: a v1.3 short-circuit attempt on a note that has no v1.3 fence (because the wrapper would have skipped the call entirely if v1.3 were intended).
-
-The defense-in-depth comment at NoteWriter:230-241 acknowledges the duplicate gate but does not address the race window.
-
-**Fix:**
-Resolve `useInlineWidget` once at the wrapper and pass a frozen settings shim down:
-
-```ts
-private async retrofitStarterCode(
-  file: TFile,
-  detail: DetailCacheEntry | null,
-): Promise<void> {
-  const useInlineWidget = this.settings.getUseInlineWidget?.() ?? false;
-  if (useInlineWidget) {
-    logger.debug('notes.retrofitStarterCode: skipped — v1.3 widget owns the fence body');
-    return;
+peekOriginator(path: string): string | null {
+  const entry = this.map.get(path);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    this.map.delete(path);  // <-- add this
+    return null;
   }
-  // Snapshot the settings as observed at this gate; subsequent reads
-  // inside retrofitStarterCodeRaw use the frozen snapshot, eliminating
-  // the live-settings race.
-  const frozen = {
-    getDefaultLanguage: () => this.settings.getDefaultLanguage(),
-    getUseInlineWidget: () => false,
-  };
-  // ...existing pre-checks...
-  await retrofitStarterCodeRaw(this.app, file, detail, frozen);
+  return entry.originatingRegistryKey ?? null;
 }
 ```
 
-### WR-05: Multi-`## Code` corner-case behavior of `findFirstLeetCodeSolveFenceIndexInCodeSection` is undocumented and untested
+### WR-02: `applyPeerSync` swallows dispatch failure silently with no logging — **WARNING**
 
-**File:** `src/widget/fenceMigrator.ts:145-170`
-**Issue:**
-The helper iterates lines linearly. Comments at lines 121-141 describe the index semantics for the single-`## Code` case, but multi-`## Code` regions (mentioned in `countLeetCodeSolveFenceOpenersInCodeSection`'s JSDoc at line 187 as "degenerate but possible") are not addressed in the `findFirst...` helper's contract. Walking through the algorithm:
-
-- File has `## Code` (no fence) → `## Notes` (with `\`\`\`leetcode-solve`) → `## Code` (with `\`\`\`leetcode-solve`):
-  - `inCodeSection=true` at first `## Code`, no opener seen.
-  - `inCodeSection=false` at `## Notes`; the Notes fence increments `lcOpenerCount` to 1.
-  - `inCodeSection=true` at second `## Code`; first in-section opener returns 1.
-  - `rewriteFenceBody(text, 1, body)` rewrites the second leetcode-solve fence overall — which IS the in-Code one. Correct.
-
-- File has `## Code` (with `\`\`\`leetcode-solve`) → `## Notes` (with stray `\`\`\`leetcode-solve`) → `## Code` (with another `\`\`\`leetcode-solve`):
-  - In-section opener at first `## Code` returns 0 immediately. Correct.
-
-The function appears to behave correctly under all multi-`## Code` topologies, but the test suite covers only the single-section case. A future refactor could break the invariant invisibly.
+**File:** `src/widget/WidgetController.ts:531-543`
+**Issue:** The catch at line 540 swallows EVERY dispatch error including bona-fide bugs (selection out of range, doc transformation throwing). The comment says "view may be in teardown" but the code returns silently with no debug log, no telemetry, and no observable signal that the peer pane diverged from the originator. Production debugging of split-pane sync regressions will be impossible.
 
 **Fix:**
-Add property-based test coverage for multi-`## Code` topologies, AND document the invariant explicitly:
-
 ```ts
-/**
- * Multi-`## Code` semantics: returns the LC-opener index for the FIRST
- * in-section opener encountered linearly. Stray openers in interleaved
- * non-Code sections (e.g., `## Notes`) increment the LC-opener counter
- * outside the section so rewriteFenceBody targets the right fence.
- */
+} catch (err) {
+  // Defensive — view may be in teardown.
+  logger.debug('WidgetController.applyPeerSync: dispatch failed', {
+    file: this.file.path,
+    registryKey: this.registryKey,
+    err,
+  });
+  return;
+}
 ```
 
-### WR-06: `LeetCodeWidgetRenderChild.onload` materializes the entire registry on every mount
+### WR-03: `fenceMigrator` mock declares phantom export `isFrontmatterRepairCandidate` not consumed by codeBlockProcessor — **WARNING**
 
-**File:** `src/widget/WidgetController.ts:1471-1523`
-**Issue:**
-The candidate-collection step `[...registry.values()].filter(...)` materializes the full registry on every onload. With N widgets across M panes, the cost is O(N) per mount. Reading-mode rapid-flip scenarios (toggle Edit↔Reading↔Edit, multi-pane open) compound this.
+**File:** `tests/widget/codeBlockProcessor.phase21.test.ts:62-67`
+**Issue:** The vi.mock at line 62-67 declares `isFrontmatterRepairCandidate` as part of the fenceMigrator surface:
+```ts
+vi.mock('../../src/widget/fenceMigrator', () => ({
+  migrateLegacyFenceIfNeeded: migrateSpy,
+  isMigrationCandidate: candidateSpy,
+  repairFrontmatterIfNeeded: repairSpy,
+  isFrontmatterRepairCandidate: repairCandidateSpy,
+}));
+```
+But `codeBlockProcessor.ts` only imports `isMigrationCandidate, migrateLegacyFenceIfNeeded, repairFrontmatterIfNeeded` from fenceMigrator (lines 48-52). The mock surface introduces a phantom binding that hides production drift: if a future refactor relies on `isFrontmatterRepairCandidate` from codeBlockProcessor, the mock will silently shadow the real predicate and the test passes against a stubbed false.
 
-The `liveModeViewPlugin.pushParentToChild` adoption already uses `valuesForPath(path)` (lines 120-131) which is a path-keyed iterator. The same iterator is available here.
+**Fix:** Remove `isFrontmatterRepairCandidate: repairCandidateSpy` from the mock factory; the test does not exercise that predicate.
 
-This is borderline performance vs. correctness — performance is out of v1 scope. Listed as Warning rather than Critical because the registry is bounded by visible panes (typically 1-3) and the cost is negligible in practice. But the WR-09 comment block at 1467-1470 explicitly invokes "deterministic preference" and adopting the path-keyed iterator would make the intent cleaner.
+### WR-04: `routePeerSync` does not handle "originator not present in controllers" — every editable peer receives apply-peer-sync — **WARNING**
+
+**File:** `src/widget/peerSyncRouting.ts:90-107`
+**Issue:** When `originatingRegistryKey` is non-null AND there are ≥2 editable controllers AND the originator is NOT among them (registry race: originator was unregistered between arming the suppression and the modify event firing), the helper falls into `peer-fan-out` and produces a `perController` array where NO entry has `action: 'skip-originator'`. Every editable peer receives `apply-peer-sync` — including a "phantom" peer that may BE the typing-still-mid-flight pane whose registryKey changed (file rename mid-typing, plugin reload mid-flush).
+
+The test at `splitPaneCursorPreservation.test.ts:404-421` (`different file paths are filtered out`) exercises a similar shape but with a different filePath, not a missing originator on the SAME path.
 
 **Fix:**
 ```ts
-const registryWithIter = registry as unknown as
-  | {
-      values(): IterableIterator<WidgetController>;
-      valuesForPath?(p: string): Iterable<WidgetController>;
-    }
-  | undefined;
-const iter = registryWithIter?.valuesForPath
-  ? [...registryWithIter.valuesForPath(this.file.path)]
-  : registryWithIter ? [...registryWithIter.values()] : [];
-const candidates = iter.filter(/* existing predicate */);
+const originatorPresent = sameFile.some(c => c.registryKey === originatingRegistryKey);
+if (!originatorPresent) {
+  // Originator unregistered between arming and modify — treat as external.
+  return { kind: 'reload-silent' };
+}
 ```
 
-### WR-07: `extractLangSlug` invariant relies on undocumented all-lowercase `LC_LANG_SLUGS` Set
+### WR-05: NoteWriter reads `getUseInlineWidget` three times in `openProblem` without caching — race window if user toggles mid-call — **WARNING**
 
-**File:** `src/main/readingModeLegacyBannerPostProcessor.ts:158, 209-217`
-**Issue:**
-Obsidian renders `<code class="language-Java">` (capitalized) when source markdown is `\`\`\`Java`. The regex `LANGUAGE_CLASS_RE = /^language-([A-Za-z0-9_+#-]+)$/` accepts uppercase via the character class, then `m[1].toLowerCase()` is applied. `resolveLangSlug(slug, SLUG_SENTINEL)` returns lowercase. `LC_LANG_SLUGS.has(resolved)` requires the Set to be all-lowercase — this is an implicit, undocumented invariant in `src/solve/languages.ts`.
+**File:** `src/notes/NoteWriter.ts:300, 449, 506`
+**Issue:** `openProblem` reads `this.settings.getUseInlineWidget?.() ?? false` in three places: line 300 (inside `retrofitStarterCode`), line 449 (when calling `buildNoteBody`), line 506 (gating the belt-and-suspenders retrofit). If `useInlineWidget` setting changes mid-call (settings tab open in another window, programmatic flip via API), the three reads can disagree — body is emitted as v1.3 fence shape but retrofit is then run with the OFF gate, grafting a sibling fence (the very Gap B regression Plan 21-13 was supposed to close).
 
-If a future contributor adds a mixed-case entry to `LC_LANG_SLUGS` (e.g., `'CSharp'` for clarity), the post-processor silently fails to recognize legitimate user fences. The flow is correct today; the fragility is the concern.
+In production this race is unlikely but not impossible; user invokes `openProblem` from browser, then flips the toggle in settings before the network fetch resolves.
+
+**Fix:** Cache once at the top of `openProblem`:
+```ts
+async openProblem(slug: string, initialStatus?: ...) {
+  const useInlineWidget = this.settings.getUseInlineWidget?.() ?? false;
+  // Pass useInlineWidget through to retrofitStarterCode + buildNoteBody at every call site.
+}
+```
+
+### WR-06: `peerSyncRouting` accepts unfiltered controllers but caller pre-filters — contract ambiguity — **WARNING**
+
+**File:** `src/widget/peerSyncRouting.ts:41, 85-87`
+**Issue:** The helper signature accepts ALL controllers in the registry (line 41: `controllers: PeerSyncControllerLike[]`) and filters by filePath inside the function. main.ts:1415-1420 builds `peerLikes` from the SAME `allMatching` array that was already filtered by file.path at lines 1366-1372 — so the helper re-filters a list that's already filtered. Harmless redundancy, but if a future refactor passes the full registry directly (cleaner separation of concerns), the helper continues to work — but the multi-pane decision implicitly trusts the input shape.
+
+**Fix:** Either:
+- Document that `controllers` must be the FULL registry (and remove the caller-side filter), or
+- Rename to `sameFileControllers` and remove the internal filter at line 85.
+
+### WR-07: `codeBlockProcessor.ts:225-228` outermost catch swallows programmer errors with no log breadcrumb — **WARNING**
+
+**File:** `src/widget/codeBlockProcessor.ts:225-228`
+**Issue:** The outer try at line 167 (the autoMigrate=ON path) wraps both the migrate and repair calls. The catch at line 225-228 swallows EVERYTHING including bugs (TypeError on null fm, fence parser exceptions, internal errors in the migrator). The comment "Defensive — migration / repair failures fall through to the existing path" doesn't cover programmer-error throws. Combined with the inner try/catch at line 216-222 around the rerender helper, three nested try/catches eat all signals. Production debugging of migration regressions has zero breadcrumb.
 
 **Fix:**
-Either add a runtime invariant assertion at module load in `solve/languages.ts`, or document the invariant inline at the call site:
-
 ```ts
-// LC_LANG_SLUGS is canonically lowercase (verified at module load in
-// src/solve/languages.ts); resolveLangSlug returns lowercase so the
-// .has() check below is case-stable.
-if (!LC_LANG_SLUGS.has(resolved)) continue;
+} catch (err) {
+  // Note: we use eslint-disable-next-line no-console only if logger is unavailable.
+  // logger should already be in scope via existing imports if available.
+  // At minimum log:
+  // logger.debug('codeBlockProcessor: migrate/repair gate threw (non-fatal)', err);
+  // Fall through to the existing path.
+}
 ```
 
 ## Info
 
-### IN-01: `H2_ANY_RE` regex anchors on `\S` — single non-whitespace char qualifies as "any heading"
+### IN-01: `liveModeBannerStateField.ts` mixes legacy v1.2 banner logic and permanent v1.3 widget StateFields in the same module
 
-**File:** `src/main/readingModeLegacyBannerPostProcessor.ts:67-68, 219-230`
-**Issue:** The regex order in `isUnderCodeHeading` is correct (Code-specific first, generic second), and `H2_ANY_RE = /^\s*##\s+\S/` accepts a single non-whitespace char. Pathological headings like `## #` would correctly be flagged as "any heading," forcing a not-under-Code result. Edge case is benign but worth a comment for the next reader.
+**File:** `src/widget/liveModeBannerStateField.ts:438-460, 462-480`
+**Issue:** The `PHASE_22_DELETE_WITH_V1_2_PATH` marker at line 438 + the test at `liveModeBannerStateField.test.ts:392-461` lock in the marker convention, but the practical effect is that Phase 22's delete sweep MUST surgically remove the legacy half of THIS file rather than deleting the file outright. The dispatch helper `dispatchLeetCodeRefresh` (line 147) is shared between both paths and survives Phase 22 — so the file structure conflicts with the comment "permanent v1.3 path" at line 462.
 
-**Fix:** Optional — add a brief comment near `H2_ANY_RE` explaining the intent (catch any non-Code H2 as a section boundary).
+**Fix:** Split into two files: `legacyBannerStateField.ts` (deleted in Phase 22 entirely) and `leetCodeWidgetStateField.ts` (permanent). Move `dispatchLeetCodeRefresh` to the permanent file, leave the legacy import.
 
-### IN-02: `readingModeMigrationHook.ts` `.then().catch().finally().then(rerender)` chain comment is hard to parse
+### IN-02: `WidgetController.ts:1321-1322` ESLint disable for `@typescript-eslint/no-explicit-any` is duplicated
 
-**File:** `src/main/readingModeMigrationHook.ts:160-200`
-**Issue:** The chain works because Promise spec guarantees the trailing `.then` runs AFTER `.finally`. Test G1.4 verifies the observable invariant. The inline comment at lines 187-200 ("trailing .then is attached above. The else branch follows") is dense and reads as tangled on first pass.
+**File:** `src/widget/WidgetController.ts:1321-1322`
+**Issue:** Two consecutive `eslint-disable-next-line @typescript-eslint/no-explicit-any` comments at lines 1321 and 1323. The 1321 disable targets line 1322 (`ctl.writer = new DebouncedWriter(`) which has no `any` type. The 1323 disable targets line 1324 (`plugin.app as any`) which is the actual `any` cast. The first disable is dead annotation noise.
 
-**Fix:** Optional rewrite for clarity — call out the four-step ordering in a numbered comment:
+**Fix:** Remove the line-1321 disable comment.
 
-```ts
-// Auto-path migration. Order:
-//   1. .then  — capture migrated boolean; chain repair if migrated=false.
-//   2. .catch — record both flags as false; logDebug the rejection.
-//   3. .finally — UNCONDITIONALLY clear the in-flight lock.
-//   4. trailing .then — after .finally, fire rerender iff EITHER flag is true.
-//      Wrapped in inner try/catch so a rerender throw does not leak.
-```
+### IN-03: Plan 21-15 CSS at `styles.css:2225-2234` re-declares `pre` rule already covered by AI-stream + verdict modal selectors
 
-### IN-03: `WidgetController.promoteThisPane` walks `getLeavesOfType` per click
+**File:** `styles.css:2225-2234`
+**Issue:** The CSS block is correctly marked for Phase 22 deletion. All declared values use Obsidian CSS variables (good), but `.lc-legacy-banner--livepreview pre` cascades into the existing `.leetcode-ai-stream-body pre, .leetcode-verdict pre` rule at line 1434-1441 which sets `background-color: var(--code-background)` — duplicate declaration. Browsers handle this fine via cascade specificity, but the duplicate is dead weight.
 
-**File:** `src/widget/WidgetController.ts:738-767`
-**Issue:** Each overlay click re-walks all markdown leaves. The underlying `app.workspace.getLeavesOfType` is reasonably fast (Obsidian indexes leaves), but the function comment block (lines 720-737) is so detailed that the simple `.find` walk underneath looks mismatched. The post-UAT Gap A self-recover invocation of `setPaneState('active')` is correct (idempotent on already-active state).
+**Fix:** Drop the `pre` rule from the LP banner block; verify visually that the existing cascade specificity is acceptable.
 
-**Fix:** None required.
+### IN-04: `splitPaneCursorPreservation.test.ts` does not call `vi.restoreAllMocks` between tests
 
-### IN-04: `fenceMigrator.ts` `void sawCodeHeading;` is a discard pattern that signals dead code
+**File:** `tests/widget/splitPaneCursorPreservation.test.ts:91-94, 429-432`
+**Issue:** The P5 test at line 150 spies on `view.dispatch` with `mockImplementation`, calls `applyPeerSync('hello world')`, then asserts captured annotations. The test does not call `mockRestore()` after the assertion. With `beforeEach` only resetting `document.body.innerHTML`, a subsequent test in the same describe block that touches the same view instance (none currently, but easy to add) would see the spy still installed. Defensive testing hygiene.
 
-**File:** `src/widget/fenceMigrator.ts:589-592`
-**Issue:** The block:
+**Fix:** Add `vi.restoreAllMocks()` to the `beforeEach` block, or use `afterEach`.
 
-```ts
-// No leetcode-solve opener inside any `## Code` region — caller falls
-// through silently. (sawCodeHeading retained for symmetry; result is
-// false either way.)
-void sawCodeHeading;
-return false;
-```
+### IN-05: `liveModeBannerStateField.test.ts` repair-path test (R2.LP.5) couples to plugin internal Set field via `as`-cast
 
-The `void` discard is dead code — `sawCodeHeading` is set inside the loop but never consulted. The comment "retained for symmetry" suggests intent that didn't ship. Either remove the variable entirely or use it for a debug-level diagnostic when a `## Code` heading exists but no leetcode-solve opener is found.
+**File:** `tests/widget/liveModeBannerStateField.test.ts:653-655, 715-717`
+**Issue:** The R2.LP.5/R2.LP.6/R2.LP.7 tests inject `repairInFlight` via `(plugin as unknown as { repairInFlight: Set<string> }).repairInFlight = new Set<string>()`. This couples the test to the plugin's INTERNAL Set field name; a refactor that renames or restructures the dedupe Set will silently pass the test (no compile error from `as unknown as`). The structural shape `StateFieldPluginHost` at `liveModeBannerStateField.ts:79-88` already declares `repairInFlight?: Set<string>` — the test should construct a plugin via `makePlugin` that provides this in the structural shape directly.
 
-**Fix:**
-```ts
-// Remove unused tracking variable:
-const lines = noteText.split(/\r?\n/);
-let inCodeSection = false;
-for (let i = 0; i < lines.length; i++) {
-  const text = lines[i] ?? '';
-  if (H2_CODE_RE.test(text)) { inCodeSection = true; continue; }
-  if (H2_ANY_RE.test(text)) { inCodeSection = false; continue; }
-  // ...
-}
-return false;
-```
+**Fix:** Extend the `makePlugin` factory to accept `repairInFlight: new Set<string>()` as a default field, and let tests read/write it as `plugin.repairInFlight` without the `as`-cast.
 
 ---
 
-_Reviewed: 2026-06-01T18:00:00Z_
+_Reviewed: 2026-06-01_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: deep_
