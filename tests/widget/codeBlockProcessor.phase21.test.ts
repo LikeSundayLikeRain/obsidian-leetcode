@@ -153,7 +153,7 @@ const V12_SECTION = (() => {
 })();
 
 describe('Phase 21 mount-path migration', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     migrateSpy.mockClear();
     candidateSpy.mockClear();
     bannerSpy.mockClear();
@@ -162,6 +162,14 @@ describe('Phase 21 mount-path migration', () => {
     migrateSpy.mockResolvedValue(true);
     candidateSpy.mockReturnValue(true);
     repairSpy.mockResolvedValue(false);
+    // Plan 21.1-01 (MIGRATE-FLICKER-01) — the module-level
+    // codeBlockProcessorMigrateAttempted Set persists across tests in the
+    // same module instance. Clear it before each test so tests that invoke
+    // the processor independently don't short-circuit each other.
+    const mod = await import('../../src/widget/codeBlockProcessor') as unknown as {
+      clearAllCodeBlockProcessorAttempted?: () => void;
+    };
+    mod.clearAllCodeBlockProcessorAttempted?.();
   });
 
   it('Case 1: useInlineWidget=ON + autoMigrateOnOpen=ON + lc-slug → awaits migrate, renders static fallback, no addChild', async () => {

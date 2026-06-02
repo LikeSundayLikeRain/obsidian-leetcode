@@ -180,7 +180,11 @@ import { registerVaultModifyRepairTrigger } from './main/childEditorSync';
 // useInlineWidget=ON (default OFF) per CONTEXT D-05; v1.2 nested-editor
 // stays the user-facing default through Phase 21.
 import { WidgetRegistry } from './widget/widgetRegistry';
-import { leetCodeBlockProcessor } from './widget/codeBlockProcessor';
+import {
+  leetCodeBlockProcessor,
+  clearCodeBlockProcessorAttempted,
+  clearAllCodeBlockProcessorAttempted,
+} from './widget/codeBlockProcessor';
 // Phase 20 Plan 20-01 (VIM-02) — canonical reader for the undocumented
 // `app.vault.getConfig('vimMode')` boolean. Single cast site.
 import { readVimModeFromVault } from './widget/vimMode';
@@ -368,6 +372,15 @@ export default class LeetCodePlugin extends Plugin {
   // this Set so a docChange-driven rebuild does not retrigger
   // processFrontMatter on every keystroke.
   repairInFlight: Set<string> = new Set();
+  // Plan 21.1-01 (MIGRATE-FLICKER-01) — attempt-once-this-session Sets.
+  // Unlike migrateInFlight / repairInFlight (cleared in .finally()), these
+  // Sets survive across completed attempts. Cleared per-path on
+  // vault.on('rename') and globally on Plugin.onunload. Initialized in
+  // onload below. NOT cleared on workspace.on('file-open') because that
+  // event fires on tab focus too — clearing there would reintroduce flicker
+  // on tab-switch.
+  migrateAttempted: Set<string> = new Set();
+  repairAttempted: Set<string> = new Set();
   // Phase 19 Plan 01 — instantiated only when useInlineWidget=ON (D-05
   // hard-gate). Optional field; main.ts onunload uses optional chaining when
   // calling destroyAll() so the v1.2 baseline path remains unaffected.
@@ -847,6 +860,13 @@ export default class LeetCodePlugin extends Plugin {
         const slug = fm?.['lc-slug'];
         if (!isValidSlug(slug)) return false;
         if (!checking) {
+          // Plan 21.1-01 (MIGRATE-FLICKER-01) — clear all three attempt
+          // sentinels for the active file path BEFORE invoking the
+          // migrator. This allows a manual retry after a failed auto-attempt
+          // (T-21.1-04 threat-model mitigation).
+          this.migrateAttempted?.delete(file.path);
+          this.repairAttempted?.delete(file.path);
+          clearCodeBlockProcessorAttempted(file.path);
           void migrateLegacyFenceIfNeeded(this.app, file, {
             force: true,
             autoMigrateOnOpen: true,
@@ -1232,6 +1252,12 @@ export default class LeetCodePlugin extends Plugin {
             // Plan 19-03 — drain any persisted state under the old path so
             // the renamed file's widget doesn't hydrate stale cursor/scroll.
             this.statePersistence?.clearForPath(oldPath);
+            // Plan 21.1-01 (MIGRATE-FLICKER-01) — clear all three attempt
+            // sentinels for the old path so the renamed file gets a fresh
+            // attempt-once gate on its next render.
+            this.migrateAttempted?.delete(oldPath);
+            this.repairAttempted?.delete(oldPath);
+            clearCodeBlockProcessorAttempted(oldPath);
           }
         }),
       );
@@ -1861,6 +1887,11 @@ export default class LeetCodePlugin extends Plugin {
     // we explicitly clear here so the in-memory map doesn't carry between
     // plugin reloads in the same Obsidian session.
     this.statePersistence?.clear();
+    // Plan 21.1-01 (MIGRATE-FLICKER-01) — clear all attempt sentinels so
+    // a plugin reload starts with fresh attempt-once gates for all paths.
+    this.migrateAttempted?.clear();
+    this.repairAttempted?.clear();
+    clearAllCodeBlockProcessorAttempted();
     // Phase 20 Plan 20-05 — reset the Hook 1 file-path tracker so a fresh
     // onload populates from scratch.
     this.lastActiveLeafFilePath = undefined;

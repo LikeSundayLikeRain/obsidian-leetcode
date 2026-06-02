@@ -24,6 +24,39 @@ import {
   type MarkdownPostProcessorContext,
   type Plugin,
 } from 'obsidian';
+
+/**
+ * Plan 21.1-01 (MIGRATE-FLICKER-01) — module-scoped attempt-once-this-session
+ * Set for the codeBlockProcessor autoMigrateOnOpen gate.
+ *
+ * On first invocation for a given file path within a session, the handler
+ * enters the migrate/repair await block and adds the path to this Set.
+ * All subsequent invocations for the same path (LP body flushes on every
+ * DebouncedWriter cadence) short-circuit BEFORE vault.read / disk I/O.
+ *
+ * Module-scoped (not plugin-instance) because the post-processor is
+ * registered at the module level by Obsidian's runtime. The helpers below
+ * (`clearCodeBlockProcessorAttempted` / `clearAllCodeBlockProcessorAttempted`)
+ * are the lifecycle hooks used by main.ts to clear on rename / Plugin.onunload
+ * / explicit "Migrate this note" command.
+ */
+const codeBlockProcessorMigrateAttempted = new Set<string>();
+
+/**
+ * Plan 21.1-01 — clear the attempt sentinel for a single file path.
+ * Called from main.ts vault.on('rename') and "Migrate this note" command.
+ */
+export function clearCodeBlockProcessorAttempted(path: string): void {
+  codeBlockProcessorMigrateAttempted.delete(path);
+}
+
+/**
+ * Plan 21.1-01 — clear all attempt sentinels.
+ * Called from main.ts Plugin.onunload.
+ */
+export function clearAllCodeBlockProcessorAttempted(): void {
+  codeBlockProcessorMigrateAttempted.clear();
+}
 import { isEmbedContext } from './embedDetect';
 import { LeetCodeWidgetRenderChild, type WidgetMountHost } from './WidgetController';
 // Phase 21 Plan 21-02 Task 3 — pre-mount migration gate (D-trigger-01).
@@ -169,6 +202,18 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
       settings?.getUseInlineWidget?.() === true &&
       settings?.getAutoMigrateOnOpen?.() === true
     ) {
+      // Plan 21.1-01 (MIGRATE-FLICKER-01) — attempt-once-this-session gate.
+      // On first invocation for this file path within a session, enter the
+      // migrate/repair await block and mark the path attempted. All
+      // subsequent invocations for the same path (LP body flushes on every
+      // DebouncedWriter cadence) short-circuit here, skipping the vault.read
+      // / disk I/O entirely. Fall through to the widget mount path below
+      // without awaiting anything — the note is already migrated/repaired.
+      if (codeBlockProcessorMigrateAttempted.has(file.path)) {
+        // Short-circuit — already attempted this session. Fall through to
+        // the widget mount path below.
+      } else {
+      codeBlockProcessorMigrateAttempted.add(file.path);
       try {
         const defaultLanguage =
           settings?.getDefaultLanguage?.() ?? 'python3';
@@ -244,6 +289,7 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
           err,
         );
       }
+      } // end else (not yet attempted for this path)
     }
     if (
       hasLcSlug &&

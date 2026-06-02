@@ -85,6 +85,20 @@ export type StateFieldPluginHost = Plugin & WidgetMountHost & {
   migrateInFlight: Set<string>;
   /** Plan 21-09 — sibling dedupe Set for the frontmatter-repair path. */
   repairInFlight?: Set<string>;
+  /**
+   * Plan 21.1-01 (MIGRATE-FLICKER-01) — attempt-once-this-session Set for
+   * the migrate side-effect. Survives across .finally() (unlike
+   * migrateInFlight). Cleared on vault.on('rename') per-path and on
+   * Plugin.onunload globally. Set by main.ts Plugin.onload.
+   */
+  migrateAttempted?: Set<string>;
+  /**
+   * Plan 21.1-01 (MIGRATE-FLICKER-01) — attempt-once-this-session Set for
+   * the repair side-effect. Survives across .finally() (unlike
+   * repairInFlight). Cleared on vault.on('rename') per-path and on
+   * Plugin.onunload globally. Set by main.ts Plugin.onload.
+   */
+  repairAttempted?: Set<string>;
 };
 
 /**
@@ -315,8 +329,20 @@ function buildLegacyBannerDecorations(state: EditorState): DecorationSet {
   // the side-effect is idempotent, gated through plugin.migrateInFlight,
   // and the StateField's pure return value (the DecorationSet) does NOT
   // depend on the side-effect result.
+  //
+  // Plan 21.1-01 (MIGRATE-FLICKER-01) — attempt-once-this-session gate.
+  // The migrateAttempted Set survives across .finally() (unlike
+  // migrateInFlight). After the first attempt per file-open, every
+  // subsequent docChange-driven rebuild short-circuits here so no
+  // vault.read / disk I/O is dispatched. The decoration return value
+  // below is UNCHANGED — the gate only prevents the side-effect dispatch.
   if (isAutoMigrateEnabled(plugin)) {
-    if (!plugin.migrateInFlight.has(file.path)) {
+    const attempted = plugin.migrateAttempted;
+    if (attempted?.has(file.path)) {
+      // Already attempted this session for this path — skip the
+      // fire-and-forget. Decorations still build normally below.
+    } else if (!plugin.migrateInFlight.has(file.path)) {
+      attempted?.add(file.path);
       plugin.migrateInFlight.add(file.path);
       void migrateLegacyFenceIfNeeded(
         plugin.app as Parameters<typeof migrateLegacyFenceIfNeeded>[0],
@@ -383,8 +409,20 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
     isInlineWidgetEnabled(plugin) &&
     isAutoMigrateEnabled(plugin)
   ) {
+    // Plan 21.1-01 (MIGRATE-FLICKER-01) — attempt-once-this-session gate.
+    // The repairAttempted Set survives across .finally() (unlike
+    // repairInFlight). After the first attempt per file-open, every
+    // subsequent docChange-driven rebuild short-circuits here. The
+    // decoration return value below is UNCHANGED — only the side-effect
+    // dispatch is gated.
+    const repairAttempted = plugin.repairAttempted;
+    if (repairAttempted?.has(file.path)) {
+      // Already attempted this session for this path — skip the
+      // fire-and-forget. Fall through to widget mount below.
+    } else {
     const repairInFlight = plugin.repairInFlight;
     if (repairInFlight && !repairInFlight.has(file.path)) {
+      repairAttempted?.add(file.path);
       repairInFlight.add(file.path);
       void repairFrontmatterIfNeeded(
         plugin.app as Parameters<typeof repairFrontmatterIfNeeded>[0],
@@ -430,6 +468,7 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
           repairInFlight.delete(file.path);
         });
     }
+    } // end else (not yet attempted)
   }
 
   const from = state.doc.line(fence.openerLine).from;
