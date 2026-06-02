@@ -810,4 +810,77 @@ describe('Plan 21-11 Task 2 — legacyBannerStateField + leetCodeWidgetStateFiel
       expect(repairInFlight.has(FILE_PATH)).toBe(false);
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Plan 21-15 — R4 (UAT re-test gap closure): LP banner CSS scope
+  // isolation. Both *BannerWidget.toDOM call sites must add the
+  // `lc-legacy-banner--livepreview` class to the host element so styles.css
+  // rules can target the LP shape distinctly without bleeding into the
+  // Reading-mode banner (which is rendered via mountLegacyFenceBanner from
+  // src/widget/codeBlockProcessor.ts and does NOT carry the class).
+  // ───────────────────────────────────────────────────────────────────────
+  describe('R4 — LP banner CSS scope isolation (Plan 21-15)', () => {
+    /**
+     * Helper: extract the widget from the StateField's DecorationSet and
+     * invoke its toDOM(). The widget classes (AutoMigratingBannerWidget /
+     * ManualPromptBannerWidget) are not exported; the StateField is the
+     * only construction path. We pull the Decoration.replace spec out via
+     * RangeSet.iter and then call widget.toDOM(view) — view is unused by
+     * both widgets' toDOM bodies (they only read this.plugin/this.file/
+     * this.source) so a dummy cast is safe.
+     */
+    function extractBannerHost(
+      doc: string,
+      autoMigrate: boolean,
+    ): Promise<HTMLElement> {
+      return (async () => {
+        const plugin = makePlugin({
+          useInlineWidget: true,
+          autoMigrateOnOpen: autoMigrate,
+        });
+        const { editorInfoField } = await import('obsidian');
+        const state = EditorState.create({
+          doc,
+          extensions: [
+            editorInfoField as unknown as import('@codemirror/state').Extension,
+            leetCodeFenceViewPlugin(plugin as never),
+          ],
+        });
+        const decos = state.field(legacyBannerStateField, false);
+        expect(decos).toBeDefined();
+        let widget: { toDOM: (v: unknown) => HTMLElement } | null = null;
+        decos!.between(0, state.doc.length, (_from, _to, deco) => {
+          const spec = (deco as unknown as { spec?: { widget?: unknown } })
+            .spec;
+          if (spec && spec.widget) {
+            widget = spec.widget as { toDOM: (v: unknown) => HTMLElement };
+          }
+        });
+        expect(widget).not.toBeNull();
+        return widget!.toDOM({} as unknown as EditorView);
+      })();
+    }
+
+    // Test R4.LP.1
+    it('AutoMigratingBannerWidget.toDOM produces a host element carrying both `.leetcode-migration-banner-host` AND `.lc-legacy-banner--livepreview` classes', async () => {
+      const host = await extractBannerHost(NOTE_WITH_LEGACY_FENCE, true);
+      expect(host.classList.contains('leetcode-migration-banner-host')).toBe(
+        true,
+      );
+      expect(host.classList.contains('lc-legacy-banner--livepreview')).toBe(
+        true,
+      );
+    });
+
+    // Test R4.LP.2
+    it('ManualPromptBannerWidget.toDOM produces a host element carrying both `.leetcode-migration-banner-host` AND `.lc-legacy-banner--livepreview` classes', async () => {
+      const host = await extractBannerHost(NOTE_WITH_LEGACY_FENCE, false);
+      expect(host.classList.contains('leetcode-migration-banner-host')).toBe(
+        true,
+      );
+      expect(host.classList.contains('lc-legacy-banner--livepreview')).toBe(
+        true,
+      );
+    });
+  });
 });

@@ -189,7 +189,17 @@ class AutoMigratingBannerWidget extends WidgetType {
 
   toDOM(_view: EditorView): HTMLElement {
     const host = document.createElement('div');
-    host.classList.add('leetcode-migration-banner-host');
+    // Plan 21-15 (UAT R4 closure) — `lc-legacy-banner--livepreview` is the
+    // top-level CSS scope class that styles.css uses to reset CM6's block-
+    // decoration wrapper styling (background tint, monospace font, fence
+    // border) that would otherwise blur the visual boundary between banner
+    // UI and the read-only fence body. Reading-mode caller of
+    // mountLegacyFenceBanner (src/widget/codeBlockProcessor.ts) does NOT
+    // add this class — its host is not wrapped by CM6.
+    host.classList.add(
+      'leetcode-migration-banner-host',
+      'lc-legacy-banner--livepreview',
+    );
     mountLegacyFenceBanner(
       host,
       this.source,
@@ -223,7 +233,13 @@ class ManualPromptBannerWidget extends WidgetType {
 
   toDOM(_view: EditorView): HTMLElement {
     const host = document.createElement('div');
-    host.classList.add('leetcode-migration-banner-host');
+    // Plan 21-15 (UAT R4 closure) — see AutoMigratingBannerWidget.toDOM
+    // above for the rationale. Both LP widget hosts carry the LP scope
+    // class so styles.css rules apply identically.
+    host.classList.add(
+      'leetcode-migration-banner-host',
+      'lc-legacy-banner--livepreview',
+    );
     mountLegacyFenceBanner(
       host,
       this.source,
