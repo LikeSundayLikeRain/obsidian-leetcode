@@ -205,27 +205,32 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
           },
         );
         if (repaired) {
-          // Render the intermediate static fallback first so the user never
-          // sees a "no widget" frame between the repair write and the
-          // re-run post-processor cycle.
-          renderStaticFallback(el, source);
-          // Plan 21-14 (UAT R2 closure) — frontmatter changed; force the
-          // Reading-mode pane to re-run post-processors so the widget mount
-          // path re-reads `lc-language` from the just-written frontmatter.
-          // The "metadataCache.changed will refire" assumption (Plan 21-09
-          // GREEN comment) does not hold for `leetcode-solve`-tagged fences
-          // in Reading mode: by the time `metadataCache.changed` fires, the
-          // widget has already mounted in a stale state. Same hand-off shape
-          // as Plan 21-08's migrate path in readingModeMigrationHook.ts.
-          // Pattern S-05 silent-on-failure — try/catch around the helper.
-          try {
-            rerenderReadingModePanes(plugin.app, file.path);
-          } catch {
-            // Swallow per Pattern S-05; rerender failure must NOT block
-            // post-processor return. The helper itself is hardened with
-            // its own outer + inner try/catch (Plan 21-08 ✔).
-          }
-          return;
+          // Plan 21-14 cycle-2 follow-up — `processFrontMatter` resolves
+          // before `metadataCache.changed` fires. If we mount the widget
+          // now, `resolveLanguageSlug` reads stale frontmatter and falls
+          // back to Python+Notice. Wait for the cache to actually reflect
+          // the write (bounded poll @ ~50ms × 16 = ~800ms ceiling), then
+          // fall through to the widget mount path below — by which point
+          // `resolveLanguageSlug` reads the freshly-written `lc-language`
+          // and constructs the widget on the user's chosen language.
+          await new Promise<void>((resolve) => {
+            const wait = (ticks: number): void => {
+              const fmNow = plugin.app.metadataCache.getFileCache(file)
+                ?.frontmatter as Record<string, unknown> | undefined;
+              const lcLangNow = fmNow?.['lc-language'];
+              if (
+                (typeof lcLangNow === 'string' && lcLangNow.length > 0) ||
+                ticks <= 0
+              ) {
+                resolve();
+                return;
+              }
+              setTimeout(() => wait(ticks - 1), 50);
+            };
+            wait(16);
+          });
+          // Fall through — the existing addChild path runs below with
+          // fresh frontmatter.
         }
       } catch (err) {
         // Defensive — migration / repair failures fall through to the

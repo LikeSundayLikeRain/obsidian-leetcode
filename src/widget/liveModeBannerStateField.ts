@@ -397,17 +397,30 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
       )
         .then((repaired) => {
           if (repaired === true) {
-            // Plan 21-14 (UAT R2 closure) — frontmatter changed; dispatch
-            // the sentinel annotation against each EditorView leaf showing
-            // this file so the widget StateFields recompute against the
-            // fresh frontmatter on the SAME open. Without this, the
-            // LeetCodeFenceWidget passed to Decoration.replace was
-            // constructed with the STALE language; the StateField only
-            // rebuilds on tr.docChanged so a frontmatter-only write does
-            // NOT trigger rebuild. Reading-mode panes are unaffected (no
-            // .editor); a sibling hand-off in codeBlockProcessor.ts covers
-            // the Reading-mode entry point.
-            dispatchLeetCodeRefresh(plugin, file.path);
+            // Plan 21-14 cycle-2 follow-up — `processFrontMatter` resolves
+            // BEFORE `metadataCache.changed` fires, so an immediate dispatch
+            // produces a StateField rebuild that still sees stale
+            // frontmatter (`lc-language` still missing). Wait for the
+            // metadataCache to actually reflect the write, then dispatch.
+            // Bounded poll: 16-tick budget @ ~50ms each = ~800ms ceiling.
+            const waitForCacheAndDispatch = (ticks: number): void => {
+              const fmNow = plugin.app.metadataCache.getFileCache(file)
+                ?.frontmatter as Record<string, unknown> | undefined;
+              const lcLangNow = fmNow?.['lc-language'];
+              if (typeof lcLangNow === 'string' && lcLangNow.length > 0) {
+                dispatchLeetCodeRefresh(plugin, file.path);
+                return;
+              }
+              if (ticks <= 0) {
+                // Give up — fire dispatch anyway in case our read missed
+                // a sub-tick race; the worst case is the widget stays in
+                // Python+Notice state, which matches the pre-fix behavior.
+                dispatchLeetCodeRefresh(plugin, file.path);
+                return;
+              }
+              setTimeout(() => waitForCacheAndDispatch(ticks - 1), 50);
+            };
+            waitForCacheAndDispatch(16);
           }
         })
         .catch(() => {
