@@ -74,14 +74,29 @@ export class SelfWriteSuppression {
    *  TTL — no defensive delete here; tryConsume owns that), or (c) the
    *  entry was armed without the originator (legacy 2-arg call shape).
    *
-   *  CRITICAL: peekOriginator is READ-ONLY. It does NOT consume / drop the
-   *  entry — tryConsume is the only mutator. The modify-handler captures
-   *  the originator BEFORE calling tryConsume so the routing decision is
-   *  made on the live entry; the subsequent tryConsume drops it. */
+   *  CRITICAL: peekOriginator is READ-ONLY for LIVE entries — it does NOT
+   *  consume / drop a live entry. tryConsume is the only mutator for live
+   *  entries. The modify-handler captures the originator BEFORE calling
+   *  tryConsume so the routing decision is made on the live entry; the
+   *  subsequent tryConsume drops it.
+   *
+   *  WR-01 (Phase 21 cycle-2 review-fix): expired entries ARE garbage-
+   *  collected here. If tryConsume is never called for an armed entry
+   *  (e.g., the writing pane was unmounted before its echo lands — file
+   *  rename, plugin teardown, fast tab close, or modify event fired on a
+   *  different fence so observedHash mismatched and was dropped on a
+   *  different path), the orphan would otherwise persist past TTL until
+   *  onunload's clear(). Garbage-collecting expired entries on peek is
+   *  pure cleanup — peekOriginator already treats expired entries as
+   *  absent, so dropping the dead entry is a no-op for callers and an
+   *  observable improvement for memory under churn. */
   peekOriginator(path: string): string | null {
     const entry = this.map.get(path);
     if (!entry) return null;
-    if (Date.now() > entry.expiresAt) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.map.delete(path);
+      return null;
+    }
     return entry.originatingRegistryKey ?? null;
   }
 
