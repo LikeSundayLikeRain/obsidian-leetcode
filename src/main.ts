@@ -1686,6 +1686,11 @@ export default class LeetCodePlugin extends Plugin {
               cm.dispatch({ effects: nestedEditorRebuildEffect.of(null) });
             }
           }
+          // Plan 21.1-01 (R6 LP fix) — dispatch leetcodeRefreshAnnotation to
+          // LP leaves so leetCodeWidgetStateField recomputes against the
+          // now-indexed frontmatter. See handleMetadataCacheChangedForLP for
+          // the full rationale and Phase 18 race description.
+          this.handleMetadataCacheChangedForLP(file, cache);
         }
       }),
     );
@@ -4013,6 +4018,47 @@ export default class LeetCodePlugin extends Plugin {
    * when the listener fires (mirrors the `dispatchChildLanguageReconfigure`
    * convention at lines ~2473-2476).
    */
+  /**
+   * Plan 21.1-01 (R6 LP fix) — LP-specific metadataCache.changed handler.
+   *
+   * When `metadataCache.changed` fires for a file that now has `lc-slug` in
+   * its frontmatter AND `useInlineWidget=ON`, dispatch
+   * `leetcodeRefreshAnnotation` to all LP/source-mode leaves for that file
+   * so `leetCodeWidgetStateField` recomputes against the now-indexed
+   * frontmatter.
+   *
+   * Context: `leetCodeWidgetStateField.create()` fires when Obsidian
+   * constructs the CM6 EditorState (inside `openLinkText`). If
+   * `metadataCache` hasn't indexed `applyFrontmatter`'s
+   * `processFrontMatter` write yet, `create()` returns `Decoration.none`.
+   * The two-rAF `leetcodeRefreshAnnotation` dispatch from
+   * `NoteWriter.fireRerenderAfterNoteWritten` fires ~32 ms later — but if
+   * `metadataCache.changed` fires AFTER that window, nothing triggers a
+   * subsequent StateField recompute and the widget is permanently stuck at
+   * `Decoration.none` (user sees native CM6 Java syntax highlighting
+   * instead of the LC widget).
+   *
+   * `metadataCache.changed` is the definitive "frontmatter indexed" signal.
+   * Dispatching here guarantees the LP StateField gets a recompute trigger
+   * after `metadataCache` populates — regardless of whether the two-rAF
+   * window raced ahead of metadata indexing. Mirrors the
+   * `nestedEditorRebuildEffect` dispatch above for the v1.2 nested-editor
+   * path (same Phase 18 race, same fix shape).
+   *
+   * Extracted into a private method so unit tests can invoke it via
+   * `helper.call(fakePlugin, file, cache)` without spinning up a full
+   * plugin (mirrors `handleFmChangeForLanguageReactivity` test strategy).
+   */
+  private handleMetadataCacheChangedForLP(
+    file: { path: string },
+    cache: { frontmatter?: Record<string, unknown> } | null | undefined,
+  ): void {
+    if (!this.settings.getUseInlineWidget?.()) return;
+    const slug = cache?.frontmatter?.['lc-slug'];
+    if (typeof slug !== 'string' || slug.length === 0) return;
+    dispatchLeetcodeRefreshToLivePreviewLeaves(this.app, file.path);
+  }
+
   private handleFmChangeForLanguageReactivity(
     file: { path: string },
     cache: { frontmatter?: Record<string, unknown> } | null | undefined,
