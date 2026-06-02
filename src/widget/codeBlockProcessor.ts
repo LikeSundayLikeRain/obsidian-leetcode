@@ -51,6 +51,12 @@ import {
   repairFrontmatterIfNeeded,
 } from './fenceMigrator';
 import { mountLegacyFenceBanner } from './legacyFenceBanner';
+// Plan 21-14 (UAT R2 closure) — after repairFrontmatterIfNeeded resolves with
+// `repaired === true`, force the Reading-mode pane to re-run post-processors
+// so the widget mount path re-reads the just-written `lc-language` from
+// frontmatter. Same shape as Plan 21-08's migrate hand-off in
+// readingModeMigrationHook.ts trailing .then.
+import { rerenderReadingModePanes } from '../main/readingModeMigrationHook';
 
 type ProcessorHost = Plugin & WidgetMountHost & {
   app: WidgetMountHost['app'] & {
@@ -194,9 +200,26 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
           },
         );
         if (repaired) {
-          // metadataCache.changed will refire the post-processor with the
-          // repaired frontmatter — the widget mounts on the next cycle.
+          // Render the intermediate static fallback first so the user never
+          // sees a "no widget" frame between the repair write and the
+          // re-run post-processor cycle.
           renderStaticFallback(el, source);
+          // Plan 21-14 (UAT R2 closure) — frontmatter changed; force the
+          // Reading-mode pane to re-run post-processors so the widget mount
+          // path re-reads `lc-language` from the just-written frontmatter.
+          // The "metadataCache.changed will refire" assumption (Plan 21-09
+          // GREEN comment) does not hold for `leetcode-solve`-tagged fences
+          // in Reading mode: by the time `metadataCache.changed` fires, the
+          // widget has already mounted in a stale state. Same hand-off shape
+          // as Plan 21-08's migrate path in readingModeMigrationHook.ts.
+          // Pattern S-05 silent-on-failure — try/catch around the helper.
+          try {
+            rerenderReadingModePanes(plugin.app, file.path);
+          } catch {
+            // Swallow per Pattern S-05; rerender failure must NOT block
+            // post-processor return. The helper itself is hardened with
+            // its own outer + inner try/catch (Plan 21-08 ✔).
+          }
           return;
         }
       } catch {

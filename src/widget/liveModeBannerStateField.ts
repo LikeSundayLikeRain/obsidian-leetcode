@@ -48,6 +48,7 @@
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
+  Annotation,
   Facet,
   StateField,
   type EditorState,
@@ -99,6 +100,78 @@ const pluginHostFacet = Facet.define<StateFieldPluginHost, StateFieldPluginHost 
 
 function readHost(state: EditorState): StateFieldPluginHost | null {
   return state.facet(pluginHostFacet);
+}
+
+/**
+ * Plan 21-14 (UAT R2 closure) — sentinel annotation that asks both
+ * StateFields below to recompute even on a transaction with no doc
+ * changes. Dispatched by the post-repair .then handler in
+ * `buildLeetCodeWidgetDecorations` after `repairFrontmatterIfNeeded`
+ * resolves with `repaired === true` so the widget remounts against the
+ * now-fresh frontmatter on the SAME open.
+ *
+ * CM6 contract: empty-change annotation-only transactions never reach
+ * the section-lock changeFilter (it only inspects doc-mutating
+ * transactions per `tr.changes.length > 0`), so this dispatch bypasses
+ * Phase 05.5 'leetcode.*' userEvent gating automatically. The widened
+ * StateField predicate below recomputes on either `tr.docChanged` OR
+ * the presence of this annotation.
+ *
+ * Trust-boundary note (T-21-14-02): the Annotation is module-private at
+ * the import boundary — external code must `import { leetcodeRefreshAnnotation }`
+ * to synthesize a transaction carrying it. The widened predicate runs
+ * the same `buildLegacyBannerDecorations` / `buildLeetCodeWidgetDecorations`
+ * pure functions as the docChanged path — same input shape, same output
+ * shape, just one extra recompute trigger.
+ */
+export const leetcodeRefreshAnnotation = Annotation.define<true>();
+
+/**
+ * Plan 21-14 (UAT R2) — walk the host plugin's known markdown leaves,
+ * filter to those whose backing file matches `path` AND whose `editor`
+ * exposes a CM6 `EditorView` (Live Preview / Source mode), and dispatch
+ * the leetcodeRefreshAnnotation so the leetCodeWidgetStateField
+ * recomputes against the post-repair frontmatter without requiring a
+ * doc change. Reading-mode panes are unaffected (no .editor).
+ *
+ * The `view.editor.cm` accessor is the documented internal Obsidian
+ * pattern used elsewhere in the plugin (e.g. src/main.ts switchFenceLanguage,
+ * src/main/codeActionsEditorExtension.ts languageRefreshEffect — see
+ * CLAUDE.md "Conventions" section).
+ *
+ * Defensive: outer + inner try/catch swallow undefined-method, throwing
+ * dispatch, and unexpected workspace API shapes (mirrors the
+ * defensive shape of rerenderReadingModePanes in
+ * src/main/readingModeMigrationHook.ts:267-295). Pattern S-05.
+ */
+function dispatchLeetCodeRefresh(
+  plugin: StateFieldPluginHost,
+  path: string,
+): void {
+  try {
+    const leaves = plugin.app.workspace.getLeavesOfType('markdown');
+    for (const leaf of leaves) {
+      const view = (leaf as { view?: unknown }).view as
+        | {
+            file?: { path?: string } | null;
+            editor?: unknown;
+          }
+        | undefined;
+      if (!view || view.file?.path !== path) continue;
+      const cm = (view.editor as unknown as { cm?: { dispatch: (spec: unknown) => void } })
+        ?.cm;
+      if (!cm || typeof cm.dispatch !== 'function') continue;
+      try {
+        cm.dispatch({
+          annotations: [leetcodeRefreshAnnotation.of(true)],
+        });
+      } catch {
+        // Per-leaf swallow — keep walking remaining leaves.
+      }
+    }
+  } catch {
+    // Outer swallow — never propagate to the StateField caller.
+  }
 }
 
 /**
@@ -306,6 +379,21 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
             plugin.settings.getDefaultLanguage?.() ?? 'python3',
         },
       )
+        .then((repaired) => {
+          if (repaired === true) {
+            // Plan 21-14 (UAT R2 closure) — frontmatter changed; dispatch
+            // the sentinel annotation against each EditorView leaf showing
+            // this file so the widget StateFields recompute against the
+            // fresh frontmatter on the SAME open. Without this, the
+            // LeetCodeFenceWidget passed to Decoration.replace was
+            // constructed with the STALE language; the StateField only
+            // rebuilds on tr.docChanged so a frontmatter-only write does
+            // NOT trigger rebuild. Reading-mode panes are unaffected (no
+            // .editor); a sibling hand-off in codeBlockProcessor.ts covers
+            // the Reading-mode entry point.
+            dispatchLeetCodeRefresh(plugin, file.path);
+          }
+        })
         .catch(() => {
           // Pattern S-05 silent-on-failure.
         })
@@ -340,7 +428,13 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
 export const legacyBannerStateField = StateField.define<DecorationSet>({
   create: (state) => buildLegacyBannerDecorations(state),
   update: (value, tr) => {
-    if (!tr.docChanged) return value;
+    // Plan 21-14 — also recompute on the sentinel annotation so the
+    // post-repair fire-and-forget chain can force a rebuild against the
+    // freshly-written frontmatter without a doc change. The annotation
+    // path runs the same pure builder as the docChanged path.
+    if (!tr.docChanged && !tr.annotation(leetcodeRefreshAnnotation)) {
+      return value;
+    }
     return buildLegacyBannerDecorations(tr.state);
   },
   provide: (f) => [
@@ -353,7 +447,14 @@ export const legacyBannerStateField = StateField.define<DecorationSet>({
 export const leetCodeWidgetStateField = StateField.define<DecorationSet>({
   create: (state) => buildLeetCodeWidgetDecorations(state),
   update: (value, tr) => {
-    if (!tr.docChanged) return value;
+    // Plan 21-14 — same widening as legacyBannerStateField above. The
+    // leetcodeRefreshAnnotation is dispatched by the post-repair .then
+    // chain in buildLeetCodeWidgetDecorations once the frontmatter write
+    // resolves; the rebuilt DecorationSet then re-instantiates
+    // LeetCodeFenceWidget with the post-repair language.
+    if (!tr.docChanged && !tr.annotation(leetcodeRefreshAnnotation)) {
+      return value;
+    }
     return buildLeetCodeWidgetDecorations(tr.state);
   },
   provide: (f) => [

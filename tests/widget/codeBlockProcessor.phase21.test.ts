@@ -43,14 +43,21 @@ vi.mock('obsidian', async () => {
 // vi.hoisted spies — must be declared inside hoisted() so vi.mock factories
 // can reference them without TDZ. Mirrors the pattern in
 // tests/widget/legacyFenceBanner.test.ts.
-const { migrateSpy, candidateSpy, bannerSpy, repairSpy, repairCandidateSpy } =
-  vi.hoisted(() => ({
-    migrateSpy: vi.fn(async () => true),
-    candidateSpy: vi.fn(() => true),
-    bannerSpy: vi.fn(),
-    repairSpy: vi.fn(async () => false),
-    repairCandidateSpy: vi.fn(() => false),
-  }));
+const {
+  migrateSpy,
+  candidateSpy,
+  bannerSpy,
+  repairSpy,
+  repairCandidateSpy,
+  rerenderReadingModePanesSpy,
+} = vi.hoisted(() => ({
+  migrateSpy: vi.fn(async () => true),
+  candidateSpy: vi.fn(() => true),
+  bannerSpy: vi.fn(),
+  repairSpy: vi.fn(async () => false),
+  repairCandidateSpy: vi.fn(() => false),
+  rerenderReadingModePanesSpy: vi.fn(),
+}));
 
 vi.mock('../../src/widget/fenceMigrator', () => ({
   migrateLegacyFenceIfNeeded: migrateSpy,
@@ -61,6 +68,12 @@ vi.mock('../../src/widget/fenceMigrator', () => ({
 
 vi.mock('../../src/widget/legacyFenceBanner', () => ({
   mountLegacyFenceBanner: bannerSpy,
+}));
+
+// Plan 21-14 — mock the rerenderReadingModePanes helper so tests can spy on
+// the post-repair hand-off without invoking the real preview-rerender API.
+vi.mock('../../src/main/readingModeMigrationHook', () => ({
+  rerenderReadingModePanes: rerenderReadingModePanesSpy,
 }));
 
 interface FakeSectionInfo {
@@ -139,6 +152,7 @@ describe('Phase 21 mount-path migration', () => {
     bannerSpy.mockClear();
     repairSpy.mockClear();
     repairCandidateSpy.mockClear();
+    rerenderReadingModePanesSpy.mockClear();
     migrateSpy.mockResolvedValue(true);
     candidateSpy.mockReturnValue(true);
     repairSpy.mockResolvedValue(false);
@@ -324,5 +338,167 @@ describe('Phase 21 mount-path migration', () => {
     expect(bannerSpy).not.toHaveBeenCalled();
     // Falls through — existing path mounts the render child.
     expect(ctx.addChild).toHaveBeenCalledTimes(1);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Plan 21-14 — R2 (UAT re-test gap closure): post-repair rerender hand-off.
+  // After repairFrontmatterIfNeeded resolves with `repaired === true`, the
+  // post-processor must invoke `rerenderReadingModePanes(plugin.app,
+  // file.path)` so the SAME open re-runs post-processors against the just-
+  // written frontmatter — without requiring a close+reopen.
+  // ───────────────────────────────────────────────────────────────────────
+  describe('R2 — post-repair rerender hand-off (Plan 21-14)', () => {
+    const V13_SECTION = {
+      text:
+        '---\nlc-slug: two-sum\n---\n\n## Code\n\n```leetcode-solve\ndef solve(): pass\n```\n',
+      lineStart: 5,
+      lineEnd: 7,
+    };
+
+    it('Test R2.1: migrate=false + repair=true → rerenderReadingModePanes invoked exactly once with file.path AFTER renderStaticFallback', async () => {
+      const metadataCache = createFakeMetadataCache();
+      metadataCache.setFrontmatter('LeetCode/two-sum.md', { 'lc-slug': 'two-sum' });
+      const plugin = createFakePlugin({ metadataCache });
+      const settings: FakeSettings = {
+        getUseInlineWidget: () => true,
+        getAutoMigrateOnOpen: () => true,
+        getDefaultLanguage: () => 'java',
+        getIndentSizeOverride: () => 'auto',
+      };
+      const processor = await getProcessor(plugin, settings);
+      const el = makeHost();
+      const ctx = makeCtx('LeetCode/two-sum.md', V13_SECTION);
+
+      migrateSpy.mockResolvedValueOnce(false);
+      repairSpy.mockResolvedValueOnce(true);
+
+      await processor(V12_SOURCE, el, ctx as never);
+
+      expect(migrateSpy).toHaveBeenCalledTimes(1);
+      expect(repairSpy).toHaveBeenCalledTimes(1);
+      expect(rerenderReadingModePanesSpy).toHaveBeenCalledTimes(1);
+      const [appArg, pathArg] =
+        rerenderReadingModePanesSpy.mock.calls[0] as unknown as [
+          unknown,
+          string,
+        ];
+      // The helper receives plugin.app and the file's path string.
+      expect(appArg).toBe(plugin.app);
+      expect(pathArg).toBe('LeetCode/two-sum.md');
+      // Static fallback rendered.
+      expect(ctx.addChild).not.toHaveBeenCalled();
+      const code = el.querySelector('pre code');
+      expect(code).not.toBeNull();
+    });
+
+    it('Test R2.2: migrate=false + repair=false → rerenderReadingModePanes NOT invoked', async () => {
+      const metadataCache = createFakeMetadataCache();
+      metadataCache.setFrontmatter('LeetCode/two-sum.md', { 'lc-slug': 'two-sum' });
+      const plugin = createFakePlugin({ metadataCache });
+      const settings: FakeSettings = {
+        getUseInlineWidget: () => true,
+        getAutoMigrateOnOpen: () => true,
+        getDefaultLanguage: () => 'java',
+        getIndentSizeOverride: () => 'auto',
+      };
+      const processor = await getProcessor(plugin, settings);
+      const el = makeHost();
+      const ctx = makeCtx('LeetCode/two-sum.md', V13_SECTION);
+
+      migrateSpy.mockResolvedValueOnce(false);
+      repairSpy.mockResolvedValueOnce(false);
+
+      await processor(V12_SOURCE, el, ctx as never);
+
+      expect(repairSpy).toHaveBeenCalledTimes(1);
+      expect(rerenderReadingModePanesSpy).not.toHaveBeenCalled();
+    });
+
+    it('Test R2.3: migrate=true → repair NOT called AND rerenderReadingModePanes NOT called from the repair branch', async () => {
+      const metadataCache = createFakeMetadataCache();
+      metadataCache.setFrontmatter('LeetCode/two-sum.md', { 'lc-slug': 'two-sum' });
+      const plugin = createFakePlugin({ metadataCache });
+      const settings: FakeSettings = {
+        getUseInlineWidget: () => true,
+        getAutoMigrateOnOpen: () => true,
+        getDefaultLanguage: () => 'python3',
+        getIndentSizeOverride: () => 'auto',
+      };
+      const processor = await getProcessor(plugin, settings);
+      const el = makeHost();
+      const ctx = makeCtx('LeetCode/two-sum.md', V12_SECTION);
+
+      migrateSpy.mockResolvedValueOnce(true);
+
+      await processor(V12_SOURCE, el, ctx as never);
+
+      expect(migrateSpy).toHaveBeenCalledTimes(1);
+      // Migrator returned true → early return; repair was NOT called.
+      expect(repairSpy).not.toHaveBeenCalled();
+      // The post-processor's repair branch never runs, so its rerender call
+      // never fires. The migrate-path rerender hand-off lives in the
+      // readingModeMigrationHook (Plan 21-08), NOT in this post-processor.
+      expect(rerenderReadingModePanesSpy).not.toHaveBeenCalled();
+    });
+
+    it('Test R2.4: repair() rejects → rerenderReadingModePanes NOT called; no exception propagates', async () => {
+      const metadataCache = createFakeMetadataCache();
+      metadataCache.setFrontmatter('LeetCode/two-sum.md', { 'lc-slug': 'two-sum' });
+      const plugin = createFakePlugin({ metadataCache });
+      const settings: FakeSettings = {
+        getUseInlineWidget: () => true,
+        getAutoMigrateOnOpen: () => true,
+        getDefaultLanguage: () => 'java',
+        getIndentSizeOverride: () => 'auto',
+      };
+      const processor = await getProcessor(plugin, settings);
+      const el = makeHost();
+      const ctx = makeCtx('LeetCode/two-sum.md', V13_SECTION);
+
+      migrateSpy.mockResolvedValueOnce(false);
+      repairSpy.mockRejectedValueOnce(new Error('boom'));
+
+      // Existing inner try/catch in the post-processor swallows the rejection.
+      await expect(
+        processor(V12_SOURCE, el, ctx as never),
+      ).resolves.toBeUndefined();
+
+      expect(repairSpy).toHaveBeenCalledTimes(1);
+      expect(rerenderReadingModePanesSpy).not.toHaveBeenCalled();
+    });
+
+    it('Test R2.5: rerenderReadingModePanes is called WITH the same file.path string the post-processor received (not basename)', async () => {
+      const metadataCache = createFakeMetadataCache();
+      metadataCache.setFrontmatter(
+        'LeetCode/0001-two-sum.md',
+        { 'lc-slug': 'two-sum' },
+      );
+      const plugin = createFakePlugin({ metadataCache });
+      const settings: FakeSettings = {
+        getUseInlineWidget: () => true,
+        getAutoMigrateOnOpen: () => true,
+        getDefaultLanguage: () => 'java',
+        getIndentSizeOverride: () => 'auto',
+      };
+      const processor = await getProcessor(plugin, settings);
+      const el = makeHost();
+      const ctx = makeCtx('LeetCode/0001-two-sum.md', V13_SECTION);
+
+      migrateSpy.mockResolvedValueOnce(false);
+      repairSpy.mockResolvedValueOnce(true);
+
+      await processor(V12_SOURCE, el, ctx as never);
+
+      expect(rerenderReadingModePanesSpy).toHaveBeenCalledTimes(1);
+      const [, pathArg] =
+        rerenderReadingModePanesSpy.mock.calls[0] as unknown as [
+          unknown,
+          string,
+        ];
+      // Tightens R2.1 — the second argument is the full vault path string,
+      // not the basename and not the TFile object.
+      expect(pathArg).toBe('LeetCode/0001-two-sum.md');
+      expect(typeof pathArg).toBe('string');
+    });
   });
 });
