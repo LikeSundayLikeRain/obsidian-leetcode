@@ -49,6 +49,28 @@ vi.mock('obsidian', async () => {
   return { ...actual, editorInfoField };
 });
 
+// Plan 21-14 — mock fenceMigrator so the post-repair fire-and-forget chain
+// is observable without invoking the real processFrontMatter write. R2.LP
+// tests below override `migrateLegacyFenceIfNeeded` and
+// `repairFrontmatterIfNeeded` per-test via vi.mocked(...).mockResolvedValue.
+const { migrateLegacyFenceSpy, repairFrontmatterSpy } = vi.hoisted(() => ({
+  migrateLegacyFenceSpy: vi.fn(async () => false),
+  repairFrontmatterSpy: vi.fn(async () => false),
+}));
+
+vi.mock('../../src/widget/fenceMigrator', async () => {
+  // Preserve real exports for the helpers (isMigrationCandidate etc.) we
+  // don't override; only stub the two async writers.
+  const actual = await vi.importActual<
+    typeof import('../../src/widget/fenceMigrator')
+  >('../../src/widget/fenceMigrator');
+  return {
+    ...actual,
+    migrateLegacyFenceIfNeeded: migrateLegacyFenceSpy,
+    repairFrontmatterIfNeeded: repairFrontmatterSpy,
+  };
+});
+
 // Stub child editor mocking surfaces — the LeetCodeFenceWidget toDOM
 // path eventually calls into mountLeetCodeWidget which wires up an
 // embedded EditorView. We do not exercise that DOM here; the StateField
@@ -69,6 +91,7 @@ import { leetCodeFenceViewPlugin } from '../../src/widget/liveModeViewPlugin';
 import {
   legacyBannerStateField,
   leetCodeWidgetStateField,
+  leetcodeRefreshAnnotation,
 } from '../../src/widget/liveModeBannerStateField';
 
 const FILE_PATH = 'LeetCode/0001-two-sum.md';
@@ -455,5 +478,336 @@ describe('Plan 21-11 Task 2 — legacyBannerStateField + leetCodeWidgetStateFiel
     const decos = state.field(legacyBannerStateField, false);
     expect(decos).toBeDefined();
     expect(decos === Decoration.none || decos!.size === 0).toBe(true);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Plan 21-14 — R2 (UAT re-test gap closure): post-repair StateField
+  // recompute. After repairFrontmatterIfNeeded resolves with `repaired ===
+  // true`, dispatch a sentinel annotation against each EditorView leaf for
+  // the file path so the leetCodeWidgetStateField recomputes against the
+  // post-repair frontmatter on the SAME open — without requiring docChange.
+  // ───────────────────────────────────────────────────────────────────────
+  describe('R2 — post-repair StateField recompute (Plan 21-14)', () => {
+    const NOTE_MISSING_LC_LANGUAGE = [
+      '---',
+      'lc-slug: two-sum',
+      '---',
+      '',
+      '## Code',
+      '',
+      '```leetcode-solve',
+      'class Solution:',
+      '    def twoSum(self, nums, target):',
+      '        return []',
+      '```',
+      '',
+    ].join('\n');
+
+    beforeEach(() => {
+      migrateLegacyFenceSpy.mockReset();
+      repairFrontmatterSpy.mockReset();
+      migrateLegacyFenceSpy.mockResolvedValue(false);
+      repairFrontmatterSpy.mockResolvedValue(false);
+    });
+
+    async function flushMicrotasks(): Promise<void> {
+      // Flush enough ticks to pump .then → .catch → .finally chain.
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    }
+
+    // Test R2.LP.1
+    it('leetcodeRefreshAnnotation is exported and is a CM6 Annotation', () => {
+      expect(leetcodeRefreshAnnotation).toBeDefined();
+      expect(typeof leetcodeRefreshAnnotation.of).toBe('function');
+      // Annotations expose `.of(value)` returning an opaque Annotation
+      // object that StateField update can read via tr.annotation(...).
+      const ann = leetcodeRefreshAnnotation.of(true);
+      expect(ann).toBeDefined();
+    });
+
+    // Test R2.LP.2
+    it('leetCodeWidgetStateField recomputes on a transaction carrying leetcodeRefreshAnnotation even when tr.docChanged is false', async () => {
+      const plugin = makePlugin({
+        fm: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
+      });
+      const { editorInfoField } = await import('obsidian');
+      const state = EditorState.create({
+        doc: NOTE_WITH_LC_SOLVE_FENCE,
+        extensions: [
+          editorInfoField as unknown as import('@codemirror/state').Extension,
+          leetCodeFenceViewPlugin(plugin as never),
+        ],
+      });
+
+      // Initial widget StateField — should already contain a range.
+      const initialDecos = state.field(leetCodeWidgetStateField, false);
+      expect(initialDecos).toBeDefined();
+
+      // Dispatch annotation-only transaction (NO doc change).
+      const tr = state.update({
+        annotations: [leetcodeRefreshAnnotation.of(true)],
+      });
+      const next = tr.state;
+      expect(tr.docChanged).toBe(false);
+
+      // The StateField recomputed — even though docChanged=false, the
+      // sentinel annotation widened the predicate. The new DecorationSet
+      // is a freshly built object (NOT referentially equal to the prior).
+      const nextDecos = next.field(leetCodeWidgetStateField, false);
+      expect(nextDecos).toBeDefined();
+      // After recompute on the same fm, the range count is still >= 1.
+      let found = 0;
+      nextDecos!.between(0, next.doc.length, () => {
+        found++;
+      });
+      expect(found).toBeGreaterThanOrEqual(1);
+      // Referential check — recompute means the new value is a freshly
+      // built RangeSet, NOT the cached `value` returned by the early-return
+      // bail-out branch. CM6's RangeSet.empty is a sentinel; a fresh
+      // Decoration.set(...) call returns a new instance.
+      expect(nextDecos).not.toBe(initialDecos);
+    });
+
+    // Test R2.LP.3
+    it('leetCodeWidgetStateField does NOT recompute on a doc-empty transaction WITHOUT the annotation (regression check)', async () => {
+      const plugin = makePlugin({
+        fm: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
+      });
+      const { editorInfoField } = await import('obsidian');
+      const state = EditorState.create({
+        doc: NOTE_WITH_LC_SOLVE_FENCE,
+        extensions: [
+          editorInfoField as unknown as import('@codemirror/state').Extension,
+          leetCodeFenceViewPlugin(plugin as never),
+        ],
+      });
+      const initialDecos = state.field(leetCodeWidgetStateField, false);
+
+      // Dispatch a doc-empty transaction with NO annotation.
+      const tr = state.update({});
+      const next = tr.state;
+      expect(tr.docChanged).toBe(false);
+
+      // The StateField bailed out — value is referentially equal.
+      const nextDecos = next.field(leetCodeWidgetStateField, false);
+      expect(nextDecos).toBe(initialDecos);
+    });
+
+    // Test R2.LP.4
+    it('legacyBannerStateField also recomputes on the annotation (parity — both StateFields share the widened predicate)', async () => {
+      const plugin = makePlugin({
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+      });
+      const { editorInfoField } = await import('obsidian');
+      const state = EditorState.create({
+        doc: NOTE_WITH_LEGACY_FENCE,
+        extensions: [
+          editorInfoField as unknown as import('@codemirror/state').Extension,
+          leetCodeFenceViewPlugin(plugin as never),
+        ],
+      });
+      const initialDecos = state.field(legacyBannerStateField, false);
+      expect(initialDecos).toBeDefined();
+
+      // Dispatch annotation-only transaction.
+      const tr = state.update({
+        annotations: [leetcodeRefreshAnnotation.of(true)],
+      });
+      const next = tr.state;
+      expect(tr.docChanged).toBe(false);
+
+      const nextDecos = next.field(legacyBannerStateField, false);
+      // Recomputed (new RangeSet instance).
+      expect(nextDecos).not.toBe(initialDecos);
+      let found = 0;
+      nextDecos!.between(0, next.doc.length, () => {
+        found++;
+      });
+      expect(found).toBeGreaterThanOrEqual(1);
+    });
+
+    // Test R2.LP.5
+    it('post-repair scheduled dispatch fires leetcodeRefreshAnnotation against each known EditorView for the file path', async () => {
+      const plugin = makePlugin({
+        fm: { 'lc-slug': 'two-sum' },
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+      });
+      // Add repairInFlight Set + a workspace.getLeavesOfType returning
+      // a matching + a non-matching fake leaf.
+      const matchingDispatch = vi.fn();
+      const otherDispatch = vi.fn();
+      const matchingLeaf = {
+        view: {
+          file: { path: FILE_PATH },
+          editor: { cm: { dispatch: matchingDispatch } },
+        },
+      };
+      const otherLeaf = {
+        view: {
+          file: { path: 'LeetCode/other.md' },
+          editor: { cm: { dispatch: otherDispatch } },
+        },
+      };
+      (plugin as unknown as { repairInFlight: Set<string> }).repairInFlight =
+        new Set<string>();
+      const app = plugin.app as unknown as {
+        workspace: { getLeavesOfType: (t: string) => unknown[] };
+      };
+      app.workspace = {
+        ...((plugin.app as unknown as { workspace?: object }).workspace ??
+          {}),
+        getLeavesOfType: (t: string) =>
+          t === 'markdown' ? [matchingLeaf, otherLeaf] : [],
+      } as never;
+
+      // repair resolves true → dispatch should fire on the matching leaf.
+      repairFrontmatterSpy.mockResolvedValueOnce(true);
+
+      const { editorInfoField } = await import('obsidian');
+      EditorState.create({
+        doc: NOTE_MISSING_LC_LANGUAGE,
+        extensions: [
+          editorInfoField as unknown as import('@codemirror/state').Extension,
+          leetCodeFenceViewPlugin(plugin as never),
+        ],
+      });
+
+      await flushMicrotasks();
+
+      // (a) repair was invoked.
+      expect(repairFrontmatterSpy).toHaveBeenCalledTimes(1);
+      // (b) matching EditorView received exactly one dispatch carrying the
+      // sentinel annotation; non-matching leaf received zero.
+      expect(matchingDispatch).toHaveBeenCalledTimes(1);
+      expect(otherDispatch).not.toHaveBeenCalled();
+      const firstCall = matchingDispatch.mock.calls[0] as
+        | unknown[]
+        | undefined;
+      expect(firstCall).toBeDefined();
+      const dispatchArg = (firstCall as unknown[])[0] as {
+        annotations?: unknown;
+        changes?: unknown;
+      };
+      // Inspect annotations — should be a single-element array containing
+      // an Annotation produced by leetcodeRefreshAnnotation.of(true).
+      expect(dispatchArg).toBeDefined();
+      const anns = Array.isArray(dispatchArg.annotations)
+        ? dispatchArg.annotations
+        : [dispatchArg.annotations];
+      expect(anns.length).toBe(1);
+      // (c) repairInFlight was cleared via the .finally.
+      const repairInFlight = (
+        plugin as unknown as { repairInFlight: Set<string> }
+      ).repairInFlight;
+      expect(repairInFlight.has(FILE_PATH)).toBe(false);
+    });
+
+    // Test R2.LP.6
+    it('post-repair scheduled dispatch is NOT fired when repairFrontmatterIfNeeded resolves false', async () => {
+      const plugin = makePlugin({
+        fm: { 'lc-slug': 'two-sum' },
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+      });
+      const matchingDispatch = vi.fn();
+      (plugin as unknown as { repairInFlight: Set<string> }).repairInFlight =
+        new Set<string>();
+      const app = plugin.app as unknown as {
+        workspace: { getLeavesOfType: (t: string) => unknown[] };
+      };
+      app.workspace = {
+        ...((plugin.app as unknown as { workspace?: object }).workspace ??
+          {}),
+        getLeavesOfType: (t: string) =>
+          t === 'markdown'
+            ? [
+                {
+                  view: {
+                    file: { path: FILE_PATH },
+                    editor: { cm: { dispatch: matchingDispatch } },
+                  },
+                },
+              ]
+            : [],
+      } as never;
+
+      // repair resolves false → no dispatch should fire.
+      repairFrontmatterSpy.mockResolvedValueOnce(false);
+
+      const { editorInfoField } = await import('obsidian');
+      EditorState.create({
+        doc: NOTE_MISSING_LC_LANGUAGE,
+        extensions: [
+          editorInfoField as unknown as import('@codemirror/state').Extension,
+          leetCodeFenceViewPlugin(plugin as never),
+        ],
+      });
+
+      await flushMicrotasks();
+
+      expect(repairFrontmatterSpy).toHaveBeenCalledTimes(1);
+      expect(matchingDispatch).not.toHaveBeenCalled();
+      const repairInFlight = (
+        plugin as unknown as { repairInFlight: Set<string> }
+      ).repairInFlight;
+      expect(repairInFlight.has(FILE_PATH)).toBe(false);
+    });
+
+    // Test R2.LP.7
+    it('post-repair scheduled dispatch is NOT fired when repairFrontmatterIfNeeded rejects', async () => {
+      const plugin = makePlugin({
+        fm: { 'lc-slug': 'two-sum' },
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+      });
+      const matchingDispatch = vi.fn();
+      (plugin as unknown as { repairInFlight: Set<string> }).repairInFlight =
+        new Set<string>();
+      const app = plugin.app as unknown as {
+        workspace: { getLeavesOfType: (t: string) => unknown[] };
+      };
+      app.workspace = {
+        ...((plugin.app as unknown as { workspace?: object }).workspace ??
+          {}),
+        getLeavesOfType: (t: string) =>
+          t === 'markdown'
+            ? [
+                {
+                  view: {
+                    file: { path: FILE_PATH },
+                    editor: { cm: { dispatch: matchingDispatch } },
+                  },
+                },
+              ]
+            : [],
+      } as never;
+
+      // repair rejects.
+      repairFrontmatterSpy.mockRejectedValueOnce(new Error('repair boom'));
+
+      const { editorInfoField } = await import('obsidian');
+      // Construction must not throw — the .catch swallows the rejection.
+      expect(() => {
+        EditorState.create({
+          doc: NOTE_MISSING_LC_LANGUAGE,
+          extensions: [
+            editorInfoField as unknown as import('@codemirror/state').Extension,
+            leetCodeFenceViewPlugin(plugin as never),
+          ],
+        });
+      }).not.toThrow();
+
+      await flushMicrotasks();
+
+      expect(repairFrontmatterSpy).toHaveBeenCalledTimes(1);
+      expect(matchingDispatch).not.toHaveBeenCalled();
+      // The .finally still cleared the in-flight lock.
+      const repairInFlight = (
+        plugin as unknown as { repairInFlight: Set<string> }
+      ).repairInFlight;
+      expect(repairInFlight.has(FILE_PATH)).toBe(false);
+    });
   });
 });
