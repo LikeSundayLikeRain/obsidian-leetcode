@@ -282,9 +282,12 @@ const DEFAULT_DATA: PluginData = {
   // Phase 19 vq4 — default true preserves Phase 13–18 nested-editor behavior
   // for every existing user. Toggle is reload-required.
   useNestedEditor: true,
-  // Phase 19 D-05 — default false hard-gates the v1.3 inline widget path.
-  // Bisection-clean: bug → flip flag → bisect against v1.2 baseline.
-  useInlineWidget: false,
+  // Phase 22 POLISH-01 / D-cutover-01 sub-step A — default flipped to true.
+  // The v1.3 inline widget is now the canonical mount path on fresh installs.
+  // 1.2.x users carrying explicit `useInlineWidget: false` in `data.json`
+  // are force-flipped on boot via the inversion guard in Plugin.onload (the
+  // mutual-exclusion Notice — see src/main.ts inversion site for D-cutover-02).
+  useInlineWidget: true,
   // Phase 21 MIGRATE-06 — default ON; user must explicitly opt out. The
   // master gate `useInlineWidget` still has to be ON for migration to fire
   // (L9), so the user-visible default for fresh installs that haven't flipped

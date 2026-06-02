@@ -68,9 +68,12 @@ describe('Phase 19 gap-closure — v1.2 action-row registration gated on !useInl
       expect(actionGateIdx).toBeLessThan(mutexIdx);
     });
 
-    it('the mutual-exclusion assert is still present and forces useNestedEditor=false', () => {
-      expect(MAIN_TS).toMatch(/useInlineWidget\s*&&\s*useNestedEditor/);
-      expect(MAIN_TS).toMatch(/setUseNestedEditor\(false\)/);
+    it('Phase 22 D-cutover-02 inversion guard is present and forces useInlineWidget=true on 1.2.x carry-over', () => {
+      // Pre-Phase-22 invariant was `useInlineWidget && useNestedEditor → setUseNestedEditor(false)`.
+      // Phase 22 sub-step A inverts this: `!useInlineWidget && useNestedEditor → setUseInlineWidget(true)`.
+      // File is scheduled for deletion in sub-step D's audit-expand.
+      expect(MAIN_TS).toMatch(/!useInlineWidget\s*&&\s*useNestedEditor/);
+      expect(MAIN_TS).toMatch(/setUseInlineWidget\(true\)/);
     });
   });
 });

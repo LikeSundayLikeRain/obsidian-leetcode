@@ -1126,20 +1126,26 @@ export default class LeetCodePlugin extends Plugin {
 
     // Phase 19 vq4 — read once: the nested-editor toggle is reload-apply-only.
     let useNestedEditor = this.settings.getUseNestedEditor();
-    // Phase 19 Plan 01 — read the v1.3 inline-widget master toggle (CONTEXT D-05).
-    const useInlineWidget = this.settings.getUseInlineWidget();
+    // Phase 19 Plan 01 / Phase 22 D-cutover-02 — read the v1.3 inline-widget
+    // master toggle. Mutable because the inversion guard below force-flips
+    // it on 1.2.x carry-over `data.json` so the registration blocks below
+    // see the post-flip value.
+    let useInlineWidget = this.settings.getUseInlineWidget();
 
-    // Phase 19 D-06 mutual-exclusion assert — must run BEFORE either
-    // registration path fires (RESEARCH Pitfall 19-G timing). Forces
-    // useNestedEditor=false when useInlineWidget=true so corrupt data.json
-    // (both flags ON) cannot produce two CM6 instances per fence.
-    // Issue 1 of 17-UAT.md style: this assert is the bisection boundary —
-    // any unexpected widget activation must come from the user explicitly
-    // flipping the toggle, never from data.json corruption.
-    if (useInlineWidget && useNestedEditor) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'useInlineWidget' / 'useNestedEditor' are persistent setting field names (proper nouns in this domain).
-      new Notice('useInlineWidget is ON — disabling useNestedEditor (mutually exclusive)', 5000);
-      await this.settings.setUseNestedEditor(false);
+    // Phase 22 D-cutover-02 — mutual-exclusion inversion. After the v1.3
+    // default flip (POLISH-01), 1.2.x users carrying `useInlineWidget: false`
+    // AND `useNestedEditor: true` in `data.json` are force-flipped to v1.3
+    // here. Without this guard, persisted explicit-`false` would still mount
+    // the v1.2 path (which becomes deleted code in sub-step C+). The Notice
+    // is one-time per `Plugin.onload`; the v1.2 nested-editor path retires
+    // wholesale in sub-step E along with the `useNestedEditor` field itself.
+    // Local-var sync after the setter call ensures the v1.2 nested-editor
+    // registration block below is bypassed for the carry-over upgrade path
+    // (`truths` invariant from PLAN frontmatter).
+    if (!useInlineWidget && useNestedEditor) {
+      new Notice('v1.2 nested-editor path retired in 1.3.0 — using v1.3 widget', 5000);
+      await this.settings.setUseInlineWidget(true);
+      useInlineWidget = true;
       useNestedEditor = false;
     }
 

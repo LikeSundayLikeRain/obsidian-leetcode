@@ -20,18 +20,23 @@ describe('Phase 19 D-06 — useInlineWidget / useNestedEditor mutual exclusion',
     expect(MAIN_TS).toMatch(/this\.settings\.getUseInlineWidget\(\)/);
   });
 
-  it('src/main.ts onload contains a mutual-exclusion assert (useInlineWidget && useNestedEditor)', () => {
-    expect(MAIN_TS).toMatch(/useInlineWidget\s*&&\s*useNestedEditor/);
+  it('src/main.ts onload contains the Phase 22 inversion guard (!useInlineWidget && useNestedEditor)', () => {
+    // Phase 22 D-cutover-02 inverted the guard: was `useInlineWidget && useNestedEditor`
+    // (mutual-exclusion warn), is now `!useInlineWidget && useNestedEditor` (carry-over flip).
+    expect(MAIN_TS).toMatch(/!useInlineWidget\s*&&\s*useNestedEditor/);
   });
 
-  it('mutual-exclusion branch calls setUseNestedEditor(false)', () => {
-    // Locate a region that contains both the mutual-exclusion guard and a
-    // setUseNestedEditor(false) call within the same onload body.
+  it('Phase 22 D-cutover-02 inversion branch calls setUseInlineWidget(true)', () => {
+    // Phase 22 inversion: when 1.2.x carry-over `data.json` has
+    // `useInlineWidget: false` AND `useNestedEditor: true`, the boot guard
+    // force-flips the user to the v1.3 widget. The pre-Phase-22 assertion
+    // (`setUseNestedEditor(false)`) inverted in Plan 22-01 sub-step A; the
+    // file is scheduled for deletion in sub-step D's audit-expand.
     const onloadMatch = /async\s+onload\(\)[\s\S]*?\n  \}/.exec(MAIN_TS);
     expect(onloadMatch).not.toBeNull();
     const onloadBody = onloadMatch![0];
-    expect(onloadBody).toMatch(/useInlineWidget\s*&&\s*useNestedEditor/);
-    expect(onloadBody).toMatch(/setUseNestedEditor\(false\)/);
+    expect(onloadBody).toMatch(/!useInlineWidget\s*&&\s*useNestedEditor/);
+    expect(onloadBody).toMatch(/setUseInlineWidget\(true\)/);
   });
 
   it('mutual-exclusion branch surfaces a Notice', () => {
