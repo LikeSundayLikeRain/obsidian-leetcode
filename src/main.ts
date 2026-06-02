@@ -523,6 +523,95 @@ export default class LeetCodePlugin extends Plugin {
       });
     });
 
+    // Phase 21 Plan 21-16 (UAT R6 closure) — wire the production post-write
+    // rerender callback into NoteWriter. After NoteWriter.openProblem fully
+    // writes the new note's body (vault.create + applyFrontmatter chain) AND
+    // opens the leaf via openLinkText, this callback walks markdown leaves
+    // for the file's path and fires the appropriate rerender:
+    //   - Reading-mode pane → rerenderReadingModePanes (Plan 21-08 helper).
+    //   - Live-Preview / Source-mode pane → leetcodeRefreshAnnotation dispatch
+    //     (Plan 21-14 annotation; loaded defensively so this plan stays
+    //     mergeable even if 21-14 has not yet landed in this branch).
+    //
+    // Three layers of try/catch (outer + middle + inner) preserve Pattern
+    // S-05 silent-on-failure across the entire dispatch path — a throw at
+    // any layer is logged at debug level only and never propagates back into
+    // NoteWriter.openProblem.
+    //
+    // SOFT DEPENDENCY on Plan 21-14: `leetcodeRefreshAnnotation` is loaded
+    // via dynamic require() so the import resolves whether or not 21-14 has
+    // shipped. When the export is absent, the LP dispatch path falls through
+    // to a no-op; the Reading-mode rerender path (already shipped via 21-08)
+    // is unaffected.
+    let leetcodeRefreshAnnotation:
+      | { of: (value: boolean) => unknown }
+      | undefined;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const mod = require('./widget/liveModeBannerStateField') as {
+        leetcodeRefreshAnnotation?: { of: (value: boolean) => unknown };
+      };
+      leetcodeRefreshAnnotation = mod.leetcodeRefreshAnnotation;
+    } catch (err) {
+      logger.debug(
+        'main.rerenderAfterNoteWritten: leetcodeRefreshAnnotation import failed (Plan 21-14 not landed)',
+        err,
+      );
+    }
+
+    this.notes.setRerenderAfterNoteWritten((path: string) => {
+      // Outer try/catch: top-level callback boundary. Pattern S-05.
+      try {
+        // Layer 1 — Reading-mode rerender helper (Plan 21-08).
+        try {
+          rerenderReadingModePanes(this.app, path);
+        } catch (err) {
+          logger.debug(
+            'main.rerenderAfterNoteWritten: rerenderReadingModePanes threw (non-fatal)',
+            err,
+          );
+        }
+
+        // Layer 2 — Live-Preview / Source-mode CM6 dispatch (Plan 21-14
+        // annotation). Skipped entirely when the annotation isn't exported
+        // (soft-dependency fallback).
+        if (leetcodeRefreshAnnotation) {
+          try {
+            const leaves = this.app.workspace.getLeavesOfType('markdown');
+            for (const leaf of leaves) {
+              const view = leaf.view;
+              if (!(view instanceof MarkdownView)) continue;
+              if (view.file?.path !== path) continue;
+              const cm = (view.editor as unknown as { cm?: unknown }).cm as
+                | { dispatch?: (spec: unknown) => void }
+                | undefined;
+              if (!cm || typeof cm.dispatch !== 'function') continue;
+              try {
+                cm.dispatch({
+                  annotations: [leetcodeRefreshAnnotation.of(true)],
+                });
+              } catch (err) {
+                logger.debug(
+                  'main.rerenderAfterNoteWritten: cm.dispatch threw (non-fatal)',
+                  err,
+                );
+              }
+            }
+          } catch (err) {
+            logger.debug(
+              'main.rerenderAfterNoteWritten: leaf walk threw (non-fatal)',
+              err,
+            );
+          }
+        }
+      } catch (err) {
+        logger.debug(
+          'main.rerenderAfterNoteWritten: outer boundary threw (non-fatal)',
+          err,
+        );
+      }
+    });
+
     // Step 5.8 — Phase 5 Plan 04 (D-09) — ephemeral tab store for the unified
     // Run modal. Registers `layout-change` + `active-leaf-change` via
     // `plugin.registerEvent` so it auto-detaches on unload; dispose() is still
