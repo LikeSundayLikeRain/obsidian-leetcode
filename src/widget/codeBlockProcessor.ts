@@ -57,6 +57,11 @@ import { mountLegacyFenceBanner } from './legacyFenceBanner';
 // frontmatter. Same shape as Plan 21-08's migrate hand-off in
 // readingModeMigrationHook.ts trailing .then.
 import { rerenderReadingModePanes } from '../main/readingModeMigrationHook';
+// WR-07 (Phase 21 cycle-2 review-fix) — log migration / repair failures so
+// production debugging has a breadcrumb when the auto-migrate path swallows
+// a programmer-error throw (TypeError on null fm, fence parser exceptions,
+// internal migrator errors).
+import { logger } from '../shared/logger';
 
 type ProcessorHost = Plugin & WidgetMountHost & {
   app: WidgetMountHost['app'] & {
@@ -222,9 +227,17 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
           }
           return;
         }
-      } catch {
+      } catch (err) {
         // Defensive — migration / repair failures fall through to the
-        // existing path.
+        // existing path. WR-07 (Phase 21 cycle-2 review-fix): log so
+        // production debugging of the auto-migrate / auto-repair path
+        // has a breadcrumb. The previous bare catch swallowed bona-fide
+        // programmer-error throws (TypeError on null fm, fence parser
+        // exceptions, internal migrator errors) with zero signal.
+        logger.debug(
+          'codeBlockProcessor: migrate/repair gate threw (non-fatal, falling through)',
+          err,
+        );
       }
     }
     if (
