@@ -902,6 +902,215 @@ describe('Phase 21 Plan 21-05 — Reading-mode workspace.on(file-open) trigger',
     });
   });
 
+  // ───────────────────────────────────────────────────────────────────────
+  // Plan 21-14 — R2 (UAT re-test gap closure) regression lock.
+  //
+  // No source change required: the existing implementation at
+  // src/main/readingModeMigrationHook.ts:151-200 (Plan 21-09 GREEN commit
+  // da8513f) already captures `repairedFlag` and fires
+  // `rerenderPreviewLeaves(file.path)` when `migratedFlag || repairedFlag`
+  // is true. These five tests lock that behavior in so a future refactor
+  // cannot regress it. Test descriptions explicitly note "Plan 21-14
+  // regression lock" so future maintainers know they are anti-regression
+  // assertions, NOT the original 21-09 acceptance tests.
+  // ───────────────────────────────────────────────────────────────────────
+  describe('R2 — repair hand-off rerender (Plan 21-14 regression lock)', () => {
+    it('Test R2.HOOK.1 [migrate=false + repair=true] rerenderPreviewLeaves invoked exactly once with file.path', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'java',
+      });
+      migrate = vi.fn(async () => false);
+      const repair = vi.fn(async () => true);
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(rerenderPreviewLeaves).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).toHaveBeenCalledWith(file.path);
+    });
+
+    it('Test R2.HOOK.2 [migrate=false + repair=false] rerenderPreviewLeaves NOT invoked', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => false);
+      const repair = vi.fn(async () => false);
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(migrate).toHaveBeenCalledTimes(1);
+      expect(repair).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).not.toHaveBeenCalled();
+    });
+
+    it('Test R2.HOOK.3 [migrate=false + repair rejects] rerenderPreviewLeaves NOT invoked; logDebug records non-fatal failure', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => false);
+      const repair = vi.fn(async () => {
+        throw new Error('repair regression boom');
+      });
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      expect(repair).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).not.toHaveBeenCalled();
+      const matched = logDebug.mock.calls.some((call) =>
+        /non-fatal failure/.test(String(call[0])),
+      );
+      expect(matched).toBe(true);
+    });
+
+    it('Test R2.HOOK.4 [migrate=true] rerenderPreviewLeaves invoked exactly once; repair NOT called (does not double-fire from a phantom repair branch)', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+      migrate = vi.fn(async () => true);
+      const repair = vi.fn(async () => true);
+      const rerenderPreviewLeaves = vi.fn();
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      // Migrator returned true → early return; repair must NOT be called.
+      expect(migrate).toHaveBeenCalledTimes(1);
+      expect(repair).not.toHaveBeenCalled();
+      // rerender fires from the migrate path (Plan 21-08 R1) exactly once
+      // — NOT double-fired by a phantom repair branch.
+      expect(rerenderPreviewLeaves).toHaveBeenCalledTimes(1);
+      expect(rerenderPreviewLeaves).toHaveBeenCalledWith(file.path);
+    });
+
+    it('Test R2.HOOK.5 [ordering] migrate → repair → migrateInFlight cleared → rerenderPreviewLeaves (in that strict order)', async () => {
+      const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
+      const app = makeApp({
+        fmByPath: {
+          'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
+        },
+        textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
+      });
+      const plugin = makeMockPlugin(app, {
+        useInlineWidget: true,
+        autoMigrateOnOpen: true,
+        defaultLanguage: 'python3',
+      });
+
+      let counter = 0;
+      let migrateAt = 0;
+      let repairAt = 0;
+      let rerenderAt = 0;
+      let inFlightWhenRerendered: boolean | null = null;
+
+      migrate = vi.fn(async () => {
+        migrateAt = ++counter;
+        return false;
+      });
+      const repair = vi.fn(async () => {
+        repairAt = ++counter;
+        return true;
+      });
+      const rerenderPreviewLeaves = vi.fn((_path: string) => {
+        rerenderAt = ++counter;
+        inFlightWhenRerendered = plugin.migrateInFlight.has(file.path);
+      });
+
+      const handler = wireHook({
+        plugin,
+        migrate,
+        isMigrationCandidate,
+        logDebug,
+        repair,
+        rerenderPreviewLeaves,
+      });
+
+      handler(file);
+      await flushPromises();
+
+      // Strict ordering: migrate first, repair second, rerender LAST.
+      expect(migrateAt).toBeGreaterThan(0);
+      expect(repairAt).toBeGreaterThan(migrateAt);
+      expect(rerenderAt).toBeGreaterThan(repairAt);
+      // The in-flight lock must already be cleared when rerender observes
+      // it — the trailing .then runs AFTER the .finally per Plan 21-08 G1.4.
+      expect(inFlightWhenRerendered).toBe(false);
+      expect(plugin.migrateInFlight.has(file.path)).toBe(false);
+    });
+  });
+
   it('Test 8 [registerEvent cleanup contract] hook registered via this.registerEvent(workspace.on(...))', () => {
     const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
     void file;
