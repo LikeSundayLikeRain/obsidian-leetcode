@@ -324,7 +324,12 @@ export function dispatchLeetcodeRefreshToLivePreviewLeaves(
       const v = view as unknown as {
         file?: { path?: string } | null;
         getMode?: () => string;
-        editor?: { cm?: { dispatch?: (spec: unknown) => void } };
+        editor?: {
+          cm?: {
+            dispatch?: (spec: unknown) => void;
+            state?: { selection?: { main?: { head: number } } };
+          };
+        };
       };
       if (v.file?.path !== path) continue;
       // Skip Reading-mode leaves; rerenderReadingModePanes handles those.
@@ -334,8 +339,17 @@ export function dispatchLeetcodeRefreshToLivePreviewLeaves(
       const cm = v.editor?.cm;
       if (!cm || typeof cm.dispatch !== 'function') continue;
       try {
+        // Plan 21.1-01 fresh-create LP fix — dispatching annotation alone
+        // is insufficient. CM6 fires StateField.update and computes a new
+        // DecorationSet, but the EditorView's viewport build pipeline does
+        // NOT pick up the new Decoration.replace on a no-doc-change empty
+        // transaction. Forcing a selection re-set (even to the same value)
+        // triggers CM6's selection-change pathway which rebuilds the
+        // viewport including freshly-emitted Decoration.replace ranges.
+        const head = cm.state?.selection?.main?.head ?? 0;
         cm.dispatch({
           annotations: [leetcodeRefreshAnnotation.of(true)],
+          selection: { anchor: head, head },
         });
       } catch {
         // Inner: swallow per-leaf dispatch exception. No log here —
