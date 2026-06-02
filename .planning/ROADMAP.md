@@ -198,7 +198,7 @@ Plans:
 - Research flag: LOW for mechanics; MEDIUM for hand-edited note edge cases (e.g., user-modified fence with extra blank lines, malformed frontmatter, missing `## Code` heading).
 - Pitfalls covered: P7, P13.
 
-**Plans:** 13/17 plans complete (cycle 2 post-UAT closure pending: 21-14/15/16/17)
+**Plans:** 15/17 plans executed
 
 Plans:
 **Wave 1**
@@ -225,9 +225,9 @@ Plans:
 
 **Post-UAT gap closure (cycle 2)** *(re-test of 21-08..21-13 found 3 new mount-race / styling issues; close UAT R2 + R4 + R6; addendum 21-17 closes R9 split-pane cursor preservation)*
 
-- [ ] 21-14-PLAN.md — Repair-path post-write rerender hand-off (R2): Reading-mode post-processor + Live-Preview StateField annotation-driven recompute (MIGRATE-FM-REPAIR-01)
+- [x] 21-14-PLAN.md — Repair-path post-write rerender hand-off (R2): Reading-mode post-processor + Live-Preview StateField annotation-driven recompute (MIGRATE-FM-REPAIR-01)
 - [ ] 21-15-PLAN.md — Live-Preview banner CSS isolation (R4): host scope class + styles.css rules to prevent CM6 fence-block style bleed-through (MIGRATE-BANNER-LP-01)
-- [ ] 21-16-PLAN.md — New-note open-flow rerender hand-off (R6): NoteWriter.openProblem post-leaf-open rerender DI + drop line-440 retrofit when useInlineWidget=ON (NEWNOTE-FENCE-DEDUP-01)
+- [x] 21-16-PLAN.md — New-note open-flow rerender hand-off (R6): NoteWriter.openProblem post-leaf-open rerender DI + drop line-440 retrofit when useInlineWidget=ON (NEWNOTE-FENCE-DEDUP-01)
 - [ ] 21-17-PLAN.md — Split-pane cursor preservation (R9): WidgetController.applyPeerSync incremental dispatch with mapped selection + leetcode.peer-sync userEvent + addToHistory.of(false); modify-handler peer fan-out via originator-aware selfWriteSuppression (MULTI-PANE-CURSOR-01)
 
 ---
@@ -299,7 +299,7 @@ Plans:
 | 18. Vim, Recovery & Polish + Ship Close     | v1.2      | 4/4            | Complete    | 2026-05-26 |
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
 | 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 9/9 | Complete   | 2026-05-31 |
-| 21. v1.2 Migration                          | v1.3      | 13/13 | Complete   | 2026-06-01 |
+| 21. v1.2 Migration                          | v1.3      | 15/17 | In Progress|  |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
 
 ## Backlog
