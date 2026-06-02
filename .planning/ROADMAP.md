@@ -64,6 +64,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 - [x] **Phase 19: Widget Foundation + One-Way Sync** — Self-contained inline `leetcode-solve` widget mounted in both Reading and Live Preview, debounced one-way sync to disk, state persistence, hash-based echo suppression — completed 2026-05-29
 - [x] **Phase 20: Reconciliation, UX, Action Row, Section Protection** — External-edit reconciliation + conflict modal, action row inside widget, language switching via metadataCache, narrowed `sectionProtectionExtension`, vim live-reconfigure (completed 2026-05-30)
 - [x] **Phase 21: v1.2 Migration** — Lazy-on-open atomic migration of v1.2 fence tags → `leetcode-solve`, backup sidecar with 30-day retention, idempotent detection, CI fixtures across v1.0/v1.1/v1.2 sample notes (completed 2026-06-01)
+- [ ] **Phase 21.1: v1.2 Migration follow-up — typing-flicker fix** — Address UAT R10: widget unmounts/remounts visibly on every body-flush (DebouncedWriter cadence ~500ms) when `autoMigrateOnOpen=ON`. Pre-existing baseline issue (reproduced at 4bca4c4); not introduced by Phase 21 cycle-2 work.
 - [ ] **Phase 22: v1.2 Path Removal + Polish** — Hard cutover; delete 5 legacy files (~2,400 LOC net), drop `'leetcode.*'` userEvent convention, theme regression gate, BRAT alpha, plugin-store re-review
 
 </details>
@@ -229,6 +230,36 @@ Plans:
 - [x] 21-15-PLAN.md — Live-Preview banner CSS isolation (R4): host scope class + styles.css rules to prevent CM6 fence-block style bleed-through (MIGRATE-BANNER-LP-01)
 - [x] 21-16-PLAN.md — New-note open-flow rerender hand-off (R6): NoteWriter.openProblem post-leaf-open rerender DI + drop line-440 retrofit when useInlineWidget=ON (NEWNOTE-FENCE-DEDUP-01)
 - [x] 21-17-PLAN.md — Split-pane cursor preservation (R9): WidgetController.applyPeerSync incremental dispatch with mapped selection + leetcode.peer-sync userEvent + addToHistory.of(false); modify-handler peer fan-out via originator-aware selfWriteSuppression (MULTI-PANE-CURSOR-01)
+
+---
+
+### Phase 21.1: v1.2 Migration follow-up — typing-flicker fix
+
+**Goal:** Eliminate the visible widget unmount/remount on every body-flush during typing in Live Preview when `autoMigrateOnOpen=ON`. With the fix in place, typing into an LC widget produces no visible flicker on the ~500ms DebouncedWriter cadence; the widget remains continuously rendered while the child editor flushes its buffer to the parent doc + disk.
+
+**Depends on:** Phase 21
+
+**Requirements:** MIGRATE-FLICKER-01 (NEW — to be added to REQUIREMENTS.md during planning)
+
+**Success criteria (observable behaviors):**
+
+1. With `useInlineWidget=ON`, `autoMigrateOnOpen=ON`, and a v1.3-shaped LC note already on disk (lc-language present, fence opener `leetcode-solve`): typing characters into the widget in Live Preview produces no visible unmount/remount cycle on the DebouncedWriter flush cadence (~500ms).
+2. The fix preserves R2's confirmed pass: a v1.3 note with missing `lc-language` still gets `lc-language` injected via repair AND mounts the widget on the same open without falling back to Python+Notice.
+3. The fix preserves all other cycle-2 closures: R4 (LP banner CSS), R6 (fresh problem widget mount), R9 (split-pane cursor preservation) — verified via re-test or focused unit/integration tests.
+4. No regression on `autoMigrateOnOpen=OFF` mode (which currently does not flicker).
+
+**Key risks/notes:**
+
+- **Root-cause investigation needed.** R10 was bisected to baseline `4bca4c4` (BEFORE Phase 21 cycle-2 work shipped) — so the bug pre-exists this milestone's cycle-2 changes but is gated on `autoMigrateOnOpen=ON`. Most likely: the LP StateField's `buildLeetCodeWidgetDecorations` runs side-effects (`migrate` / `repair` fire-and-forget) on every parent docChange when autoMigrate=ON, and those side-effects interact with the parent→child sync push path during keystroke flushes.
+- **Diagnosis hints (from 21-HUMAN-UAT.md R10 entry):**
+  - Investigate `buildLeetCodeWidgetDecorations` side-effects gated on `isAutoMigrateEnabled(plugin)` — these likely fire on every parent docChange.
+  - Cross-check whether the codeBlockProcessor re-fire on body change in Live Preview produces a fresh `LeetCodeWidgetRenderChild` on each flush.
+  - Confirm peer-sync fan-out's `applyPeerSync` (Plan 21-17) is NOT being invoked in single-pane scenarios (it shouldn't — `single-pane-consumed` should be the routing decision).
+  - Likely fix: dedupe StateField side-effects via a per-path "already-attempted-this-session" Set so migrate/repair only run once per file-open, not on every parent docChange.
+- **Scope discipline.** Phase 21.1 is a single-issue follow-up. Do NOT bundle other minor cosmetics or pre-existing bugs unless they share a root cause with R10. Phase 22 owns the v1.2-path-removal cleanup; this is a targeted bug fix that should ship before Phase 22 starts deleting code.
+- **R10 severity is `minor`** in the UAT — annoying but not blocking. The user can work around by setting `autoMigrateOnOpen=OFF`. This phase exists to close the gap properly so Phase 22's v1.2 path removal doesn't bake the flicker into the steady state.
+
+**UI hint**: no (no new UI; behavioral fix in existing LP path)
 
 ---
 
