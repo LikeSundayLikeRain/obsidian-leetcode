@@ -1,5 +1,5 @@
 ---
-status: fixing
+status: resolved
 trigger: "R6 STILL FAILS after 2bf274e fix. New evidence: user sees native Java syntax highlighting (Obsidian's CM6 default renderer) not a static <pre><code> fallback. Zero LC-related console logs. lc-slug + lc-language BOTH present at open time. Workarounds: hover→Edit this block, or close+reopen."
 created: 2026-06-02T00:00:00Z
 updated: 2026-06-02T00:01:00Z

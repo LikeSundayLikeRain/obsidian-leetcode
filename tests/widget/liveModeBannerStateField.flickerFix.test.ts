@@ -178,15 +178,21 @@ async function flushMicrotasks(): Promise<void> {
  * Apply N successive single-character insert transactions to the state,
  * flushing microtasks after each so async side-effects can resolve.
  * Returns the final state.
+ *
+ * Insert at the END of the document (before the final newline) so that
+ * the fence structure (opener line = 'leetcode-solve') is never disrupted
+ * by the inserts. Disrupting the opener would prevent findCodeFence from
+ * matching and cause the StateField to return Decoration.none early,
+ * bypassing the repair side-effect entirely.
  */
 async function applyNDocChanges(
   initialState: EditorState,
   n: number,
 ): Promise<EditorState> {
   let state = initialState;
-  // Find a position inside the fence body to insert into.
-  const insertPos = Math.min(50, state.doc.length);
   for (let i = 0; i < n; i++) {
+    // Insert at end of doc (doc.length - 1 keeps the trailing newline intact)
+    const insertPos = Math.max(0, state.doc.length - 1);
     const tr = state.update({
       changes: { from: insertPos, insert: 'x' },
     });
@@ -315,14 +321,23 @@ describe('Plan 21.1-01 — Flicker fix: attempt-once-per-session gate (liveModeB
     state = await applyNDocChanges(state, 5);
     expect(repairFrontmatterSpy).toHaveBeenCalledTimes(1);
 
+    // Drain all pending microtasks fully (ensure .finally() clears repairInFlight).
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+
     // Simulate rename clearing the attempt Set for this path.
     plugin.repairAttempted?.delete(FILE_PATH);
+    // Also clear repairInFlight in case the first round left it populated
+    // (the .finally() chain may still be pending — clear explicitly to
+    // simulate the post-rename state where the path is fully reset).
+    plugin.repairInFlight?.delete(FILE_PATH);
     vi.clearAllMocks();
     repairFrontmatterSpy.mockResolvedValue(true);
 
-    // 6th transaction — attempt Set was cleared, so repair IS called again.
+    // 6th transaction — both attempt Set AND in-flight Set were cleared,
+    // so repair IS called again.
+    const insertPos6 = Math.max(0, state.doc.length - 1);
     const tr = state.update({
-      changes: { from: Math.min(50, state.doc.length), insert: 'y' },
+      changes: { from: insertPos6, insert: 'y' },
     });
     state = tr.state;
     await flushMicrotasks();
@@ -354,7 +369,7 @@ describe('Plan 21.1-01 — Flicker fix: attempt-once-per-session gate (liveModeB
 
     // One docChange to fire the first (and only) repair attempt.
     const tr1 = state.update({
-      changes: { from: Math.min(50, state.doc.length), insert: 'x' },
+      changes: { from: Math.max(0, state.doc.length - 1), insert: 'x' },
     });
     state = tr1.state;
     await flushMicrotasks();
