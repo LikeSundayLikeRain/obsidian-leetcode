@@ -250,32 +250,28 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
           },
         );
         if (repaired) {
-          // Plan 21-14 cycle-2 follow-up — `processFrontMatter` resolves
-          // before `metadataCache.changed` fires. If we mount the widget
-          // now, `resolveLanguageSlug` reads stale frontmatter and falls
-          // back to Python+Notice. Wait for the cache to actually reflect
-          // the write (bounded poll @ ~50ms × 16 = ~800ms ceiling), then
-          // fall through to the widget mount path below — by which point
-          // `resolveLanguageSlug` reads the freshly-written `lc-language`
-          // and constructs the widget on the user's chosen language.
-          await new Promise<void>((resolve) => {
-            const wait = (ticks: number): void => {
-              const fmNow = plugin.app.metadataCache.getFileCache(file)
-                ?.frontmatter as Record<string, unknown> | undefined;
-              const lcLangNow = fmNow?.['lc-language'];
-              if (
-                (typeof lcLangNow === 'string' && lcLangNow.length > 0) ||
-                ticks <= 0
-              ) {
-                resolve();
-                return;
-              }
-              setTimeout(() => wait(ticks - 1), 50);
-            };
-            wait(16);
-          });
-          // Fall through — the existing addChild path runs below with
-          // fresh frontmatter.
+          // R6 fix (Plan 21.1-01 follow-up) — mirror the migrate=true path
+          // exactly. `processFrontMatter` resolves before
+          // `metadataCache.changed` fires, so mounting the widget NOW
+          // would have `resolveLanguageSlug` read stale frontmatter and
+          // fall back to Python+Notice. Instead:
+          //   1. Call rerenderReadingModePanes — forces the Reading-mode
+          //      pane to re-run post-processors. The second invocation
+          //      enters the Set.has(path)=true short-circuit, skips
+          //      migrate/repair, and falls straight through to addChild
+          //      with fresh frontmatter (metadataCache has caught up by
+          //      then because rerenderReadingModePanes is async relative
+          //      to the processFrontMatter modify event).
+          //   2. Render a static intermediate so the user never sees a
+          //      "no widget" frame between now and the rerender.
+          //   3. Return — this invocation has no further work.
+          // Symmetric to the `migrated === true` branch above (Plan 21-08
+          // hand-off). The attempt-once Set entry is already set (line 216
+          // above), so the second invocation skips migrate/repair and goes
+          // directly to addChild.
+          rerenderReadingModePanes(plugin.app, file.path);
+          renderStaticFallback(el, source);
+          return;
         }
       } catch (err) {
         // Defensive — migration / repair failures fall through to the
