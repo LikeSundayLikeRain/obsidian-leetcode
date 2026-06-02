@@ -91,6 +91,23 @@ export function routePeerSync(input: PeerSyncRouteInput): PeerSyncDecision {
     return { kind: 'single-pane-consumed' };
   }
 
+  // WR-04 (Phase 21 cycle-2 review-fix) — registry race: the originator's
+  // registryKey was armed in selfWriteSuppression but is NOT present among
+  // the same-file controllers (file rename mid-typing, plugin reload mid-
+  // flush, originator unregistered between arm() and the modify event
+  // firing). Without this guard the helper falls into 'peer-fan-out' and
+  // produces a perController list where NO entry has 'skip-originator';
+  // every editable peer (including the phantom whose registryKey changed)
+  // would receive apply-peer-sync. Treat as external — defer to the
+  // existing reload-silent path so the conflict modal / hash mismatch
+  // fail-safe handles the divergence.
+  const originatorPresent = sameFile.some(
+    (c) => c.registryKey === originatingRegistryKey,
+  );
+  if (!originatorPresent) {
+    return { kind: 'reload-silent' };
+  }
+
   // Peer fan-out: classify every same-file controller. Originator is skipped;
   // embed/readOnly are skipped. Other editable controllers receive
   // apply-peer-sync.
