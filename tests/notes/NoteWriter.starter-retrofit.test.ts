@@ -454,6 +454,20 @@ describe('NoteWriter retrofit useInlineWidget gating — Post-UAT Gap B (Plan 21
 // mount sequence between applyFrontmatter and openLinkText is deterministic.
 // ─────────────────────────────────────────────────────────────────────────
 describe('R6 — post-write rerender hand-off (Plan 21-16)', () => {
+  // CR-04 (Phase 21 cycle-2 review-fix) — fireRerenderAfterNoteWritten now
+  // defers via two requestAnimationFrame ticks so the dispatch lands on a
+  // CM6 instance that has hydrated. happy-dom provides rAF; we wait for
+  // both ticks to flush before asserting.
+  const flushTwoRafTicks = async (): Promise<void> => {
+    await new Promise<void>((resolve) =>
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => resolve());
+      }),
+    );
+    // One extra microtask so the post-rAF body (logger.debug etc.) settles.
+    await Promise.resolve();
+  };
+
   it('R6.1: openProblem on a fresh problem with useInlineWidget=ON fires rerenderAfterNoteWritten exactly once with the new file path AFTER openLinkText resolves', async () => {
     noticeSpy.mockClear();
     const m = makeMockVaultApp({});
@@ -475,6 +489,9 @@ describe('R6 — post-write rerender hand-off (Plan 21-16)', () => {
     });
     writer.setRerenderAfterNoteWritten(rerenderSpy);
     await writer.openProblem('palindrome-number');
+    // CR-04 — fireRerenderAfterNoteWritten defers via two rAF ticks so the
+    // dispatch lands on a hydrated CM6 instance. Wait for both ticks.
+    await flushTwoRafTicks();
     // Created file path.
     const createdPath = m.spies.create.mock.calls[0]?.[0] as string;
     expect(createdPath).toBeDefined();
@@ -498,6 +515,7 @@ describe('R6 — post-write rerender hand-off (Plan 21-16)', () => {
     const rerenderSpy = vi.fn();
     writer.setRerenderAfterNoteWritten(rerenderSpy);
     await writer.openProblem('two-sum');
+    await flushTwoRafTicks();
     expect(rerenderSpy).not.toHaveBeenCalled();
   });
 
@@ -543,6 +561,7 @@ describe('R6 — post-write rerender hand-off (Plan 21-16)', () => {
     const rerenderSpy = vi.fn();
     writer.setRerenderAfterNoteWritten(rerenderSpy);
     await writer.openProblem('two-sum');
+    await flushTwoRafTicks();
     expect(rerenderSpy).not.toHaveBeenCalled();
   });
 
@@ -578,6 +597,7 @@ describe('R6 — post-write rerender hand-off (Plan 21-16)', () => {
     const rerenderSpy = vi.fn();
     writer.setRerenderAfterNoteWritten(rerenderSpy);
     await writer.openProblem('two-sum');
+    await flushTwoRafTicks();
     expect(rerenderSpy).not.toHaveBeenCalled();
   });
 
@@ -595,6 +615,7 @@ describe('R6 — post-write rerender hand-off (Plan 21-16)', () => {
     writer.setRerenderAfterNoteWritten(spy1);
     writer.setRerenderAfterNoteWritten(spy2);
     await writer.openProblem('palindrome-number');
+    await flushTwoRafTicks();
     expect(spy1).not.toHaveBeenCalled();
     expect(spy2).toHaveBeenCalledTimes(1);
     // Detach via null.
@@ -610,6 +631,7 @@ describe('R6 — post-write rerender hand-off (Plan 21-16)', () => {
     writer2.setRerenderAfterNoteWritten(spy2);
     writer2.setRerenderAfterNoteWritten(null);
     await expect(writer2.openProblem('valid-parentheses')).resolves.toBeUndefined();
+    await flushTwoRafTicks();
     // spy2 was attached then detached on writer2 → still 1 call total (only the writer1 call).
     expect(spy2).toHaveBeenCalledTimes(1);
   });
@@ -629,6 +651,9 @@ describe('R6 — post-write rerender hand-off (Plan 21-16)', () => {
     writer.setRerenderAfterNoteWritten(throwingSpy);
     // Must resolve cleanly.
     await expect(writer.openProblem('two-sum')).resolves.toBeUndefined();
+    // CR-04 — wait for the deferred rAF callback to run so we can assert it
+    // was invoked AND that its synchronous throw was caught (Pattern S-05).
+    await flushTwoRafTicks();
     expect(throwingSpy).toHaveBeenCalledTimes(1);
     // No retrofit/Notice fired downstream of the throw.
     const hadRetrofitNotice = noticeSpy.mock.calls.some(([msg]) =>

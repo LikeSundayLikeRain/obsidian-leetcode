@@ -239,14 +239,44 @@ export class NoteWriter {
    */
   private fireRerenderAfterNoteWritten(filePath: string): void {
     if (!this.rerenderAfterNoteWritten) return;
-    try {
-      this.rerenderAfterNoteWritten(filePath);
-    } catch (err) {
-      logger.debug(
-        'notes.rerenderAfterNoteWritten: callback threw synchronously',
-        err,
-      );
+    // CR-04 (Phase 21 cycle-2 review-fix) — defer until CM6 has hydrated
+    // and Obsidian's preview pipeline has run its initial rAF cycle.
+    // openLinkText resolves AS SOON AS the leaf is created, NOT when CM6
+    // has evaluated its initial StateField factory. A dispatch against
+    // a half-hydrated `view.editor.cm` either silently no-ops (cm
+    // undefined) or fires before any decoration state exists, collapsing
+    // the leetcodeRefreshAnnotation update to a no-op.
+    //
+    // Two rAF ticks is the canonical cross-browser pattern for "next
+    // paint": tick #1 aligns with browser layout; tick #2 guarantees
+    // the CM6 initial transaction has flushed AND Obsidian's
+    // requestAnimationFrame-debounced preview render has run.
+    const fire = (): void => {
+      try {
+        this.rerenderAfterNoteWritten?.(filePath);
+      } catch (err) {
+        logger.debug(
+          'notes.rerenderAfterNoteWritten: callback threw',
+          err,
+        );
+      }
+    };
+    const raf =
+      typeof window !== 'undefined' &&
+      typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : null;
+    if (!raf) {
+      // Test / non-browser fallback — fire synchronously so unit-test
+      // assertions on call ordering remain deterministic.
+      fire();
+      return;
     }
+    raf(() => {
+      raf(() => {
+        fire();
+      });
+    });
   }
 
   /**
