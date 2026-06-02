@@ -104,6 +104,15 @@ import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorEx
 // `./main/codeActionsEditorExtension` (different module, different SSoT
 // scope) and is unchanged.
 import { countLeetCodeSolveFenceOpeners } from './widget/fenceLocator';
+// CR-03 (Phase 21 cycle-2 review-fix) — Plan 21-14 has shipped, so the
+// previous defensive dynamic require() against the hypothetical case
+// "21-14 not landed" is dead-code defense. esbuild's CJS interop for
+// require() of a TS-shaped ESM module is not byte-identical to a static
+// import; a static import gives compile-time guarantees and zero runtime
+// surprise. A future refactor that deletes the StateField will produce
+// a compile error pointing at this consumer — exactly the desired
+// behavior.
+import { leetcodeRefreshAnnotation } from './widget/liveModeBannerStateField';
 // Phase 21 Plan 21-02 Task 3 — command palette entry `Migrate current note`
 // dispatches the v1.2 → v1.3 migration with force: true (D-auto-03 escape
 // hatch). Gated via editorCheckCallback on useInlineWidget=ON + lc-slug.
@@ -541,27 +550,12 @@ export default class LeetCodePlugin extends Plugin {
     // any layer is logged at debug level only and never propagates back into
     // NoteWriter.openProblem.
     //
-    // SOFT DEPENDENCY on Plan 21-14: `leetcodeRefreshAnnotation` is loaded
-    // via dynamic require() so the import resolves whether or not 21-14 has
-    // shipped. When the export is absent, the LP dispatch path falls through
-    // to a no-op; the Reading-mode rerender path (already shipped via 21-08)
-    // is unaffected.
-    let leetcodeRefreshAnnotation:
-      | { of: (value: boolean) => unknown }
-      | undefined;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-      const mod = require('./widget/liveModeBannerStateField') as {
-        leetcodeRefreshAnnotation?: { of: (value: boolean) => unknown };
-      };
-      leetcodeRefreshAnnotation = mod.leetcodeRefreshAnnotation;
-    } catch (err) {
-      logger.debug(
-        'main.rerenderAfterNoteWritten: leetcodeRefreshAnnotation import failed (Plan 21-14 not landed)',
-        err,
-      );
-    }
-
+    // CR-03 (Phase 21 cycle-2 review-fix) — `leetcodeRefreshAnnotation` is
+    // now a static import at the top of this module. Plan 21-14 has shipped;
+    // the previous defensive dynamic require() block was dead-code defense
+    // against a state that does not exist, and esbuild's CJS interop for
+    // a require() of a TS module is not guaranteed identical to a static
+    // import.
     this.notes.setRerenderAfterNoteWritten((path: string) => {
       // Outer try/catch: top-level callback boundary. Pattern S-05.
       try {
@@ -576,36 +570,33 @@ export default class LeetCodePlugin extends Plugin {
         }
 
         // Layer 2 — Live-Preview / Source-mode CM6 dispatch (Plan 21-14
-        // annotation). Skipped entirely when the annotation isn't exported
-        // (soft-dependency fallback).
-        if (leetcodeRefreshAnnotation) {
-          try {
-            const leaves = this.app.workspace.getLeavesOfType('markdown');
-            for (const leaf of leaves) {
-              const view = leaf.view;
-              if (!(view instanceof MarkdownView)) continue;
-              if (view.file?.path !== path) continue;
-              const cm = (view.editor as unknown as { cm?: unknown }).cm as
-                | { dispatch?: (spec: unknown) => void }
-                | undefined;
-              if (!cm || typeof cm.dispatch !== 'function') continue;
-              try {
-                cm.dispatch({
-                  annotations: [leetcodeRefreshAnnotation.of(true)],
-                });
-              } catch (err) {
-                logger.debug(
-                  'main.rerenderAfterNoteWritten: cm.dispatch threw (non-fatal)',
-                  err,
-                );
-              }
+        // annotation).
+        try {
+          const leaves = this.app.workspace.getLeavesOfType('markdown');
+          for (const leaf of leaves) {
+            const view = leaf.view;
+            if (!(view instanceof MarkdownView)) continue;
+            if (view.file?.path !== path) continue;
+            const cm = (view.editor as unknown as { cm?: unknown }).cm as
+              | { dispatch?: (spec: unknown) => void }
+              | undefined;
+            if (!cm || typeof cm.dispatch !== 'function') continue;
+            try {
+              cm.dispatch({
+                annotations: [leetcodeRefreshAnnotation.of(true)],
+              });
+            } catch (err) {
+              logger.debug(
+                'main.rerenderAfterNoteWritten: cm.dispatch threw (non-fatal)',
+                err,
+              );
             }
-          } catch (err) {
-            logger.debug(
-              'main.rerenderAfterNoteWritten: leaf walk threw (non-fatal)',
-              err,
-            );
           }
+        } catch (err) {
+          logger.debug(
+            'main.rerenderAfterNoteWritten: leaf walk threw (non-fatal)',
+            err,
+          );
         }
       } catch (err) {
         logger.debug(
