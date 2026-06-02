@@ -301,7 +301,11 @@ Plans:
 - Research flag: LOW — deletion + checklist, no new architecture.
 - Pitfalls covered: P5, P13, P25.
 
-**Plans:** TBD
+**Plans:**
+
+- 22-01 — Cutover (default flip + delete v1.2 sources + dead tests + main.ts unwiring + CLAUDE.md conventions strip + userEvent annotations strip)
+- 22-02 — Carry-over polish (vim-Tab investigation + fix-or-defer; widget hover border CSS; action row font CSS)
+- 22-03 — Release gates (THEME-05 manual checklist + bundle-size CI gate + eslint-plugin-obsidianmd clean run + README + CLAUDE.md architecture sketch + manifest version bump) + BRAT alpha + plugin-store re-review
 
 **UI hint**: yes
 

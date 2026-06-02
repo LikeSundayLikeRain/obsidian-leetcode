@@ -1,9 +1,10 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.3
-milestone_name: inline widget architecture
+milestone_name: architecture overview, migration docs, sync interaction notes, and Cmd-Z/Cmd-F scoping behavior.
 status: verifying
-last_updated: "2026-06-02T18:11:30.743Z"
+stopped_at: Phase 22 context gathered
+last_updated: "2026-06-02T18:59:51.967Z"
 last_activity: 2026-06-02 -- Phase 21.1 Plan 21.1-01 closed; SUMMARY.md written
 progress:
   total_phases: 1
