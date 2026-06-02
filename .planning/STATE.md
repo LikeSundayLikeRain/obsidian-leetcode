@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 
 ## Current Position
 
-Phase: 21.1 (v1-2-migration-follow-up-typing-flicker-fix) — EXECUTING
-Plan: 21.1-01 (per-path attempt-once gate for migrate/repair)
-Status: Task 1 GREEN complete — awaiting Task 2 human-verify checkpoint
-Last activity: 2026-06-01 -- Phase 21.1 Plan 21.1-01 Task 1 complete; built + deployed to dev vault
+Phase: 21.1 (v1-2-migration-follow-up-typing-flicker-fix) — COMPLETE
+Plan: 21.1-01 (per-path attempt-once gate for migrate/repair + R6 fresh-create fix)
+Status: COMPLETE — UAT human-verify approved 2026-06-02. MIGRATE-FLICKER-01 Resolved.
+Last activity: 2026-06-02 -- Phase 21.1 Plan 21.1-01 closed; SUMMARY.md written
 
 ## Performance Metrics
 

@@ -64,7 +64,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 - [x] **Phase 19: Widget Foundation + One-Way Sync** — Self-contained inline `leetcode-solve` widget mounted in both Reading and Live Preview, debounced one-way sync to disk, state persistence, hash-based echo suppression — completed 2026-05-29
 - [x] **Phase 20: Reconciliation, UX, Action Row, Section Protection** — External-edit reconciliation + conflict modal, action row inside widget, language switching via metadataCache, narrowed `sectionProtectionExtension`, vim live-reconfigure (completed 2026-05-30)
 - [x] **Phase 21: v1.2 Migration** — Lazy-on-open atomic migration of v1.2 fence tags → `leetcode-solve`, backup sidecar with 30-day retention, idempotent detection, CI fixtures across v1.0/v1.1/v1.2 sample notes (completed 2026-06-01)
-- [ ] **Phase 21.1: v1.2 Migration follow-up — typing-flicker fix** — Address UAT R10: widget unmounts/remounts visibly on every body-flush (DebouncedWriter cadence ~500ms) when `autoMigrateOnOpen=ON`. Pre-existing baseline issue (reproduced at 4bca4c4); not introduced by Phase 21 cycle-2 work.
+- [x] **Phase 21.1: v1.2 Migration follow-up — typing-flicker fix** — UAT R10 closed (per-path attempt-once gate) + R6 fresh-create regression closed (wait for metadataCache before openLinkText). MIGRATE-FLICKER-01 resolved (completed 2026-06-02).
 - [ ] **Phase 22: v1.2 Path Removal + Polish** — Hard cutover; delete 5 legacy files (~2,400 LOC net), drop `'leetcode.*'` userEvent convention, theme regression gate, BRAT alpha, plugin-store re-review
 
 </details>
@@ -265,7 +265,7 @@ Plans:
 
 **Wave 1**
 
-- [~] 21.1-01-PLAN.md — Per-path attempt-once-this-session gate in liveModeBannerStateField + codeBlockProcessor + main.ts wiring (MIGRATE-FLICKER-01); RED→GREEN with 10 new vitest regression tests + live dev-vault checkpoint covering R10 fix AND R2/R4/R6/R9/autoMigrateOnOpen=OFF/manual-Migrate-retry preservation [Task 1 GREEN ✓ — Task 2 human-verify pending]
+- [x] 21.1-01-PLAN.md — Per-path attempt-once-this-session gate in liveModeBannerStateField + codeBlockProcessor + main.ts wiring (MIGRATE-FLICKER-01); RED→GREEN with 10 new vitest regression tests + R6 fresh-create root-cause fix (wait for metadataCache before openLinkText) + live dev-vault checkpoint approved 2026-06-02
 
 **UI hint**: no (no new UI; behavioral fix in existing LP path)
 
