@@ -74,6 +74,10 @@ import type { StatePersistenceMap } from './statePersistence';
 import { readVimModeFromVault } from './vimMode';
 import { isEmbedContext } from './embedDetect';
 import { mountActionRow, type WidgetActionRowCtl } from './widgetActions';
+// WR-02 (Phase 21 cycle-2 review-fix) — log dispatch failures from
+// applyPeerSync at debug level so production debugging of split-pane
+// peer-sync regressions has an observable breadcrumb.
+import { logger } from '../shared/logger';
 
 /**
  * Plugin-host shape required by the widget mount factory. Structurally typed
@@ -472,6 +476,20 @@ export class WidgetController {
    *                handler call site, this is `extractFenceBody(disk, fenceIndex)`.
    */
   applyPeerSync(newBody: string): void {
+    // CR-01 (Phase 21 cycle-2 review-fix) — guard against clobbering this
+    // peer's own in-flight uncommitted typing. When this widget's
+    // DebouncedWriter has a pending flush, applying the originator's body
+    // here would replace pane B's in-memory edits; pane B's `getDoc()`
+    // closure would then carry the post-applyPeerSync doc into its next
+    // flush, silently overwriting the user's last 100-500ms of typing.
+    // Conservative behavior: skip the sync. The originator already wrote
+    // canonical disk; pane B's flush (when it fires) will see disk drift
+    // and route through the existing fail-safe (selfWriteSuppression hash
+    // mismatch drops the entry → next modify event becomes 'reload-silent'
+    // or conflict-modal).
+    if (this.writer?.hasPending() === true) {
+      return;
+    }
     const oldDoc = this.view.state.doc.toString();
     // Step 1 — no-op guard. Identical bodies (frontmatter-only write OR a
     // different fence in the same file changed) skip the dispatch entirely.
@@ -537,8 +555,17 @@ export class WidgetController {
           Transaction.addToHistory.of(false),
         ],
       });
-    } catch {
-      // Defensive — view may be in teardown.
+    } catch (err) {
+      // Defensive — view may be in teardown. WR-02 (Phase 21 cycle-2
+      // review-fix): log so production debugging of split-pane peer-sync
+      // regressions has an observable breadcrumb. Previously this catch
+      // swallowed every dispatch error including bona-fide bugs (selection
+      // out of range, doc transformation throws) silently.
+      logger.debug('WidgetController.applyPeerSync: dispatch failed', {
+        file: this.file.path,
+        registryKey: this.registryKey,
+        err,
+      });
       return;
     }
 

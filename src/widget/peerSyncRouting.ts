@@ -37,7 +37,16 @@ export interface PeerSyncRouteInput {
   originatingRegistryKey: string | null;
   /** Result of selfWriteSuppression.tryConsume(path, observedHash). */
   consumeResult: 'consumed' | 'stale' | 'miss';
-  /** All controllers in the registry (the helper filters by filePath). */
+  /** Controllers visible to the routing decision.
+   *
+   *  WR-06 (Phase 21 cycle-2 review-fix) — contract: callers MAY pass any
+   *  superset of controllers (the entire registry is acceptable). The
+   *  helper filters by `filePath` internally; callers do NOT need to
+   *  pre-filter and SHOULD NOT rely on a pre-filtered shape (the
+   *  decision tree depends on the post-filter view). The current
+   *  main.ts call site happens to pre-filter via `allMatching`; this is
+   *  redundant but harmless. A future caller passing the entire registry
+   *  directly remains correct. */
   controllers: PeerSyncControllerLike[];
 }
 
@@ -89,6 +98,23 @@ export function routePeerSync(input: PeerSyncRouteInput): PeerSyncDecision {
   // Single-pane self-write echo: no peer to update; existing silent return.
   if (editableSameFile.length < 2 || originatingRegistryKey === null) {
     return { kind: 'single-pane-consumed' };
+  }
+
+  // WR-04 (Phase 21 cycle-2 review-fix) — registry race: the originator's
+  // registryKey was armed in selfWriteSuppression but is NOT present among
+  // the same-file controllers (file rename mid-typing, plugin reload mid-
+  // flush, originator unregistered between arm() and the modify event
+  // firing). Without this guard the helper falls into 'peer-fan-out' and
+  // produces a perController list where NO entry has 'skip-originator';
+  // every editable peer (including the phantom whose registryKey changed)
+  // would receive apply-peer-sync. Treat as external — defer to the
+  // existing reload-silent path so the conflict modal / hash mismatch
+  // fail-safe handles the divergence.
+  const originatorPresent = sameFile.some(
+    (c) => c.registryKey === originatingRegistryKey,
+  );
+  if (!originatorPresent) {
+    return { kind: 'reload-silent' };
   }
 
   // Peer fan-out: classify every same-file controller. Originator is skipped;

@@ -43,19 +43,27 @@ vi.mock('obsidian', async () => {
 // vi.hoisted spies — must be declared inside hoisted() so vi.mock factories
 // can reference them without TDZ. Mirrors the pattern in
 // tests/widget/legacyFenceBanner.test.ts.
+// WR-03 (Phase 21 cycle-2 review-fix) — `isFrontmatterRepairCandidate` is
+// NOT consumed by codeBlockProcessor.ts (the production module imports
+// only `isMigrationCandidate, migrateLegacyFenceIfNeeded,
+// repairFrontmatterIfNeeded`). The previous mock declared a phantom
+// `isFrontmatterRepairCandidate` spy that hid production drift: a future
+// refactor that started consuming the predicate from codeBlockProcessor
+// would silently see the stubbed `false` rather than failing loudly.
+// `repairFrontmatterIfNeeded` is fully replaced by `repairSpy` in this
+// mock — so the predicate's role inside the real implementation is moot;
+// the spy entry was pure dead weight. Removed.
 const {
   migrateSpy,
   candidateSpy,
   bannerSpy,
   repairSpy,
-  repairCandidateSpy,
   rerenderReadingModePanesSpy,
 } = vi.hoisted(() => ({
   migrateSpy: vi.fn(async () => true),
   candidateSpy: vi.fn(() => true),
   bannerSpy: vi.fn(),
   repairSpy: vi.fn(async () => false),
-  repairCandidateSpy: vi.fn(() => false),
   rerenderReadingModePanesSpy: vi.fn(),
 }));
 
@@ -63,7 +71,6 @@ vi.mock('../../src/widget/fenceMigrator', () => ({
   migrateLegacyFenceIfNeeded: migrateSpy,
   isMigrationCandidate: candidateSpy,
   repairFrontmatterIfNeeded: repairSpy,
-  isFrontmatterRepairCandidate: repairCandidateSpy,
 }));
 
 vi.mock('../../src/widget/legacyFenceBanner', () => ({
@@ -151,12 +158,10 @@ describe('Phase 21 mount-path migration', () => {
     candidateSpy.mockClear();
     bannerSpy.mockClear();
     repairSpy.mockClear();
-    repairCandidateSpy.mockClear();
     rerenderReadingModePanesSpy.mockClear();
     migrateSpy.mockResolvedValue(true);
     candidateSpy.mockReturnValue(true);
     repairSpy.mockResolvedValue(false);
-    repairCandidateSpy.mockReturnValue(false);
   });
 
   it('Case 1: useInlineWidget=ON + autoMigrateOnOpen=ON + lc-slug → awaits migrate, renders static fallback, no addChild', async () => {
