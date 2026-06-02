@@ -472,6 +472,20 @@ export class WidgetController {
    *                handler call site, this is `extractFenceBody(disk, fenceIndex)`.
    */
   applyPeerSync(newBody: string): void {
+    // CR-01 (Phase 21 cycle-2 review-fix) — guard against clobbering this
+    // peer's own in-flight uncommitted typing. When this widget's
+    // DebouncedWriter has a pending flush, applying the originator's body
+    // here would replace pane B's in-memory edits; pane B's `getDoc()`
+    // closure would then carry the post-applyPeerSync doc into its next
+    // flush, silently overwriting the user's last 100-500ms of typing.
+    // Conservative behavior: skip the sync. The originator already wrote
+    // canonical disk; pane B's flush (when it fires) will see disk drift
+    // and route through the existing fail-safe (selfWriteSuppression hash
+    // mismatch drops the entry → next modify event becomes 'reload-silent'
+    // or conflict-modal).
+    if (this.writer?.hasPending() === true) {
+      return;
+    }
     const oldDoc = this.view.state.doc.toString();
     // Step 1 — no-op guard. Identical bodies (frontmatter-only write OR a
     // different fence in the same file changed) skip the dispatch entirely.
