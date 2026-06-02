@@ -427,10 +427,23 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
   const openerLine0 = fence.openerLine - 1;
   const fenceIndex = computeFenceIndex(fileText, openerLine0);
   const sourceHash = djb2(source);
+  // Plan 21-14 cycle-2 follow-up — language identity vector. When repair
+  // injects lc-language, this string changes from '<missing>' to e.g.
+  // 'java' so the rebuilt widget's eq() returns false and CM6 calls
+  // toDOM() afresh instead of reusing the stale Python+Notice DOM.
+  const languageKey =
+    typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : '<missing>';
 
   return Decoration.set([
     Decoration.replace({
-      widget: new LeetCodeFenceWidget(plugin, file, fenceIndex, sourceHash, source),
+      widget: new LeetCodeFenceWidget(
+        plugin,
+        file,
+        fenceIndex,
+        sourceHash,
+        source,
+        languageKey,
+      ),
     }).range(from, to),
   ]);
 }
