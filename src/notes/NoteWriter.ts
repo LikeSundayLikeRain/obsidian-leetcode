@@ -326,8 +326,16 @@ export class NoteWriter {
   private async retrofitStarterCode(
     file: TFile,
     detail: DetailCacheEntry | null,
+    // WR-05 (Phase 21 cycle-2 review-fix) — accept an override so the
+    // openProblem caller can pass the value it captured at the top of the
+    // call. This collapses the race where the user toggles useInlineWidget
+    // mid-call (e.g., between the network fetch and the post-write
+    // retrofit). Defaults to a fresh settings read for the OTHER three
+    // call sites (re-open / cache-cleared recovery / backgroundRefresh).
+    useInlineWidgetOverride?: boolean,
   ): Promise<void> {
-    const useInlineWidget = this.settings.getUseInlineWidget?.() ?? false;
+    const useInlineWidget =
+      useInlineWidgetOverride ?? (this.settings.getUseInlineWidget?.() ?? false);
     if (useInlineWidget) {
       // v1.3 widget owns the fence body; retrofit is structurally meaningless
       // and would corrupt the note by stacking a sibling fence (Plan 21-13).
@@ -351,6 +359,14 @@ export class NoteWriter {
   ): Promise<void> {
     const folder = this.settings.getProblemsFolder();
     const cached = this.settings.getProblemDetail(slug);
+    // WR-05 (Phase 21 cycle-2 review-fix) — cache useInlineWidget once at
+    // entry. The setting was previously read in three places (retrofit
+    // wrapper, buildNoteBody arg, belt-and-suspenders retrofit gate); a
+    // user toggling the setting mid-call (settings tab in another window
+    // or programmatic flip via API while the network fetch is in flight)
+    // could see the three reads disagree, regressing into the Plan 21-13
+    // Gap B sibling-fence corruption.
+    const useInlineWidget = this.settings.getUseInlineWidget?.() ?? false;
 
     // Re-open path (D-11): existing file + cached detail → reveal first, optionally background-refresh.
     const existingPath = cached ? buildNotePath(folder, cached.id, slug) : null;
@@ -374,7 +390,9 @@ export class NoteWriter {
       });
       // Phase 3 Plan 07 — retrofit starter code on re-open path (D-07 idempotent).
       // Silent on every failure per D-09 (retrofit owns its own error surface).
-      await this.retrofitStarterCode(existingFile, cached);
+      // WR-05: pass the captured useInlineWidget so a mid-call toggle does
+      // not split the view of "should this fence be the v1.3 widget body".
+      await this.retrofitStarterCode(existingFile, cached, useInlineWidget);
       // D-11/D-12: background-refresh if cache is stale; silent on failure.
       const now = Date.now();
       const cacheStale = !cached || (now - cached.fetchedAt) > CACHE_TTL_MS;
@@ -445,7 +463,8 @@ export class NoteWriter {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
       });
       // Silent retrofit (D-09) — starterCodeInjector handles all error surfaces.
-      await this.retrofitStarterCode(existingAtCanonical, newEntry);
+      // WR-05: pass the captured useInlineWidget for race-free gating.
+      await this.retrofitStarterCode(existingAtCanonical, newEntry, useInlineWidget);
       // Union-merge frontmatter so lc-* keys track the fresh detail, mirroring
       // backgroundRefresh's posture.
       try {
@@ -476,7 +495,9 @@ export class NoteWriter {
       langSlug: defaultLang || undefined,
       starterCode,
       title: newEntry.title,
-      useInlineWidget: this.settings.getUseInlineWidget?.() ?? false,
+      // WR-05: use the captured value so the emitter and the downstream
+      // retrofit gate see the same setting view across the call.
+      useInlineWidget,
     });
     const createdRaw = await this.app.vault.create(filePath, body);
     const file = narrowToTFile(createdRaw);
@@ -533,9 +554,12 @@ export class NoteWriter {
     // backgroundRefresh) — those are not in the R6 reproduction. Phase 22
     // mechanically deletes the entire `if (!useInlineWidget)` branch when
     // the v1.2 path is removed.
-    const useInlineWidget = this.settings.getUseInlineWidget?.() ?? false;
+    // WR-05: the captured useInlineWidget at the top of openProblem is
+    // the single source of truth for this call; the prior re-read at this
+    // line could disagree with the value passed to buildNoteBody if the
+    // setting flipped between the two reads.
     if (!useInlineWidget) {
-      await this.retrofitStarterCode(file, newEntry);
+      await this.retrofitStarterCode(file, newEntry, useInlineWidget);
     }
 
     // D-18 lazy ship — opportunistic, non-fatal.
