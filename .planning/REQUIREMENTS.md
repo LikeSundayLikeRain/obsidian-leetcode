@@ -90,6 +90,7 @@
 - [ ] **MIGRATE-08**: New notes created in v1.3 emit `\`\`\`leetcode-solve` directly via `starterCodeInjector.ts` and `NoteTemplate.ts`
 - [ ] **MIGRATE-09**: `codeExtractor.ts` sources language from `lc-language` frontmatter instead of fence tag
 - [ ] **MIGRATE-10**: CI fixtures for v1.0, v1.1, v1.2 sample notes verify migration correctness on every release candidate
+- [ ] **MIGRATE-FLICKER-01**: When typing into an LC widget in Live Preview with `useInlineWidget=ON` and `autoMigrateOnOpen=ON`, the widget MUST NOT visibly unmount/remount on each DebouncedWriter flush cadence (~500ms). The widget mount lifecycle MUST remain stable across keystroke flushes — only an actual fence-body content change committed via `vault.process` may trigger remount, not the side-effect-on-every-docChange path triggered by `autoMigrateOnOpen=ON` gates.
 
 ### Deletion (DELETE-*)
 
@@ -194,6 +195,7 @@
 | MIGRATE-08 | Phase 21 | Pending |
 | MIGRATE-09 | Phase 21 | Pending |
 | MIGRATE-10 | Phase 21 | Pending |
+| MIGRATE-FLICKER-01 | Phase 21.1 | Pending |
 | DELETE-01 | Phase 22 | Pending |
 | DELETE-02 | Phase 22 | Pending |
 | DELETE-03 | Phase 22 | Pending |
@@ -210,11 +212,13 @@
 | POLISH-06 | Phase 22 | Pending |
 
 **Coverage:**
-- v1.3 requirements: 56 total
-- Mapped to phases: 56
+- v1.3 requirements: 57 total
+- Mapped to phases: 57
 - Unmapped: 0 ✓
 
 **Phase boundaries finalized by gsd-roadmapper on 2026-05-29.** Provisional placeholder mappings from initial requirements definition were retained without modification — phase boundary judgment confirmed all 56 mappings.
+
+**2026-06-01 — Phase 21.1 follow-up requirement added:** MIGRATE-FLICKER-01 covers the typing-flicker fix surfaced as UAT R10 during Phase 21 cycle-2 verification.
 
 ---
 *Requirements defined: 2026-05-29*

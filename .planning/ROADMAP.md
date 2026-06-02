@@ -259,6 +259,14 @@ Plans:
 - **Scope discipline.** Phase 21.1 is a single-issue follow-up. Do NOT bundle other minor cosmetics or pre-existing bugs unless they share a root cause with R10. Phase 22 owns the v1.2-path-removal cleanup; this is a targeted bug fix that should ship before Phase 22 starts deleting code.
 - **R10 severity is `minor`** in the UAT — annoying but not blocking. The user can work around by setting `autoMigrateOnOpen=OFF`. This phase exists to close the gap properly so Phase 22's v1.2 path removal doesn't bake the flicker into the steady state.
 
+**Plans:** 1 plan
+
+Plans:
+
+**Wave 1**
+
+- [ ] 21.1-01-PLAN.md — Per-path attempt-once-this-session gate in liveModeBannerStateField + codeBlockProcessor + main.ts wiring (MIGRATE-FLICKER-01); RED→GREEN with 10 new vitest regression tests + live dev-vault checkpoint covering R10 fix AND R2/R4/R6/R9/autoMigrateOnOpen=OFF/manual-Migrate-retry preservation
+
 **UI hint**: no (no new UI; behavioral fix in existing LP path)
 
 ---
@@ -331,6 +339,7 @@ Plans:
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
 | 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 9/9 | Complete   | 2026-05-31 |
 | 21. v1.2 Migration                          | v1.3      | 17/17 | Complete   | 2026-06-02 |
+| 21.1. v1.2 Migration follow-up (flicker)    | v1.3      | 0/1            | Pending     | -          |
 | 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
 
 ## Backlog
