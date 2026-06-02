@@ -2,10 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: inline widget architecture
-status: executing
-stopped_at: Phase 21 context gathered
-last_updated: "2026-06-01T23:58:44.398Z"
-last_activity: 2026-06-01 -- Phase 21 execution started
+status: verifying
+last_updated: "2026-06-02T18:11:30.743Z"
+last_activity: 2026-06-02 -- Phase 21.1 Plan 21.1-01 closed; SUMMARY.md written
 progress:
   total_phases: 1
   completed_phases: 0
@@ -118,7 +117,7 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-01T14:44:04.381Z
-Stopped at: Phase 21 context gathered
-Resume file: .planning/phases/21-v1-2-migration/21-CONTEXT.md
+Last session: 2026-06-02T18:11:30.734Z
+Stopped at: Phase 22 context gathered
+Resume file: .planning/phases/22-v1-2-path-removal-polish/22-CONTEXT.md
 Next action: `/gsd-plan-phase 20`
