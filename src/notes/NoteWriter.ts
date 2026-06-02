@@ -162,6 +162,32 @@ export class NoteWriter {
    *  still renders with a Log in button but the click is a no-op. */
   private login: (() => void | Promise<void>) | null = null;
 
+  /**
+   * Phase 21 Plan 21-16 (UAT R6 closure) — post-write rerender hand-off
+   * fired AFTER the new-note creation path completes (vault.create →
+   * applyFrontmatter → openLinkText → fireOnNoteOpen). The callback
+   * receives the just-opened file's path string and is responsible for
+   * dispatching the appropriate rerender (Reading-mode previewMode.
+   * rerender(true) AND/OR Live-Preview leetcodeRefreshAnnotation).
+   *
+   * Symmetric to Plan 21-08's migrate-path rerender + Plan 21-14's
+   * repair-path rerender. The new-note path needs the same hand-off
+   * because the widget mount path (WidgetController.resolveLanguageSlug)
+   * reads frontmatter from metadataCache at MOUNT time — and metadata-
+   * Cache may not yet have absorbed the post-applyFrontmatter snapshot
+   * when openLinkText triggers the first render cycle. The post-write
+   * rerender forces a remount against the now-finalized buffer.
+   *
+   * Injected via setter (same rationale as setOnNoteOpen above) so
+   * existing NoteWriter tests don't need to wire the widget rerender
+   * subsystem to construct a NoteWriter. When null (the default), the
+   * callback is a no-op.
+   *
+   * Gated on `useInlineWidget=ON` at the call site so the legacy v1.2
+   * path (no widget to remount) is undisturbed.
+   */
+  private rerenderAfterNoteWritten: ((path: string) => void) | null = null;
+
   constructor(
     private readonly app: App,
     private readonly client: NoteWriterClient,
@@ -183,6 +209,17 @@ export class NoteWriter {
     this.login = login;
   }
 
+  /**
+   * Phase 21 Plan 21-16 (UAT R6 closure) — install the post-write
+   * rerender callback. Production wiring in main.ts passes a callback
+   * that walks markdown leaves and dispatches `rerenderReadingModePanes`
+   * (Plan 21-08) and `leetcodeRefreshAnnotation` (Plan 21-14) per leaf.
+   * Latest setter wins; passing null detaches.
+   */
+  setRerenderAfterNoteWritten(cb: ((path: string) => void) | null): void {
+    this.rerenderAfterNoteWritten = cb;
+  }
+
   /** Fire the on-open hook if installed. Swallows synchronous throws so a
    *  faulty hook never breaks the reveal path. The hook itself is responsible
    *  for its async error handling (D-12 silent-offline). */
@@ -192,6 +229,23 @@ export class NoteWriter {
       this.onNoteOpen(slug);
     } catch (err) {
       logger.debug('notes.onNoteOpen: hook threw synchronously', err);
+    }
+  }
+
+  /**
+   * Plan 21-16 — fire the post-write rerender callback. Pattern S-05
+   * silent-on-failure: a throwing callback must NOT propagate to
+   * openProblem so the user's reveal is never blocked.
+   */
+  private fireRerenderAfterNoteWritten(filePath: string): void {
+    if (!this.rerenderAfterNoteWritten) return;
+    try {
+      this.rerenderAfterNoteWritten(filePath);
+    } catch (err) {
+      logger.debug(
+        'notes.rerenderAfterNoteWritten: callback threw synchronously',
+        err,
+      );
     }
   }
 
@@ -437,7 +491,22 @@ export class NoteWriter {
     // this call is typically an idempotent no-op (recognized langSlug fence
     // detected → early return). Retained so a future change to buildNoteBody
     // that drops `## Code` doesn't silently break new-note creation.
-    await this.retrofitStarterCode(file, newEntry);
+    //
+    // Phase 21 Plan 21-16 (UAT R6 closure) — defense-in-depth: drop this
+    // call entirely on the v1.3 path (useInlineWidget=ON). Plan 21-13's
+    // wrapper at retrofitStarterCode:246-254 already short-circuits when
+    // useInlineWidget=ON; eliminating the call site here makes the mount
+    // sequence between applyFrontmatter and openLinkText deterministic
+    // (no intermediate vault operation can trigger a metadataCache modify
+    // event mid-render). The wrapper gate stays in place (belt) for the
+    // OTHER three call sites (re-open / cache-cleared recovery /
+    // backgroundRefresh) — those are not in the R6 reproduction. Phase 22
+    // mechanically deletes the entire `if (!useInlineWidget)` branch when
+    // the v1.2 path is removed.
+    const useInlineWidget = this.settings.getUseInlineWidget?.() ?? false;
+    if (!useInlineWidget) {
+      await this.retrofitStarterCode(file, newEntry);
+    }
 
     // D-18 lazy ship — opportunistic, non-fatal.
     await ensureLeetcodeBase(this.app, folder).catch((err) => {
@@ -451,6 +520,15 @@ export class NoteWriter {
     }
     // Phase 4 Plan 05 (D-02) — fire on-open hook after new-note reveal.
     this.fireOnNoteOpen(slug);
+    // Phase 21 Plan 21-16 (UAT R6 closure) — fire the post-write rerender
+    // hand-off so the v1.3 widget mounts against the finalized buffer.
+    // Symmetric to Plan 21-08's migrate-path rerender + Plan 21-14's
+    // repair-path rerender. Gated on useInlineWidget=ON: legacy v1.2
+    // notes have no widget to remount and the production callback is
+    // a no-op when null (older tests that don't wire it).
+    if (useInlineWidget) {
+      this.fireRerenderAfterNoteWritten(file.path);
+    }
   }
 
   /**
