@@ -1371,7 +1371,27 @@ export default class LeetCodePlugin extends Plugin {
               }
             }
             if (allMatching.length === 0) return;
-            const firstMatch = allMatching[0]!;
+            // CR-02 (Phase 21 cycle-2 review-fix) — Map iteration is
+            // insertion-order. With a Reading-mode read-only widget
+            // registered before the editable LP widget on the same file
+            // (split pane: Reading on left registered first, LP on right
+            // registered second), `allMatching[0]` would be the read-only
+            // pane. Read-only widgets carry `writer === undefined` (set
+            // only on `!readOnly` mounts) and never refresh
+            // `currentDocHash`, so:
+            //   • the Pitfall P2 hash gate at (b) becomes dead (empty
+            //     hash never matches the observed disk hash); AND
+            //   • the external-edit branch at (d) sees `hasPending` false
+            //     and silently reload-silent-clobbers the LP pane's
+            //     in-flight typing — Plan 20-03's conflict modal never
+            //     fires.
+            // Prefer an editable representative (non-readOnly, non-embed)
+            // and fall back to the first match only when no editable
+            // widget exists.
+            const editableMatching = allMatching.filter(
+              (c) => !c.readOnly && !c.isEmbed,
+            );
+            const firstMatch = editableMatching[0] ?? allMatching[0]!;
 
             const disk = await this.app.vault.read(file);
             const observedBody = extractFenceBody(disk, firstMatch.fenceIndex) ?? '';
