@@ -301,6 +301,41 @@ export class NoteWriter {
   }
 
   /**
+   * Plan 21.1-01 R6 fresh-create — bounded poll until metadataCache reports
+   * `lc-slug` for the freshly-written file, OR ticks budget exhausts.
+   *
+   * Why: applyFrontmatter resolves before metadataCache.changed fires. If
+   * we call openLinkText immediately after applyFrontmatter, CM6 builds
+   * the EditorView while metadataCache still returns null for the new
+   * file. The leetCodeWidgetStateField returns Decoration.none on its
+   * first call (slug not visible), and Obsidian's built-in markdown
+   * CodeBlockWidget claims the fence range. The later metadataCache.changed
+   * dispatch can't reliably evict Obsidian's widget from the rendered
+   * viewport, leaving the user with a read-only Java-highlighted fence.
+   *
+   * This poll guarantees that EditorState.create runs against a populated
+   * metadataCache — same path as opening any existing note.
+   *
+   * Bounded: ticks * delayMs ceiling so a metadata-indexer hang cannot
+   * block the UI. The default 16 * 50 = ~800ms ceiling matches Plan 21-14's
+   * cycle-2 follow-up poll in liveModeBannerStateField.ts:444-461.
+   */
+  private async waitForFrontmatterIndexed(
+    file: TFile,
+    ticks: number,
+    delayMs: number,
+  ): Promise<void> {
+    for (let i = 0; i < ticks; i++) {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+        | Record<string, unknown>
+        | undefined;
+      const slug = fm?.['lc-slug'];
+      if (typeof slug === 'string' && slug.length > 0) return;
+      await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+    }
+  }
+
+  /**
    * Phase 3 Plan 07 — retrofit wrapper with D-09 pre-guards.
    *
    * starterCodeInjector.retrofit is silent-on-failure internally, but it is
@@ -566,6 +601,20 @@ export class NoteWriter {
     await ensureLeetcodeBase(this.app, folder).catch((err) => {
       logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
     });
+
+    // Plan 21.1-01 R6 fresh-create — wait for metadataCache to index
+    // the freshly-written frontmatter BEFORE openLinkText creates the
+    // CM6 EditorView. Without this, EditorState.create runs while
+    // metadataCache is still null for the new file, leetCodeWidgetStateField
+    // returns Decoration.none (no slug visible), and Obsidian's built-in
+    // markdown CodeBlockWidget claims the fence range. The later
+    // metadataCache.changed dispatch can't reliably swap the widget in
+    // because CM6 has already committed to Obsidian's render.
+    //
+    // Polling shape mirrors the Plan 21-14 cycle-2 follow-up in
+    // liveModeBannerStateField.ts: 16-tick budget @ ~50ms each = ~800ms
+    // ceiling. Bounded so a metadata-indexer hang never blocks UI.
+    await this.waitForFrontmatterIndexed(file, 16, 50);
 
     // Reveal the newly-created note.
     // Phase 18: tab idempotency — reuse existing leaf if already open.
