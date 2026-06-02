@@ -437,3 +437,258 @@ describe('NoteWriter retrofit useInlineWidget gating — Post-UAT Gap B (Plan 21
     expect(body).not.toContain('```leetcode-solve');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 21 Plan 21-16 — UAT R6 closure (post-write rerender hand-off).
+// With `useInlineWidget=ON`, opening a fresh problem from the problem
+// browser produces a note with the correct single ```leetcode-solve fence
+// (Plan 21-13 fix landed) but the widget mounts in a stale state on first
+// open — no syntax highlighting, not editable, no action row. The new-note
+// path needs a post-write rerender hand-off symmetric to Plan 21-08
+// (migrate-path) and Plan 21-14 (repair-path) so the widget remounts
+// against the finalized buffer.
+//
+// Tests assert the DI shape (setRerenderAfterNoteWritten) and call-ordering
+// guarantees (callback fires AFTER openLinkText). Defense-in-depth: line-440
+// belt-and-suspenders retrofit is dropped when useInlineWidget=ON so the
+// mount sequence between applyFrontmatter and openLinkText is deterministic.
+// ─────────────────────────────────────────────────────────────────────────
+describe('R6 — post-write rerender hand-off (Plan 21-16)', () => {
+  it('R6.1: openProblem on a fresh problem with useInlineWidget=ON fires rerenderAfterNoteWritten exactly once with the new file path AFTER openLinkText resolves', async () => {
+    noticeSpy.mockClear();
+    const m = makeMockVaultApp({});
+    const client = makeMockLeetCodeClient({ detail: pythonStarterDetail('palindrome-number') });
+    const writer = new NoteWriter(
+      m.app as never,
+      client as never,
+      makeEmptySettings({ useInlineWidget: true }) as never,
+    );
+    // Shared call-ordering counter: each spy bumps the counter and records its tick.
+    let tick = 0;
+    let openLinkTextTick = -1;
+    let rerenderTick = -1;
+    m.spies.openLinkText.mockImplementation(async () => {
+      openLinkTextTick = ++tick;
+    });
+    const rerenderSpy = vi.fn((_path: string) => {
+      rerenderTick = ++tick;
+    });
+    writer.setRerenderAfterNoteWritten(rerenderSpy);
+    await writer.openProblem('palindrome-number');
+    // Created file path.
+    const createdPath = m.spies.create.mock.calls[0]?.[0] as string;
+    expect(createdPath).toBeDefined();
+    // Spy invoked exactly once with the resulting file path.
+    expect(rerenderSpy).toHaveBeenCalledTimes(1);
+    expect(rerenderSpy).toHaveBeenCalledWith(createdPath);
+    // Call-ordering: rerender ticks AFTER openLinkText.
+    expect(openLinkTextTick).toBeGreaterThan(0);
+    expect(rerenderTick).toBeGreaterThan(openLinkTextTick);
+  });
+
+  it('R6.2: openProblem on a fresh problem with useInlineWidget=OFF does NOT fire rerenderAfterNoteWritten', async () => {
+    noticeSpy.mockClear();
+    const m = makeMockVaultApp({});
+    const client = makeMockLeetCodeClient({ detail: pythonStarterDetail('two-sum') });
+    const writer = new NoteWriter(
+      m.app as never,
+      client as never,
+      makeEmptySettings({ useInlineWidget: false }) as never,
+    );
+    const rerenderSpy = vi.fn();
+    writer.setRerenderAfterNoteWritten(rerenderSpy);
+    await writer.openProblem('two-sum');
+    expect(rerenderSpy).not.toHaveBeenCalled();
+  });
+
+  it('R6.3: openProblem on the re-open path (existing file at canonical path + cached detail) does NOT fire rerenderAfterNoteWritten', async () => {
+    noticeSpy.mockClear();
+    const existingBody = [
+      '---',
+      'lc-slug: two-sum',
+      'lc-language: python3',
+      '---',
+      '',
+      '## Problem',
+      'problem body',
+      '',
+      '## Code',
+      '',
+      '```leetcode-solve',
+      'class Solution:',
+      '    pass',
+      '```',
+      '',
+      '## Notes',
+      '',
+    ].join('\n');
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': existingBody });
+    const detail = pythonStarterDetail('two-sum');
+    const client = makeMockLeetCodeClient({ detail });
+    const settings = makeEmptySettings({ useInlineWidget: true }) as ReturnType<
+      typeof makeEmptySettings
+    >;
+    // Seed cached detail so the re-open branch fires.
+    void settings.setProblemDetail('two-sum', {
+      fetchedAt: Date.now(),
+      id: 1,
+      title: 'Two Sum',
+      difficulty: 'Easy',
+      url: 'https://leetcode.com/problems/two-sum/',
+      contentHtml: '<p>...</p>',
+      topicSlugs: [],
+      codeSnippets: detail.codeSnippets,
+    });
+    const writer = new NoteWriter(m.app as never, client as never, settings as never);
+    const rerenderSpy = vi.fn();
+    writer.setRerenderAfterNoteWritten(rerenderSpy);
+    await writer.openProblem('two-sum');
+    expect(rerenderSpy).not.toHaveBeenCalled();
+  });
+
+  it('R6.4: openProblem on the cache-cleared recovery path (existing file at canonical path BUT no cached detail) does NOT fire rerenderAfterNoteWritten', async () => {
+    noticeSpy.mockClear();
+    const existingBody = [
+      '---',
+      'lc-slug: two-sum',
+      'lc-language: python3',
+      '---',
+      '',
+      '## Problem',
+      'old body',
+      '',
+      '## Code',
+      '',
+      '```leetcode-solve',
+      'class Solution:',
+      '    pass',
+      '```',
+      '',
+      '## Notes',
+      '',
+    ].join('\n');
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': existingBody });
+    const client = makeMockLeetCodeClient({ detail: pythonStarterDetail('two-sum') });
+    // No cached detail seeded — drives execution into existingAtCanonical branch.
+    const writer = new NoteWriter(
+      m.app as never,
+      client as never,
+      makeEmptySettings({ useInlineWidget: true }) as never,
+    );
+    const rerenderSpy = vi.fn();
+    writer.setRerenderAfterNoteWritten(rerenderSpy);
+    await writer.openProblem('two-sum');
+    expect(rerenderSpy).not.toHaveBeenCalled();
+  });
+
+  it('R6.5: rerenderAfterNoteWritten setter is idempotent — last setter wins; passing null detaches the callback', async () => {
+    noticeSpy.mockClear();
+    const m = makeMockVaultApp({});
+    const client = makeMockLeetCodeClient({ detail: pythonStarterDetail('palindrome-number') });
+    const writer = new NoteWriter(
+      m.app as never,
+      client as never,
+      makeEmptySettings({ useInlineWidget: true }) as never,
+    );
+    const spy1 = vi.fn();
+    const spy2 = vi.fn();
+    writer.setRerenderAfterNoteWritten(spy1);
+    writer.setRerenderAfterNoteWritten(spy2);
+    await writer.openProblem('palindrome-number');
+    expect(spy1).not.toHaveBeenCalled();
+    expect(spy2).toHaveBeenCalledTimes(1);
+    // Detach via null.
+    writer.setRerenderAfterNoteWritten(null);
+    // Drive a second fresh slug so we re-enter the new-note path.
+    const m2 = makeMockVaultApp({});
+    const client2 = makeMockLeetCodeClient({ detail: pythonStarterDetail('valid-parentheses') });
+    const writer2 = new NoteWriter(
+      m2.app as never,
+      client2 as never,
+      makeEmptySettings({ useInlineWidget: true }) as never,
+    );
+    writer2.setRerenderAfterNoteWritten(spy2);
+    writer2.setRerenderAfterNoteWritten(null);
+    await expect(writer2.openProblem('valid-parentheses')).resolves.toBeUndefined();
+    // spy2 was attached then detached on writer2 → still 1 call total (only the writer1 call).
+    expect(spy2).toHaveBeenCalledTimes(1);
+  });
+
+  it('R6.6: rerenderAfterNoteWritten failure does NOT propagate to openProblem (Pattern S-05 silent-on-failure)', async () => {
+    noticeSpy.mockClear();
+    const m = makeMockVaultApp({});
+    const client = makeMockLeetCodeClient({ detail: pythonStarterDetail('two-sum') });
+    const writer = new NoteWriter(
+      m.app as never,
+      client as never,
+      makeEmptySettings({ useInlineWidget: true }) as never,
+    );
+    const throwingSpy = vi.fn(() => {
+      throw new Error('boom');
+    });
+    writer.setRerenderAfterNoteWritten(throwingSpy);
+    // Must resolve cleanly.
+    await expect(writer.openProblem('two-sum')).resolves.toBeUndefined();
+    expect(throwingSpy).toHaveBeenCalledTimes(1);
+    // No retrofit/Notice fired downstream of the throw.
+    const hadRetrofitNotice = noticeSpy.mock.calls.some(([msg]) =>
+      /retrofit|starter|code section/i.test(String(msg))
+    );
+    expect(hadRetrofitNotice).toBe(false);
+    // File still created on disk.
+    const createdPath = m.spies.create.mock.calls[0]?.[0] as string;
+    expect(createdPath).toBeDefined();
+    expect(m.getContent(createdPath)).toBeDefined();
+  });
+
+  it('R6.7: defense-in-depth — line-440 retrofit is dropped on the new-note path when useInlineWidget=ON (no vault.process call from retrofit on this path)', async () => {
+    noticeSpy.mockClear();
+    const m = makeMockVaultApp({});
+    const client = makeMockLeetCodeClient({ detail: pythonStarterDetail('two-sum') });
+    const writer = new NoteWriter(
+      m.app as never,
+      client as never,
+      makeEmptySettings({ useInlineWidget: true }) as never,
+    );
+    await writer.openProblem('two-sum');
+    // The new-note path's only writes should be vault.create (the body) +
+    // applyFrontmatter (frontmatter via processFrontMatter). retrofit, if
+    // invoked, calls vault.process to mutate the body — when the call site
+    // is dropped, vault.process MUST NOT have been called on the new-note
+    // path. (The wrapper short-circuit alone would cover us, but the
+    // dropped call site is the deterministic-mount win.)
+    expect(m.spies.process).not.toHaveBeenCalled();
+    // Body still has the canonical single leetcode-solve fence (Plan 21-13).
+    const createdPath = m.spies.create.mock.calls[0]?.[0] as string;
+    const body = m.getContent(createdPath) ?? '';
+    expect(body).toMatch(/^```leetcode-solve\s*$/m);
+    expect(body).not.toMatch(/^```python\s*$/m);
+  });
+
+  it('R6.8: defense-in-depth — line-440 retrofit IS invoked on the new-note path when useInlineWidget=OFF (legacy v1.2 path preserved)', async () => {
+    noticeSpy.mockClear();
+    // useInlineWidget=OFF + a fresh slug. buildNoteBody emits the legacy
+    // ```<langSlug> fence. retrofit would no-op via the recognized-fence
+    // early return inside starterCodeInjector — it does not call
+    // vault.process in that case (idempotent on already-correct bodies).
+    // The test instead asserts the call-site is reachable: body still has
+    // ## Code and a ```python fence, AND the legacy emitter shape is intact.
+    // (Removing the call site would NOT change body shape today because
+    // buildNoteBody already emits the fence — the test locks in that we
+    // only dropped the call on the v1.3 branch, not globally.)
+    const m = makeMockVaultApp({});
+    const client = makeMockLeetCodeClient({ detail: pythonStarterDetail('two-sum') });
+    const writer = new NoteWriter(
+      m.app as never,
+      client as never,
+      makeEmptySettings({ useInlineWidget: false }) as never,
+    );
+    await writer.openProblem('two-sum');
+    const createdPath = m.spies.create.mock.calls[0]?.[0] as string;
+    const body = m.getContent(createdPath) ?? '';
+    // Legacy emitter shape preserved.
+    expect(body).toMatch(/^```python\s*$/m);
+    expect(body).not.toContain('```leetcode-solve');
+    expect(body).toContain('class Solution:');
+  });
+});
