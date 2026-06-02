@@ -1,32 +1,28 @@
 ---
-status: testing
+status: partial
 phase: 21-v1-2-migration
 source: [21-VERIFICATION.md]
 started: 2026-06-01T21:35:00Z
-updated: 2026-06-01T22:30:00Z
+updated: 2026-06-02T00:00:00Z
 gap_closure_plans: [21-08, 21-09, 21-10, 21-11, 21-12, 21-13, 21-14, 21-15, 21-16, 21-17]
-gap_closure_status: cycle_2_code_shipped_pending_live_uat
+gap_closure_status: cycle_2_complete_R10_open
 re_test_complete: 2026-06-01T21:10:00Z
 re_test_passed: 5
 re_test_issues: 4
 cycle_2_re_test_started: 2026-06-01T22:30:00Z
+cycle_2_re_test_complete: 2026-06-02T00:00:00Z
+cycle_2_results:
+  R2: passed (cycle-2 fix d6e41d0 — metadataCache wait + fall-through to mount)
+  R4: passed (cycle-2 fix 79d2503 — within-fence layout + accent CTA in both modes)
+  R6: passed (cycle-2 confirmed — Plan 21-16 NoteWriter post-write rerender DI works)
+  R9: passed (cycle-2 confirmed — Plan 21-17 applyPeerSync peer-sync fan-out works)
+new_gaps_found:
+  R10: typing flicker on body flush with autoMigrateOnOpen=ON (pre-existing baseline issue, severity=minor)
 ---
 
 ## Current Test
 
-number: R4
-name: Live-Preview banner CSS isolation (cycle-2 fix from plan 21-15)
-expected: |
-  Open a v1.2-shaped note in Live Preview with useInlineWidget=ON AND
-  autoMigrateOnOpen=OFF. The migration banner mounts as a visually
-  distinct UI block — banner copy + [Migrate now] CTA visually separated
-  from the read-only fence body preview, parallel to the Reading-mode
-  banner shape (no single rounded code-block-tinted box wrapping
-  everything).
-awaiting: user response
-
-cycle_2_results_so_far:
-  - R2: passed (cycle-2 fix d6e41d0 — metadataCache wait + fall-through to mount)
+[cycle-2 re-test complete — 4 cycle-2 closures pass + R10 new gap filed]
 
 ## Re-Test Tests (post gap-closure)
 
@@ -64,8 +60,21 @@ result: pass
 
 ### R4. Live-Preview banner without CM6 RangeError (21-11 / MIGRATE-BANNER-LP-01)
 expected: "Open a v1.2-shaped note in Live Preview with useInlineWidget=ON AND autoMigrateOnOpen=OFF. The migration banner mounts WITHOUT throwing the CM6 RangeError 'Decorations that replace line breaks may not be specified via plugins'. Console clean. With autoMigrateOnOpen=ON, AutoMigratingBannerWidget mounts cleanly and unmounts on the post-migration update cycle."
-result: issue
-reported: "CM6 RangeError is gone (banner mounts), BUT the banner copy + [Migrate now] CTA + the fence body all render inside a single rounded code-block-tinted box. Banner copy/button and the read-only fence body are not visually separated — the whole thing looks like one fence with banner text grafted on top. (Reading mode banner is correctly styled — issue is Live-Preview-only.) Screenshot attached."
+result: pass
+cycle_2_status: resolved
+cycle_2_fix_commit: 79d2503
+cycle_2_fix_summary: |
+  Cycle-1 (Plan 21-15) added scoped LP CSS that wrapped everything in
+  an extra rounded box and gave the button blue-accent styling — making
+  LP look DIFFERENT from Reading mode rather than the user-expected
+  parity-with-some-distinction.
+  Cycle-2 fix accepts CM6's outer fence container as a constraint and
+  works WITHIN it: drops the LP outer wrapper (host transparent), restores
+  Obsidian UI font on banner copy + CTA, adds a horizontal separator
+  between banner header and source preview, and applies accent-color
+  CTA in BOTH modes (unscoped selector + !important to win against
+  Obsidian's default button specificity).
+  Verified pass 2026-06-02 in dev vault.
 severity: minor
 why_human: "RangeError fix (the actual blocker) succeeded; this is a visual/structural defect in the Live-Preview banner rendering. The legacyBannerStateField uses Decoration.replace({widget: AutoMigratingBannerWidget, block: true}) over the legacy fence range — the AutoMigratingBannerWidget builds a single host element containing copy + button + read-only pre/code, so CM6 sees the entire host as one block decoration replacing the multi-line fence. The host element's outer container picks up the surrounding code-block tint or shares the fence's CSS scope, so the visual separation is lost compared to Reading mode where the banner replaces the rendered code-block element with a freshly-styled host."
 diagnosis_hint: |
@@ -79,8 +88,17 @@ result: pass
 
 ### R6. No duplicate fence from problem browser (21-13 / NEWNOTE-FENCE-DEDUP-01)
 expected: "With useInlineWidget=ON, opening a fresh problem from the problem browser produces a note whose ## Code section contains EXACTLY ONE ```leetcode-solve fence — ZERO langSlug-tagged sibling fences. Note renders with single LC widget mount."
-result: issue
-reported: "Note content on disk is correct (single ```leetcode-solve fence in ## Code, no sibling — Plan 21-13 fix landed). BUT the widget rendering is broken on the first open: no syntax highlighting, no action row, not editable. Same broken-mount shape as R2."
+result: pass
+cycle_2_status: resolved
+cycle_2_fix_commit: 712503e (Plan 21-16 ship — verified during cycle-2 UAT)
+cycle_2_fix_summary: |
+  Plan 21-16 introduced setRerenderAfterNoteWritten DI on NoteWriter and
+  wired the production callback in main.ts to fire BOTH rerenderReadingModePanes
+  AND a leetcodeRefreshAnnotation CM6 dispatch on every problem-browser
+  open. Cycle-2 user verification confirms the widget mounts in working
+  state on first paint (syntax highlighting, action row, editable) for
+  fresh problems opened from the browser with useInlineWidget=ON.
+  Verified pass 2026-06-02 in dev vault.
 severity: major
 why_human: "Source-on-disk fix succeeded (single fence — confirms 21-13 retrofit gate works). Defect is downstream: the new-note open flow lands the note in the editor, then writes/retrofits the body, but no rerender hand-off ensures the widget remounts against the now-finalized source. Same family as R2 — post-write rerender missing on the new-note path."
 diagnosis_hint: |
@@ -119,8 +137,18 @@ diagnosis_hint: |
 
 ### R9. Split-pane cursor preservation across edits (post-R7 finding)
 expected: "When the same LC note is open in two split panes, editing in one pane preserves the cursor position in the OTHER pane's widget — cursor does NOT jump to the beginning of the widget."
-result: issue
-reported: "In split-pane mode (two panes, same LC note), editing in one pane causes the cursor in the OTHER pane's widget to jump to the start of the widget. Cursor preservation is broken across split-pane sync."
+result: pass
+cycle_2_status: resolved
+cycle_2_fix_commit: a6d333c (Plan 21-17 ship — verified during cycle-2 UAT)
+cycle_2_fix_summary: |
+  Plan 21-17 added applyPeerSync (incremental ChangeSpec dispatch with
+  mapped selection forward-bias) + peerSyncRouting helper + main.ts
+  modify-handler peer-sync fan-out (skip originator, apply to peers).
+  Cycle-2 user verification: typing in pane A propagates edits to pane B
+  with cursor preserved at user's chosen position (no jump-to-zero).
+  Both panes remain usable. R7 two-pane peer overlay (Plan 21-12)
+  preserved.
+  Verified pass 2026-06-02 in dev vault.
 severity: minor
 why_human: "Split-pane sync is a multi-leaf timing path that requires real Obsidian Workspace to reproduce. The peer pane's CM6 view should receive an incremental Transaction (with cursor mapping) rather than a full EditorState.create(); current code path resets selection."
 captured: |
