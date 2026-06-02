@@ -183,6 +183,9 @@ import { leetCodeFenceViewPlugin } from './widget/liveModeViewPlugin';
 // Phase 19 Plan 02 — selfWriteSuppression + sha1 helper for the modify-event
 // consumer. extractFenceBody for hashing observed disk fence body.
 import { SelfWriteSuppression } from './widget/selfWriteSuppression';
+// Plan 21-17 — pure routing helper for the modify-handler peer-sync fan-out
+// (split-pane cursor preservation; closes UAT cycle-2 R9).
+import { routePeerSync, type PeerSyncControllerLike } from './widget/peerSyncRouting';
 import { sha1 } from './widget/debouncedWriter';
 import { extractFenceBody } from './widget/fenceSerialization';
 import type { WidgetController } from './widget/WidgetController';
@@ -1307,29 +1310,38 @@ export default class LeetCodePlugin extends Plugin {
       // Hook 6: Plugin.onunload — extends below in onunload() with flushAll
       // followed by destroyAll + selfWriteSuppression.clear.
 
-      // Plan 19-02 + Phase 20 Plan 20-03 — vault.on('modify') decision tree
-      // (SYNC-04 / SYNC-05). RESEARCH Specific Findings §4 gated body —
-      // useInlineWidget can be flipped mid-session; gate at fire time, not
-      // registration time.
+      // Plan 19-02 + Phase 20 Plan 20-03 + Plan 21-17 — vault.on('modify')
+      // decision tree (SYNC-04 / SYNC-05 / split-pane peer-sync). RESEARCH
+      // Specific Findings §4 gated body — useInlineWidget can be flipped
+      // mid-session; gate at fire time, not registration time.
       //
-      // Decision tree (Plan 20-03 — RELOCATES the Plan 20-02 Pitfall P2
-      // early-return into step (b) of the full structure; selfWrite consume
-      // moves to step (c); branches on hasPending() in step (d)):
-      //   (a) gating: useInlineWidget on; file is TFile; matching widget
+      // Decision tree (Plan 21-17 amends step (c) — peer-sync fan-out):
+      //   (a) gating: useInlineWidget on; file is TFile; ≥1 matching widget
       //       found in registry. If no match → no-op.
       //   (b) Pitfall P2 early-return — fence body unchanged: if
-      //       observedFenceHash === widget.currentDocHash, the modify event
-      //       is a frontmatter-only echo (canonical case: chevron-switch's
-      //       processFrontMatter via switchLanguageFromWidget). Return
-      //       without invoking suppression. RELOCATED from Plan 20-02 (was
-      //       a pre-suppression check; same logic — different anchor in
-      //       the tree).
-      //   (c) selfWriteSuppression.tryConsume(path, observedFenceHash):
-      //       'consumed' → self-write echo, drop silently.
-      //       'stale' | 'miss' → fall through to (d).
-      //   (d) hasPending() branch:
-      //       false → widget.reloadFromDisk('silent') (line/col cursor clamp
-      //               per D-conflict-03; addToHistory.of(false) annotation).
+      //       observedFenceHash === firstMatch.currentDocHash, the modify
+      //       event is a frontmatter-only echo (canonical case: chevron-
+      //       switch's processFrontMatter via switchLanguageFromWidget).
+      //       Return without invoking suppression. (Multi-pane: every
+      //       widget on the file has the same hash because they're driven
+      //       by the same flush path — firstMatch is a representative.)
+      //   (c) selfWriteSuppression — capture originator BEFORE tryConsume,
+      //       then call tryConsume:
+      //         'consumed' → self-write echo. Route via routePeerSync:
+      //                      - peer-fan-out: skip originator, dispatch
+      //                        applyPeerSync(observedBody) on each peer
+      //                        (incremental ChangeSpec with mapped
+      //                        selection + 'leetcode.peer-sync' userEvent
+      //                        + addToHistory.of(false)). Plan 21-17.
+      //                      - single-pane-consumed: existing silent return.
+      //         'stale' | 'miss' → fall through to (d) — external edit.
+      //       Plan 21-17 — the originator capture uses the new
+      //       selfWriteSuppression.peekOriginator(path) read-only accessor;
+      //       it must run BEFORE tryConsume drops the entry.
+      //   (d) hasPending() branch (external edit only):
+      //       false → firstMatch.reloadFromDisk('silent') (line/col cursor
+      //               clamp per D-conflict-03; addToHistory.of(false)
+      //               annotation). UNCHANGED — preserves R8 byte-identical.
       //       true  → if activeConflictModal?.isOpen, fire
       //               updateExternalContent(observedBody) (D-conflict-04 —
       //               in-place update, NEVER stack a second modal).
@@ -1342,66 +1354,118 @@ export default class LeetCodePlugin extends Plugin {
           if (!(file instanceof TFile)) return;
           if (!this.selfWriteSuppression) return;
           try {
-            // (a) gate — find any widget matching this file's path. We walk
-            // the registry rather than a getByFilePath accessor (single-
-            // fence common case is fenceIndex 0; multi-fence tracking is
-            // Plan 19-04+/v1.4 deferred). For multi-pane same-file
-            // (CONTEXT L10 single-active baseline + Plan 20-04 "Take over"
-            // CTA), only ONE widget actively types — others get silent
-            // reload. We pick the FIRST matching widget here; multi-pane
-            // fan-out is owned by Plan 20-04.
-            let matchingWidget: WidgetController | null = null;
+            // (a) gate — find ALL widgets matching this file's path. Plan
+            // 21-17 amends the previous "first matching widget" pick to
+            // collect every controller on the file so the peer-sync fan-out
+            // in step (c) can iterate them. firstMatch (the original
+            // single-controller anchor) is preserved for the Pitfall P2
+            // early-return AND for the external-edit reload-silent path —
+            // both of which are unchanged from Plan 20-03.
+            const allMatching: WidgetController[] = [];
             if (this.widgetRegistry) {
               for (const ctl of this.widgetRegistry.values()) {
                 const candidate = ctl as unknown as WidgetController & { file: { path: string } };
                 if (candidate.file.path === file.path) {
-                  matchingWidget = candidate;
-                  break;
+                  allMatching.push(candidate);
                 }
               }
             }
-            if (!matchingWidget) return;
+            if (allMatching.length === 0) return;
+            const firstMatch = allMatching[0]!;
 
             const disk = await this.app.vault.read(file);
-            const observedBody = extractFenceBody(disk, matchingWidget.fenceIndex) ?? '';
+            const observedBody = extractFenceBody(disk, firstMatch.fenceIndex) ?? '';
             const observedHash = await sha1(observedBody);
 
             // (b) Pitfall P2 early-return — fence body unchanged. If the
             // widget's currentDocHash matches what we just observed on
             // disk, the file changed but the FENCE BODY did not
-            // (frontmatter-only write — chevron-switch path).
+            // (frontmatter-only write — chevron-switch path). Multi-pane
+            // case: every widget on the file has the same hash because
+            // they're driven by the same flush path (firstMatch is a
+            // representative).
             if (
-              typeof matchingWidget.currentDocHash === 'string' &&
-              matchingWidget.currentDocHash.length > 0 &&
-              matchingWidget.currentDocHash === observedHash
+              typeof firstMatch.currentDocHash === 'string' &&
+              firstMatch.currentDocHash.length > 0 &&
+              firstMatch.currentDocHash === observedHash
             ) {
               return;
             }
 
-            // (c) Phase 20 BL-04 (review-fix) — selfWriteSuppression
-            // consume. The DebouncedWriter arms a per-path suppression
-            // entry BEFORE vault.process; the modify event echo lands
-            // here. tryConsume drops the entry on a hash match (silent
-            // self-write echo); a stale or miss falls through to (d).
-            // Without this call the suppression map grows monotonically
-            // (one entry per debounced flush, never drained) AND the
-            // post-flush echo could open a ConflictModal during normal
-            // typing because the writer.hasPending() gate at (d) fires
-            // before the writer's pending flag resets (see
-            // DebouncedWriter.flush() try/finally — pending stays true
-            // through the entire flush body, including the modify echo).
+            // (c) Plan 21-17 — capture originator BEFORE tryConsume drops
+            // the entry. peekOriginator is read-only (does NOT mutate the
+            // suppression map); tryConsume below is the sole mutator.
+            const originatingRegistryKey = this.selfWriteSuppression.peekOriginator(file.path);
+
+            // Phase 20 BL-04 (review-fix) — selfWriteSuppression consume.
+            // The DebouncedWriter arms a per-path suppression entry BEFORE
+            // vault.process; the modify event echo lands here. tryConsume
+            // drops the entry on a hash match (silent self-write echo);
+            // a stale or miss falls through to (d).
             const consumeResult = this.selfWriteSuppression.tryConsume(
               file.path,
               observedHash,
             );
-            if (consumeResult === 'consumed') return;
+
+            // Plan 21-17 — peer-sync fan-out routing. The pure helper
+            // returns the per-controller decision; we invoke the
+            // corresponding method below. External edits (consumeResult !==
+            // 'consumed') route to 'reload-silent' which falls through to
+            // step (d) — preserves R8 byte-identical.
+            const peerLikes: PeerSyncControllerLike[] = allMatching.map((c) => ({
+              registryKey: c.registryKey,
+              filePath: c.file.path,
+              isEmbed: c.isEmbed,
+              readOnly: c.readOnly,
+            }));
+            const decision = routePeerSync({
+              filePath: file.path,
+              originatingRegistryKey,
+              consumeResult,
+              controllers: peerLikes,
+            });
+
+            if (decision.kind === 'single-pane-consumed') {
+              // Self-write echo with no peer to fan out to. Silent return —
+              // existing single-pane behavior is byte-identical.
+              return;
+            }
+
+            if (decision.kind === 'peer-fan-out') {
+              // Plan 21-17 — fan out applyPeerSync(observedBody) to every
+              // editable peer; skip the originating pane (its caret is
+              // already correct because its own typing produced the new
+              // doc state). Embed/readOnly widgets are filtered by the
+              // routing helper.
+              const byKey = new Map<string, WidgetController>();
+              for (const c of allMatching) byKey.set(c.registryKey, c);
+              for (const perCtl of decision.perController) {
+                if (perCtl.action !== 'apply-peer-sync') continue;
+                const peer = byKey.get(perCtl.registryKey);
+                if (!peer) continue;
+                try {
+                  peer.applyPeerSync(observedBody);
+                } catch {
+                  // Defensive — peer view may be in teardown.
+                }
+              }
+              return;
+            }
+
+            // decision.kind === 'reload-silent' — external edit. Fall
+            // through to the existing childDoc backup + reload-silent path
+            // below. UNCHANGED from pre-Plan-21-17 behavior.
 
             // Backup self-write detection for the case where the
             // suppression entry was missed (stale TTL, hash mismatch
             // race per RESEARCH §1 fail-safe). When the observed disk
             // body equals the child's current doc, the modify event
             // is the auto-save echo of our own typing → silent no-op.
-            const childDoc = matchingWidget.view.state.doc.toString();
+            // Plan 21-17 — uses firstMatch as the representative; in the
+            // multi-pane case Plan 21-17 handles fan-out at step (c) and
+            // never reaches this fallthrough (it returns from the
+            // peer-fan-out branch above).
+            const childDoc = firstMatch.view.state.doc.toString();
             if (observedBody === childDoc) return;
 
             // (d) Disk diverges from child = external write (Sync from
@@ -1417,10 +1481,10 @@ export default class LeetCodePlugin extends Plugin {
             // open on every divergence. The legacy hasPending() gate
             // is collapsed into "always show modal" because the user
             // typing IS the parent doc state.
-            const hasPending = matchingWidget.writer?.hasPending() === true;
+            const hasPending = firstMatch.writer?.hasPending() === true;
             if (!hasPending) {
               // Idle widget — silent reload with line/col cursor clamp.
-              await matchingWidget.reloadFromDisk('silent');
+              await firstMatch.reloadFromDisk('silent');
               return;
             }
 
@@ -1439,8 +1503,8 @@ export default class LeetCodePlugin extends Plugin {
             // exactly once across every close trigger.
             const modal = new ConflictModal(
               this.app,
-              matchingWidget,
-              matchingWidget.view.state.doc.toString(),
+              firstMatch,
+              firstMatch.view.state.doc.toString(),
               observedBody,
               () => {
                 this.activeConflictModal = null;
