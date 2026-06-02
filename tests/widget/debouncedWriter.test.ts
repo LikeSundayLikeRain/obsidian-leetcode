@@ -256,4 +256,63 @@ describe('DebouncedWriter', () => {
       expect(w.hasPending()).toBe(false);
     });
   });
+
+  // Plan 21-17 — originator threading. DebouncedWriter accepts an optional
+  // registryKey at construction; flush() passes it as the third arg to
+  // selfWriteSuppression.arm(...) so peer-sync fan-out can identify the
+  // writing pane and skip it during the modify-handler dispatch.
+  describe('arm() originator threading (Plan 21-17)', () => {
+    it('W1 DebouncedWriter constructed with registryKey arms suppression with the controller registryKey', async () => {
+      const armSpy = vi.spyOn(suppression, 'arm');
+      const w = new DebouncedWriter(
+        app as never,
+        file as never,
+        getDoc,
+        getFenceIndex,
+        suppression,
+        400,
+        'a.md::0::leaf-A::lp', // registryKey — Plan 21-17 originator
+      );
+      await w.forceFlush();
+      expect(armSpy).toHaveBeenCalledTimes(1);
+      // Third arg is the registryKey; first arg is path; second is hash.
+      expect(armSpy.mock.calls[0]![0]).toBe('a.md');
+      expect(armSpy.mock.calls[0]![2]).toBe('a.md::0::leaf-A::lp');
+    });
+
+    it('W2 DebouncedWriter constructed without registryKey falls back to 2-arg arm() shape (backward compat)', async () => {
+      const armSpy = vi.spyOn(suppression, 'arm');
+      // Legacy 6-arg constructor — no registryKey. Backward compat for
+      // existing test fixtures that haven't been threaded.
+      const w = new DebouncedWriter(
+        app as never, file as never, getDoc, getFenceIndex, suppression, 400,
+      );
+      await w.forceFlush();
+      expect(armSpy).toHaveBeenCalledTimes(1);
+      expect(armSpy.mock.calls[0]![0]).toBe('a.md');
+      // Third arg is undefined — arm's default behavior.
+      expect(armSpy.mock.calls[0]![2]).toBeUndefined();
+    });
+
+    it('peer-sync routing: peekOriginator returns the registryKey threaded by DebouncedWriter', async () => {
+      const w = new DebouncedWriter(
+        app as never,
+        file as never,
+        getDoc,
+        getFenceIndex,
+        suppression,
+        400,
+        'a.md::0::leaf-X::lp',
+      );
+      await w.forceFlush();
+      // The arm call inside flush() set the originator; peekOriginator
+      // returns it (entry was already consumed by the post-flush hash
+      // diagnostic? No — the modify event consumes it in production; in
+      // this test we manually peek BEFORE any tryConsume).
+      // Actually, flush() arms BEFORE vault.process; the test's vault.process
+      // returns synchronously without firing a modify echo, so the entry
+      // remains armed and peekOriginator should return it.
+      expect(suppression.peekOriginator('a.md')).toBe('a.md::0::leaf-X::lp');
+    });
+  });
 });

@@ -33,6 +33,7 @@ import {
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
+  ChangeSet,
   Compartment,
   EditorSelection,
   EditorState,
@@ -414,6 +415,141 @@ export class WidgetController {
   /** Read the current widget document content (used by debouncedWriter). */
   getDoc(): string {
     return this.view.state.doc.toString();
+  }
+
+  /**
+   * Plan 21-17 — incremental peer-pane sync with mapped selection.
+   *
+   * Closes UAT cycle-2 R9: when the same LC note is open in two split panes,
+   * typing in pane A previously caused the cursor in pane B's widget to jump
+   * to position 0 (the line/col clamp in `reloadFromDisk` would relocate
+   * pane B's caret to col 0 of the same line number whenever pane A's edit
+   * landed UPSTREAM of pane B's caret).
+   *
+   * Contrast with `reloadFromDisk`:
+   *   - `reloadFromDisk` is for EXTERNAL edits (no armed self-write
+   *     suppression). It dispatches a FULL-DOC REPLACEMENT with line/col-
+   *     clamped selection — fine for "pane is reading what the disk now
+   *     says", wrong for "sibling pane just typed".
+   *   - `applyPeerSync` is for SIBLING-PANE edits (confirmed self-write
+   *     echo via selfWriteSuppression.peekOriginator). It dispatches an
+   *     INCREMENTAL `ChangeSpec` (computed from longest common prefix +
+   *     suffix) and maps the current selection forward through the change
+   *     set so the sibling caret stays anchored to its original logical
+   *     character position.
+   *
+   * Annotations:
+   *   - `'leetcode.peer-sync'` userEvent — per CLAUDE.md Phase 17 D-03 / D-05
+   *     convention (any plugin dispatch into a section-locked range MUST
+   *     carry a `'leetcode.*'` userEvent so the section-lock filter passes
+   *     it through). The widget's own EditorView does not install
+   *     section-protection (per the comment at line ~545), so the annotation
+   *     is structurally not required for THIS view — but it documents intent
+   *     and locks in the convention for any future extension that DOES
+   *     install section-aware filters on widget views.
+   *   - `Transaction.addToHistory.of(false)` — the peer-sync transaction
+   *     must NOT pollute pane B's undo stack. Cmd-Z in pane B should undo
+   *     only pane B's own typing, not pane A's edits. NOTE: this annotation
+   *     suppresses undo-stack inclusion ONLY; it does NOT suppress
+   *     StateField updates — legitimate decoration recomputes (banner state,
+   *     lc-language repair) continue to fire on doc change.
+   *
+   * Algorithm (minimal-edit ChangeSpec):
+   *   1. If `newBody === oldDoc`, return early (no dispatch — guards against
+   *      unnecessary history pollution and selection jitter).
+   *   2. Compute the longest common prefix length `p` and the longest common
+   *      suffix length `s` (capped so prefix+suffix never exceeds the
+   *      shorter of the two strings).
+   *   3. Build the ChangeSpec: `{ from: p, to: oldLen - s, insert: newBody.slice(p, newLen - s) }`.
+   *   4. Build a `ChangeSet` from the spec and map every selection range
+   *      through it via `changes.mapPos(pos, 1)` (forward-bias).
+   *   5. Dispatch a single transaction with `changes`, `selection`, and
+   *      both annotations.
+   *   6. Refresh `currentDocHash` for the modify-handler Pitfall P2 gate.
+   *
+   * @param newBody The fresh fence body observed on disk (or any string the
+   *                caller wants the widget to converge on). For the modify
+   *                handler call site, this is `extractFenceBody(disk, fenceIndex)`.
+   */
+  applyPeerSync(newBody: string): void {
+    const oldDoc = this.view.state.doc.toString();
+    // Step 1 — no-op guard. Identical bodies (frontmatter-only write OR a
+    // different fence in the same file changed) skip the dispatch entirely.
+    if (newBody === oldDoc) return;
+
+    const oldLen = oldDoc.length;
+    const newLen = newBody.length;
+
+    // Step 2 — longest common prefix.
+    let prefixLen = 0;
+    const maxPrefix = Math.min(oldLen, newLen);
+    while (prefixLen < maxPrefix && oldDoc.charCodeAt(prefixLen) === newBody.charCodeAt(prefixLen)) {
+      prefixLen++;
+    }
+
+    // Step 2b — longest common suffix (capped so prefix + suffix never
+    // exceed either string's length — this prevents the prefix and suffix
+    // ranges from overlapping when one string is a substring of the other).
+    let suffixLen = 0;
+    const maxSuffix = Math.min(oldLen - prefixLen, newLen - prefixLen);
+    while (
+      suffixLen < maxSuffix &&
+      oldDoc.charCodeAt(oldLen - 1 - suffixLen) === newBody.charCodeAt(newLen - 1 - suffixLen)
+    ) {
+      suffixLen++;
+    }
+
+    // Step 3 — minimal ChangeSpec describing the contiguous edit region.
+    const spec = {
+      from: prefixLen,
+      to: oldLen - suffixLen,
+      insert: newBody.slice(prefixLen, newLen - suffixLen),
+    };
+
+    // Step 4 — build the ChangeSet and map the current selection forward.
+    let mappedSelection: EditorSelection;
+    try {
+      const changes = ChangeSet.of(spec, oldLen);
+      const ranges = this.view.state.selection.ranges.map((r) =>
+        EditorSelection.range(changes.mapPos(r.anchor, 1), changes.mapPos(r.head, 1)),
+      );
+      mappedSelection = EditorSelection.create(
+        ranges,
+        this.view.state.selection.mainIndex,
+      );
+    } catch {
+      // Defensive — if the change set rejects the spec (shouldn't happen
+      // for a well-formed minimal edit), fall back to a cursor at the
+      // start of the inserted region. The downside is a benign caret
+      // jump; the upside is the dispatch still applies. Wrap the
+      // SelectionRange in a single-range EditorSelection so the dispatch
+      // accepts it.
+      mappedSelection = EditorSelection.create([EditorSelection.cursor(prefixLen)]);
+    }
+
+    // Step 5 — single transaction with both annotations.
+    try {
+      this.view.dispatch({
+        changes: spec,
+        selection: mappedSelection,
+        annotations: [
+          Transaction.userEvent.of('leetcode.peer-sync'),
+          Transaction.addToHistory.of(false),
+        ],
+      });
+    } catch {
+      // Defensive — view may be in teardown.
+      return;
+    }
+
+    // Step 6 — refresh currentDocHash for the modify-handler Pitfall P2
+    // absorption gate (`src/main.ts` step (b) checks currentDocHash; without
+    // this refresh, the NEXT modify event on the same path would be
+    // incorrectly treated as a body change). Fire-and-forget — same pattern
+    // as `reloadFromDisk` step (5).
+    void sha1(newBody).then((hash) => {
+      this.currentDocHash = hash;
+    });
   }
 
   /**
@@ -1191,6 +1327,10 @@ export function mountLeetCodeWidget(
       () => ctl.fenceIndex,
       plugin.selfWriteSuppression,
       delay,
+      // Plan 21-17 — thread the controller's registryKey so the modify-
+      // handler peer-sync fan-out can identify the originating pane via
+      // selfWriteSuppression.peekOriginator(file.path) and skip it.
+      ctl.registryKey,
     );
   }
 
