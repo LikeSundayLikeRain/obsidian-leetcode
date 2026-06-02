@@ -130,6 +130,7 @@ import {
 import {
   makeReadingModeMigrationHandler,
   rerenderReadingModePanes,
+  dispatchLeetcodeRefreshToLivePreviewLeaves,
 } from './main/readingModeMigrationHook';
 // Phase 21 Plan 21-04 Task 1 — 30-day TTL backup cleanup (MIGRATE-05).
 // Fire-and-forget microtask scheduled from Plugin.onload(). Runs
@@ -1760,8 +1761,17 @@ export default class LeetCodePlugin extends Plugin {
           // view.previewMode.rerender(true). Closes UAT Test 1 — the v1.3
           // widget now mounts on the SAME file-open after the migration
           // promise resolves with `migrated === true`.
-          rerenderPreviewLeaves: (path: string) =>
-            rerenderReadingModePanes(this.app, path),
+          //
+          // Cycle-2 R2 follow-up — rerenderReadingModePanes only handles
+          // Reading-mode leaves. Live-Preview / Source-mode leaves need a
+          // leetcodeRefreshAnnotation-tagged CM6 dispatch (the
+          // leetCodeWidgetStateField predicate accepts annotation-only
+          // transactions). Both fire so the post-migrate/repair remount
+          // works in every editor mode.
+          rerenderPreviewLeaves: (path: string) => {
+            rerenderReadingModePanes(this.app, path);
+            dispatchLeetcodeRefreshToLivePreviewLeaves(this.app, path);
+          },
         }),
       ),
     );

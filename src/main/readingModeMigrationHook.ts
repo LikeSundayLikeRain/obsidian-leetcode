@@ -38,6 +38,7 @@
 
 import type { App, TFile } from 'obsidian';
 import { MarkdownView } from 'obsidian';
+import { leetcodeRefreshAnnotation } from '../widget/liveModeBannerStateField';
 
 export interface ReadingModeMigrationHookDeps {
   app: App;
@@ -291,5 +292,57 @@ export function rerenderReadingModePanes(app: App, path: string): void {
   } catch {
     // Outer: an unexpected workspace API shape (e.g., getLeavesOfType
     // missing) must NOT propagate to the migrate orchestrator.
+  }
+}
+
+/**
+ * Phase 21 Plan 21-14 (UAT R2 cycle-2 follow-up) — Live-Preview /
+ * Source-mode rerender hand-off after migrate/repair completes.
+ *
+ * `rerenderReadingModePanes` only handles Reading-mode (`getMode() === 'preview'`)
+ * leaves. For Live-Preview / Source-mode leaves, the equivalent recompute
+ * trigger is a `leetcodeRefreshAnnotation`-tagged CM6 transaction; the
+ * `leetCodeWidgetStateField` predicate (`liveModeBannerStateField.ts:451, 471`)
+ * accepts annotation-only transactions even when `docChanged === false`.
+ *
+ * Together with `rerenderReadingModePanes`, this closes the post-repair
+ * remount gap on the file-open migration handler path.
+ *
+ * Pattern S-05 silent-on-failure across all three layers (outer try/catch,
+ * per-leaf inner try, dispatch try). Never propagates into the migrate
+ * orchestrator.
+ */
+export function dispatchLeetcodeRefreshToLivePreviewLeaves(
+  app: App,
+  path: string,
+): void {
+  try {
+    const leaves = app.workspace.getLeavesOfType('markdown');
+    for (const leaf of leaves) {
+      const view = (leaf as { view?: unknown }).view;
+      if (!(view instanceof MarkdownView)) continue;
+      const v = view as unknown as {
+        file?: { path?: string } | null;
+        getMode?: () => string;
+        editor?: { cm?: { dispatch?: (spec: unknown) => void } };
+      };
+      if (v.file?.path !== path) continue;
+      // Skip Reading-mode leaves; rerenderReadingModePanes handles those.
+      if (typeof v.getMode === 'function' && v.getMode() === 'preview') {
+        continue;
+      }
+      const cm = v.editor?.cm;
+      if (!cm || typeof cm.dispatch !== 'function') continue;
+      try {
+        cm.dispatch({
+          annotations: [leetcodeRefreshAnnotation.of(true)],
+        });
+      } catch {
+        // Inner: swallow per-leaf dispatch exception. No log here —
+        // the outer catch handles wider failure modes.
+      }
+    }
+  } catch {
+    // Outer: unexpected workspace API shape must NOT propagate.
   }
 }
