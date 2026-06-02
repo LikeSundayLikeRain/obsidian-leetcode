@@ -265,7 +265,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 21.1-01-PLAN.md — Per-path attempt-once-this-session gate in liveModeBannerStateField + codeBlockProcessor + main.ts wiring (MIGRATE-FLICKER-01); RED→GREEN with 10 new vitest regression tests + live dev-vault checkpoint covering R10 fix AND R2/R4/R6/R9/autoMigrateOnOpen=OFF/manual-Migrate-retry preservation
+- [~] 21.1-01-PLAN.md — Per-path attempt-once-this-session gate in liveModeBannerStateField + codeBlockProcessor + main.ts wiring (MIGRATE-FLICKER-01); RED→GREEN with 10 new vitest regression tests + live dev-vault checkpoint covering R10 fix AND R2/R4/R6/R9/autoMigrateOnOpen=OFF/manual-Migrate-retry preservation [Task 1 GREEN ✓ — Task 2 human-verify pending]
 
 **UI hint**: no (no new UI; behavioral fix in existing LP path)
 

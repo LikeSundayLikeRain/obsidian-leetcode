@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 
 ## Current Position
 
-Phase: 21 (v1-2-migration) — EXECUTING
-Plan: 1 of 17
-Status: Executing Phase 21
-Last activity: 2026-06-01 -- Phase 21 execution started
+Phase: 21.1 (v1-2-migration-follow-up-typing-flicker-fix) — EXECUTING
+Plan: 21.1-01 (per-path attempt-once gate for migrate/repair)
+Status: Task 1 GREEN complete — awaiting Task 2 human-verify checkpoint
+Last activity: 2026-06-01 -- Phase 21.1 Plan 21.1-01 Task 1 complete; built + deployed to dev vault
 
 ## Performance Metrics
 
