@@ -59,18 +59,6 @@ export class LeetCodeFenceWidget extends WidgetType {
     public readonly fenceIndex: number,
     public readonly sourceHash: string,
     private readonly source: string,
-    /**
-     * Plan 21-14 cycle-2 follow-up — frontmatter `lc-language` value at
-     * StateField build time. Included in `eq()` so a frontmatter-only
-     * write (e.g. `repairFrontmatterIfNeeded` injecting `lc-language`)
-     * forces CM6 to destroy + remount the widget, picking up the
-     * post-repair language instead of the stale Python+Notice fallback.
-     *
-     * Constructor default `''` keeps existing test fixtures working
-     * (they don't pass this argument); the live build path always
-     * supplies the current `lc-language` (or `'<missing>'` sentinel).
-     */
-    public readonly languageKey: string = '',
   ) {
     super();
   }
@@ -130,8 +118,7 @@ export class LeetCodeFenceWidget extends WidgetType {
     return (
       other.plugin === this.plugin &&
       other.file.path === this.file.path &&
-      other.fenceIndex === this.fenceIndex &&
-      other.languageKey === this.languageKey
+      other.fenceIndex === this.fenceIndex
     );
   }
 
