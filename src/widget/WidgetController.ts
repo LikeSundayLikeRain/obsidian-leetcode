@@ -29,6 +29,8 @@ import {
   keymap,
   drawSelection,
   highlightActiveLine,
+  lineNumbers,
+  ViewPlugin,
   type ViewUpdate,
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
@@ -715,10 +717,17 @@ export class WidgetController {
   reconfigureVim(enabled: boolean): void {
     if (this.mountedVimMode === enabled) return;
     this.mountedVimMode = enabled;
+    // Phase 22 D-polish-06 — same-transaction reconfigure of both vim AND
+    // line-numbers Compartments so the user sees both changes apply
+    // atomically (gutter switches between absolute and hybrid in lockstep
+    // with vim activation).
     this.view.dispatch({
-      effects: this.vimCompartment.reconfigure(
-        enabled ? vim({ status: true } as Parameters<typeof vim>[0]) : [],
-      ),
+      effects: [
+        this.vimCompartment.reconfigure(
+          enabled ? vim({ status: true } as Parameters<typeof vim>[0]) : [],
+        ),
+        lineNumbersCompartment.reconfigure(buildLineNumbersExtension(enabled)),
+      ],
     });
   }
 
@@ -998,6 +1007,60 @@ function resolveLanguageSlug(plugin: WidgetMountHost, file: TFile): string {
  *   - createScrollIntoViewExtension (lives in soon-deleted childEditorSync.ts)
  *   - syncExtensions parameter (Plan 19-02 will wire updateListener inline)
  *
+/**
+ * Phase 22 D-polish-06 — line-number gutter Compartment.
+ *
+ * Module-singleton (matches `languageCompartment` pattern, NOT the per-widget
+ * `vimCompartment` pattern). Multiple widgets share one Compartment because
+ * the only mutation is "rebuild the line-numbers extension when vim toggles",
+ * and `Compartment.reconfigure` dispatches per-EditorView regardless of the
+ * Compartment's identity scope.
+ *
+ * `buildLineNumbersExtension` produces:
+ *   - vim OFF: plain `lineNumbers()` — absolute numbering (1, 2, 3, ...)
+ *   - vim ON:  hybrid mode — current line shows the absolute line number;
+ *              all other lines show their distance from the current line
+ *              (matches `:set number relativenumber`).
+ *
+ * The cursor-redraw ViewPlugin is required only in hybrid mode. CM6's gutter
+ * caches by doc state; pure selection changes don't invalidate the cache, so
+ * relative numbers stay stale until a doc edit. The plugin watches for
+ * `selectionSet` updates that cross a line boundary and calls
+ * `view.requestMeasure()` to force a re-render. Pattern verified against the
+ * Obsidian community plugin "Relative Line Numbers".
+ */
+const lineNumbersCompartment = new Compartment();
+
+function buildLineNumbersExtension(vimEnabled: boolean): Extension {
+  if (!vimEnabled) {
+    return lineNumbers();
+  }
+  const formatNumber = (n: number, state: EditorState): string => {
+    const cursorLine = state.doc.lineAt(state.selection.main.head).number;
+    return n === cursorLine ? String(n) : String(Math.abs(n - cursorLine));
+  };
+  const cursorLineRedraw = ViewPlugin.fromClass(
+    class {
+      private lastLine: number;
+      constructor(view: EditorView) {
+        this.lastLine = view.state.doc.lineAt(
+          view.state.selection.main.head,
+        ).number;
+      }
+      update(u: ViewUpdate): void {
+        if (!u.selectionSet) return;
+        const line = u.state.doc.lineAt(u.state.selection.main.head).number;
+        if (line !== this.lastLine) {
+          this.lastLine = line;
+          u.view.requestMeasure();
+        }
+      }
+    },
+  );
+  return [lineNumbers({ formatNumber }), cursorLineRedraw];
+}
+
+/*
  * Phase 20 Plan 20-01 (VIM-02) — the previous unconditional `vim()` injection
  * is now wrapped in a per-widget `vimCompartment.of(...)` so the plugin-side
  * `workspace.on('layout-change')` listener can dispatch a live reconfigure
@@ -1022,6 +1085,10 @@ function buildExtensions(
 
   // Shared visual extensions (both editable and read-only).
   const visual: Extension[] = [
+    // Phase 22 D-polish-06 — line-number gutter (vim-aware).
+    // Vim OFF → absolute (1, 2, 3, ...). Vim ON → hybrid (current line
+    // absolute; others relative). Reconfigured live by `reconfigureVim`.
+    lineNumbersCompartment.of(buildLineNumbersExtension(vimEnabled)),
     languageCompartment.of(buildLanguageExtensions(slug, indent)),
     obsidianSemanticClasses,
     ...createThemedHighlight(),

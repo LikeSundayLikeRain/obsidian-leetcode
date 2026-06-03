@@ -2036,6 +2036,19 @@ button.leetcode-language-chevron:hover {
   background: transparent;
   border-right: none;
 }
+/* Phase 22 D-polish-06 — line-number gutter visual treatment.
+ * Muted color + smaller than 14px content so the gutter reads as chrome,
+ * not as content. Right-aligned numbers + small min-width so the gutter
+ * is consistently sized whether numbers are 1-digit, 2-digit, or 3-digit. */
+.cm-editor .lc-nested-editor .cm-lineNumbers {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 0 8px 0 4px;
+}
+.cm-editor .lc-nested-editor .cm-lineNumbers .cm-gutterElement {
+  text-align: right;
+  min-width: 1.5em;
+}
 .cm-editor .lc-nested-editor .cm-activeLine {
   background: var(--background-modifier-hover);
 }
