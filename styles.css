@@ -2115,13 +2115,23 @@ button.leetcode-language-chevron:hover {
  * .cm-fat-cursor children when entering Insert, but if any straggler exists
  * we want it gone) AND restore the OS-native caret-color that vim() set
  * to transparent at the editor-root level. The native caret is what
- * provides the blinking pipe in Insert mode. */
+ * provides the blinking pipe in Insert mode.
+ *
+ * Specificity note: vim's `caret-color: transparent !important` is
+ * generated through CM6's EditorView.theme system, which produces classes
+ * like `.ͼ1` etc. We override with maximum specificity by targeting all
+ * three relevant levels (.cm-editor, .cm-content, .cm-line) and using
+ * `var(--text-normal, currentColor)` instead of `auto` — the explicit
+ * color ensures the caret renders even if `auto` would otherwise resolve
+ * to a transparent inherited value. */
 .lc-nested-editor.lc-vim-active.lc-vim-insert .cm-fat-cursor {
   display: none !important;
 }
 .lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor,
-.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-content {
-  caret-color: auto !important;
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-scroller,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-content,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-line {
+  caret-color: var(--text-normal, currentColor) !important;
 }
 
 /* Phase 17 gap-closure (17-11, 17-UAT.md Issue 6 sibling) — vim mode
