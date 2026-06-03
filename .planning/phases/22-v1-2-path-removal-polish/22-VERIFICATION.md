@@ -263,4 +263,25 @@ Categories of pre-existing errors (concentrated in `src/main.ts`, `src/widget/Co
 
 **Plugin-store re-review impact:** the reviewer's automated checks scope to runtime-observable concerns (innerHTML, eval, isDesktopOnly, no remote code, no telemetry). All of those are PASS. The `obsidianmd/prefer-window-timers` lint rule is a popout-window correctness suggestion; the `@typescript-eslint/*` rules are type-strictness hygiene. None are plugin-store auto-rejection criteria.
 
+## 22-03-03 THEME-05 Manual Theme Regression Checklist
+
+**Status:** PASS (spot-check) — confirmed in dev vault by user 2026-06-03 against the active Atom theme + the polish surface (hover, font, cursor, line numbers, read-mode size, takeover, blank line) that was stress-tested across the 22-01-B dogfood window.
+
+**Procedure executed:** spot-check against the user's active Atom theme. Phase 22's framing is "deletion + checklist, no new architecture" — the polish surface that the cutover preserves was already visually validated across the 22-01-B and 22-03 deploy cycles. Real-world risk for theme regressions in a deletion-only milestone phase is low.
+
+**Decision rationale:** rigorous 5-theme matrix (Minimal / Things / Catppuccin / Anuppuccin / Atom × 3 views = 30 screenshots + side-by-side diff) was framed in CONTEXT D-gate-03 as the gold-standard procedure but explicitly tagged "manual checklist is sufficient" for the success criterion. User chose spot-check — captures real-vault behavior on their daily theme; remaining 4 themes can be exercised passively during the 7-day BRAT window if desired.
+
+**Polish surface validated** (all PASS in Atom):
+- Hover border absent (D-polish-02)
+- Action row text font (D-polish-03)
+- Read-mode 14px matching Live Preview (D-polish-04)
+- Takeover overlay invisible (D-polish-05)
+- Line-number gutter, vim-aware hybrid (D-polish-06)
+- Cursor mode-class rendering (Insert pipe / Normal block / vim-OFF default) (D-polish-07)
+- Blank line between `## Code` and fence in fresh notes (D-polish-08)
+
+**Build state at validation:** `1.3.0-beta.1` deployed at 2026-06-03 13:40, bundle 1,756,707 B (under HARD_LIMIT 1,800,000), full smoke test passed.
+
+**Escape hatch:** if a P0/P1 theme regression surfaces during the BRAT 7-day window in any of the 4 unverified themes, fix and re-tag `1.3.0-beta.2` (window restarts).
+
 **Acceptance:** PARTIAL PASS — the operative D-gate-02 concern (innerHTML in widget) passes; the broader eslint cleanup is deferred. Phase 22 ships under this disposition.
