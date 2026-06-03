@@ -208,4 +208,16 @@ The overlay element still mounts so its keyboard handler stays available as a de
 
 ## 22-02-01 Vim-Tab Probe
 
-**Status:** _Held for later execution. Will run after 22-01-B dogfood completes and 22-01 Task E lands. See orchestrator plan 22-02-PLAN.md._
+**Status:** RESOLVED (no-repro) by user 2026-06-02 during 22-01-B dogfood.
+
+**Original issue (Phase 20 UAT):** the Plan 20-10 hotfix Tab handler routes Tab through `insertTab` directly, allegedly bypassing vim's input pipeline so the CM5-style block-cursor marker lagged the actual caret by one indent in vim Insert mode.
+
+**Empirical observation 2026-06-02:** the issue cannot be reproduced in the v1.3 widget after the polish chain shipped this session. Most likely contributors: the cursor cleanup (D-polish-07 — clean per-mode rendering, transparent caret restored, fat block / pipe / native caret each handled correctly) eliminated whatever measure-pass timing window made the marker visibly lag in v1.2. The Tab handler in `src/widget/WidgetController.ts:1071-1095` is unchanged from Phase 20-10 — the fix didn't come from touching the Tab path; it came from fixing the cursor rendering surrounding it.
+
+**Disposition:**
+- No code change for D-polish-01.
+- ROADMAP §22 success criterion 7 is satisfied: the marker now tracks correctly in dev-vault dogfood. No README footnote needed; no GitHub issue needed.
+- The 30-min probe in PLAN 22-02 task 22-02-01 is unnecessary — the no-repro observation supersedes the probe.
+- The 22-02-01 task block in `22-02-PLAN.md` can stay as-is for the audit trail; just mark its `<done>` outcome as "supplanted by D-polish-07 — no probe required, no defer required."
+
+**Closing the carry-over:** all 7 polish items in Plan 22-02 are resolved (6 shipped + 1 no-repro). Plan 22-02 is feature-complete — SUMMARY.md can be written once 22-01 closes its remaining sub-steps (C/D/E).
