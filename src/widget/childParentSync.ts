@@ -31,11 +31,15 @@ const DEFAULT_DEBOUNCE_MS = 300;
 
 /**
  * Handle returned by createChildParentSyncExtension. Exposes `flushSync()`
- * for imperative callers (flush-on-unload, flush-on-leaf-change, Cmd-Q)
- * and `cancel()` for teardown.
+ * for imperative callers (flush-on-unload, flush-on-leaf-change, Cmd-Q),
+ * `hasPending()` for the parent→child push gate (skip the push when the
+ * child has unflushed typing — see `pushParentToChild` in
+ * liveModeViewPlugin.ts for the rollback-prevention rationale), and
+ * `cancel()` for teardown.
  */
 export interface ChildParentSyncHandle {
   flushSync(): void;
+  hasPending(): boolean;
   cancel(): void;
 }
 
@@ -105,6 +109,7 @@ export function createChildParentSyncExtension(
 
   const handle: ChildParentSyncHandle = {
     flushSync: doFlush,
+    hasPending: () => timer !== null,
     cancel(): void {
       if (timer !== null) {
         clearTimeout(timer);

@@ -34,7 +34,12 @@
 //     liveModeBannerStateField.ts for justification).
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
-import { Transaction, type Extension } from '@codemirror/state';
+import {
+  ChangeSet,
+  EditorSelection,
+  Transaction,
+  type Extension,
+} from '@codemirror/state';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   ViewPlugin,
@@ -135,6 +140,7 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
       file?: { path?: string };
       view?: EditorView;
       writer?: { hasPending?: () => boolean };
+      syncHandle?: { hasPending?: () => boolean; flushSync?: () => void };
     };
     if (candidate.file?.path !== file.path) continue;
     const childView = candidate.view;
@@ -144,14 +150,82 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
     // push when the widget's debounced disk writer has a pending flush.
     if (candidate.writer?.hasPending?.() === true) continue;
 
+    // Rollback-prevention gate (debug session
+    // vim-cursor-jumps-to-widget-start follow-up). When the child→parent
+    // sync has a pending flush, the child holds typing the parent has
+    // not yet absorbed. Pushing the current parent body into the child
+    // would discard those un-synced characters. Skip the push — the
+    // child is the source of truth during the 300ms debounce window;
+    // the next child→parent flush will bring them back into sync. We
+    // cannot run flushSync() synchronously here because pushParentToChild
+    // executes inside the parent's ViewPlugin.update() and CM6 throws on
+    // re-entrant view.dispatch() during an update.
+    if (candidate.syncHandle?.hasPending?.() === true) continue;
+
     // No-op when child already matches parent.
     const childDoc = childView.state.doc.toString();
     const norm = (s: string) => s.replace(/\r\n/g, '\n').replace(/\s+$/, '');
     if (norm(childDoc) === norm(newBody)) continue;
 
+    // Compute a minimal ChangeSpec (longest common prefix + suffix) and map
+    // the child's current selection forward through it. A full-doc replace
+    // (`from: 0, to: childDoc.length`) collapses every selection coordinate
+    // to offset 0 — visible to the user as the cursor jumping to the
+    // top-left of the widget mid-typing whenever the parent CM6 reflows
+    // (e.g., Obsidian's editor auto-save fires while the child has typing
+    // ahead of the last 300ms child→parent flush).
+    //
+    // Mirrors WidgetController.applyPeerSync (Plan 21-17): same LCP/LCS +
+    // ChangeSet.mapPos(forward-bias) shape that already handles the
+    // analogous case for split-pane peers.
+    const oldLen = childDoc.length;
+    const newLen = newBody.length;
+    let prefixLen = 0;
+    const maxPrefix = Math.min(oldLen, newLen);
+    while (
+      prefixLen < maxPrefix &&
+      childDoc.charCodeAt(prefixLen) === newBody.charCodeAt(prefixLen)
+    ) {
+      prefixLen++;
+    }
+    let suffixLen = 0;
+    const maxSuffix = Math.min(oldLen - prefixLen, newLen - prefixLen);
+    while (
+      suffixLen < maxSuffix &&
+      childDoc.charCodeAt(oldLen - 1 - suffixLen) ===
+        newBody.charCodeAt(newLen - 1 - suffixLen)
+    ) {
+      suffixLen++;
+    }
+    const spec = {
+      from: prefixLen,
+      to: oldLen - suffixLen,
+      insert: newBody.slice(prefixLen, newLen - suffixLen),
+    };
+
+    let mappedSelection: EditorSelection;
+    try {
+      const changes = ChangeSet.of(spec, oldLen);
+      const ranges = childView.state.selection.ranges.map((r) =>
+        EditorSelection.range(
+          changes.mapPos(r.anchor, 1),
+          changes.mapPos(r.head, 1),
+        ),
+      );
+      mappedSelection = EditorSelection.create(
+        ranges,
+        childView.state.selection.mainIndex,
+      );
+    } catch {
+      mappedSelection = EditorSelection.create([
+        EditorSelection.cursor(prefixLen),
+      ]);
+    }
+
     try {
       childView.dispatch({
-        changes: { from: 0, to: childView.state.doc.length, insert: newBody },
+        changes: spec,
+        selection: mappedSelection,
         annotations: [
           syncAnnotation.of(true),
           Transaction.userEvent.of('leetcode.parent-sync'),
