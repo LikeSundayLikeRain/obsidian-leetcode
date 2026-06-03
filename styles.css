@@ -2130,7 +2130,9 @@ button.leetcode-language-chevron:hover {
 .lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor,
 .lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-scroller,
 .lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-content,
-.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-line {
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-content .cm-line,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-line,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-line * {
   caret-color: var(--text-normal, currentColor) !important;
 }
 
