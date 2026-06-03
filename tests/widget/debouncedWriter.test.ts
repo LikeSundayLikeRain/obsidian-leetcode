@@ -80,6 +80,42 @@ const FENCE_NOTE = [
   '',
 ].join('\n');
 
+/**
+ * Drain the asynchronous flush() chain deterministically.
+ *
+ * The flush body awaits vault.read → sha1 (native crypto.subtle.digest
+ * Promise — NOT synchronized with fake timers) → vault.process. Different
+ * Node versions / CI runners need different numbers of event-loop ticks for
+ * the native crypto Promise to resolve. We tick fake time forward in 1ms
+ * increments — strictly less than rateLimitMs (200ms) — so the drain never
+ * crosses the rate-limit boundary and never schedules an unwanted retry.
+ *
+ * Each 1ms tick drains pending microtasks AND fires any sub-rate-limit
+ * timers, which is sufficient regardless of how many native-Promise hops
+ * crypto needs.
+ *
+ * Throws if the loop exhausts before observing the target call count —
+ * surfaces silent flake exhaustion as a clear test error rather than a
+ * misleading `expected 1, got 0` from the trailing assertion.
+ */
+async function drainFlushAsyncChain(
+  app: { vault: { process: ReturnType<typeof vi.fn> } },
+  opts: { target?: number; maxIters?: number } = {},
+): Promise<void> {
+  const target = opts.target ?? 1;
+  const maxIters = opts.maxIters ?? 2000;
+  const calls = () => (app.vault.process as ReturnType<typeof vi.fn>).mock.calls.length;
+  for (let i = 0; i < maxIters; i++) {
+    if (calls() >= target) return;
+    await vi.advanceTimersByTimeAsync(1);
+  }
+  if (calls() < target) {
+    throw new Error(
+      `drainFlushAsyncChain: vault.process called ${calls()} times after ${maxIters}ms of fake-time advancement (expected >= ${target})`,
+    );
+  }
+}
+
 describe('DebouncedWriter', () => {
   let app: ReturnType<typeof makeFakeApp>;
   let file: FakeFile;
@@ -113,15 +149,9 @@ describe('DebouncedWriter', () => {
     w.run();
     await vi.advanceTimersByTimeAsync(399);
     expect(app.vault.process).not.toHaveBeenCalled();
-    // Drain remaining 1ms PLUS pending microtasks from the async flush() chain.
+    // Fire the debounce timer, then drain the async flush chain.
     await vi.advanceTimersByTimeAsync(1);
-    await vi.runAllTimersAsync();
-    // crypto.subtle.digest returns a real Promise that fake timers don't
-    // synchronize with deterministically — drain remaining microtasks.
-    for (let i = 0; i < 5 && (app.vault.process as ReturnType<typeof vi.fn>).mock.calls.length === 0; i++) {
-      await Promise.resolve();
-      await vi.runAllTimersAsync();
-    }
+    await drainFlushAsyncChain(app);
     expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 
@@ -138,14 +168,9 @@ describe('DebouncedWriter', () => {
     // resets each time. We need 400ms past the LAST run().
     await vi.advanceTimersByTimeAsync(399);
     expect(app.vault.process).not.toHaveBeenCalled();
+    // Fire the debounce timer, then drain the async flush chain.
     await vi.advanceTimersByTimeAsync(1);
-    await vi.runAllTimersAsync();
-    // crypto.subtle.digest returns a real Promise that fake timers don't
-    // synchronize with deterministically — drain remaining microtasks.
-    for (let i = 0; i < 5 && (app.vault.process as ReturnType<typeof vi.fn>).mock.calls.length === 0; i++) {
-      await Promise.resolve();
-      await vi.runAllTimersAsync();
-    }
+    await drainFlushAsyncChain(app);
     expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 
@@ -176,12 +201,9 @@ describe('DebouncedWriter', () => {
     w.run();
     await vi.advanceTimersByTimeAsync(999);
     expect(app.vault.process).not.toHaveBeenCalled();
-    // Advance the remaining 1ms, then drain pending timers + microtasks.
-    await vi.advanceTimersByTimeAsync(2);
-    for (let i = 0; i < 5; i++) {
-      await vi.runAllTimersAsync();
-      await Promise.resolve();
-    }
+    // Fire the debounce timer, then drain the async flush chain.
+    await vi.advanceTimersByTimeAsync(1);
+    await drainFlushAsyncChain(app);
     expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 
