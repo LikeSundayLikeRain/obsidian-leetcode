@@ -134,6 +134,19 @@ The override (a) matches the source selector path so specificity wins, (b) restr
 **Tests:** `npm test -- WidgetController` — 14/14 pass after the final port.
 **Deploy:** commit `01e1a76`.
 
+## 22-01-B Dogfood Note: Vim Toggle Requires Reload
+
+**Status:** ACCEPTED as the v1.3 contract — confirmed by user 2026-06-02.
+
+**Observation during dogfood:** Toggling vim ON/OFF in Obsidian Settings does not hot-reload the widget — the user must reload the app (Cmd-R or restart) for the new vim state to apply. The widget's `reconfigureVim` path works for plugin-driven dispatches, but the user-driven Settings-panel toggle does not propagate reliably through the existing `workspace.on('layout-change')` listener.
+
+**Disposition:** Acceptable. Plan 22-03 documents the reload requirement in README "Known notes" section. Users hit the inconvenience once per vim toggle, which is a rare event.
+
+**REQUIREMENTS.md update needed in Plan 22-03 (D-gate-08 / L7 amendment):**
+- VIM-03 traceability marker changes from `"Resolved by Phase 20 live-reconfigure (no banner shipped)"` to `"Resolved by 'reload required' documentation. The Phase 20 reconfigureVim path works for plugin-driven dispatches but Settings-panel toggle requires app reload — accepted as v1.3 contract; banner explicitly NOT shipped per user decision 2026-06-02 during 22-01-B dogfood."`
+
+**Escape hatch:** If BRAT alpha (Plan 22-03 D-gate-04, 7-day window) surfaces user complaints about the reload requirement, ship the VIM-03 banner as a 22.1 hotfix (~30 LOC: Notice from obsidian API hooked into SettingsTab onChange for the vim setting). Banner UX was designed in Phase 20 CONTEXT but never built because Phase 20 thought live-reconfigure was reliable.
+
 ## 22-02-05 Takeover Overlay Hidden (D-polish-05)
 
 **Status:** PASS — confirmed in dev vault by user 2026-06-02. Added during 22-01-B dogfood when user observed the takeover CTA was redundant chrome.
