@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: architecture overview, migration docs, sync interaction notes, and Cmd-Z/Cmd-F scoping behavior.
-status: verifying
-stopped_at: Phase 22 context gathered
-last_updated: "2026-06-02T18:59:51.967Z"
-last_activity: 2026-06-02 -- Phase 21.1 Plan 21.1-01 closed; SUMMARY.md written
+status: executing
+stopped_at: Phase 22 Plan 22-01 + Plan 22-02 complete; awaiting Plan 22-03 release gates
+last_updated: "2026-06-03T00:00:00.000Z"
+last_activity: 2026-06-03 -- Phase 22 Plan 22-01 cutover complete (5 sub-steps + 8 polish items shipped during 22-01-B dogfood)
 progress:
   total_phases: 1
   completed_phases: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** Phase 21 — v1-2-migration
+**Current focus:** Phase 22 — v1-2-path-removal-polish
 
 ## Current Position
 
-Phase: 21.1 (v1-2-migration-follow-up-typing-flicker-fix) — COMPLETE
-Plan: 21.1-01 (per-path attempt-once gate for migrate/repair + R6 fresh-create fix)
-Status: COMPLETE — UAT human-verify approved 2026-06-02. MIGRATE-FLICKER-01 Resolved.
-Last activity: 2026-06-02 -- Phase 21.1 Plan 21.1-01 closed; SUMMARY.md written
+Phase: 22 (v1-2-path-removal-polish) — EXECUTING (Wave 1+2 complete)
+Plan: 2 of 3 complete (22-01 cutover ✓, 22-02 polish ✓ — both shipped 2026-06-03; 22-03 release gates pending)
+Status: Awaiting Plan 22-03 release gates (bundle-size cap, lint, theme regression, README, manifest bump, BRAT alpha, plugin-store re-review)
+Last activity: 2026-06-03 -- Phase 22 cutover complete (commit `306f48a`, net -3,325 LOC across 34 files)
 
 ## Performance Metrics
 

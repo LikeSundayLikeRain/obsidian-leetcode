@@ -303,7 +303,8 @@ Plans:
 
 **Plans:**
 
-- 22-01 — Cutover (default flip + delete v1.2 sources + dead tests + main.ts unwiring + CLAUDE.md conventions strip + userEvent annotations strip)
+0/3 plans executed
+
 - 22-02 — Carry-over polish (vim-Tab investigation + fix-or-defer; widget hover border CSS; action row font CSS)
 - 22-03 — Release gates (THEME-05 manual checklist + bundle-size CI gate + eslint-plugin-obsidianmd clean run + README + CLAUDE.md architecture sketch + manifest version bump) + BRAT alpha + plugin-store re-review
 
@@ -344,7 +345,7 @@ Plans:
 | 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 9/9 | Complete   | 2026-05-31 |
 | 21. v1.2 Migration                          | v1.3      | 17/17 | Complete   | 2026-06-02 |
 | 21.1. v1.2 Migration follow-up (flicker)    | v1.3      | 0/1            | Pending     | -          |
-| 22. v1.2 Path Removal + Polish              | v1.3      | 0/0            | Not started | -          |
+| 22. v1.2 Path Removal + Polish              | v1.3      | 0/3 | Planned    |  |
 
 ## Backlog
 
