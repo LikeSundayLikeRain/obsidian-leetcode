@@ -177,23 +177,45 @@ function renderRunResult(
   }
   const arity = Math.max(responseArity, 1);
 
-  // ── Step 3: per-case pass mask (D-04 strict trim-compare) ──────────────
+  // ── Step 3: per-case pass mask — LC-authoritative ──────────────────────
+  // Priority order: compare_result bitmask → correct_answer boolean →
+  // local trim-compare (defensive last-resort fallback only).
   // null = "no expected available" (custom-input run); no chip rendered.
   const outputs = splitOutput(res.code_answer, arity);
   const expected = splitOutput(res.expected_code_answer, arity);
+  const compareResult =
+    typeof res.compare_result === 'string' ? res.compare_result : '';
+  const correctAnswer =
+    typeof res.correct_answer === 'boolean' ? res.correct_answer : undefined;
+
   const passMask: Array<boolean | null> = [];
   for (let i = 0; i < arity; i++) {
     const exp = expected[i] ?? '';
     const out = outputs[i] ?? '';
+    // Custom-input run: no expected → no chip.
     if (exp.length === 0) {
       passMask.push(null);
-    } else {
-      passMask.push(out.trim() === exp.trim());
+      continue;
     }
+    // LC's per-case bitmask is authoritative when present.
+    if (compareResult.length > i) {
+      passMask.push(compareResult[i] === '1');
+      continue;
+    }
+    // Aggregate boolean — broadcast to all cases when no per-case mask.
+    if (correctAnswer !== undefined) {
+      passMask.push(correctAnswer);
+      continue;
+    }
+    // Defensive fallback — should not fire on a real LC response.
+    passMask.push(out.trim() === exp.trim());
   }
 
   // ── Step 4: aggregate verdict ──────────────────────────────────────────
-  const aggregatePass = passMask.every((m) => m !== false);
+  // Prefer LC's authoritative correct_answer; fall back to passMask aggregate.
+  const aggregatePass = correctAnswer !== undefined
+    ? correctAnswer
+    : passMask.every((m) => m !== false);
   const statusInfo = classifyStatus(
     typeof res.status_code === 'number' ? res.status_code : 10,
     typeof res.status_msg === 'string' ? res.status_msg : undefined,
