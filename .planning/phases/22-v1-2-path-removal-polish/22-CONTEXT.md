@@ -248,6 +248,7 @@ Out of scope: any new v1.3 capabilities (those belong in v1.3.x); migration-infr
 - **v1.4+ triple-backtick bracket pair (BRACKET-01)** — Phase 19 deferred.
 - **VIM-03 reload-on-toggle banner** — NOT shipped per L7 (Phase 20 live-reconfigure works). Mark as "Resolved by Phase 20 live-reconfigure" in REQUIREMENTS.md traceability.
 - **Plugin-store auto-rejection escape hatch** — If the re-review surfaces a blocker (e.g., a hidden `innerHTML` in a path eslint missed), Plan 22-03 fixes it inline; if blocker is non-trivial, mini-phase 22.1 handles.
+- **Block-id UX for the widget fence** — Surfaced during 22-01-B dogfood 2026-06-02. Standard Obsidian `^block-id` syntax already works on the widget fence (verified empirically — `^id` on the line after the closing fence resolves via `[[Note#^id]]`), so the basic linking capability is already there. The deferred enhancement is UX: (a) hide auto-written `^id` lines in Live Preview within LC notes via a CSS rule scoped to a `.lc-slug-note` class; (b) add a "Copy block ref" button to the widget action row that auto-generates a stable ID and copies `[[NoteName#^id]]` to clipboard. Defer to v1.4+ — Phase 22's "deletion + checklist" framing doesn't fit a new action-row button and ID-generation/parent-doc write path. Track as a separate feature request when v1.4 planning starts.
 
 </deferred>
 
