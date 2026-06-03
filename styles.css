@@ -1966,15 +1966,26 @@ button.leetcode-language-chevron:hover {
   border-radius: 4px;
   padding: 8px 0;
 }
-/* Phase 22 D-polish-02 — suppress Obsidian's default :hover border bleed
- * on the widget surface. Scoped to outer wrapper + inner wrapper to leave
- * cursor-marker / focus-ring rules at lines 2014-2035 unaffected. Limited
- * strictly to border + outline so the grey paint at lines 1953-1955 is
- * preserved. */
-.cm-editor .lc-nested-editor:hover,
-.cm-editor .lc-nested-editor .leetcode-widget-codeblock:hover {
-  border: none;
-  outline: none;
+/* Phase 22 D-polish-02 — suppress Obsidian/theme :hover effects bleeding
+ * onto the widget surface. Round 2 (post-dogfood): the round-1 rule only
+ * killed `border` + `outline`, but themes commonly paint hover via
+ * `box-shadow: inset ...` (e.g. Minimal, Things, Catppuccin). The themed
+ * `.cm-editor`/`.cm-focused` hover treatment is also a frequent source.
+ *
+ * Scope notes:
+ * - `:not(:focus-within)` preserves the focus ring at lines ~2014-2035
+ *   when the widget is actually focused (idle hover only suppresses).
+ * - Limited to `border` + `outline` + `box-shadow`. We do NOT touch
+ *   `background` because the grey paint at lines 1953-1955 lives there.
+ * - Includes the parent `.cm-editor:hover` because some themes paint hover
+ *   on the CodeMirror wrapper, not on `.lc-nested-editor` directly. Scoped
+ *   via `:has(.lc-nested-editor)` so only widget-bearing editors are hit. */
+.cm-editor .lc-nested-editor:hover:not(:focus-within),
+.cm-editor .lc-nested-editor .leetcode-widget-codeblock:hover:not(:focus-within),
+.cm-editor:has(.lc-nested-editor):hover:not(:focus-within) {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 /* Defensive — ensure the action row shows the note background even when
  * an outer theme rule paints `.lc-nested-editor`. The Phase 20 widget
