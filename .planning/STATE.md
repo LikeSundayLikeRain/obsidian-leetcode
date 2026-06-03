@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: architecture overview, migration docs, sync interaction notes, and Cmd-Z/Cmd-F scoping behavior.
 status: executing
-stopped_at: Phase 22 Plan 22-01 + Plan 22-02 complete; awaiting Plan 22-03 release gates
-last_updated: "2026-06-03T00:00:00.000Z"
-last_activity: 2026-06-03 -- Phase 22 Plan 22-01 cutover complete (5 sub-steps + 8 polish items shipped during 22-01-B dogfood)
+stopped_at: Phase 22 Plan 22-03 in-tree wave complete; THEME-05 manual checklist + BRAT 7-day dogfood surfaced as checkpoints
+last_updated: "2026-06-03T12:30:00.000Z"
+last_activity: 2026-06-03 -- Phase 22 Plan 22-03 in-tree gates wired (bundle-size + innerHTML + README + CLAUDE.md + version-bump + REQUIREMENTS); 6 commits e6f4aef..04690a1
 progress:
   total_phases: 1
   completed_phases: 0
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 
 ## Current Position
 
-Phase: 22 (v1-2-path-removal-polish) — EXECUTING (Wave 1+2 complete)
-Plan: 2 of 3 complete (22-01 cutover ✓, 22-02 polish ✓ — both shipped 2026-06-03; 22-03 release gates pending)
-Status: Awaiting Plan 22-03 release gates (bundle-size cap, lint, theme regression, README, manifest bump, BRAT alpha, plugin-store re-review)
-Last activity: 2026-06-03 -- Phase 22 cutover complete (commit `306f48a`, net -3,325 LOC across 34 files)
+Phase: 22 (v1-2-path-removal-polish) — EXECUTING (Plan 22-03 in-tree wave wired; BRAT alpha pending)
+Plan: 3 of 3 in-tree wave complete (22-01 cutover ✓, 22-02 polish ✓, 22-03 in-tree gates ✓ — all shipped 2026-06-03)
+Status: Plan 22-03 release gates wired in-tree; awaiting two manual checkpoints — THEME-05 5-theme regression checklist (~80 min) + BRAT 7-day dogfood + plugin-store version-bump-trigger re-review
+Last activity: 2026-06-03 -- Plan 22-03 in-tree wave complete (commits `e6f4aef`..`04690a1` — bundle-size gate, innerHTML scan, README, CLAUDE.md architecture, manifest 1.3.0-beta.1 bump, REQUIREMENTS traceability)
 
 ## Performance Metrics
 
@@ -78,6 +78,9 @@ Recent decisions affecting current work:
 - **v1.3 multi-pane (Q4):** Single-active-per-file is the v1.3 baseline; full live/mirror with promote-on-focus deferred to v1.3.x (MULTI-01/MULTI-02 v1.4+).
 - **v1.3 rollout (Q5):** Default ON from first 1.3.x release — no opt-in alpha period (BRAT-only alpha for plugin-store re-review readiness).
 - **v1.3 migration (Q6, Q7):** 30-day backup retention; migration + first-edit are atomic in a single `vault.process` callback.
+- **Phase 22-03 bundle threshold calibration (2026-06-03):** HARD_LIMIT preserved at 1,800,000 (Phase 17 D-19 user-approved ceiling) instead of lowered to v1.2 baseline 1,706,000 as 22-03 originally proposed. Phase 22-02 polish suite re-pulled +49 KB CodeMirror surface (lineNumbers gutter port, per-mode vim cursor rendering, hover-border CSS, etc.); the v1.2 ratchet became infeasible at the actual measured 1,756,707 size. SOFT_WARN drops to 1,760,000 — fires on any feature regression past polish within ~1 KB of growth.
+- **VIM-03 disposition (2026-06-03 per 22-01-B dogfood):** vim-toggle in Settings does NOT hot-reload; user must reload Obsidian. Banner explicitly NOT shipped. README "Known notes" section documents the requirement. REQUIREMENTS.md VIM-03 marker = "Resolved by 'reload required' documentation."
+- **POLISH-03 scope-boundary deferral (2026-06-03):** innerHTML scan in `src/widget/` PASS (zero active assignments — operative D-gate-02 concern intact). `npm run lint` 81-error baseline pre-existed Phase 22 (verified at commit 245f45b — identical output). Per Rule 3 SCOPE BOUNDARY, deferred to a Phase 22.5 mini-phase scope (~3 hours: `--fix` auto-corrections + ~26 hand-fixes + baseline-gate wiring). Plugin-store auto-rejection guard intact.
 
 ### Pending Todos
 
@@ -118,7 +121,7 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-02T18:11:30.734Z
-Stopped at: Phase 22 context gathered
-Resume file: .planning/phases/22-v1-2-path-removal-polish/22-CONTEXT.md
-Next action: `/gsd-plan-phase 20`
+Last session: 2026-06-03T12:30:00.000Z
+Stopped at: Plan 22-03 in-tree wave complete; THEME-05 + BRAT manual checkpoints surfaced to user
+Resume file: .planning/phases/22-v1-2-path-removal-polish/22-03-SUMMARY.md
+Next action: User executes THEME-05 manual checklist (Task 22-03-03, ~80 min) + pushes `1.3.0-beta.1` tag and runs BRAT 7-day dogfood (Task 22-03-07). On BRAT pass: GA tag bump (`1.3.0`) + plugin-store re-review submission. On BRAT fail: hotfix lane to `1.3.0-beta.2` re-tag or mini-phase 22.1 escalation.

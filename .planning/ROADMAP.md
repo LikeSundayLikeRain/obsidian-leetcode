@@ -65,7 +65,7 @@ Full milestone detail: [.planning/milestones/v1.2-ROADMAP.md](milestones/v1.2-RO
 - [x] **Phase 20: Reconciliation, UX, Action Row, Section Protection** — External-edit reconciliation + conflict modal, action row inside widget, language switching via metadataCache, narrowed `sectionProtectionExtension`, vim live-reconfigure (completed 2026-05-30)
 - [x] **Phase 21: v1.2 Migration** — Lazy-on-open atomic migration of v1.2 fence tags → `leetcode-solve`, backup sidecar with 30-day retention, idempotent detection, CI fixtures across v1.0/v1.1/v1.2 sample notes (completed 2026-06-01)
 - [x] **Phase 21.1: v1.2 Migration follow-up — typing-flicker fix** — UAT R10 closed (per-path attempt-once gate) + R6 fresh-create regression closed (wait for metadataCache before openLinkText). MIGRATE-FLICKER-01 resolved (completed 2026-06-02).
-- [ ] **Phase 22: v1.2 Path Removal + Polish** — Hard cutover; delete 5 legacy files (~2,400 LOC net), drop `'leetcode.*'` userEvent convention, theme regression gate, BRAT alpha, plugin-store re-review
+- [~] **Phase 22: v1.2 Path Removal + Polish** — Hard cutover (DONE 2026-06-03, net −3,325 LOC across 34 files); polish suite (DONE 2026-06-03, 8 items); release gates wired in-tree (DONE 2026-06-03 — bundle-size CI gate, innerHTML scan, README v1.3 update, CLAUDE.md ## Architecture sketch, manifest 1.3.0-beta.1 bump, REQUIREMENTS traceability close). Pending two manual checkpoints: THEME-05 5-theme regression checklist (~80 min) + BRAT 7-day dogfood + plugin-store version-bump-trigger re-review. v1.3 milestone closes on BRAT pass.
 
 </details>
 
@@ -344,8 +344,8 @@ Plans:
 | 19. Widget Foundation + One-Way Sync        | v1.3      | 5/4 | Complete   | 2026-05-29 |
 | 20. Reconciliation, UX, Action Row, Section Protection | v1.3 | 9/9 | Complete   | 2026-05-31 |
 | 21. v1.2 Migration                          | v1.3      | 17/17 | Complete   | 2026-06-02 |
-| 21.1. v1.2 Migration follow-up (flicker)    | v1.3      | 0/1            | Pending     | -          |
-| 22. v1.2 Path Removal + Polish              | v1.3      | 0/3 | Planned    |  |
+| 21.1. v1.2 Migration follow-up (flicker)    | v1.3      | 1/1            | Complete    | 2026-06-02 |
+| 22. v1.2 Path Removal + Polish              | v1.3      | 3/3 | Executing (in-tree wave done; BRAT alpha + plugin-store re-review checkpoints pending)    | 2026-06-03 (in-tree) |
 
 ## Backlog
 
