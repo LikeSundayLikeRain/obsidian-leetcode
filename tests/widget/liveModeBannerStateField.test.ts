@@ -674,6 +674,29 @@ describe('Plan 21-11 Task 2 — legacyBannerStateField + leetCodeWidgetStateFiel
         ],
       });
 
+      // Seed metadataCache with lc-language AFTER EditorState.create (which
+      // synchronously triggered repairFrontmatterIfNeeded because lc-language
+      // was missing) but BEFORE flushMicrotasks() resolves the promise. The
+      // production-code post-repair poll (waitForCacheAndDispatch in
+      // src/widget/liveModeBannerStateField.ts ~line 437) will find the value
+      // on its first iteration and dispatch synchronously inside the `.then`
+      // handler — exercising the canonical happy path (cache reflects the
+      // write quickly, no setTimeout fallback needed). Prior to commit
+      // d6e41d0 (Plan 21-14 cycle-2 follow-up) the post-repair dispatch fired
+      // unconditionally; the new poll waits for the cache write to land, so
+      // this test fixture must now mirror that write.
+      (
+        plugin.app.metadataCache as unknown as {
+          setFrontmatter: (
+            path: string,
+            fm: Record<string, unknown>,
+          ) => void;
+        }
+      ).setFrontmatter(FILE_PATH, {
+        'lc-slug': 'two-sum',
+        'lc-language': 'python3',
+      });
+
       await flushMicrotasks();
 
       // (a) repair was invoked.

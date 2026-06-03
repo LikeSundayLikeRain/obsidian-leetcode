@@ -60,6 +60,11 @@ vi.mock('@codemirror/view', () => {
       none: 'mock-decoration-none',
     },
     WidgetType: class {},
+    // Phase 22 D-polish-06 — line-number gutter (vim-aware) imports.
+    // Stubs only — these tests don't assert on gutter behavior.
+    lineNumbers: vi.fn().mockReturnValue('mock-line-numbers-ext'),
+    gutter: vi.fn().mockReturnValue('mock-gutter-ext'),
+    GutterMarker: class { eq() { return false; } toDOM() { return document.createTextNode(''); } },
   };
 });
 

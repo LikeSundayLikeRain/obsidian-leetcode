@@ -88,6 +88,13 @@ vi.mock('@codemirror/view', () => {
     keymap: { of: vi.fn(() => 'mock-keymap-ext') },
     drawSelection: vi.fn(() => 'mock-draw-selection-ext'),
     highlightActiveLine: vi.fn(() => 'mock-highlight-active-line-ext'),
+    // Phase 22 D-polish-06 + D-polish-07 — line-number gutter + cursor
+    // mode-class extensions imported from @codemirror/view. Stubs only —
+    // these tests don't assert on gutter or cursor behavior.
+    lineNumbers: vi.fn(() => 'mock-line-numbers-ext'),
+    gutter: vi.fn(() => 'mock-gutter-ext'),
+    GutterMarker: class { eq() { return false; } toDOM() { return document.createTextNode(''); } },
+    ViewPlugin: { fromClass: vi.fn(() => 'mock-view-plugin-from-class'), define: vi.fn(() => 'mock-view-plugin-define') },
   };
 });
 
