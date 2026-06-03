@@ -2194,21 +2194,16 @@ button.leetcode-language-chevron:hover {
 .lc-nested-editor[data-pane-state] {
   position: relative;
 }
-.lc-nested-editor[data-pane-state="active"] > .lc-takeover-overlay {
-  display: none;
-}
+.lc-nested-editor[data-pane-state="active"] > .lc-takeover-overlay,
+/* Phase 22 D-polish-05 — peer-mode overlay is redundant chrome.
+ * Focus-driven takeover already promotes the peer pane to active when the
+ * user clicks into the second pane (multiPaneCoordinator listens for
+ * active-leaf-change). The overlay element still mounts so its keyboard
+ * handler stays available, but it's invisible and pointer-transparent so
+ * clicks pass through to the underlying CM6 instance. */
 .lc-nested-editor[data-pane-state="peer"] > .lc-takeover-overlay {
-  position: absolute;
-  inset: 0;
-  background: var(--background-secondary);
-  opacity: 0.55;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border-radius: 4px;
-  pointer-events: auto;
-  z-index: 5;
+  display: none;
+  pointer-events: none;
 }
 .lc-nested-editor[data-pane-state="peer"] > .lc-takeover-overlay:hover {
   border: 1px solid var(--interactive-accent);
