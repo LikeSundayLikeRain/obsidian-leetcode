@@ -14,7 +14,12 @@
 
 ## 22-02-03 Action Row Font
 
-**Status:** _Pending — Task 22-02-03 next._
+**Status:** Ready for visual check post-deploy.
+**CSS rule added:** `.leetcode-code-actions, .leetcode-code-actions * { font-family: var(--font-text); }` — inserted after line 970 (after the `!important` cascade-override block at lines 961-970). Base-class specificity should win against `.cm-content`'s monospace cascade since `.cm-content` does not declare `font-family` with `!important`. If dev-vault check shows monospace still wins, add `!important` and document.
+**Build:** `npm run build` clean.
+**Deploy:** see commit log.
+**Visual check (human-driven, dogfood):** open an LC note with widget mounted; inspect the action row chevron + buttons — confirm they render in the user's text font (not monospace). DevTools Computed `font-family` should show the resolved `var(--font-text)` value (e.g., -apple-system, BlinkMacSystemFont, Inter), not Menlo / Consolas / monospace.
+**Acceptance:** PASS pending user dogfood confirmation.
 
 ## 22-02-04 Read-Mode Font-Size
 

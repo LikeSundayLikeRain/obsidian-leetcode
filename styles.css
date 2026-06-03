@@ -969,6 +969,17 @@
   padding-top: 8px !important;
 }
 
+/* Phase 22 D-polish-03 — action row chrome reads as UI, not as code.
+ * The chevron + buttons inherit var(--font-monospace) from the surrounding
+ * .cm-editor / .cm-content cascade when the action row is mounted inside
+ * the widget DOM. Override to var(--font-text) so the controls render as
+ * UI chrome. The descendant selector (`.leetcode-code-actions *`) covers
+ * chevron text, button labels, and the language-name display. */
+.leetcode-code-actions,
+.leetcode-code-actions * {
+  font-family: var(--font-text);
+}
+
 /* Phase 05.5 (POLISH) — section-lock heading-marker hide.
  *
  * Lines decorated with .leetcode-locked-heading-line are heading lines whose
