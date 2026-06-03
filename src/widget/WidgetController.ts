@@ -27,6 +27,7 @@
 import {
   EditorView,
   GutterMarker,
+  ViewPlugin,
   gutter,
   keymap,
   drawSelection,
@@ -730,6 +731,18 @@ export class WidgetController {
         lineNumbersCompartment.reconfigure(buildLineNumbersExtension(enabled)),
       ],
     });
+    // Phase 22 D-polish-07 — strip orphaned vim mode classes when vim
+    // toggles OFF. The mode-class ViewPlugin won't run again until a fresh
+    // transaction touches the editor (which may be after a delay or never),
+    // so without this line the previous mode CSS could keep wrong-cursor
+    // visibility after vim is disabled.
+    if (!enabled) {
+      try {
+        this.container.classList.remove('lc-vim-active', 'lc-vim-insert');
+      } catch {
+        /* swallow — container may be in teardown */
+      }
+    }
   }
 
   /**
@@ -1071,6 +1084,63 @@ function buildLineNumbersExtension(vimEnabled: boolean): Extension {
   return vimEnabled ? createRelativeLineNumberGutter() : lineNumbers();
 }
 
+/**
+ * Phase 22 D-polish-07 — clean cursor rendering by vim mode.
+ *
+ * Toggles `.lc-vim-insert` class on the widget's container element based on
+ * the live vim Insert-mode state. CSS in `styles.css` keys on this class to
+ * show only the cursor layer that matches the current mode:
+ *   - present (Insert mode)        → blinking pipe visible, fat cursor hidden
+ *   - absent (Normal/Visual/OFF)   → fat cursor visible (or default pipe when
+ *                                    vim is OFF — `.cm-fat-cursor` doesn't
+ *                                    exist when vim is inactive so the rule
+ *                                    is a no-op)
+ *
+ * Replaces v1.2's "force both cursor layers visible" compromise (Phase 17
+ * gap-closure 17-11 + Phase 18 in `childEditorFactory.ts:createVimIsolation
+ * Extension`), which had to keep both layers visible because the vim
+ * fat-cursor measure-pass was unreliable in the nested-editor mount. The
+ * v1.3 widget mount is more stable — verified empirically during 22-01-B
+ * dogfood — so we can show only the matching cursor.
+ */
+function createVimModeClassExtension(container: HTMLElement): Extension {
+  return ViewPlugin.fromClass(
+    class {
+      constructor(view: EditorView) {
+        this.sync(view);
+      }
+      update(u: ViewUpdate): void {
+        // Sync on any transaction — vim mode flips happen on key events
+        // which always produce a transaction (even no-op selection ones).
+        if (
+          u.selectionSet ||
+          u.docChanged ||
+          u.focusChanged ||
+          u.transactions.length > 0
+        ) {
+          this.sync(u.view);
+        }
+      }
+      private sync(view: EditorView): void {
+        const cm = getCM(view);
+        const vimState = cm?.state?.vim;
+        // vim is "active" whenever the vim() extension is loaded — even
+        // in Normal/Visual mode. We detect this via the presence of the
+        // vim state object on the CM5 adapter (set by @replit/codemirror-
+        // vim during its setup hook). Insert is a sub-state of active.
+        const active = !!vimState;
+        const insert = !!vimState?.insertMode;
+        try {
+          container.classList.toggle('lc-vim-active', active);
+          container.classList.toggle('lc-vim-insert', insert);
+        } catch {
+          /* swallow — container may be in teardown */
+        }
+      }
+    },
+  );
+}
+
 /*
  * Phase 20 Plan 20-01 (VIM-02) — the previous unconditional `vim()` injection
  * is now wrapped in a per-widget `vimCompartment.of(...)` so the plugin-side
@@ -1091,6 +1161,10 @@ function buildExtensions(
    *  When present, the extension is appended directly. Editable Live-Preview
    *  mounts pass this in. Read-only mounts skip. */
   syncExtension?: Extension,
+  /** Phase 22 D-polish-07 — outer `.lc-nested-editor` container. The vim
+   *  mode-class ViewPlugin toggles `.lc-vim-insert` on this element so CSS
+   *  can show only the cursor layer matching the current vim mode. */
+  modeClassContainer?: HTMLElement,
 ): Extension[] {
   const indent = plugin.settings.getIndentSizeOverride();
 
@@ -1135,6 +1209,15 @@ function buildExtensions(
     vimCompartment.of(
       vimEnabled ? vim({ status: true } as Parameters<typeof vim>[0]) : [],
     ),
+    // Phase 22 D-polish-07 — vim mode → `.lc-vim-insert` class on container.
+    // CSS keys on the class to render only the cursor layer matching the
+    // current mode (Insert → blinking pipe; Normal/Visual → solid fat
+    // block; vim OFF → default pipe). Container falls back to undefined
+    // for callers that don't pass it (e.g. unit tests building extensions
+    // out of context); the extension is a no-op when undefined.
+    ...(modeClassContainer
+      ? [createVimModeClassExtension(modeClassContainer)]
+      : []),
     // Plan 20-10 hotfix part 7 — Tab/Shift-Tab handler. Behavior:
     //   - When vim is active and NOT in Insert mode (Normal/Visual/etc.),
     //     return false so the keystroke falls through to vim's own
@@ -1322,6 +1405,7 @@ export function mountLeetCodeWidget(
       vimEnabled,
       onDocChanged,
       undefined,
+      container,
     ),
   });
 

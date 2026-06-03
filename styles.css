@@ -2068,34 +2068,41 @@ button.leetcode-language-chevron:hover {
  * site (src/main/childEditorTheme.ts: `var(--code-keyword, #ff7b72)`),
  * so Obsidian's native --code-* wins via cascade and the GitHub-dark
  * hex codes only fire when --code-* is genuinely undefined. */
-/* Phase 17 gap-closure (17-11, 17-UAT.md Issue 5) — force cursor
- * visibility so vim Insert-mode caret renders deterministically.
- * @replit/codemirror-vim relies on a measure-pass after Normal → Insert
- * transition; the Decoration.widget({block:true}) mount can leave the
- * cursor element transparent until the next user keystroke. Forcing
- * opacity + visibility makes the cursor visible regardless of the
- * vim package's measure timing. Applies to both .cm-cursor (Insert
- * mode caret) and .cm-fat-cursor (Normal mode block cursor).
+/* Phase 22 D-polish-07 — clean cursor rendering by vim mode.
  *
- * Scoped to .lc-nested-editor so the rule applies ONLY to the child
- * editor — Obsidian's parent editor and other CM6 instances elsewhere
- * in the vault are unaffected. */
-/* Phase 18: Force both cursor layers visible. The pipe cursor always renders
- * as a fallback — in Normal mode, vim's fat cursor overlays on top. After
- * focus-steal events (hotkeys, property editor), the pipe remains visible
- * even when vim's fat cursor doesn't render. No blink on either layer. */
-.lc-nested-editor .cm-vimCursorLayer {
-  display: block !important;
-  animation: none !important;
+ * Replaces the v1.2 "force both cursor layers visible" compromise (Phase 17
+ * gap-closure 17-11 + Phase 18) — the v1.2 nested editor needed both layers
+ * always visible because the vim fat-cursor measure-pass was unreliable
+ * after focus-steal events. The v1.3 widget mount is more stable
+ * (verified empirically during 22-01-B dogfood), so we can render only the
+ * cursor layer matching the current mode.
+ *
+ * Mode discrimination via TWO classes on the widget container, toggled by
+ * createVimModeClassExtension in WidgetController.ts:
+ *   - `.lc-vim-active` → vim extension is loaded (Insert OR Normal OR Visual)
+ *   - `.lc-vim-insert` → vim is loaded AND in Insert mode (subset of active)
+ *
+ * Three-state mapping:
+ *   - Vim OFF (no `.lc-vim-active`)            → CM6 default pipe (no override).
+ *   - Vim Normal/Visual (active, not insert)  → fat block visible, pipe hidden.
+ *   - Vim Insert (active and insert)          → pipe visible (with blink),
+ *                                                fat block hidden.
+ *
+ * Critical correctness: only override `.cm-cursor` when vim is ACTIVE.
+ * `.lc-nested-editor:not(.lc-vim-active) .cm-cursor` retains the CM6 default
+ * blinking pipe, so non-vim users don't get a hidden cursor.
+ */
+.lc-nested-editor.lc-vim-active:not(.lc-vim-insert) .cm-fat-cursor {
+  display: block;
 }
-.lc-nested-editor .cm-editor .cm-cursorLayer,
-.lc-nested-editor .cm-editor:not(.cm-focused) .cm-cursorLayer,
-.lc-nested-editor .cm-layer-above.cm-cursorLayer {
-  display: block !important;
-  animation: none !important;
+.lc-nested-editor.lc-vim-active:not(.lc-vim-insert) .cm-cursor {
+  display: none !important;
 }
-.lc-nested-editor .cm-cursor {
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-cursor {
   display: block !important;
+}
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-fat-cursor {
+  display: none !important;
 }
 
 /* Phase 17 gap-closure (17-11, 17-UAT.md Issue 6 sibling) — vim mode
