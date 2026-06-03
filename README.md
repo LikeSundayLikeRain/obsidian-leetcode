@@ -4,6 +4,73 @@ Browse, solve, and note LeetCode problems inside your Obsidian vault. Every
 solved problem becomes a first-class note — tagged, linked, and discoverable —
 so practice builds a knowledge graph instead of scattered code files.
 
+This plugin communicates with `leetcode.com` to fetch problems and submit
+solutions. See the [Network usage](#network-usage) section below for the
+full list of hosts contacted.
+
+## v1.3 — Inline widget architecture
+
+**v1.3** introduces an inline widget architecture: every `leetcode-solve`
+fence renders as a self-contained CodeMirror editor inside your note, with
+edits flowing to disk via debounced `vault.process` writes. The dual-CM6
+nested editor + bidirectional sync from v1.2 has been retired. The file is
+the single source of truth; the widget writes through one mutation primitive;
+language metadata lives entirely in the `lc-language` frontmatter field.
+
+### Migration from v1.0 / v1.1 / v1.2
+
+Existing v1.0 / v1.1 / v1.2 notes auto-migrate to the `leetcode-solve` fence
+tag the first time you open them in 1.3.x. Migration is a single atomic
+`vault.process` write — no half-migrated state ever lands on disk.
+
+- **Backup sidecar:** before each migration the original note is copied to
+  `.obsidian/plugins/obsidian-leetcode/migration-backup-{slug}-{ISO-timestamp}/`.
+- **Backup retention:** backups auto-delete after 30 days.
+- **`autoMigrateOnOpen` setting:** default ON. Toggle OFF to migrate manually
+  via the `LeetCode: Migrate this note` command palette entry.
+- **Reassurance:** your existing notes are not modified until you open them.
+  The migration is idempotent — opening an already-migrated note is a no-op.
+
+### How sync works
+
+The widget's editing model is one-way: widget edits are the only source of
+new content; the file is the canonical store.
+
+- **Debounced writes:** widget edits write to disk via `vault.process` with
+  ~400 ms debounce by default (configurable to 300 / 500 / 1000 / 2000 ms in
+  Settings → LeetCode → Sync).
+- **External edits reload the widget:** if another pane, Obsidian Sync, or a
+  CLI tool (`git pull`, etc.) modifies the file, the widget reloads with your
+  cursor position preserved.
+- **Conflict modal:** if an external edit arrives while you are mid-keystroke,
+  a `Keep mine / Keep external / View diff` modal appears so neither side is
+  silently dropped.
+
+### Keyboard scoping
+
+- **Cmd-Z / Ctrl-Z (Undo):** per-widget. Pressing undo inside the widget undoes
+  widget edits; pressing it outside undoes parent-doc edits. The two undo
+  stacks are independent — typing in the widget does not pollute the parent
+  doc's undo stack and vice versa.
+- **Cmd-F / Ctrl-F (Find):** focus-scoped. Pressing find inside the widget
+  searches widget content; outside, it searches the parent doc. The active
+  search scope follows your cursor.
+
+### Known notes
+
+- **Vim toggle requires reload:** toggling vim mode ON/OFF in
+  `Settings → Editor → Vim Mode` does not hot-reload the widget. Reload
+  Obsidian (Cmd-R or restart) for the new vim state to apply. The plugin's
+  internal `Compartment.reconfigure` path works for plugin-driven dispatches
+  but the user-driven Settings-panel toggle does not propagate reliably.
+  This is a known v1.3 contract.
+- **Block-id widget UX deferred to v1.4+:** standard Obsidian `^block-id`
+  syntax already works on the widget fence — appending `^id` on the line
+  after the closing fence resolves via `[[Note#^id]]`. The deferred
+  enhancement is UX polish (auto-hiding generated `^id` lines in Live Preview
+  and a one-click "Copy block ref" button); the basic linking capability is
+  available today.
+
 ## Features
 
 - Browse the LeetCode problem list with search + difficulty/status filters
@@ -109,7 +176,12 @@ Open Settings → LeetCode. Three sections:
 
 ### Code editor
 
-The plugin renders the `## Code` fence as an embedded code editor with syntax highlighting by default. If you prefer Obsidian's native markdown editor (for custom CodeMirror plugins, accessibility tooling, or any other reason), open Settings → LeetCode → Code editor and turn off **Use nested code editor**, then reload Obsidian. Run / Submit / Reset / Retrieve last submission / AI commands all continue to work on the raw markdown fence.
+The plugin renders the `## Code` fence as an embedded inline-widget editor with
+syntax highlighting, auto-indent, bracket matching, and per-language comment
+toggling. The widget is the only editor surface in v1.3 — the v1.2 nested-editor
+fallback path was retired in 1.3.0. Run / Submit / Reset / Retrieve last
+submission / AI commands all continue to work via the action row mounted inside
+the widget.
 
 ## Troubleshooting
 
@@ -119,33 +191,44 @@ The plugin renders the `## Code` fence as an embedded code editor with syntax hi
 - `LeetCode is slow to respond. Try again.` — LC did not answer within 10 seconds. Judge or network latency; retry manually.
 - Run/Submit buttons don't appear — verify the note has `lc-slug` in its frontmatter (only LC-problem notes show the buttons). The buttons render in both Reading mode and Edit mode (Live Preview + Source). If they still don't appear after toggling the plugin off and on, check the developer console (Cmd-Option-I) for errors.
 
-### Section Locking
+### Section Protection
 
-Problem notes (any note with an `lc-slug` frontmatter entry) make plugin-owned regions read-only in Edit Mode (Live Preview + Source). The lock is silent: typing or pasting into a locked region simply has no effect — there's no Notice or warning. If you find yourself typing and the keystroke isn't appearing, check the heading you're under.
+Problem notes (any note with an `lc-slug` frontmatter entry) make a small
+set of plugin-owned regions read-only in Edit Mode (Live Preview + Source).
+The protection is silent: typing or pasting into a protected region simply
+has no effect — there's no Notice or warning.
 
-**Locked regions** (read-only):
+**Protected regions** (read-only):
 
-````text
-## Problem            ← heading + entire body
-## Code               ← heading line only
-```python             ← fence opener (including the language tag)
-```                   ← fence closer
-## Techniques         ← heading line only
-## Notes              ← heading line only
-````
+- `## Problem` — heading and entire body (the plugin overwrites this on
+  background refresh).
+- `## Techniques` — heading line only (the plugin writes `[[Wikilinks]]`
+  underneath on Accepted submissions).
 
 **Editable regions:**
 
-- The `## Code` body between the opening and closing fence — this is your active solving surface.
-- The `## Techniques` body — you can add manual `[[Wikilinks]]` here; future AI-driven analysis will also write here.
-- The `## Notes` body — your own notes about the problem, fully under your control.
-- `## Custom Tests` (legacy section) — never locked; the plugin doesn't read or write it.
+- The `## Code` body — owned by the inline widget; you write your solution
+  here. The widget itself enforces the fence boundaries via
+  `EditorView.atomicRanges`, so your cursor cannot stray into the fence
+  opener / closer lines.
+- The `## Techniques` body — you can add manual `[[Wikilinks]]` here; AI-driven
+  analysis will also write here.
+- The `## Notes` body — your own notes about the problem, fully under your
+  control.
+- `## Custom Tests` (legacy section) — never protected; the plugin doesn't
+  read or write it.
 
-**Why this exists:** the plugin overwrites `## Problem` on background refresh, the `## Code` fence body on Past Submissions / Copy-to-Code, and `## Techniques` + frontmatter on Accepted submissions. Locking the heading lines and structural anchors prevents your edits from accidentally landing in regions the plugin is about to overwrite.
+**Switching languages:** click the language chevron in the action row at the
+top of the widget. It rewrites the fence opener atomically (Cmd-Z reverts the
+change inside the widget's per-widget undo stack) and updates the
+`lc-language` frontmatter. The fence opener tag is `leetcode-solve` in v1.3 —
+you do not edit it directly.
 
-**Switching languages:** the fence opener line (e.g. ` ```python `) is locked, so you cannot rename the language by typing into the fence tag. Use the chevron dropdown next to the Run/Submit buttons — it rewrites the opener atomically (Cmd-Z reverts the change) and updates the `lc-language` frontmatter.
-
-**Cursor behavior:** when the cursor lands inside a locked region (via click or arrow), it automatically snaps to the nearest editable position outside. You can still select across locked regions to copy text — only typing into a locked region is suppressed.
+**Why this exists:** locking the `## Problem` body and the `## Techniques`
+heading prevents your edits from accidentally landing in regions the plugin
+is about to overwrite. v1.3 narrows protection sharply versus v1.2: fence
+opener / closer protection is no longer needed because the widget owns the
+fence range.
 
 ## License
 
@@ -172,7 +255,12 @@ For local testing, copy `main.js`, `manifest.json`, and `styles.css` into `<your
 The production bundle (`main.js`) is gated by CI (`scripts/check-bundle-size.mjs`).
 
 - **Hard ceiling: 1.8 MB.** PRs that push `main.js` over 1,800,000 bytes fail CI.
-- **Current size (v1.2):** ~1.71 MB raw / ~459 KB gzipped. Language packs for the nested code editor account for the increase from v1.1.
+- **Soft warn: 1.76 MB.** PRs that push `main.js` over 1,760,000 bytes emit a CI
+  warning so feature drift is caught well before the hard cap.
+- **Current size (v1.3):** ~1.76 MB raw. The v1.2 path deletion (~3,325 LOC
+  removed) and the v1.3 polish suite (line-number gutter port, per-mode vim
+  cursor rendering, hover-border override, action row font) net out to a
+  small +49 KB delta versus the v1.2 baseline.
 
 Run the gate locally before pushing:
 
