@@ -107,6 +107,47 @@ The override (a) matches the source selector path so specificity wins, (b) restr
 
 **Acceptance:** PASS pending user dogfood confirmation. If specificity insufficient (read-mode still 16px), add `!important` and document.
 
+## 22-02-07 Clean Cursor by Vim Mode (D-polish-07)
+
+**Status:** PASS — confirmed in dev vault by user 2026-06-02. Added during 22-01-B dogfood.
+
+**Behavior verified:**
+- Vim OFF → blinking pipe (CM6 default; no override applied).
+- Vim Insert mode (`i`) → blinking pipe (OS-native caret restored).
+- Vim Normal mode (`Esc`) → solid red fat block (no blink).
+- Vim Visual mode (`v`) → solid red fat block at the moving end.
+
+**Implementation trail (4 commits — vim's cursor architecture has 3 hidden layers):**
+
+| Commit | Approach | Outcome |
+|--------|----------|---------|
+| `675d7e2` | `createVimModeClassExtension` ViewPlugin toggling `.lc-vim-active` + `.lc-vim-insert` classes; CSS three-state `display:none/block` rules | Wrong direction — only hid the wrong cursor; didn't address blink (Normal) or hidden caret (Insert) |
+| `3fe5370` | Added `animation: none !important` on `.cm-vimCursorLayer` for Normal mode + `caret-color: auto` on `.cm-editor`/`.cm-content` for Insert | Normal mode FIX (block stopped blinking); Insert mode pipe still missing |
+| `dc61ffa` | Broadened caret-color override to `.cm-scroller`, `.cm-content`, `.cm-line` levels; switched to `var(--text-normal, currentColor)` | DevTools confirmed `.cm-content` got the right caret-color but `.cm-line` still showed `rgba(0,0,0,0)` |
+| `15599b1` | Added `.cm-content .cm-line` and `.cm-line *` to the override selectors with same `var(--text-normal)` value | **PASS** — cursor visible in Insert mode |
+
+**Root cause (verified by reading `@replit/codemirror-vim/dist/index.js`):**
+
+vim's cursor architecture has 3 layers we had to address independently:
+
+1. **Vim's own theme rule** sets `caret-color: transparent !important` on `.cm-editor` so the OS-native caret is hidden in Normal/Visual mode (vim's own red `.cm-fat-cursor` div is the visible cursor).
+2. **`.cm-vimCursorLayer` carries an animation-name** (`cm-blink` / `cm-blink2`) toggled per measure pass — that's the blink on the fat block.
+3. **`.cm-line` inherits `caret-color: transparent`** through the cascade and our `.cm-content`-level override didn't reach it because CM6 generates `.cm-line` rules at higher specificity.
+
+The fix needed all three:
+- Disable blink: `animation: none !important` on `.cm-vimCursorLayer` in Normal mode.
+- Restore caret in Insert mode: explicit `caret-color: var(--text-normal, currentColor) !important` on `.cm-editor`, `.cm-scroller`, `.cm-content`, `.cm-content .cm-line`, `.cm-line`, AND `.cm-line *` to ensure all selectors win against vim's transparent default.
+
+**Files changed:** `src/widget/WidgetController.ts` (+ ~50 LOC for `createVimModeClassExtension` + `reconfigureVim` cleanup), `styles.css` (deleted v1.2's "force both layers visible" compromise rules, replaced with three-state per-mode rendering).
+
+**Phase 22 learning (for SUMMARY.md):** Multi-layer compositions (vim + CM6) need DevTools-driven debugging of the actual cascade, not selector guessing. The trail compressed from "4 commits over 30 min" to "1 commit" once we ran `getComputedStyle().caretColor` on each cursor-relevant DOM level — that revealed `.cm-line` was the unwon level, fix was specific.
+
+**v1.2 reference (for cleanup orientation):** The compromise this replaces lived in `styles.css` lines ~2071-2099 (Phase 17 gap-closure 17-11 + Phase 18 — both layers always visible because the v1.2 nested-editor mount couldn't reliably keep vim's measure-pass timing). The widget mount is more stable, so the simpler per-mode design is now correct.
+
+**Build:** `npm run build` clean.
+**Tests:** `npm test -- WidgetController` — 14/14 pass after each commit in the trail.
+**Deploy:** final state in commit `15599b1`.
+
 ## 22-02-06 Line-Number Gutter (D-polish-06)
 
 **Status:** PASS — confirmed in dev vault by user 2026-06-02. Added during 22-01-B dogfood.
