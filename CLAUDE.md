@@ -190,17 +190,20 @@ An Obsidian community plugin that fetches LeetCode problems, lets users write an
 <!-- GSD:stack-end -->
 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
-## Conventions
-
-- **`'leetcode.*'` userEvent annotation is the bypass convention for plugin-internal CM6 dispatches.** The Phase 05.5 section lock (`src/main/sectionLockExtension.ts`) registers an `EditorState.changeFilter` that drops keystrokes inside locked ranges (`## Problem` entire region, `## Code` heading + fence opener + closing fence, `## Techniques` heading, `## Notes` heading). The filter checks `tr.annotation(Transaction.userEvent)` first; transactions whose userEvent string starts with `'leetcode.'` thread through unfiltered. **Any future plugin dispatch that targets a locked range MUST set `userEvent: 'leetcode.<verb>'` on its `cm.dispatch` spec, or the section lock will silently drop the change.** Audited callsites: `src/main.ts:799-805` (`switchFenceLanguage` — sets `'leetcode.lang-switch'`); `src/main/codeActionsEditorExtension.ts:~320` (`languageRefreshEffect` — dispatches an effect with no `changes`, not subject to the changeFilter); `src/main.ts:~2791-2803` (Reset child dispatch — sets `'leetcode.reset.child'`, Phase 17 D-03). Vault-layer writes via `app.vault.process(...)` and `app.fileManager.processFrontMatter(...)` (e.g., `src/graph/copyToCode.ts`) bypass the lock by design — they happen below CM6 and never hit the editor's transaction filter.
-
-- **Canonical plugin write-path pattern (Phase 17 D-05).** Plugin writes touching the fence body dispatch through the child editor's CM6 instance when one is registered (looked up via `this.childEditorRegistry.get(file.path)`); the existing `createChildSyncExtension` in `src/main/childEditorSync.ts:82-121` mirrors the change to the parent with `addToHistory.of(false)`. Fall back to `app.vault.process(...)` only when no child is registered. The Reset code path (`src/main.ts:~2791-2803`) is the canonical example. Future write paths (e.g., Copy to Code) must follow the same shape — never dispatch on the parent CM6 with a non-`addToHistory.of(false)` annotation, or the change lands in the parent's undo stack and Cmd-Z leaks the prior body into adjacent sections (Phase 16 carry-over from CONTEXT D-03). DO NOT add `'leetcode.reset.child'` to `ECHO_PRONE_USER_EVENTS` in `src/main/nestedEditorExtension.ts:265-268` — child-origin Reset relies on the existing child→parent sync mirror to propagate to the parent doc.
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
+**v1.3 inline-widget architecture (post-Phase-22).**
+
+The plugin's editing model is a single `registerMarkdownCodeBlockProcessor('leetcode-solve', ...)` + `registerEditorExtension(leetCodeFenceViewPlugin)` pair (Reading mode + Live Preview, both calling `mountLeetCodeWidget`). The widget owns its own embedded CM6 `EditorView`; widget edits flow through `app.vault.process(file, fn)` — the only mutation primitive in the plugin. `lc-language` frontmatter is the single source of truth for Run / Submit / AI dispatch (read via `extractFirstFencedBlock(noteBody, frontmatter)` in `src/solve/codeExtractor.ts`).
+
+`src/main/sectionProtectionExtension.ts` (narrow scope: `## Problem` body + `## Techniques` heading) is the only protection extension. Section locking on the fence opener / closer is moot — the widget owns the fence range via `EditorView.atomicRanges`, so the parent doc's cursor cannot enter the fence at all.
+
+Migration infrastructure (`src/widget/fenceMigrator.ts`, `src/widget/legacyFenceBanner.ts`, `src/widget/migrationBackupGc.ts`, `autoMigrateOnOpen` setting) stays in tree indefinitely so users upgrading 1.2.x → 1.3.x late still get lazy single-fence migration. Backups land at `.obsidian/plugins/obsidian-leetcode/migration-backup-{slug}-{ISO}/` with 30-day retention; the GC runs on plugin load.
+
+`src/widget/widgetRegistry.ts` is a thin `Map<key, EditorView>` keyed by `${file.path}::${fenceIdentity}` — replaces v1.2's `childEditorRegistry`. Self-write echo suppression uses a per-path content-hash map with 2-second TTL (NOT a boolean flag). External edits arriving during local in-flight typing surface a conflict modal (`Keep mine / Keep external / View diff`).
 <!-- GSD:architecture-end -->
 
 <!-- GSD:skills-start source:skills/ -->

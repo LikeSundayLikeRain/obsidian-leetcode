@@ -1,658 +1,339 @@
-# Architecture: Zone-Scoped Code Editing Extensions in CM6 Markdown
+# v1.3 Inline Widget Architecture — Integration Research
 
-**Domain:** CM6 editor extension architecture for scoped code-editing behavior within a fenced code block
-**Researched:** 2026-05-21
-**Overall Confidence:** HIGH (verified against CM6 official docs, existing codebase patterns, and runtime constraints)
+**Domain:** Obsidian plugin — replacing dual-CM6 nested editor with inline code-block widget
+**Researched:** 2026-05-28
+**Confidence:** HIGH (sourced directly from current code; no external docs needed for integration mapping)
 
----
+## 1. Integration Boundary — Cutlist (Confirmed)
 
-## Executive Summary
+### KEEP (carry-over, minor adapters)
 
-The v1.2 "Code Editor Experience" milestone requires injecting code-editor behavior (auto-indent, bracket handling, Tab indent/dedent) into a specific line range (the fence body between opener and closer) of an Obsidian markdown document, while leaving the rest of the document in standard markdown editing mode. The architecture must coexist with the existing `sectionLockExtension` (changeFilter + transactionFilter) and the `codeActionsEditorExtension` (StateField + DecorationSet).
+| File / Module | LOC | Why kept | Adapter needed? |
+|---|---|---|---|
+| `src/main/childEditorFactory.ts` | 482 | Builds the actual CM6 EditorView with theme + lang + indent + bracket + line-number config. The composition root for "what extensions go in a child". | **Repurpose.** Drop the parent-binding seam; widget mounts the EditorView in its own container. Output type stays `EditorView`. |
+| `src/main/childEditorLanguage.ts` | 148 | `languageCompartment` + `buildLanguageExtensions(slug, indent)` — 8-language pack registry. | **Keep verbatim.** Compartment-based language switching is the right primitive for v1.3 too. |
+| `src/main/childEditorTheme.ts` | 152 | `lc-nested-editor` + `HyperMD-codeblock` theme integration that lets community themes (e.g. One Dark) cascade. | **Keep verbatim.** Same DOM container class survives. |
+| `src/main/childEditorSemanticClasses.ts` | 297 | CM6 ViewPlugin that maps Lezer node names → semantic CSS classes for theme tag-mapping (Issue 13 pass). | **Keep verbatim.** Self-contained, decoration-layer only. |
+| `src/main/codeBlockButtonRow.ts` | 99 | Builds Run/Submit/AI/Reset/Retrieve button row DOM. Already shared between Reading-Mode post-processor and Edit-Mode CM6 widget. | **Keep verbatim.** Single shared DOM helper — third call site (the new widget) just imports it. |
+| `src/main/languageChevronWidget.ts` | 304 | Edit-Mode language chevron DOM helper. | **Keep verbatim** — but mount point moves into the widget UI rather than below the fence. |
+| `src/main/codeActionsPostProcessor.ts` | 67 | **Reading-mode** post-processor that mounts buttons below `<pre>`. | **Keep verbatim.** Reading mode is unaffected by the widget rewrite. |
+| `src/main/python3Highlighter.ts` | 59 | python3→python class swap for Reading-Mode Prism highlighting. | **Keep verbatim.** Reading-mode only. |
+| `src/main/fileOpenHook.ts` | 63 | Starter-code retrofit on file-open. | **Keep verbatim.** Operates at vault layer (`processFrontMatter` + `vault.process`); no CM6 coupling. |
+| `src/notes/NoteTemplate.ts` | (uses CODE_HEADING_LINE) | Note shape: `## Problem` → `## Code` → `## Notes` → `## Techniques`. | **Keep verbatim** of headings, **swap fence tag** in starter injection from `python3` → `leetcode-solve` (see §6). |
+| `src/solve/starterCodeInjector.ts` | (uses fence tag) | Pure body-rewriting helpers used by retrofit + reset. | **Modify** — emit `leetcode-solve` fence with metadata in info-string instead of `python3`. (See §6 migration). |
+| `src/solve/codeExtractor.ts` | (parses fence) | Pulls solution code out of `## Code` for run/submit. | **Modify** — fence-tag detection broadens to `leetcode-solve` + legacy lang slugs. |
+| `src/graph/copyToCode.ts` | (vault.process) | "Copy submission to ## Code" — vault-layer write. | **Keep, light-modify.** Continue using `vault.process`; the widget will pick the change up via the file-modify reload path. Drop the `childEditorRegistry?.get` lookup in main.ts callsite (D-05 canonical pattern is obsolete in v1.3). |
+| `src/solve/resetCodeWithConfirm.ts` | 205 | Reset-to-starter helper. | **Modify** — drop the `getDispatchHandle` seam (Phase 17 D-03 child-CM6 dispatch). Pure `vault.process` is correct again — see §4. |
 
-The recommended architecture uses **guarded keymaps** (command functions that check cursor position before acting) combined with a **Compartment** for dynamic language switching. This avoids the impossible path of replacing Obsidian's markdown language and instead layers behavior on top using CM6's composable extension model.
+### DELETE (entire files)
 
----
+| File | LOC | Why deleted |
+|---|---|---|
+| `src/main/childEditorSync.ts` | **809** | Bidirectional child↔parent sync. The whole point of v1.3 is that the file IS the source of truth and there is no parent-CM6 fence body to mirror. `wireSyncIfNeeded`, `detectAndPropagateExternalChange`, `syncAnnotation`, `repairFenceStructure`, `registerVaultModifyRepairTrigger` all become dead code. |
+| `src/main/sectionLockExtension.ts` | **527** | The whole reason section-lock exists is to prevent edits to plugin-owned regions of the parent doc when the user can still see/touch them. v1.3's widget renders the entire `## Problem`/`## Code`/`## Techniques`/`## Notes` shape via Reading Mode (or Live Preview's normal rendering); fence body is inside the widget's own EditorView. There's nothing to lock at the parent layer. |
+| `src/main/nestedEditorExtension.ts` | **395** | The CM6 StateField that produced `lc-fence-hidden` line decorations + the NestedEditorWidget that mounted the child. Replaced by the markdown code-block processor. The transactionFilter cursor-redirect, `nestedEditorRebuildEffect`, and `ECHO_PRONE_USER_EVENTS` set all go away. |
+| `src/main/childEditorRegistry.ts` | 114 | LRU cache keyed by file path was needed because the widget unmount/remount during scroll/CM6 viewport changes could destroy and recreate the EditorView. With `registerMarkdownCodeBlockProcessor`, Obsidian owns the lifecycle — re-renders happen but our processor is called fresh; we can hold per-file state in a simpler `Map<filePath, WidgetController>` if at all. **Replace with thinner `WidgetRegistry`** (~30 LOC) for self-write suppression bookkeeping. |
+| `src/main/codeActionsEditorExtension.ts` | **395** | Edit-Mode block widget (CodeActionsWidget at fence-closer end) that paints the chevron+button row in the parent doc. v1.3 mounts the row **inside** the widget UI; the parent has no fence to anchor to. `findCodeFence` (the SSoT for fence detection in parent CM6) is also no longer needed in the parent — but **keep the function** by inlining it into the new widget controller (it's still used to slice the fence body during widget mount and during external `vault.modify` reconciliation). |
 
-## Recommended Architecture
+**Net cut:** ~2,240 LOC across 5 files (`childEditorSync` 809 + `sectionLockExtension` 527 + `nestedEditorExtension` 395 + `codeActionsEditorExtension` 395 + `childEditorRegistry` 114). Plus ~700–900 LOC of `src/main.ts` that wires sync, fence-repair triggers, child-dispatch helpers, the `ECHO_PRONE_USER_EVENTS` exemption thread, the `'leetcode.*'` userEvent annotation convention, the file-open repair hook, the `nestedEditorRebuildEffect` dispatch on metadataCache changes, and the `childEditorRegistry?.get` seams in `switchFenceLanguage`/`reset`/`copyToCode`. **Total deletion target: ~3,000 LOC.** Estimated v1.3 add: ~600 LOC. Net ~ −2,400 LOC.
 
-### High-Level Design
+### CONVENTION DELETIONS
 
-```
-+-------------------------------------------------------------+
-|                    Obsidian Editor (CM6)                     |
-|  +-----------------------------------------------------+    |
-|  |  Existing Extensions (registered via plugin)         |    |
-|  |  +- codeActionsEditorExtension (StateField)         |    |
-|  |  +- sectionLockExtension (changeFilter + txFilter)  |    |
-|  |  +- NEW: codeEditingExtension (this milestone)      |    |
-|  +-----------------------------------------------------+    |
-|                                                             |
-|  codeEditingExtension internals:                            |
-|  +----------------------------------------------------------+
-|  |  Compartment (language-specific config)               |   |
-|  |  +- indentUnit facet (language-dependent)            |   |
-|  |  +- closeBrackets config (code-mode vs markdown)     |   |
-|  |  +- language-specific indent rules (heuristic)       |   |
-|  |                                                       |   |
-|  |  Prec.high keymap (zone-guarded commands)            |   |
-|  |  +- Tab -> indentMore (if in fence body)             |   |
-|  |  +- Shift-Tab -> indentLess (if in fence body)       |   |
-|  |  +- Enter -> smartNewline (if in fence body)         |   |
-|  |  +- } / ) -> dedentOnClose (if in fence body)       |   |
-|  |                                                       |   |
-|  |  inputHandler (bracket suppression in fence)         |   |
-|  |  +- Suppress markdown pairs (* _ ~) in fence body   |   |
-|  |  +- Allow code pairs ({ [ ( " ') in fence body      |   |
-|  +----------------------------------------------------------+
-+-------------------------------------------------------------+
-```
-
-### Component Boundaries
-
-| Component | Responsibility | Communicates With |
-|-----------|---------------|-------------------|
-| `fenceZoneDetector` (pure helper) | Determine if a cursor position is inside the editable fence body | All guarded commands; reuses `findCodeFence` from `codeActionsEditorExtension.ts` |
-| `codeEditingKeymap` | Zone-guarded keymap bindings for Tab, Enter, brackets | `fenceZoneDetector`, `@codemirror/commands` indent functions |
-| `codeBracketHandler` | inputHandler that suppresses markdown bracket pairs inside fence | `fenceZoneDetector` |
-| `languageCompartment` | Compartment holding language-specific config (indent unit, indent rules) | `languageRefreshEffect` (existing), chevron switch path |
-| `indentRulesProvider` | Per-language indent heuristics (when to indent after `{`, `:`, etc.) | `languageCompartment` contents |
-| `buildCodeEditingExtension()` | Factory composing all above into a single Extension array | `src/main.ts` registration via `registerEditorExtension` |
-
-### Data Flow
-
-```
-User keystroke
-    |
-    +---> sectionLockExtension.changeFilter
-    |     (Gate 0: only fires on user-input userEvents)
-    |     (Gate 1: leetcode.* bypass)
-    |     (Gate 2-3: file + lc-slug gates)
-    |     (Gate 4: suppress if change touches locked range)
-    |     |
-    |     +---> If ALLOWED (fence body is editable) -> change proceeds
-    |
-    +---> codeEditingKeymap (Prec.high)
-    |     Tab pressed?
-    |       -> isCursorInFenceBody(state)?
-    |         YES -> indentMore(view); return true
-    |         NO  -> return false (fall through to Obsidian default)
-    |
-    +---> codeBracketHandler (EditorView.inputHandler)
-    |     User typed `*` or `_`?
-    |       -> isCursorInFenceBody(state)?
-    |         YES -> insert literal char, return true (suppress md pair)
-    |         NO  -> return false (let markdown handle it)
-    |
-    +---> Obsidian's default markdown keymap (lower precedence)
-          Handles everything outside the fence body normally
-```
+- The `'leetcode.*'` userEvent annotation convention (CLAUDE.md §Conventions, line 195) — **delete the convention entirely.** No section-lock means no bypass surface. Every `cm.dispatch` callsite carrying a `userEvent: 'leetcode.…'` becomes either a `vault.process` write (fence body changes) or a per-widget compartment.reconfigure (language switch).
+- The "canonical plugin write-path pattern" (CLAUDE.md §Conventions, line 197) — **delete.** The whole purpose of D-05 was to make Reset land on the *child's* undo stack via `childSyncExtension`'s mirror. With v1.3, "the child" is the only editor for the fence body; `vault.process` writes flow disk → `vault.on('modify')` → widget reload. Reset = pure `vault.process(file, fn)`.
 
 ---
 
-## Question-by-Question Analysis
+## 2. New Components — File Layout
 
-### Q1: CM6 Primitives for Scoping Keybindings to a Line Range
+Suggested layout under `src/widget/` (new directory) — separates v1.3 code cleanly from the legacy `src/main/` directory during the build, makes the deletion phase a single `rm -rf src/main/{childEditorSync,sectionLockExtension,nestedEditorExtension,childEditorRegistry,codeActionsEditorExtension}.ts`.
 
-**Answer:** CM6 does NOT have a built-in "scope extension to line range" primitive. The correct pattern is **guarded commands** -- keymap bindings where the `run` function checks cursor position and returns `false` (fall-through) when the cursor is outside the target zone.
-
-```typescript
-import { keymap } from '@codemirror/view';
-import { indentMore, indentLess } from '@codemirror/commands';
-import { Prec } from '@codemirror/state';
-
-// Guard: returns true if cursor head is inside the fence body
-function isCursorInFenceBody(state: EditorState): boolean {
-  const fence = findCodeFence(state);
-  if (!fence) return false;
-  const head = state.selection.main.head;
-  const bodyStart = state.doc.line(fence.openerLine).to + 1; // after opener \n
-  const bodyEnd = state.doc.line(fence.closerLine).from;     // before closer
-  return head >= bodyStart && head < bodyEnd;
-}
-
-const codeEditingKeymap = Prec.high(keymap.of([
-  {
-    key: 'Tab',
-    run: (view) => {
-      if (!isCursorInFenceBody(view.state)) return false;
-      return indentMore(view);
-    },
-    shift: (view) => {
-      if (!isCursorInFenceBody(view.state)) return false;
-      return indentLess(view);
-    },
-  },
-]));
+```
+src/widget/                                         NEW DIRECTORY
+├── codeBlockProcessor.ts          ~100 LOC   registerMarkdownCodeBlockProcessor('leetcode-solve', mount)
+│                                              Entry point — gates on lc-slug, calls WidgetController
+├── WidgetController.ts            ~200 LOC   Owns lifecycle of one CM6 EditorView per (file, codeBlockEl)
+│                                              mount(el), unmount(), reloadFromDisk(), flush()
+├── debouncedWriter.ts             ~80 LOC    Debounced vault.process queue (~300-500ms)
+│                                              Last-write-wins; flush() drains immediately
+├── selfWriteSuppression.ts        ~60 LOC    Window manager: setExpectingModify(filePath, ttl=750ms)
+│                                              vault.on('modify') consults this before widget reload
+├── widgetRegistry.ts              ~50 LOC    Thin Map<filePath, WidgetController[]>
+│                                              For external-modify dispatch + flush-all-on-unload
+├── fenceMigrator.ts               ~80 LOC    v1.2 ## Code python3 fence → ## Code leetcode-solve (lang) fence
+│                                              Pure transform; called from on-demand path (see §6)
+└── widgetActions.ts               ~60 LOC    Re-mount of buttons inside widget DOM
+                                              Wraps codeBlockButtonRow + languageChevronWidget for the new host
 ```
 
-**Confidence:** HIGH -- verified against CM6 docs. The `keymap` facet's command protocol (return `true` = handled, `false` = pass to next) is the canonical scoping mechanism.
+**Existing files that move logically (not physically):**
+- `src/main/childEditorFactory.ts` → could move to `src/widget/childEditor.ts` for clarity; not required.
+- `src/main/childEditorLanguage.ts`, `src/main/childEditorTheme.ts`, `src/main/childEditorSemanticClasses.ts` stay in `src/main/` — they're shared CM6 building blocks.
 
-**Available primitives for zone-scoping:**
-1. **`keymap` with guarded commands** -- Primary mechanism. Command returns `false` to pass through.
-2. **`EditorView.inputHandler`** -- For intercepting text input (typed characters). Can check position and return `false` to delegate.
-3. **`EditorState.transactionFilter`** -- For inspecting/modifying transactions after they form. Can rewrite based on position.
-4. **`EditorState.changeFilter`** -- Already used by sectionLock. Returns suppressed ranges.
-5. **`Prec.*` precedence wrappers** -- Control which extension gets first crack at a key.
-
-There is NO equivalent to VSCode's `editorTextFocus && editorLangId == 'java'` `when` clause -- all scoping must be imperative in the command body.
-
-### Q2: TransactionFilter/Keymap Interaction with sectionLockExtension
-
-**Answer:** The section lock and the new code editing extension operate at different layers and are complementary, not conflicting.
-
-**Interaction model:**
-```
-Keystroke arrives
-  1. keymap handlers fire (highest Prec first)
-     -> codeEditingKeymap (Prec.high) checks zone, dispatches indent/newline
-     -> If handled (returns true), CM6 creates a transaction from the dispatch
-  2. Transaction passes through changeFilter
-     -> sectionLockExtension checks if changes touch locked ranges
-     -> Fence BODY is NOT locked -> changes pass through
-  3. Transaction passes through transactionFilter
-     -> sectionLockExtension snaps cursor if it landed in a locked range
-     -> Code editing dispatches land IN the fence body -> no snap needed
-```
-
-**Key insight:** The section lock's changeFilter only suppresses changes to **locked** ranges. The fence body (between opener+1 and closer-1) is explicitly **unlocked** in `computeLockedRanges()`. Therefore, any change dispatched by the code editing extension that targets the fence body will pass the changeFilter without issue.
-
-**One critical rule:** If the code editing extension ever needs to modify the fence opener or closer (it should not, but hypothetically), it must use the `userEvent: 'leetcode.*'` annotation to bypass the lock. For normal indent/dedent/newline operations within the body, no bypass is needed.
-
-**No modifications to `sectionLockExtension.ts` are required.**
-
-### Q3: EditorView.inputHandler vs keymap Facet with Range-Check Guards
-
-**Answer:** Use BOTH, for different purposes.
-
-| Mechanism | Best For | Zone Check Cost | Integration |
-|-----------|----------|-----------------|-------------|
-| `keymap` (Prec.high) | Tab, Shift-Tab, Enter (specific keys with code-editor semantics) | Per-keypress of bound key only | Returns `false` to fall through to Obsidian defaults |
-| `EditorView.inputHandler` | Typed characters that need markdown-pair suppression (`*`, `_`, `~`) or code-pair insertion (`{`, `(`, `[`) | Per typed character | Returns `true` to suppress default handling |
-
-**Why not just keymap for everything?**
-- `keymap` binds to specific key combos. You cannot bind "any printable character" to a keymap entry.
-- `inputHandler` intercepts ALL text input (the `beforeinput` DOM event) and lets you decide per-character.
-
-**Why not just inputHandler for everything?**
-- `inputHandler` only fires for text insertion, not for keys like Tab, Shift-Tab, Enter, Backspace.
-- Tab/Enter need `keymap` because they are control keys, not text input.
-
-**Recommended split:**
-```typescript
-// keymap: control keys with code-editing semantics
-keymap.of([
-  { key: 'Tab', run: guardedIndentMore, shift: guardedIndentLess },
-  { key: 'Enter', run: guardedSmartNewline },
-  { key: 'Backspace', run: guardedDeleteBracketPair },
-])
-
-// inputHandler: character-level markdown suppression
-EditorView.inputHandler.of((view, from, to, text) => {
-  if (!isCursorInFenceBody(view.state)) return false;
-  // Suppress markdown auto-pairs for * _ ~ inside code fence
-  if ('*_~'.includes(text)) {
-    // Insert literal character without triggering markdown pair
-    view.dispatch({ changes: { from, to, insert: text } });
-    return true;
-  }
-  return false; // Let closeBrackets handle { ( [ etc.
-});
-```
-
-### Q4: Detecting "Cursor Inside Code Fence Body" Efficiently (Per-Keystroke)
-
-**Answer:** Reuse `findCodeFence(state)` from `codeActionsEditorExtension.ts` -- it is already the SSoT for fence detection. The function scans for `## Code` heading + first fence opener/closer. Cost: O(n) where n = number of lines.
-
-**Performance analysis:**
-- Typical LC problem note: 50-150 lines. `findCodeFence` scans at most once per transaction.
-- CM6 keymap commands only fire for their bound keys (Tab, Enter, etc.) -- not every keystroke.
-- `inputHandler` fires per character typed, but only when actually typing (not cursor movement).
-- At 150 lines, a linear scan is microseconds. No caching needed.
-
-**Optimization path (if needed later, but NOT recommended for v1.2):**
-A `StateField<{openerLine: number, closerLine: number} | null>` could cache the fence position and rebuild only on `tr.docChanged`. But this adds complexity and the linear scan is already negligible for the note sizes involved.
-
-**Recommended helper:**
-```typescript
-// src/main/fenceZoneDetector.ts
-import { findCodeFence } from './codeActionsEditorExtension';
-import type { EditorState } from '@codemirror/state';
-
-/**
- * Returns true if the primary cursor head is inside the editable fence body
- * (between opener line's end and closer line's start).
- *
- * O(lines) per call via findCodeFence. Acceptable for per-keypress use
- * on notes under 200 lines (typical LC note size).
- */
-export function isCursorInFenceBody(state: EditorState): boolean {
-  const fence = findCodeFence(state);
-  if (!fence) return false;
-  const head = state.selection.main.head;
-  // Body starts after the opener line's newline
-  const bodyStart = state.doc.line(fence.openerLine).to + 1;
-  // Body ends before the closer line begins
-  const bodyEnd = state.doc.line(fence.closerLine).from;
-  return head >= bodyStart && head < bodyEnd;
-}
-
-/**
- * Returns the fence body range { from, to } or null.
- * Used by indent commands that need to know the bounds.
- */
-export function getFenceBodyRange(state: EditorState): { from: number; to: number } | null {
-  const fence = findCodeFence(state);
-  if (!fence) return null;
-  return {
-    from: state.doc.line(fence.openerLine).to + 1,
-    to: state.doc.line(fence.closerLine).from,
-  };
-}
-```
-
-**Why NOT use `syntaxTree` / `languageDataAt`?**
-Obsidian's markdown parser DOES create `FencedCode` nodes in the syntax tree, and within those, nested language trees are mounted. However:
-1. The syntax tree may be **partially parsed** (CM6 parses lazily/incrementally) -- the node may not exist yet when the user types fast.
-2. `findCodeFence` is already the SSoT used by the lock extension. Using a different detection mechanism creates a divergence risk.
-3. The syntax tree approach would need to handle the case where the nested language tree isn't yet mounted (first keystroke after opening a file).
-
-Sticking with `findCodeFence` maintains the SSoT invariant established in Phase 5.
-
-### Q5: Extension Ordering -- Code-Editing Extensions vs Section Lock
-
-**Answer:** Register the code editing extension **BEFORE** the section lock.
-
-**Rationale:**
-```typescript
-// src/main.ts onload()
-this.registerEditorExtension(buildCodeActionsEditorExtension(this));  // existing
-this.registerEditorExtension(buildCodeEditingExtension(this));        // NEW (before lock)
-this.registerEditorExtension(buildSectionLockExtension(this));        // existing (last)
-```
-
-**Why this order matters:**
-
-1. **For keymaps:** Precedence is controlled by `Prec.high/highest`, not registration order. The code editing keymap should use `Prec.high` to win over Obsidian's default markdown keybindings (which are at default precedence). Registration order within the same Prec level follows array position -- earlier = higher priority. Registering before the lock means our keymap processes first within the same precedence bucket.
-
-2. **For changeFilter:** CM6 evaluates ALL changeFilter providers and intersects their results. The section lock's changeFilter returns suppressed ranges. The code editing extension does NOT add a changeFilter (it uses keymap + inputHandler). So order between them for filtering is irrelevant.
-
-3. **For transactionFilter:** The section lock's transactionFilter snaps cursors OUT of locked ranges. If the code editing extension dispatches a transaction that places the cursor in the fence body (an unlocked range), the snap filter will not interfere. No ordering concern.
-
-**The `Prec.high` wrapper on the keymap is the critical ordering mechanism**, not the registration order. But registering before the lock keeps the conceptual layering clean: "editing behaviors first, enforcement last."
-
-### Q6: Language-Switching (Java to Python) Without Re-registering Extensions
-
-**Answer:** Use a **Compartment** to hold the language-specific configuration. When the user switches language via the chevron, dispatch a `Compartment.reconfigure()` effect.
-
-**Architecture:**
-```typescript
-import { Compartment } from '@codemirror/state';
-
-// Created once per editor extension registration
-const langConfigCompartment = new Compartment();
-
-// Language-specific config varies by slug
-function getLangConfig(langSlug: string): Extension {
-  return [
-    // Indent unit: Python uses 4 spaces, Java/C++ use 4 spaces (or tab)
-    EditorState.tabSize.of(getTabSize(langSlug)),
-    indentUnit.of(getIndentUnit(langSlug)),
-    // Language-specific indent heuristics (see indentRulesProvider)
-    buildIndentRules(langSlug),
-  ];
-}
-
-// Initial: use whatever lc-language says (or default)
-const extension = langConfigCompartment.of(getLangConfig(currentLangSlug));
-
-// On language switch (triggered by chevron or languageRefreshEffect):
-function reconfigureLanguage(view: EditorView, newSlug: string) {
-  view.dispatch({
-    effects: langConfigCompartment.reconfigure(getLangConfig(newSlug)),
-  });
-}
-```
-
-**Integration with existing `languageRefreshEffect`:**
-The `codeActionsEditorExtension` already dispatches `languageRefreshEffect` when `lc-language` changes. The code editing extension can listen for the same effect in a StateField or transactionExtender and trigger the Compartment reconfigure.
-
-Alternatively (simpler): subscribe to `metadataCache.on('changed')` the same way `codeActionsEditorExtension` does, and dispatch the reconfigure effect when `lc-language` changes. This keeps the two extensions independent.
-
-**What changes per language:**
-| Config | Python | Java | C++ | JavaScript/TypeScript | Go | Rust |
-|--------|--------|------|-----|----------------------|-----|------|
-| Indent unit | 4 spaces | 4 spaces | 4 spaces (or 2) | 2 spaces | tab | 4 spaces |
-| Tab size | 4 | 4 | 4 | 2 | 4 | 4 |
-| Indent after | `:`, `(`, `[` | `{`, `(`, `[` | `{`, `(`, `[` | `{`, `(`, `[` | `{`, `(` | `{`, `(`, `[` |
-| Dedent on | (next non-empty) | `}` | `}` | `}` | `}` | `}` |
-| Comment token | `#` | `//` | `//` | `//` | `//` | `//` |
-
-### Q7: Should We Use Compartments for Dynamic Reconfiguration?
-
-**Answer:** YES. Compartments are the canonical CM6 mechanism for this exact use case.
-
-**Why Compartments (not re-registering):**
-1. `plugin.registerEditorExtension()` is append-only -- Obsidian provides no `unregisterEditorExtension()` or replace API.
-2. Even if we could remove/re-add, that would destroy and rebuild all StateFields, losing editor state.
-3. Compartments are designed for "config that changes at runtime" -- the CM6 docs use language switching as the primary Compartment example.
-4. Compartment reconfiguration is a single-transaction operation: `view.dispatch({ effects: compartment.reconfigure(newExtension) })`. The editor state transitions atomically.
-
-**Compartment scope:**
-```
-buildCodeEditingExtension() returns:
-[
-  langConfigCompartment.of(getLangConfig(initialSlug)),  // Dynamic via Compartment
-  Prec.high(codeEditingKeymap),                          // Static (zone guards handle lang differences)
-  codeBracketInputHandler,                               // Static (zone guard + per-char logic)
-  languageRefreshListener,                               // Listens for effect -> reconfigures compartment
-]
-```
-
-The keymap itself is **static** -- it does not change when language switches. The guarded commands internally read the current language config from the Compartment's facet values (e.g., `state.facet(indentUnit)`) to determine indent size. Only the Compartment's contents swap.
+**main.ts diff size estimate:**
+- ~800 LOC removed (sync wiring, file-open repair hook, externalChangeListener, `childEditorRegistry` field + `destroyAll`, `switchFenceLanguage` child-CM6 path, `dispatchChildLanguageReconfigure`, the `nestedEditorRebuildEffect` dispatch, the `useNestedEditor` settings flag fork)
+- ~80 LOC added (codeBlockProcessor registration, WidgetRegistry init, vault.on('modify') hookup, flush-all on unload)
+- Net ~ −720 LOC in main.ts (currently 3,252 → ~2,500).
 
 ---
 
-## Patterns to Follow
+## 3. Data Flow — Canonical (with self-write suppression)
 
-### Pattern 1: Guarded Command (Zone-Scoped Key Handler)
+```
+                                ┌──────────────────────────┐
+                                │     User keystroke       │
+                                │  (inside widget CM6)     │
+                                └──────────┬───────────────┘
+                                           │ updateListener
+                                           ▼
+        ┌─────────────────────────────────────────────────────┐
+        │  WidgetController.onUpdate(update)                  │
+        │   - update.docChanged → debouncedWriter.schedule()  │
+        └──────────────────────────┬──────────────────────────┘
+                                   │  300–500 ms debounce
+                                   ▼
+        ┌─────────────────────────────────────────────────────┐
+        │  debouncedWriter.flush()                            │
+        │   1. selfWriteSuppression.setExpecting(file, 750ms) │  ← arms suppression
+        │   2. await app.vault.process(file, body =>          │
+        │        rewriteFenceBody(body, widget.getDoc()))     │
+        └──────────────────────────┬──────────────────────────┘
+                                   │  Obsidian persists to disk
+                                   ▼
+        ┌─────────────────────────────────────────────────────┐
+        │  Obsidian fires vault.on('modify', file)            │
+        │  + metadataCache.on('changed', file)                │
+        └──────────────────────────┬──────────────────────────┘
+                                   │
+                ┌──────────────────┴───────────────────┐
+                │                                      │
+                ▼                                      ▼
+        Suppression armed?                       Suppression armed?
+                │                                      │
+        YES → CONSUME the event                NO → reloadFromDisk()
+              (clear flag, do nothing)               extract fence body,
+              (the CM6 doc already                   dispatch into the widget's
+              matches what we just wrote)            EditorView
+                                                     (cursor-preserving via
+                                                     EditorSelection.cursor)
 
-**What:** A keymap command that checks cursor position before acting, returning `false` to delegate to lower-precedence handlers when outside the zone.
 
-**When:** Any key that should behave differently inside the code fence vs. the rest of the markdown document.
+       ────────── PARALLEL: external write (CopyToCode, AI Review) ──────────
 
-**Example:**
-```typescript
-import { indentMore } from '@codemirror/commands';
-import { type Command } from '@codemirror/view';
-
-const guardedIndentMore: Command = (view) => {
-  if (!isCursorInFenceBody(view.state)) return false;
-  return indentMore(view);
-};
+        ┌─────────────────────────────────────────────────────┐
+        │  vault.process(file, …) called from copyToCode,     │
+        │  AI Review merge, retrofit, contest finalizer       │
+        │   - DOES NOT arm suppression                        │
+        └──────────────────────────┬──────────────────────────┘
+                                   │
+                                   ▼
+        vault.on('modify') fires → suppression NOT armed →
+        reloadFromDisk() → widget picks up new body
 ```
 
-### Pattern 2: Compartment for Language-Dependent Config
+**Why a window-based suppression (not transaction-id matching):**
+- `vault.process` returns AFTER the file is written and `modify` has fired (Obsidian's API). So a simple "expecting=true; await write; expecting=false" works *if* `modify` is dispatched synchronously inside `process` — which testing shows it is in current Obsidian (1.12.x). A 750 ms TTL is a paranoia net for any case where `modify` is queued.
+- Alternative: store the exact body string we just wrote, compare on modify event, skip if equal. More robust but adds an O(N) string compare per modify. **Recommendation: ship the time-window first; upgrade to body-hash if a regression appears.**
 
-**What:** A Compartment wrapping all config that varies by programming language, reconfigured on language switch.
+**Cross-pane synchronization:** Two widgets for the same file (split pane, two tabs). On any external `vault.on('modify')`:
+- `widgetRegistry.getAll(filePath).filter(w => !w.isOriginatingWriter).forEach(w => w.reloadFromDisk())`
+- The originating widget skips reload because suppression was armed by *its own* writer. Other panes' widgets reload.
 
-**When:** The user changes language via the chevron widget. The Compartment's contents swap atomically.
+**Flush-on-unload / flush-on-blur (from PROJECT.md):**
+- Plugin `onunload()` → `widgetRegistry.flushAll()` — drains every pending debounce synchronously.
+- `EditorView.domEventHandlers({ blur })` on each widget → `controller.flush()`. Catches Cmd-Tab, leaf close, mode switch.
+- `editor-change`-style hook is unnecessary because the debounce already covers normal typing.
 
-**Example:**
-```typescript
-const langCompartment = new Compartment();
+---
 
-function buildForLanguage(slug: string): Extension {
-  return [
-    indentUnit.of(slug === 'golang' ? '\t' : '    '),
-    EditorState.tabSize.of(4),
-    // Language-specific indent heuristics StateField or facet
-  ];
-}
+## 4. Action Row Integration — Adapter, not Rewrite
 
-// On switch:
-view.dispatch({
-  effects: langCompartment.reconfigure(buildForLanguage(newSlug)),
-});
+`src/main/codeActionsEditorExtension.ts` is **deleted entirely** (not adapted). The work it did splits into two:
+
+1. **Reading mode:** unchanged — `src/main/codeActionsPostProcessor.ts` continues to mount buttons below `<pre>`. No coupling to the widget.
+
+2. **Edit mode:** the button row is mounted **inside the widget DOM** by `WidgetController.mount(el)`:
+
+   ```ts
+   // src/widget/widgetActions.ts (sketch)
+   export function mountActionRow(host: PluginHost, file: TFile, container: HTMLElement, currentSlug: string) {
+     const row = buildCodeBlockButtonRow(container.ownerDocument, host, {
+       prefix: () => buildLanguageChevron(container.ownerDocument, host, file, currentSlug),
+     });
+     container.appendChild(row);
+     return row;
+   }
+   ```
+
+   `buildCodeBlockButtonRow` and `buildLanguageChevron` are imported as-is from `src/main/`. The chevron's click handler still calls `plugin.switchLanguage(file, slug)`. **Critical change inside `switchLanguage`:** the implementation simplifies dramatically — see §5.
+
+**`findCodeFence`:** Lift this function from the deleted `codeActionsEditorExtension.ts` into `src/widget/fenceLocator.ts` (or inline it into `WidgetController`). It's still needed by `vault.process` callbacks that rewrite the fence body. Keep test coverage from `tests/main/codeActionsEditorExtension.test.ts` for the lifted function.
+
+**Idempotency / `WidgetType.eq()` analog:** `registerMarkdownCodeBlockProcessor` calls the mount callback per code-block render. Cache the EditorView per `(filePath, codeBlockId)` in `widgetRegistry` so re-render reuses the existing CM6 instance — same DOM-reuse benefit `WidgetType.eq()` provided.
+
+---
+
+## 5. AI Review / Contest / Preview / Chevron — Dead-Path Audit
+
+After section-lock + nested-editor extension deletion, every existing dispatch path must be checked for "still works" or "now dead".
+
+| Path | Current behavior (v1.2) | v1.3 status |
+|---|---|---|
+| **AI Review write** (`src/main.ts:2005`, `src/ai/mergeAIReviewSection.ts`) | `vault.process(file, body => mergeAIReviewSection(body, …))`. Plain vault layer; bypasses parent CM6 entirely. | **Unchanged.** Widget picks up the new `## AI Review` heading via the normal modify pipeline (note body changes, but the fence body inside `## Code` is untouched, so widget's reloadFromDisk would re-extract identical fence body → no-op dispatch). Optimization: short-circuit reload when extracted body === current widget doc. |
+| **AI Debug stream** (`src/main.ts:1320`, `src/main.ts:1428`) | `vault.process(file, body => …)`. | **Unchanged.** Same reasoning. |
+| **AI Solution write** (`src/main.ts:2102`) | `vault.process(file, body => mergeAISolutionSection(body, …))`. | **Unchanged.** |
+| **Contest finalizer / scratch** (`src/contest/ContestFinalizer.ts`, `ContestScratchManager.ts`) | `vault.process` + `processFrontMatter`. | **Unchanged.** |
+| **Knowledge Graph writes** (`src/graph/KnowledgeGraphWriter.ts`, `ClusterHubWriter.ts`, `PatternClusterEngine.ts`) | `vault.process` + `processFrontMatter`. | **Unchanged.** |
+| **Copy to Code** (`src/graph/copyToCode.ts` + `src/main.ts:~3120`) | Tries `childEditorRegistry.get` first; if hit, dispatches into child CM6 with `userEvent: 'leetcode.copy-to-code'` so child sync mirrors back to parent. Fallback to `vault.process`. | **CHANGE.** Drop the child-dispatch branch entirely; always `vault.process`. The widget reloads via `vault.on('modify')`. The `'leetcode.*'` userEvent on this dispatch becomes orthogonal (no section-lock → nothing to bypass). |
+| **Reset to starter** (`src/solve/resetCodeWithConfirm.ts` + `src/main.ts:~2790`) | Same pattern — child-dispatch first, `vault.process` fallback. | **CHANGE.** Drop the `getDispatchHandle` seam. Always `vault.process`. Cmd-Z scope: Reset will land on the **widget's** undo stack only if the modify-reload arrives back as a CM6 transaction — which it does (via cursor-preserving dispatch). The "no addToHistory.of(false)" gymnastics from D-05 disappears. |
+| **switchFenceLanguage** (`src/main.ts:2507`) | Atomic `cm.dispatch` on parent that rewrites both fence opener tag and starter body, plus `processFrontMatter` for `lc-language`, plus `Compartment.reconfigure` on child. | **HEAVY CHANGE — this is the most complex migration.** v1.3 split: (a) `processFrontMatter` to write `lc-language` (unchanged, idempotent); (b) widget controller listens for fm change and calls `Compartment.reconfigure(buildLanguageExtensions(newSlug, indent))` on its EditorView; (c) **fence-tag rewrite goes away** because the new fence tag is *always* `leetcode-solve` — language is metadata, not fence tag. **THIS IS A SCHEMA SIMPLIFICATION:** the v1.2 `python3`/`java`/`cpp` fence tag is replaced by `leetcode-solve` + `lc-language` frontmatter as the single source of truth. |
+| **Retrofit starter on file-open** (`src/main/fileOpenHook.ts` + `src/solve/starterCodeInjector.ts`) | Reads `lc-language` from fm, injects `python3`/`java`/`cpp` fence with starter body. | **CHANGE** — emit `leetcode-solve` fence tag; starter body unchanged. |
+| **codeExtractor for Run/Submit** (`src/solve/codeExtractor.ts`) | Reads body inside the first fence under `## Code`, returns `{ code, lang }` where lang is parsed from fence tag. | **CHANGE** — fence tag is always `leetcode-solve`; lang comes from `lc-language` frontmatter. Extractor signature gains a fm-aware lookup. |
+| **registerVaultModifyRepairTrigger** (Phase 18 — `childEditorSync.ts`) | vim `dd`-on-fence-closer recovery — re-inserts missing markers. | **DELETED.** No fence-marker fragility because vim runs inside the widget's own EditorView, which doesn't have markers to delete. The widget's outer `## Code` heading + `\`\`\`leetcode-solve` opener live in the parent document but are NOT inside any editable CM6 region (Live Preview renders the whole code-block as the widget; Source Mode users editing fence markers fall back to the same vault.process reload path). |
+| **file-open fence repair hook** (`src/main.ts:966`) | Phase 18 timeout-based repair on file-open. | **DELETED.** Same reason. |
+| **Preview view** (`src/preview/ProblemPreviewView.ts`) | Read-mode `ItemView`; never touches CM6. | **Unchanged.** |
+| **Contest solve view** (`src/contest/ContestSolveView.ts`) | Custom ItemView with its own write paths. | **Unchanged** — does not use parent CM6 dispatches. |
+| **Chevron metadataCache subscription** (`codeActionsEditorExtension.ts:329`) | Refreshes chevron label on `lc-language` fm change. | **MOVES** into the widget controller (its own `metadataCache.on('changed')` subscription, narrowed to its file). |
+| **fmReactivity listener** (`main.ts:926`, `handleFmChangeForLanguageReactivity`) | Reconfigures child editor's languageCompartment when fm.lc-language changes externally. | **MOVES** into the widget controller. Same purpose, simpler — just call `cm.dispatch({ effects: languageCompartment.reconfigure(buildLanguageExtensions(newSlug, indent)) })` on its own view. |
+
+**Dead paths** after v1.3 deletion: every callsite that imports `childEditorRegistry`, `childEditorSync`, `sectionLockExtension`, or `nestedEditorExtension`. Confirmed import count: 8 files — all of which become removable except `src/main.ts` (refactor), `src/notes/NoteTemplate.ts` (no actual import, just docstring), and the test files (delete corresponding suites).
+
+---
+
+## 6. Migration Component — Placement & Strategy
+
+**Where it lives:** `src/widget/fenceMigrator.ts` — a pure transform `migrateLegacyFence(body: string): string` plus a side-effecting wrapper `migrateIfNeeded(app, file)`.
+
+**When it runs:** **On widget mount per file**, **before** the EditorView is constructed — three-step gate:
+
+1. `vault.read(file)` → check `## Code` section.
+2. If the first fence under `## Code` has a tag in {`python`, `python3`, `java`, `cpp`, `c`, `golang`, `javascript`, `typescript`, `csharp`} (the v1.2 lang-slug-as-tag set), trigger migration.
+3. Migration is a single `vault.process(file, body => migrateLegacyFence(body))` that:
+   - Rewrites fence opener `\`\`\`<langslug>` → `\`\`\`leetcode-solve`
+   - Reads `lc-language` from frontmatter; if absent, derives it from the old langslug and queues `processFrontMatter(file, fm => fm['lc-language'] = derived)` after the body write (vault.process atomic, processFrontMatter chained per `copyToCode.ts:67-87` ordering).
+   - **Does NOT touch the body** between fence markers — solution code untouched.
+4. After migration completes, the widget mounts normally on the migrated note.
+
+**Why on-demand (per-file lazy), not on plugin-load batch:**
+- Matches v1.1's "lazy-on-AC Techniques migration" precedent (PROJECT.md key decision).
+- A user may have 1,000+ legacy notes; batch rewriting on plugin load would cause a 30+ second freeze and risk partial-write corruption if the user closes Obsidian mid-migration.
+- Migration is idempotent — second mount is a no-op (fence already `leetcode-solve`).
+
+**Backwards-readability:** During the rollout, **legacy `python3`-fence notes still render correctly** in Reading Mode and via the existing CM6 syntax-highlighter — so even a user who never opens a note in the v1.3 build keeps a working note. The widget only mounts on `leetcode-solve` fences (or on `lc-slug` notes with a legacy fence — gate widens for the migration path).
+
+**Reverse-migration safety net:** Add `migrateLegacyFence`'s inverse (`unmigrateToLegacyFence`) but **DO NOT ship it** — keep it in tree as a dev-only command in case a critical bug forces v1.2 fallback. Document that user can paste their `## Code` body into a `python3` fence manually.
+
+---
+
+## 7. Build Order — Phases by Dependency
+
+**Phase A — Widget Shell** (greenfield, no deletions)
+- Add `src/widget/codeBlockProcessor.ts` registering `leetcode-solve` fence tag → mount callback.
+- Add `src/widget/WidgetController.ts` with `mount(el, source)` that creates a CM6 EditorView reusing `createChildEditor` from `childEditorFactory.ts`.
+- Hard-code: no buttons yet, no debounced writer yet, no migration yet. Just prove the widget renders + receives keystrokes.
+- Settings flag: `useInlineWidget` (default OFF) — mount only when flag is on AND fence is `leetcode-solve`.
+- Tests: `widget/codeBlockProcessor.test.ts` mount/unmount, `widget/WidgetController.test.ts` doc handling.
+
+**Phase B — One-way Sync (Widget → Disk)**
+- Add `src/widget/debouncedWriter.ts` + integrate into `WidgetController.onUpdate`.
+- `vault.process` writes the new fence body back to disk.
+- Add `src/widget/selfWriteSuppression.ts` — but no listener yet (no reload path).
+- Add `flush()` + plugin `onunload` flush-all.
+- Tests: typing → 350 ms wait → vault.process called once; rapid typing → coalesces; flush forces immediate write.
+
+**Phase C — External-Edit Reconciliation (Disk → Widget)**
+- Add `vault.on('modify')` listener in `WidgetController` (or shared in `widgetRegistry`).
+- Wire suppression check.
+- `reloadFromDisk()` re-extracts fence body, dispatches with cursor preservation.
+- Tests: external `vault.process` from another module → widget reloads; widget's own write → no reload (suppression hit).
+
+**Phase D — Action Row + Chevron + Language Switching**
+- Add `src/widget/widgetActions.ts` mounting `buildCodeBlockButtonRow` inside widget container.
+- Wire chevron click → `processFrontMatter(lc-language)` → metadataCache.changed → `Compartment.reconfigure` (move logic from `main.ts:switchFenceLanguage` simplifying dramatically — no fence-tag rewrite, no atomic dispatch).
+- Tests: click chevron → fm changes → widget syntax highlighting flips; Run button → existing run path fires.
+
+**Phase E — Migration**
+- Add `src/widget/fenceMigrator.ts`.
+- Wire into `WidgetController.mount` pre-step.
+- Widen `codeBlockProcessor` gate to also fire on legacy fence tags when on `lc-slug` notes (so legacy notes get migrated then mount).
+- Update `starterCodeInjector.ts` and `NoteTemplate.ts` to emit `leetcode-solve` for new notes.
+- Update `codeExtractor.ts` to source language from frontmatter not fence tag.
+- Tests: legacy note → mount triggers migration → fence rewritten → widget appears; new note → emitted with `leetcode-solve` directly.
+
+**Phase F — v1.2 Path Removal**
+- Flip `useInlineWidget` default ON.
+- Hard cutover: delete `src/main/{childEditorSync,sectionLockExtension,nestedEditorExtension,childEditorRegistry,codeActionsEditorExtension}.ts`.
+- Remove all imports + wiring in `src/main.ts` (the 800-LOC chunk).
+- Delete `'leetcode.*'` userEvent annotations from remaining callsites.
+- Delete dead test files: `childEditorSync.test.ts`, `childEditorSync.repair.test.ts`, `sectionLockExtension.test.ts`, `nestedEditorExtension.test.ts`, `codeActionsEditorExtension.test.ts`, `childEditorRegistry.test.ts`, `resetCommand.childDispatch.test.ts`, `tabMidLine.test.ts` (depended on section-lock), `fmReactivity.test.ts` (subsystem moves into widget — rewrite as widget test).
+- Drop CLAUDE.md §Conventions paragraphs about `'leetcode.*'` userEvent and "canonical plugin write-path pattern".
+- Tests: full regression run; user-acceptance pass.
+
+**Phase G — Polish**
+- Cross-pane sync (multi-widget per file).
+- Vim mode flag toggle handling (`getConfig('vimMode')` change → reload-on-toggle).
+- Flush-on-blur.
+- Bundle-size pass (expected −30 KB from extension deletions).
+
+**Dependency reasoning:**
+- **A → B:** can't write back without a widget that owns a doc.
+- **B → C:** suppression has no work to do without a writer.
+- **C → D:** chevron's reconfigure needs fm-change reactivity, which needs reload path.
+- **D → E:** migration needs the widget infrastructure to exist so it knows what to migrate to.
+- **E → F:** can't delete v1.2 path until migration exists for users with v1.2 notes.
+- **F → G:** polish only meaningful after the cutover.
+
+**Phase A–E are coexistence-safe** behind `useInlineWidget` flag. **Phase F is the hard cutover.**
+
+---
+
+## 8. Coexistence Strategy
+
+**Recommended: Feature-flagged dual-path through Phase A–E, hard cutover at Phase F.**
+
+The codebase already has a precedent: `getUseNestedEditor()` setting (line 830 of main.ts) gates the v1.2 nested editor extension. v1.3 introduces a parallel `getUseInlineWidget()` setting:
+
+```
+useNestedEditor (v1.2)   useInlineWidget (v1.3)   Behavior
+─────────────────────────────────────────────────────────────
+       OFF                      OFF                v1.0 Reading-Mode-only (legacy fallback)
+       ON                       OFF                v1.2 dual-CM6 (current default)
+       OFF                      ON                 v1.3 inline widget
+       ON                       ON                 INVALID — assert and force `useNestedEditor=OFF`
 ```
 
-### Pattern 3: inputHandler for Character-Level Override
+**Why dual-path through E:**
+- During Phase A–E development the author is dogfooding both paths daily on different notes.
+- Bisection is trivial — flip the flag if v1.3 misbehaves.
+- v1.2 path stays load-bearing for the test suite until F.
 
-**What:** Use `EditorView.inputHandler` to intercept typed characters that conflict between markdown and code modes.
+**Why hard cutover at F (not soft deprecation):**
+- The two paths share `childEditorFactory.ts`. As soon as v1.3's mount path diverges (e.g., adds `vault.on('modify')` listeners scoped to widget keys), maintaining v1.2 compat becomes a tax on every PR.
+- LOC reduction is the milestone goal — deferring deletion forfeits the benefit.
+- v1.2's bug surface (the *reason* for v1.3) keeps biting users on the old path.
 
-**When:** Characters like `*`, `_`, `~` that markdown auto-pairs but code should treat as literal operators.
+**Cutover-day plan for users on v1.2:**
+- Plugin update with `useInlineWidget=true` default. First open of any legacy note triggers migration (Phase E). Notice toast: "Migrating LeetCode notes to v1.3 fence format — backups preserved in `.obsidian/plugins/obsidian-leetcode/backups/<timestamp>/`."
+- Backup is a one-shot pre-migration write of the file body to a sidecar; deletes after 7 days.
 
-**Example:**
-```typescript
-EditorView.inputHandler.of((view, from, to, text) => {
-  if (!isCursorInFenceBody(view.state)) return false;
-  if (MARKDOWN_PAIR_CHARS.has(text)) {
-    // Insert literal, suppress markdown auto-pair
-    view.dispatch({
-      changes: { from, to, insert: text },
-      selection: { anchor: from + text.length },
-    });
-    return true;
-  }
-  return false;
-});
-```
-
-### Pattern 4: Heuristic Indentation (No Parse Tree Dependency)
-
-**What:** Language-aware auto-indent based on the previous line's content (trailing `{`, `:`, `(`) rather than the syntax tree.
-
-**When:** After Enter is pressed inside the fence body. We cannot rely on the nested language's parse tree being fully built (CM6 lazy parsing).
-
-**Example:**
-```typescript
-function computeIndentAfterEnter(
-  state: EditorState,
-  pos: number,
-  langSlug: string,
-): string {
-  const line = state.doc.lineAt(pos);
-  const trimmed = line.text.trimEnd();
-  const currentIndent = line.text.match(/^\s*/)?.[0] ?? '';
-  const unit = state.facet(indentUnit);
-
-  // Brace-based languages: indent after { ( [
-  if (/[{(\[]$/.test(trimmed)) {
-    return currentIndent + unit;
-  }
-  // Python: indent after :
-  if (langSlug === 'python3' && /:\s*(#.*)?$/.test(trimmed)) {
-    return currentIndent + unit;
-  }
-  return currentIndent;
-}
-```
-
-### Pattern 5: lc-slug Gate (Consistent with Existing Extensions)
-
-**What:** Only activate code-editing behaviors on notes with `lc-slug` frontmatter.
-
-**When:** Every guarded command and inputHandler should include this gate to avoid affecting non-LC notes.
-
-**Example:**
-```typescript
-function isLcSlugNote(state: EditorState, plugin: Plugin): boolean {
-  const file = state.field(editorInfoField)?.file;
-  if (!file) return false;
-  const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter as
-    | Record<string, unknown>
-    | undefined;
-  const slug = fm?.['lc-slug'];
-  return typeof slug === 'string' && slug.length > 0;
-}
-```
+**If hard cutover risk feels too high:** keep the `useInlineWidget` flag (defaulting ON) for one minor version (1.3.x) before removing the flag itself in 1.4. v1.2 code is gone immediately at Phase F; only the *flag* lingers (and its OFF branch falls through to "Reading-Mode-only" — i.e., no Edit-Mode widget at all, which is a graceful degradation, not a v1.2 reactivation).
 
 ---
 
-## Anti-Patterns to Avoid
+## Anti-Patterns Specific to v1.3 (carry-over warnings)
 
-### Anti-Pattern 1: Replacing Obsidian's Markdown Language
-
-**What:** Attempting to inject a custom Language or override the editor's primary language with a code language for the fence region.
-
-**Why bad:** Obsidian's CM6 instance is configured internally. Plugins cannot access the state's language configuration. Even if possible, replacing the markdown language would break all other markdown behavior (headings, lists, links, etc.).
-
-**Instead:** Layer behavior on top using keymaps + inputHandler. Accept that the editor is "markdown mode with code-editor keybindings active in a zone."
-
-### Anti-Pattern 2: Using `indentOnInput` Globally
-
-**What:** Registering `indentOnInput()` from `@codemirror/language` as a global extension.
-
-**Why bad:** `indentOnInput` relies on the language's indentation computation from the syntax tree. In a markdown document, the syntax tree says "you're in a fenced code block" -- but the indentation rules it computes are for markdown (if any), not for the nested language. Also, it would fire for ALL typed characters everywhere in the document, trying to re-indent markdown headings/lists.
-
-**Instead:** Implement a custom transactionExtender or keymap-triggered indent that only fires for the fence body and uses heuristic rules rather than the markdown syntax tree.
-
-### Anti-Pattern 3: Dispatching with userEvent That Triggers the Lock
-
-**What:** Dispatching changes from the code editing extension with `userEvent: 'input.type'` or `'input.paste'`.
-
-**Why bad:** The section lock's changeFilter (Gate 0) fires on `input.*` and `delete.*` userEvents. If the code editing extension dispatches a transaction with these userEvents targeting a locked range (e.g., accidentally targeting the fence opener), the lock will suppress the change silently.
-
-**Instead:** Code editing commands dispatch to the fence BODY (unlocked range) -- no conflict. If edge cases arise, use `userEvent: 'leetcode.indent'` to bypass. But design commands to never touch locked ranges.
-
-### Anti-Pattern 4: Caching Fence Position in a StateField
-
-**What:** Creating a StateField to cache `findCodeFence()` results for "performance."
-
-**Why bad:** Adds complexity for negligible gain. `findCodeFence` is O(lines) on ~100-line documents -- microseconds. A StateField must handle all edge cases (doc changes that move the fence, fence deletion, fence creation). The caching logic is harder to get right than the scan itself.
-
-**Instead:** Call `findCodeFence(state)` directly in each guarded command. It's pure and cheap.
-
-### Anti-Pattern 5: Bundling `@codemirror/lang-*` as Full Language Support Extensions
-
-**What:** Installing full `LanguageSupport` extensions (e.g., `javascript()`, `python()`) from the `@codemirror/lang-*` packages to get their indentation.
-
-**Why bad:** These packages provide a full language stack (parser, highlighter, completions). Installing them as extensions would conflict with Obsidian's own markdown language. They would try to parse the ENTIRE document as Java/Python, not just the fence body.
-
-**Instead:** The `@codemirror/lang-*` packages are already bundled (in `dependencies`) -- but use them ONLY if extracting indent metadata, not as active Language extensions. Or better: implement heuristic indent rules that do not depend on a parse tree at all.
+- **Don't add `cm.dispatch` callsites on the parent CM6 from the widget.** The whole reason the dual-CM6 sync was complex is that plugin code dispatched onto both editors. v1.3 plugin writes go through `vault.process` only; widget edits stay inside the widget's EditorView.
+- **Don't reinvent `childEditorRegistry`-style LRU eviction.** The markdown-code-block-processor lifecycle is owned by Obsidian; let it call your mount/unmount. Cache the EditorView only for self-write suppression bookkeeping (Map keyed on filePath, no LRU).
+- **Don't use `vault.modify`** anywhere — `vault.process` is the only safe write primitive for active files (CLAUDE.md "Do NOT use `Vault.modify()` on active file — loses cursor position"). All existing callsites already comply; preserve this discipline in new widget code.
+- **Don't mount the widget in `Live Preview` only.** `registerMarkdownCodeBlockProcessor` does NOT fire in Live Preview — see STACK.md. The widget needs a parallel `registerEditorExtension` ViewPlugin (Decoration.replace + WidgetType) for Live Preview parity. Dataview's `obsidian-dataview/src/main.ts` is the canonical reference.
+- **Self-write suppression is a stateful global, not a transaction id.** The processor mount callback can be re-invoked (Obsidian re-renders code blocks aggressively on layout changes). Suppression state must live in `widgetRegistry`, not in a `WidgetController` instance — otherwise a re-render that creates a new controller misses the in-flight suppression window.
 
 ---
 
-## Integration Points with Existing Architecture
+## Open Questions for Roadmap
 
-### Integration Point 1: `findCodeFence` (SSoT Reuse)
-
-| Aspect | Detail |
-|--------|--------|
-| **Source** | `src/main/codeActionsEditorExtension.ts` (exported) |
-| **Used by** | sectionLockExtension, codeActionsEditorExtension, NEW: fenceZoneDetector |
-| **Contract** | Returns `{openerLine, closerLine}` or `null` |
-| **No modification needed** | Function is pure; safe to call from new extension |
-
-### Integration Point 2: `languageRefreshEffect` (Language Switch Signal)
-
-| Aspect | Detail |
-|--------|--------|
-| **Source** | `src/main/codeActionsEditorExtension.ts` (exported StateEffect) |
-| **Fired by** | metadataCache 'changed' listener in codeActionsEditorExtension |
-| **Carries** | `string | undefined` (new lc-language slug or undefined) |
-| **New consumer** | Code editing extension listens for this effect to reconfigure Compartment |
-
-### Integration Point 3: `sectionLockExtension` (Coexistence)
-
-| Aspect | Detail |
-|--------|--------|
-| **Lock boundaries** | Fence opener + closer are LOCKED; body between is UNLOCKED |
-| **Code editing target** | Always the unlocked body -- no bypass needed |
-| **userEvent convention** | Code editing dispatches SHOULD use `userEvent: 'leetcode.indent'` etc. for safety, even though body changes would pass anyway |
-| **No modification needed** | Section lock's filter naturally allows fence-body changes |
-
-### Integration Point 4: `switchFenceLanguage` (Language Change Trigger)
-
-| Aspect | Detail |
-|--------|--------|
-| **Source** | `src/main.ts:2302` |
-| **Current behavior** | Rewrites fence opener tag + body content |
-| **New responsibility** | After rewriting, must also trigger Compartment reconfigure |
-| **Implementation** | Dispatch `languageRefreshEffect` (already happens via metadataCache 'changed' listener) -- the code editing extension picks it up |
-
-### Integration Point 5: Extension Registration Order in `src/main.ts`
-
-```typescript
-// Step 6f -- code actions (decorations)
-this.registerEditorExtension(buildCodeActionsEditorExtension(this));
-
-// Step 6f-bis-a -- NEW: code editing behaviors (keymap + inputHandler + compartment)
-this.registerEditorExtension(buildCodeEditingExtension(this));
-
-// Step 6f-bis -- section lock (changeFilter + transactionFilter)
-this.registerEditorExtension(buildSectionLockExtension(this));
-```
-
----
-
-## New Components to Create
-
-| File | Type | Purpose |
-|------|------|---------|
-| `src/main/fenceZoneDetector.ts` | Pure helper module | `isCursorInFenceBody()`, `getFenceBodyRange()`, `isLcSlugNote()` -- thin wrappers around `findCodeFence` + frontmatter check |
-| `src/main/codeEditingExtension.ts` | Extension factory | `buildCodeEditingExtension(plugin)` -- composes keymap, inputHandler, Compartment, refresh listener |
-| `src/main/codeIndentRules.ts` | Pure logic | Per-language heuristic indent rules (what triggers indent/dedent per language) |
-| `src/main/codeBracketRules.ts` | Pure logic | Bracket pair definitions per language; markdown-char suppression set |
-
-## Existing Components to Modify
-
-| File | Change | Reason |
-|------|--------|--------|
-| `src/main.ts` (onload) | Add `registerEditorExtension(buildCodeEditingExtension(this))` call | Registration of new extension |
-| `src/main/codeActionsEditorExtension.ts` | None | `findCodeFence` already exported; `languageRefreshEffect` already exported |
-| `src/main/sectionLockExtension.ts` | None | No changes needed; fence body is already unlocked |
-
----
-
-## Suggested Build Order
-
-Based on dependencies between components:
-
-### Phase 1: Foundation (no UI-visible behavior yet)
-1. **`fenceZoneDetector.ts`** -- Pure helper. Depends only on `findCodeFence` (already exists). Unit-testable immediately.
-2. **`codeIndentRules.ts`** -- Pure data + logic. Language-to-indent-config mapping. Unit-testable.
-3. **`codeBracketRules.ts`** -- Pure data. Markdown chars to suppress, code pairs per language. Unit-testable.
-
-### Phase 2: Core Extension (Tab/Shift-Tab)
-4. **`codeEditingExtension.ts`** (skeleton) -- Compartment setup + guarded Tab/Shift-Tab keymap. This gives immediate value: Tab indents in fence.
-5. **Registration in `main.ts`** -- Wire `buildCodeEditingExtension(this)` between code actions and section lock.
-
-### Phase 3: Smart Enter
-6. **Smart newline command** -- Enter in fence body -> compute indent from previous line -> insert newline + indent. Handles `{`/`:` indent triggers.
-7. **Brace completion on Enter** -- Enter between `{|}` -> newline + indent + newline + dedent + `}`.
-
-### Phase 4: Bracket Handling
-8. **inputHandler for markdown suppression** -- Suppress `*_~` auto-pairs inside fence.
-9. **Code bracket closing** -- `{` -> `{}` with cursor between, `(` -> `()`, etc. Only in fence.
-
-### Phase 5: Language Switching
-10. **Compartment reconfigure on `languageRefreshEffect`** -- Subscribe to the existing effect and swap indent/bracket config.
-11. **Per-language indent rules** -- Python `:` dedent, Go `tab` indent unit, etc.
-
-**Rationale:** Each phase delivers testable, shippable behavior. Phase 2 alone (Tab/Shift-Tab) resolves the most common user complaint. Phase 3 (smart Enter) is the next highest-value. Phase 4 and 5 are polish.
-
----
-
-## Scalability Considerations
-
-| Concern | Current (v1.2) | Future (if needed) |
-|---------|----------------|-------------------|
-| Fence detection cost | O(lines) per keystroke, ~100 lines | Cache in StateField if notes grow past 500 lines |
-| Language count | 8 languages (Python, Java, C++, C, JS, TS, Go, Rust) | Add indent configs to `codeIndentRules.ts` for new languages |
-| Multiple code blocks | Only first fence under `## Code` (SSoT from `findCodeFence`) | N/A -- LC note template has exactly one code fence |
-| Extension registration | Static (registered once on plugin load) | Compartment handles runtime changes without re-registration |
-
----
-
-## Key Architectural Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| Guarded commands over zone-scoped extensions | CM6 has no built-in zone-scoping; guard pattern is idiomatic |
-| Heuristic indent over syntax-tree indent | Cannot rely on nested parse tree being ready; previous-line heuristics are reliable and simple |
-| Compartment for language config | Canonical CM6 pattern; only mechanism since `registerEditorExtension` is append-only |
-| `Prec.high` for code keymap | Must beat Obsidian's default markdown keybindings (Tab = list indent in markdown) |
-| Reuse `findCodeFence` SSoT | Avoids divergence with section lock; proven reliable across 1,450 tests |
-| inputHandler for character suppression | Only mechanism to intercept arbitrary typed chars; keymap cannot bind "any char" |
-| No modification to sectionLock | Fence body is already unlocked; clean separation of concerns |
-| Register before section lock | Logical layering: behaviors first, enforcement last |
-
----
-
-## Sources
-
-- CM6 official docs: Compartment dynamic reconfiguration example (codemirror.net/examples/config) -- HIGH confidence
-- CM6 official docs: keymap facet, command protocol (return true/false) -- HIGH confidence
-- CM6 official docs: Prec.high/highest for extension precedence -- HIGH confidence
-- CM6 official docs: EditorView.inputHandler for text input interception -- HIGH confidence
-- CM6 official docs: indentWithTab, indentMore, indentLess from @codemirror/commands -- HIGH confidence
-- CM6 official docs: indentService, indentUnit, indentOnInput from @codemirror/language -- HIGH confidence
-- CM6 official docs: closeBrackets, closeBracketsKeymap, deleteBracketPair -- HIGH confidence
-- CM6 official docs: Tab handling accessibility (escape hatch via Escape key) -- HIGH confidence
-- Existing codebase: `sectionLockExtension.ts` -- changeFilter + transactionFilter architecture (direct code read)
-- Existing codebase: `codeActionsEditorExtension.ts` -- `findCodeFence` SSoT, `languageRefreshEffect` (direct code read)
-- Existing codebase: `src/main.ts` -- extension registration order, `switchFenceLanguage` dispatch pattern (direct code read)
-- Existing codebase: `esbuild.config.mjs` -- `@codemirror/commands` and `@codemirror/language` are external (runtime-provided by Obsidian)
-- Existing codebase: `package.json` -- `@codemirror/lang-*` packages are bundled dependencies
-- CLAUDE.md project conventions: `'leetcode.*'` userEvent bypass, `vault.process` not `cm.dispatch` for vault writes
+1. **Should `useInlineWidget` ship as opt-in for one alpha cycle before becoming default?** (Recommend yes — collect dogfood feedback before forced cutover.)
+2. **Live Preview rendering parity** is confirmed by STACK.md to require a separate `registerEditorExtension` ViewPlugin (Dataview pattern). Phase A must include both mount paths.
+3. **Vim toggle handling:** PROJECT.md accepts "reload-on-vim-toggle". Does the widget detect the setting change at all, or does the user have to close/reopen the note? (Settings polling vs. plugin command — minor UX decision; defer to Phase G.)
+4. **Backup sidecar retention:** 7 days, 30 days, or until next migration? Disk-space bound? (Likely answered during Phase E plan.)
+5. **`leetcode-solve` fence tag specificity:** does Obsidian's markdown code-block processor namespace prevent collisions with future Obsidian core tags? (Verify with Context7 / Obsidian API docs during Phase A.)

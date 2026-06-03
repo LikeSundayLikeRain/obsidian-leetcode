@@ -308,7 +308,7 @@ describe('ContestFinalizer', () => {
     it('replaces existing code fence under ## Code', () => {
       const body = '## Problem\nHello\n\n## Code\n```python\nold\n```\n\n## Notes\n';
       const result = rewriteCodeSection(body, 'new code', 'javascript');
-      expect(result).toContain('```javascript\nnew code\n```');
+      expect(result).toContain('```leetcode-solve\nnew code\n```');
       expect(result).not.toContain('old');
     });
 
@@ -316,7 +316,7 @@ describe('ContestFinalizer', () => {
       const body = '## Problem\nHello\n\n## Notes\n';
       const result = rewriteCodeSection(body, 'new code', 'python');
       expect(result).toContain('## Code');
-      expect(result).toContain('```python\nnew code\n```');
+      expect(result).toContain('```leetcode-solve\nnew code\n```');
     });
   });
 });

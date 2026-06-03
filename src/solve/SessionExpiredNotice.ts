@@ -38,26 +38,31 @@ import { Notice } from 'obsidian';
 export function showSessionExpiredNotice(
   login: () => void | Promise<void>,
 ): Notice {
-  // Use Obsidian's DOM helpers off `activeDocument` so popout windows wire
-  // their fragments into the right document; the test setup polyfills the
-  // helpers onto happy-dom's document so this same path runs in unit tests.
-  const frag = activeDocument.createFragment();
+  // Use Obsidian's top-level `createFragment` helper — it returns a
+  // DocumentFragment that Notice will append into the active notice container
+  // (popout-window safe). NOTE: `createFragment` is a top-level function in
+  // obsidian's API, NOT a method on Document — calling
+  // `activeDocument.createFragment()` throws TypeError at runtime even though
+  // an old ambient declaration claimed otherwise (Phase 20 Plan 20-10 hotfix).
+  const frag = createFragment();
   // CF-04 LOCKED copy — do NOT paraphrase. A trailing space separates copy
   // from the Log in button in the sticky notice. "LeetCode" is a proper-noun
   // brand name (sentence-case rule's brand allowlist permits it).
-  const copy = activeDocument.createSpan();
-
+  //
+  // NOTE: Obsidian's `Node.createSpan/createEl` (enhance.js) creates AND
+  // appends in one call — it's not a pure factory. Calling
+  // `activeDocument.createSpan()` appends to the Document itself, which
+  // throws "Only one element on document allowed". Call the helpers on the
+  // fragment so they append to the fragment instead (Plan 20-10 hotfix).
+  const copy = frag.createSpan();
   copy.textContent = 'LeetCode session expired. Log in again.';
-  frag.appendChild(copy);
 
-  const spacer = activeDocument.createSpan();
+  const spacer = frag.createSpan();
   spacer.textContent = ' ';
-  frag.appendChild(spacer);
 
-  const btn = activeDocument.createEl('button');
+  const btn = frag.createEl('button');
   btn.className = 'leetcode-notice-action mod-cta';
   btn.textContent = 'Log in';
-  frag.appendChild(btn);
 
   // timeout: 0 → sticky (Pitfall 7). User MUST click Log in or close manually.
   const notice = new Notice(frag, 0);

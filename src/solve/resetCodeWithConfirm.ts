@@ -111,9 +111,7 @@ export interface ResetCodeWithConfirmDeps {
    * helper falls back to `app.vault.process(...)` — D-04 fallback semantics
    * preserved for the no-MarkdownView path.
    *
-   * The dispatch on the child MUST carry `userEvent: 'leetcode.reset.child'`
-   * (CLAUDE.md §Conventions audited callsites — child-origin Reset). It must
-   * NOT carry `Transaction.addToHistory.of(false)` — Reset deserves a child
+   * The dispatch on the child must NOT carry `Transaction.addToHistory.of(false)` — Reset deserves a child
    * undo entry; the existing parent-side mirror already runs with
    * `addToHistory.of(false)` on the parent.
    *
@@ -143,6 +141,30 @@ export interface ResetCodeWithConfirmDeps {
    * Phase 17 D-06 CONTEXT note.
    */
   resolveActiveLangSlug?: (file: TFile) => string | undefined;
+
+  /**
+   * Phase 20 Plan 20-10 (gap-closure T10 — DATA CORRUPTION) — fence-kind seam.
+   * Returns the existing fence's kind by scanning the note's text on disk
+   * (NOT by consulting the active view, which is the silent-bail anti-pattern
+   * that root-caused T3 and would re-corrupt T10 in popout / non-active-pane /
+   * command-palette-from-other-file scenarios — see
+   * .planning/debug/reset-fence-kind-corruption.md and
+   * .planning/debug/widget-plugin-handoff-cluster.md).
+   *
+   * Async because the canonical implementation is `vault.read(file)` +
+   * `countLeetCodeSolveFenceOpeners(text) > 0`. The result threads into
+   * `forceInjectCodeSection`'s `fenceKind` option (Plan 20-10 Task 1) so v1.3
+   * notes get the body-only replace via `rewriteFenceBody` instead of the
+   * langSlug-blind legacy path.
+   *
+   * Returning `'legacy'` or `null` preserves the v1.2 forceInjectCodeSection
+   * path verbatim. Omitting the field is equivalent to `'legacy'`/null —
+   * backward compat for tests that don't exercise the v1.3 path
+   * (tests/main/resetCommand.test.ts legacy fixtures continue to work).
+   */
+  resolveFenceKind?: (
+    file: TFile,
+  ) => Promise<'leetcode-solve' | 'legacy' | null>;
 }
 
 /**
@@ -170,23 +192,37 @@ export async function resetCodeWithConfirm(
   const starter =
     detail?.codeSnippets?.find((s) => s.langSlug === langSlug)?.code ?? '';
 
+  // Phase 20 Plan 20-10 (gap-closure T10 — DATA CORRUPTION) — fence-kind
+  // seam. Resolved BEFORE the dispatch handle lookup so both branches (child
+  // dispatch + vault.process fallback) thread the same kind into
+  // forceInjectCodeSection. When the resolver returns 'leetcode-solve' AND
+  // the note has a v1.3 fence, forceInjectCodeSection short-circuits to
+  // rewriteFenceBody (Plan 20-10 Task 1), preserving the leetcode-solve
+  // opener byte-for-byte. Legacy / null / undefined → existing v1.2 path
+  // runs unchanged.
+  const fenceKind = (await deps.resolveFenceKind?.(deps.file)) ?? null;
+  const injectOpts = {
+    starterCode: starter,
+    langSlug,
+    ...(fenceKind === 'leetcode-solve' || fenceKind === 'legacy'
+      ? { fenceKind }
+      : {}),
+  };
+
   // Phase 17 D-03 — child-CM6 dispatch path. When a child is registered for
   // this file, route the write through the child so the undo entry lands on
   // the child (Phase 15 D-05 cm-z scope isolation). The handle's caller in
   // src/main.ts looks up the child via `this.childEditorRegistry?.get(...)`.
   const handle = deps.getDispatchHandle?.(deps.file) ?? null;
   if (handle) {
-    const next = forceInjectCodeSection(currentBody, {
-      starterCode: starter,
-      langSlug,
-    });
+    const next = forceInjectCodeSection(currentBody, injectOpts);
     handle.replaceFullBody(next);
   } else {
     // Phase 17 D-04 — vault.process fallback for the no-child path (note not
     // open in a MarkdownView). The reopen path will rebuild the child from
     // disk content.
     await deps.app.vault.process(deps.file, (body) =>
-      forceInjectCodeSection(body, { starterCode: starter, langSlug }),
+      forceInjectCodeSection(body, injectOpts),
     );
   }
 

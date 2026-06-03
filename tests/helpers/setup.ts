@@ -141,6 +141,16 @@ if (g.document) {
     doc,
     true,
   );
+  // Phase 20 Plan 20-10 hotfix — Obsidian patches createEl/createDiv/createSpan
+  // onto Node.prototype, so DocumentFragment (and every other Node subtype)
+  // gets them too. Mirror that here in append-mode so source code calling
+  // `frag.createSpan()` builds the fragment in one step.
+  installHelpers(
+    (g.window as unknown as { DocumentFragment: { prototype: DocumentFragment } })
+      .DocumentFragment.prototype as unknown as DomHelperHost & Record<string, unknown>,
+    doc,
+    true,
+  );
   // Expose createDiv / createEl / createSpan as globalThis functions so
   // source modules that call the bare global form (e.g. `createDiv(...)`)
   // — which is how Obsidian injects them on window in production — work in
@@ -174,5 +184,17 @@ if (g.document) {
   const docMaybe = doc as unknown as { createFragment?: () => DocumentFragment };
   if (typeof docMaybe.createFragment !== 'function') {
     docMaybe.createFragment = () => doc.createDocumentFragment();
+  }
+  // Phase 20 Plan 20-10 hotfix — Obsidian also exposes `createFragment` as
+  // a TOP-LEVEL global function (declared in obsidian.d.ts:196). Source
+  // modules now call bare `createFragment()` instead of the (incorrect)
+  // `activeDocument.createFragment()`. Polyfill the global onto happy-dom's
+  // globalThis so tests resolve the same identifier.
+  if (typeof gThis['createFragment'] !== 'function') {
+    gThis['createFragment'] = (callback?: (el: DocumentFragment) => void): DocumentFragment => {
+      const frag = doc.createDocumentFragment();
+      callback?.(frag);
+      return frag;
+    };
   }
 }

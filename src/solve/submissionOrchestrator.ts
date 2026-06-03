@@ -21,7 +21,7 @@
 // Phase 3 UI-SPEC Notice table and MUST NOT be paraphrased.
 
 import { Notice } from 'obsidian';
-import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
+import type { App, RequestUrlParam, RequestUrlResponse, TFile } from 'obsidian';
 import type { AuthCookies } from '../auth/types';
 import type { DetailCacheEntry } from '../settings/SettingsStore';
 import { setWindowTimeout } from '../shared/timers';
@@ -69,6 +69,43 @@ export interface SubmissionOrchestratorDeps {
    *  NOT at orchestrator construction — so the code sent to LC is the
    *  current content at invocation per SOLVE-09. */
   getCurrentBody: () => string;
+  /**
+   * Phase 21 Plan 21-03 Task 2 (D-extract-01) — when supplied alongside `app`,
+   * the legacy markdown-body path threads
+   * `app.metadataCache.getFileCache(file)?.frontmatter` through to
+   * `extractFirstFencedBlock` so v1.3 `\`\`\`leetcode-solve` fences resolve
+   * the language from `lc-language` frontmatter (source of truth) rather
+   * than the deleted fence tag.
+   *
+   * OPTIONAL — undefined preserves backward-compat with the 1-arg legacy
+   * extractor path. The widget path (getCurrentCode supplied) skips
+   * extraction entirely and never reads this field.
+   */
+  file?: TFile;
+  /**
+   * Phase 21 Plan 21-03 Task 2 — Obsidian App handle, paired with `file` to
+   * read frontmatter via `app.metadataCache.getFileCache(file)?.frontmatter`.
+   * OPTIONAL for the same backward-compat reasons as `file`. Test fixtures
+   * that drive the legacy markdown-body path don't need to set this when
+   * the test fences are legacy (non-leetcode-solve) tags — the fence-tag
+   * Branch C of extractFirstFencedBlock ignores frontmatter regardless.
+   */
+  app?: App;
+  /**
+   * Phase 20 Plan 20-10 Task 5 (gap-closure T7) — when supplied, the v1.3
+   * widget path's raw fence body. The orchestrator uses this value as
+   * `typed_code` directly and skips `extractFirstFencedBlock(getCurrentBody())`
+   * which fails on raw code (no markdown fences).
+   *
+   * `lcLanguage` MUST be present alongside `getCurrentCode` (the widget path
+   * always reads lc-language from frontmatter). Empty / whitespace-only code
+   * fires a user Notice and aborts before the LC API call.
+   *
+   * Phase 22 retires the legacy `getCurrentBody` field once `*FromActive` is
+   * deleted. The TODO Phase 22 marker at the fall-through site marks the
+   * deletion.
+   */
+  getCurrentCode?: () => string;
   /** Phase 5 D-21 — login callback wired to the D-21 sticky session-expired
    *  Notice. Optional to preserve backward compatibility with Wave 0 tests
    *  that instantiate the orchestrator without a login callback — in that
@@ -214,17 +251,56 @@ export class SubmissionOrchestrator {
       return;
     }
 
-    // Gate 3 — read current body at invocation (SOLVE-09) and extract first
-    // fenced block (D-04).
-    const body = this.deps.getCurrentBody();
-    const extracted = extractFirstFencedBlock(body);
-    if (!extracted) {
-       
-      new Notice(
-        'No code block found. Add a fenced block with your solution.',
-        6000,
-      );
-      return;
+    // Phase 20 Plan 20-10 Task 5 (gap-closure T7) — widget path skips the
+    // markdown-body fence extractor entirely. When `getCurrentCode` is
+    // supplied, the caller has already extracted the raw fence body
+    // (widget.view.state.doc.toString()) and we trust it. Empty /
+    // whitespace-only code fires a user Notice and aborts before the LC
+    // API call.
+    let typedCode: string;
+    let extractedLang: string | null;
+    if (this.deps.getCurrentCode) {
+      const raw = this.deps.getCurrentCode();
+      if (raw.trim().length === 0) {
+
+        new Notice(
+          'Add code to your solution before running.',
+          6000,
+        );
+        return;
+      }
+      typedCode = raw;
+      extractedLang = null;
+    } else {
+      // TODO Phase 22: delete this branch after *FromActive removal — only
+      // legacy callers (active-leaf path) use getCurrentBody() + the
+      // extractFirstFencedBlock fence-extractor. The widget path always
+      // supplies getCurrentCode and skips this entirely. See
+      // .planning/phases/20-reconciliation-ux-action-row-section-protection/
+      //   20-10-PLAN.md Task 5 for the architectural seam.
+      //
+      // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter for
+      // v1.3 leetcode-solve fences (lc-language SSoT). For legacy fences,
+      // codeExtractor's Branch C ignores the frontmatter arg entirely; for
+      // tests/legacy callers that don't supply `file` + `app`, undefined
+      // is passed and Branch C's verbatim behavior runs.
+      const body = this.deps.getCurrentBody();
+      const fm = this.deps.app && this.deps.file
+        ? (this.deps.app.metadataCache.getFileCache(this.deps.file)?.frontmatter as
+            | { 'lc-language'?: string }
+            | undefined)
+        : undefined;
+      const extracted = extractFirstFencedBlock(body, fm);
+      if (!extracted) {
+
+        new Notice(
+          'No code block found. Add a fenced block with your solution.',
+          6000,
+        );
+        return;
+      }
+      typedCode = extracted.code;
+      extractedLang = extracted.lang;
     }
 
     // Gate 4 — auth cookies.
@@ -238,7 +314,7 @@ export class SubmissionOrchestrator {
     }
 
     const langSlug = this.deps.lcLanguage ?? resolveLangSlug(
-      extracted.lang,
+      extractedLang,
       this.deps.settings.getDefaultLanguage(),
     );
     const detail = this.deps.settings.getProblemDetail(slug);
@@ -258,7 +334,7 @@ export class SubmissionOrchestrator {
       body: JSON.stringify({
         lang: langSlug,
         question_id: questionId,
-        typed_code: extracted.code,
+        typed_code: typedCode,
         judge_type: 'large',
       }),
       throw: false,

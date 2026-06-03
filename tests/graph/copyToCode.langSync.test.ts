@@ -45,9 +45,9 @@ describe('copyToCode lang-sync (G-COPY-TO-CODE-LANG-DRIFT)', () => {
     expect(fm?.['lc-language']).toBe('java');
 
     const body = m.getContent('LeetCode/1-two-sum.md') ?? '';
-    expect(body).toContain('```java');
+    expect(body).toContain('```leetcode-solve');
     expect(body).toContain('class Solution {}');
-    expect(body).not.toContain('```python\nclass Solution:');
+    expect(body).not.toContain('class Solution:\n    pass');
   });
 
   it('no-ops lc-language when submission slug matches current (same-slug short-circuit)', async () => {

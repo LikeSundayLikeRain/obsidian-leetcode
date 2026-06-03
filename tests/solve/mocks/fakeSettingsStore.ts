@@ -49,6 +49,15 @@ export interface FakeSettings {
   // Phase 19 vq4 — nested-editor master toggle (reload-required).
   getUseNestedEditor(): boolean;
   setUseNestedEditor(v: boolean): Promise<void>;
+  // Phase 19 D-05 — inline widget master toggle (reload-required).
+  getUseInlineWidget(): boolean;
+  setUseInlineWidget(v: boolean): Promise<void>;
+  // Phase 19 C-06 — debounced widget writer delay (5 options).
+  getWidgetSyncDebounceMs(): 300 | 400 | 500 | 1000 | 2000;
+  setWidgetSyncDebounceMs(v: 300 | 400 | 500 | 1000 | 2000): Promise<void>;
+  // Phase 21 MIGRATE-06 — auto-migrate v1.2 notes on open.
+  getAutoMigrateOnOpen(): boolean;
+  setAutoMigrateOnOpen(v: boolean): Promise<void>;
 }
 
 /** Optional seed values for `makeFakeSettingsStore`. Any field left undefined
@@ -176,6 +185,28 @@ export function makeFakeSettingsStore(overrides: FakeSettingsOverrides = {}): Fa
       return true;
     },
     async setUseNestedEditor(_v: boolean) {
+      // no-op in fake
+    },
+    // Phase 19 D-05 — inline widget master toggle. Default false mirrors the
+    // production hard-gate default; existing tests render the v1.2 path.
+    getUseInlineWidget() {
+      return false;
+    },
+    async setUseInlineWidget(_v: boolean) {
+      // no-op in fake
+    },
+    // Phase 19 C-06 — debounced widget writer delay. Default 400 mirrors prod.
+    getWidgetSyncDebounceMs() {
+      return 400 as const;
+    },
+    async setWidgetSyncDebounceMs(_v: 300 | 400 | 500 | 1000 | 2000) {
+      // no-op in fake
+    },
+    // Phase 21 MIGRATE-06 — auto-migrate setting. Default true mirrors prod.
+    getAutoMigrateOnOpen() {
+      return true;
+    },
+    async setAutoMigrateOnOpen(_v: boolean) {
       // no-op in fake
     },
   };

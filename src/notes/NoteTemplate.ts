@@ -22,9 +22,6 @@
 
 import type { App, TFile } from 'obsidian';
 import type { DetailCacheEntry } from './types';
-// Phase 5.3 D-04: write-time fence-tag remap (python3→python, golang→go, c→cpp).
-// Pure data + pure helper; languages.ts pulls nothing from notes/, so no cycle risk.
-import { lcSlugToFenceTag } from '../solve/languages';
 
 /** The 7 lc-* frontmatter keys Phase 2 writes. Ordered to match D-03 YAML. */
 export const PLUGIN_LC_KEYS = [
@@ -95,18 +92,18 @@ export const LOCKED_HEADINGS = [
 ] as const;
 
 /**
- * Renders a fenced code block with the given langSlug tag + starter code.
- * Caller appends trailing newline as needed.
+ * Renders a `\`\`\`leetcode-solve` fenced code block with the given starter
+ * code. Caller appends trailing newline as needed.
  *
- * Phase 5.3 D-04: the fence-tag opener is remapped via `lcSlugToFenceTag` so
- * Obsidian's `lang-markdown` nested-parser recognizes the language natively
- * in Edit Mode (e.g., `python3` slug → ` ```python` opener; `golang` → ` ```go`;
- * `c` → ` ```cpp`). Unsupported LC slugs pass through verbatim and render plain
- * monospace — same UX as the pre-Phase-5.3 baseline.
+ * Phase 22 — the v1.2 langSlug-fence emitter retired with the v1.2 path.
+ * Language metadata lives in `lc-language` frontmatter (canonical v1.3
+ * source of truth per Phase 19 C-01); the fence opener is fixed at
+ * `leetcode-solve` for every new note. Trim semantics: leading/trailing
+ * whitespace stripped, internal whitespace preserved.
  */
-export function codeBlockFor(langSlug: string, starterCode: string): string {
+export function codeBlockFor(starterCode: string): string {
   const code = starterCode.trim();
-  return '```' + lcSlugToFenceTag(langSlug) + '\n' + code + '\n```';
+  return '```leetcode-solve\n' + code + '\n```';
 }
 
 /**
@@ -179,13 +176,15 @@ export function mapStatusDisplay(
  * `## Solution` and `## Techniques` are added by Phase 4 on first Accepted submission.
  * `## Custom Tests` is a legacy Phase 3 section; Phase 5 ignores it on read and write (POLISH-07 D-08).
  *
- * Backward-compat: `langSlug` is optional and defaults to `'python3'` so Phase 2
- * callers that pass only `{ problemMarkdown }` continue to compile and render
- * the same shape (with an additional `## Code` section containing an empty
- * python3 fenced block).
+ * Phase 22 — `langSlug` accepted for back-compat but the fence opener is
+ * always `\`\`\`leetcode-solve` (v1.3 widget mount path). The legacy
+ * `\`\`\`<langSlug>` emitter retired with the v1.2 path; language
+ * metadata moved to `lc-language` frontmatter.
  */
 export function buildNoteBody(input: {
   problemMarkdown: string;
+  /** Reserved for back-compat with existing call sites; not consumed in v1.3
+   *  (language lives in `lc-language` frontmatter). */
   langSlug?: string;
   starterCode?: string;
   /** Phase 12 Plan 03 (D-11) — optional H1 title prepended before ## Problem.
@@ -193,11 +192,15 @@ export function buildNoteBody(input: {
    *  output starts with `## Problem` (backward-compat for existing callers). */
   title?: string;
 }): string {
-  const langSlug = input.langSlug ?? 'python3';
   const starter = input.starterCode ?? '';
-  const codeBlock = codeBlockFor(langSlug, starter);
+  const codeBlock = codeBlockFor(starter);
   const h1 = input.title ? `# ${input.title}\n` : '';
-  return `${h1}## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
+  // Phase 22 D-polish-08 — blank line between `## Code` and the fence
+  // (regression from v1.2 — pre-v1.3 templates had this gap; the v1.3
+  // emitter rewrite collapsed it to a single newline). Visual breathing
+  // room + reader-source consistency. Mirrors the existing `## Notes\n\n`
+  // pattern at the end of the body.
+  return `${h1}## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n\n${codeBlock}\n\n## Notes\n\n`;
 }
 
 /**

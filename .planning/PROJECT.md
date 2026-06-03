@@ -51,7 +51,29 @@ The plugin now includes a nested code editor with full language support (8 langu
 
 ### Active
 
-(Next milestone not yet started — run `/gsd:new-milestone`)
+**v1.3 Inline Widget Architecture** — see Current Milestone below.
+
+## Current Milestone: v1.3 Inline Widget Architecture
+
+**Goal:** Replace the v1.2 dual-CM6 nested-editor + bidirectional sync + section-lock model with a self-contained inline code-block widget driven by one-way sync — preserving the "code lives inside the note" UX while eliminating the corner-case bug class.
+
+**Target features:**
+- Code-block processor for a `leetcode-solve` fence tag — renders inline in Reading mode and Live Preview (Dataview / Kanban / Excalidraw pattern)
+- Self-contained child CM6 instance per widget — own state, own undo stack, no parent-doc transactions
+- One-way continuous sync: widget edits → debounced (~300–500ms) `vault.process` → atomic fence-body rewrite; parent CM6 picks up via normal file-change pipeline
+- External-edit reconciliation via `vault.on('modify')` with self-write suppression window
+- Flush-on-unload / flush-on-blur so no in-flight edits are lost
+- Vim mode via `@replit/codemirror-vim`, conditional on `app.vault.getConfig('vimMode')` — reload-on-toggle accepted
+- Carry-over from v1.2: 8 language packs, theme integration, indent/bracket/comment rules, language switching, relative line numbers
+- Re-mount Run / Submit / AI Debug / Copy buttons inside the widget UI
+- Migration path for existing v1.2 notes (legacy `## Code` block with `lc-language`)
+- Deletion of `childEditorSync.ts`, `sectionLockExtension.ts`, `nestedEditorExtension.ts`, the `'leetcode.*'` userEvent convention, history-bypass mirror dance, fence-closer-merge guard
+
+**Key context:**
+- v1.2's dual-editor sync proved an open-ended bug surface (cmd-Z leaks, locked-range dispatches, fence-closer merges, cursor visibility). Inline-widget + one-way sync collapses it to a single source of truth.
+- ~1,700 LOC net deletion expected from `src/main/`; widget mount + sync layer estimated at ~300 LOC.
+- Cmd-Z (per-widget undo) and Cmd-F (focus-scoped) become intentional UX shifts — matches other inline-block plugins.
+- Existing v1.2 notes must remain readable/editable; migration must not break vault data.
 
 ## Completed: v1.2 Code Editor Experience (2026-05-26)
 
@@ -110,6 +132,8 @@ The plugin now includes a nested code editor with full language support (8 langu
 | Look-ahead edges feature-flagged (v1.1) | Novel UX; can disable in field | ✓ Good |
 | Lazy-on-AC Techniques migration (v1.1) | Never batch-rewrite on plugin load | ✓ Good |
 | All AI vault writes via `app.vault.process` (v1.1) | Consistent with v1.0 vault-write discipline | ✓ Good |
+| Inline code-block widget + one-way sync (v1.3) | v1.2 dual-CM6 sync proved an open-ended bug surface; widget = single source of truth, file = passive consumer | Pending |
+| Reload-on-vim-toggle accepted (v1.3) | Listening for Obsidian vim toggle has no clean event; reload is acceptable to user | Pending |
 
 ## Evolution
 
@@ -122,4 +146,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-21 — v1.2 milestone started*
+*Last updated: 2026-05-28 — v1.3 milestone started*

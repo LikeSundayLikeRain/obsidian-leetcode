@@ -2,8 +2,8 @@
 //
 // Asserts that `scripts/check-bundle-size.mjs`:
 //   - Exits 1 with FAIL when main.js > 1_800_000 bytes
-//   - Exits 0 with WARN when 1_710_000 < size <= 1_800_000
-//   - Exits 0 (no warn) when size <= 1_710_000
+//   - Exits 0 with WARN when 1_760_000 < size <= 1_800_000
+//   - Exits 0 (no warn) when size <= 1_760_000
 //   - Exits 1 with FAIL when main.js does not exist
 //
 // Phase 07 Plan 03 ceiling bump (Rule 3): 500 KB → 1 MB when the AI SDK
@@ -73,8 +73,12 @@ describe('scripts/check-bundle-size.mjs (FOUND-02)', () => {
     expect(r.stderr).not.toMatch(/WARN/);
   });
 
-  it('exits 0 with WARN when 1_710_000 < size <= 1_800_000 (soft warn band)', () => {
-    const r = runWithFixture(1_750_000);
+  it('exits 0 with WARN when 1_760_000 < size <= 1_800_000 (soft warn band)', () => {
+    // Phase 22 D-gate-01 calibration: SOFT_WARN raised from 1_710_000 to
+    // 1_760_000 to accommodate Plan 22-02 polish (+~50 KB CodeMirror surface
+    // for line-number gutter, vim mode-class extension, hover override).
+    // 1_770_000 sits in the new soft-warn band (above SOFT, below HARD).
+    const r = runWithFixture(1_770_000);
     expect(r.status).toBe(0);
     expect(r.stderr).toMatch(/WARN/);
     expect(r.stderr).toMatch(/heading toward the gate/);
@@ -106,11 +110,11 @@ describe('package.json — check:bundle-size script registration (FOUND-02)', ()
   });
 });
 
-describe('scripts/check-bundle-size.mjs — threshold constants (FOUND-02 + Phase 17 Plan 06 bump)', () => {
-  it('uses HARD_LIMIT=1_800_000 and SOFT_WARN=1_710_000 (1.8 MB ceiling for vim-shipped v1.2)', () => {
+describe('scripts/check-bundle-size.mjs — threshold constants (FOUND-02 + Phase 17 Plan 06 bump + Phase 22 D-gate-01 recalibration)', () => {
+  it('uses HARD_LIMIT=1_800_000 and SOFT_WARN=1_760_000 (Phase 22: SOFT_WARN raised for v1.3 polish)', () => {
     const src = readFileSync(SCRIPT_PATH, 'utf-8');
     expect(src).toMatch(/HARD_LIMIT\s*=\s*1_?800_?000/);
-    expect(src).toMatch(/SOFT_WARN\s*=\s*1_?710_?000/);
+    expect(src).toMatch(/SOFT_WARN\s*=\s*1_?760_?000/);
   });
 });
 

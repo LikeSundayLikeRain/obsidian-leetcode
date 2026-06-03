@@ -255,19 +255,61 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         }),
       );
 
-    // Phase 19 vq4 — master toggle for the nested CM6 child-editor stack.
-    // Reload-required apply mode: persists immediately but does NOT live-
-    // destroy children. The Notice prompts the user to reload Obsidian.
-    new Setting(codeEditorGroup)
-      .setName('Use nested code editor')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- '## Code' is the literal Markdown heading rendered inside locked LC notes (proper noun in this domain); 'Obsidian' is the host application brand.
-      .setDesc('When enabled, the ## Code fence renders as an embedded code editor with syntax highlighting. Disable to use Obsidian\'s native markdown editor instead. Reload Obsidian to apply changes.')
+    // Phase 22 (D-settings-01) — `useInlineWidget` / `useNestedEditor`
+    // toggles retired with the v1.2 path. The v1.3 inline widget is the only
+    // mount path and migration runs unconditionally on file open.
+
+    // =============================
+    //   Migration section
+    // =============================
+    new Setting(containerEl).setName('Migration').setHeading();
+
+    const expGroup = containerEl.createDiv('lc-settings-group');
+
+    // Phase 21 MIGRATE-06 — auto-migrate v1.2 notes when opened. Default ON
+    // (D-auto-01). When OFF, the widget mount path renders a legacy banner
+    // with a [Migrate now] CTA (D-auto-02). Live-applies: no reload required
+    // because the next file-open consults the setting fresh from
+    // SettingsStore. The onChange handler ONLY persists; never triggers
+    // workspace.detachLeavesOfType or any reload path.
+    new Setting(expGroup)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'v1.2' is a version identifier (proper noun in this domain).
+      .setName('Auto-migrate v1.2 notes when opened')
+      .setDesc('When opening a LeetCode note from v1.2 or earlier, silently rewrite the fence to the v1.3 format. When off, a banner offers a manual [Migrate now] button.')
       .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.getUseNestedEditor())
+        .setValue(this.plugin.settings.getAutoMigrateOnOpen())
         .onChange(async (v) => {
-          await this.plugin.settings.setUseNestedEditor(v);
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'Obsidian' is the host application brand (proper noun).
-          new Notice('Reload Obsidian to apply', 5000);
+          await this.plugin.settings.setAutoMigrateOnOpen(v);
+          // No reload needed — live-applies on next file open.
+        }),
+      );
+
+    new Setting(expGroup)
+      .setName('Save delay')
+      .setDesc('Time after typing stops before saving to disk. Lower = snappier; higher = fewer file-watcher events.')
+      .addDropdown((d) => d
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- millisecond labels are not sentences.
+        .addOption('300', '300ms')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- millisecond labels are not sentences.
+        .addOption('400', '400ms (default)')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- millisecond labels are not sentences.
+        .addOption('500', '500ms')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- second labels are not sentences.
+        .addOption('1000', '1s')
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- second labels are not sentences.
+        .addOption('2000', '2s')
+        .setValue(String(this.plugin.settings.getWidgetSyncDebounceMs()))
+        .onChange(async (v) => {
+          const val: 300 | 400 | 500 | 1000 | 2000 =
+            v === '300' ? 300 :
+            v === '500' ? 500 :
+            v === '1000' ? 1000 :
+            v === '2000' ? 2000 :
+            400;
+          await this.plugin.settings.setWidgetSyncDebounceMs(val);
+          // Phase 19 Plan 02 — live-apply across all live widgets without
+          // note reload (D-08). No-op when no widgets registered.
+          this.plugin.widgetRegistry?.applyDelay(val);
         }),
       );
 

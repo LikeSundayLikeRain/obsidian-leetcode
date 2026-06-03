@@ -1,45 +1,45 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Code Editor Experience
-status: complete
-stopped_at: null
-last_updated: "2026-05-29T02:55:00.000Z"
-last_activity: 2026-05-29 -- Completed quick task 260528-vq4: useNestedEditor toggle setting
+milestone: v1.3
+milestone_name: Inline Widget Architecture
+status: executing
+stopped_at: Phase 22 Plan 22-03 in-tree wave complete; THEME-05 manual checklist + BRAT 7-day dogfood surfaced as checkpoints
+last_updated: "2026-06-03T12:30:00.000Z"
+last_activity: 2026-06-03 -- Phase 22 Plan 22-03 in-tree gates wired (bundle-size + innerHTML + README + CLAUDE.md + version-bump + REQUIREMENTS); 6 commits e6f4aef..04690a1
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 17
-  completed_plans: 17
-  percent: 100
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-21 — v1.2 milestone started)
+See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** v1.2 alpha testing — milestone ready to archive
+**Current focus:** Phase 22 — v1-2-path-removal-polish
 
 ## Current Position
 
-Phase: 18 (vim-recovery-polish) — COMPLETE
-Plans: 4/4 complete
-Status: Alpha released (1.2.0-alpha.1)
-Last activity: 2026-05-29 -- Completed quick task 260528-vq4: useNestedEditor toggle setting
-
-Progress: [██████████] 100%
+Phase: 22 (v1-2-path-removal-polish) — EXECUTING (Plan 22-03 in-tree wave wired; BRAT alpha pending)
+Plan: 3 of 3 in-tree wave complete (22-01 cutover ✓, 22-02 polish ✓, 22-03 in-tree gates ✓ — all shipped 2026-06-03)
+Status: Plan 22-03 release gates wired in-tree; awaiting two manual checkpoints — THEME-05 5-theme regression checklist (~80 min) + BRAT 7-day dogfood + plugin-store version-bump-trigger re-review
+Last activity: 2026-06-03 -- Plan 22-03 in-tree wave complete (commits `e6f4aef`..`04690a1` — bundle-size gate, innerHTML scan, README, CLAUDE.md architecture, manifest 1.3.0-beta.1 bump, REQUIREMENTS traceability)
 
 ## Performance Metrics
 
-**Cumulative (v1.0 + v1.1):**
+**Cumulative (v1.0 + v1.1 + v1.2):**
 
-- Total phases completed: 19
-- Total plans completed: 113
+- Total phases completed: 25
+- Total plans completed: 133
 - v1.0: 10 phases, 61 plans (shipped 2026-05-14)
 - v1.1: 9 phases, 41 plans (shipped 2026-05-20)
+- v1.2: 6 phases, 31 plans (shipped 2026-05-26)
+- v1.2 stats: 1,713 tests passing, 1.71 MB raw / 459 KB gzipped bundle
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
@@ -69,15 +69,29 @@ Recent decisions affecting current work:
 - Phase 13-03: Registry instantiation before all registerEditorExtension calls; nested editor registered between code-actions and section-lock for correct transactionFilter ordering
 - [Phase ?]: indentWithTab placed first in keymap for priority; 4-space default indent; addToHistory:false on all child-to-parent sync
 - [Phase ?]: mousedown preventDefault on action buttons for focus retention (D-02)
+- **v1.3 architecture (2026-05-28):** Inline code-block widget + one-way sync chosen over v1.2's dual-CM6 sync. File becomes single source of truth; widget writes through `vault.process`. Net −2,400 LOC.
+- **v1.3 mount strategy (Q3 confirmed):** Two-path mount required — `registerMarkdownCodeBlockProcessor` (Reading) + `registerEditorExtension` ViewPlugin with `Decoration.replace({ widget })` (Live Preview). Single path breaks half of all user workflows. Reading mode renders live CM6 with `editable.of(false)` for one render code path.
+- **v1.3 self-write suppression (P1):** Per-path content-hash map with 2-second TTL — NOT a boolean flag. Boolean flag is provably broken under concurrent multi-file flushes.
+- **v1.3 fence tag (Q1):** `leetcode-solve` is the canonical fence tag; language metadata moves entirely to `lc-language` frontmatter. Fence opener no longer encodes language.
+- **v1.3 vim toggle (Q2):** Live `Compartment.reconfigure(enabled ? vim() : [])` is the primary path; reload-on-toggle banner is the pre-accepted fallback (VIM-03) if empirical test fails.
+- **v1.3 section protection (Q1):** `sectionLockExtension.ts` (527 LOC) deleted; replaced by narrower `sectionProtectionExtension.ts` covering only `## Problem` body + `## Techniques` heading. Fence opener/closer protection moot (widget owns the fence). `'leetcode.*'` userEvent convention retired.
+- **v1.3 multi-pane (Q4):** Single-active-per-file is the v1.3 baseline; full live/mirror with promote-on-focus deferred to v1.3.x (MULTI-01/MULTI-02 v1.4+).
+- **v1.3 rollout (Q5):** Default ON from first 1.3.x release — no opt-in alpha period (BRAT-only alpha for plugin-store re-review readiness).
+- **v1.3 migration (Q6, Q7):** 30-day backup retention; migration + first-edit are atomic in a single `vault.process` callback.
+- **Phase 22-03 bundle threshold calibration (2026-06-03):** HARD_LIMIT preserved at 1,800,000 (Phase 17 D-19 user-approved ceiling) instead of lowered to v1.2 baseline 1,706,000 as 22-03 originally proposed. Phase 22-02 polish suite re-pulled +49 KB CodeMirror surface (lineNumbers gutter port, per-mode vim cursor rendering, hover-border CSS, etc.); the v1.2 ratchet became infeasible at the actual measured 1,756,707 size. SOFT_WARN drops to 1,760,000 — fires on any feature regression past polish within ~1 KB of growth.
+- **VIM-03 disposition (2026-06-03 per 22-01-B dogfood):** vim-toggle in Settings does NOT hot-reload; user must reload Obsidian. Banner explicitly NOT shipped. README "Known notes" section documents the requirement. REQUIREMENTS.md VIM-03 marker = "Resolved by 'reload required' documentation."
+- **POLISH-03 scope-boundary deferral (2026-06-03):** innerHTML scan in `src/widget/` PASS (zero active assignments — operative D-gate-02 concern intact). `npm run lint` 81-error baseline pre-existed Phase 22 (verified at commit 245f45b — identical output). Per Rule 3 SCOPE BOUNDARY, deferred to a Phase 22.5 mini-phase scope (~3 hours: `--fix` auto-corrections + ~26 hand-fixes + baseline-gate wiring). Plugin-store auto-rejection guard intact.
 
 ### Pending Todos
 
-None yet.
+- Plan Phase 19: Widget Foundation + One-Way Sync — `/gsd:plan-phase 19`
 
 ### Blockers/Concerns
 
-- Bundle size: language packs raise ceiling from 1.2 MB to ~1.5 MB — user accepted this tradeoff for better UX
-- Phase 13 spike needed: empirically verify `Decoration.widget` + CSS-hidden approach works in both Source Mode and Live Preview
+- **Phase 19 empirical risks:** Live Preview raw-source-reveal mitigation (`mousedown.stopPropagation()`) is empirically unverified — state-persistence map is the fallback regardless. `getSectionInfo` null-paths must be exercised on day one.
+- **Phase 20 empirical risks:** Section-protection narrowing has no precedent (must audit every `changeFilter` condition). `@replit/codemirror-vim` Compartment.reconfigure runtime-toggle is undocumented in the library README — early dev-vault probe required.
+- **Phase 21 risk:** Migration is the highest-risk surface in the milestone. Hand-edited note edge cases (extra blank lines, malformed frontmatter, missing `## Code` heading) need fixture coverage in CI.
+- **Bundle headroom:** ~92 KB remaining after v1.2's vim addition. v1.3 should net out negative (−2,400 LOC) but CI gate must guard.
 
 ### Quick Tasks Completed
 
@@ -101,9 +115,13 @@ None yet.
 | Contest | Difficulty-weighted Surprise me — CONTEST-FUT-02 | Deferred | 2026-05-15 |
 | Contest | Upcoming contest schedule — CONTEST-FUT-03 | Deferred | 2026-05-15 |
 | Contest | LC Virtual Contest API integration — CONTEST-FUT-04 | Deferred | 2026-05-18 |
+| Widget | Multi-pane live/mirror — MULTI-01, MULTI-02 | Deferred to v1.4+ | 2026-05-29 |
+| Widget | Static palette for widget — PALETTE-01 (v1.2 backlog 999.1) | Deferred to v1.4+ | 2026-05-29 |
+| Widget | Triple-backtick bracket pair — BRACKET-01 (v1.2 carry-over) | Deferred to v1.4+ | 2026-05-29 |
 
 ## Session Continuity
 
-Last session: 2026-05-23T02:29:46.876Z
-Stopped at: Phase 17 context gathered
-Resume file: .planning/phases/17-polish-edge-cases/17-CONTEXT.md
+Last session: 2026-06-03T12:30:00.000Z
+Stopped at: Plan 22-03 in-tree wave complete; THEME-05 + BRAT manual checkpoints surfaced to user
+Resume file: .planning/phases/22-v1-2-path-removal-polish/22-03-SUMMARY.md
+Next action: User executes THEME-05 manual checklist (Task 22-03-03, ~80 min) + pushes `1.3.0-beta.1` tag and runs BRAT 7-day dogfood (Task 22-03-07). On BRAT pass: GA tag bump (`1.3.0`) + plugin-store re-review submission. On BRAT fail: hotfix lane to `1.3.0-beta.2` re-tag or mini-phase 22.1 escalation.

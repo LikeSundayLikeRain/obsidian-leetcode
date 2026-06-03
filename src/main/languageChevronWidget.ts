@@ -55,6 +55,26 @@ export interface LanguageChevronHost extends CodeBlockButtonRowHost {
 }
 
 /**
+ * Phase 20 Plan 20-08 — refresh handle returned by `buildLanguageChevron`.
+ *
+ * Callers that previously consumed the chevron's return value as `HTMLElement`
+ * destructure `.wrapper`. The `refresh` closure is the load-bearing handle for
+ * gap-closure: the v1.3 inline widget calls it after every `lc-language`
+ * frontmatter change so the chevron's visible state reflects the new slug
+ * without remounting (see `WidgetController.actionRowRefresh`).
+ *
+ * The v1.2 path (`codeActionsEditorExtension.ts`) extracts `.wrapper` only —
+ * `Decoration.widget` rebuilds the chevron via `WidgetType.eq()` when the
+ * widget's `currentSlug` flips, so no live refresh is required there.
+ */
+export interface LanguageChevronHandle {
+  wrapper: HTMLElement;
+  labelSpan: HTMLSpanElement;
+  items: Map<string, HTMLButtonElement>;
+  refresh: (newSlug: string) => void;
+}
+
+/**
  * Build the chevron DOM (button + dropdown) for the active fence's language.
  *
  * @param doc          The owning Document (use `view.dom.ownerDocument`,
@@ -64,14 +84,16 @@ export interface LanguageChevronHost extends CodeBlockButtonRowHost {
  * @param currentSlug  The note's current `lc-language` slug (e.g. 'python3').
  *                     Used for the chevron label, the .is-current marker on
  *                     the matching dropdown item, and the same-slug-no-op gate.
- * @returns A wrapper `<span>` containing the chevron button + dropdown div.
+ * @returns A `LanguageChevronHandle` exposing `.wrapper` (the existing
+ *          top-level span), `.labelSpan` and `.items` for direct DOM access,
+ *          and a `.refresh(newSlug)` closure for live updates without rebuild.
  */
 export function buildLanguageChevron(
   doc: Document,
   plugin: Plugin & LanguageChevronHost,
   file: TFile,
   currentSlug: string,
-): HTMLElement {
+): LanguageChevronHandle {
   const wrapper = doc.createElement('span');
   wrapper.className = 'leetcode-language-chevron-wrapper';
 
@@ -231,6 +253,18 @@ export function buildLanguageChevron(
     doc.addEventListener('keydown', escKeyHandler, true);
   };
 
+  // Phase 20 Plan 20-10 hotfix — `mountedSlug` is the chevron's live state
+  // (mount-time slug, kept in sync by `refresh()`). The per-item click
+  // handlers MUST compare against `mountedSlug`, not the captured
+  // `currentSlug` — otherwise a Java→Python→Java sequence finds the Java
+  // item's handler still seeing closure `currentSlug = 'java'`, trips the
+  // same-slug no-op, and the user can't switch back to the original
+  // language. Hoisting the declaration above the loop closes that bug
+  // (the original "intentional" comment at this site was wrong: the
+  // plugin's switchLanguage path is NOT a same-slug no-op, so a redundant
+  // call mattered for parser-state reconfiguration too).
+  let mountedSlug = currentSlug;
+  const items = new Map<string, HTMLButtonElement>();
   for (const slug of LC_CHEVRON_LANG_ORDER) {
     const item = doc.createElement('button');
     item.className = 'leetcode-language-chevron-item';
@@ -250,12 +284,36 @@ export function buildLanguageChevron(
       closeDropdown();
       // No-op when the user picks the current language (UI-SPEC §"State machine"
       // — "click current language item → back to CLOSED, no further action").
-      if (slug !== currentSlug) {
+      // Compare against the LIVE `mountedSlug`, not the closure-captured
+      // `currentSlug`, so a refreshed chevron reflects the user's actual
+      // current selection.
+      if (slug !== mountedSlug) {
         void plugin.switchLanguage(file, slug);
       }
     });
+    items.set(slug, item);
     dropdown.appendChild(item);
   }
+
+  // Phase 20 Plan 20-08 — surgical refresh closure. Updates labelSpan
+  // text + re-targets .is-current marker to the new slug. Idempotent
+  // when called with the same slug. Robust to unknown-slug input —
+  // falls back to literal slug text on the label and drops all
+  // .is-current markers (matches the existing build-time fallback at
+  // line 96 + line 238 above). Invoked by the WidgetController
+  // metadataCache 'changed' listener AFTER the existing
+  // languageCompartment.reconfigure dispatch so the chevron's visible
+  // state reflects the parser swap.
+  const refresh = (newSlug: string): void => {
+    if (newSlug === mountedSlug) return;
+    mountedSlug = newSlug;
+    labelSpan.textContent = LC_LANG_DISPLAY_LABELS[newSlug] ?? newSlug;
+    for (const item of items.values()) {
+      item.classList.remove('is-current');
+    }
+    const target = items.get(newSlug);
+    if (target) target.classList.add('is-current');
+  };
 
   // G-DROPDOWN-CLIPPED — dropdown is NOT appended to wrapper. It is portaled
   // to doc.body in openDropdown() and detached in closeDropdown() so it lives
@@ -300,5 +358,5 @@ export function buildLanguageChevron(
     }
   });
 
-  return wrapper;
+  return { wrapper, labelSpan, items, refresh };
 }

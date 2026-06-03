@@ -132,3 +132,77 @@ describe('extractFirstFencedBlock (SOLVE-01, SOLVE-09)', () => {
     expect(result).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 21 Plan 21-03 Task 1 — frontmatter-source dispatch (D-extract-01).
+//
+// When the located fence is ```leetcode-solve, frontmatter['lc-language'] is
+// the source of truth for the language slug. When the located fence is any
+// other tag (legacy LC fence, ```text, ```bash, …), behavior is preserved
+// verbatim — the fence tag wins regardless of frontmatter.
+//
+// Phase 22 deletes the legacy fence-tag branch (it becomes unreachable once
+// `useInlineWidget=ON` is the default and all notes have migrated to v1.3).
+// ─────────────────────────────────────────────────────────────────────────
+describe('extractFirstFencedBlock — frontmatter-source dispatch (Plan 21-03, D-extract-01)', () => {
+  const V13_BODY = '## Code\n\n```leetcode-solve\nbody\n```\n';
+  const LEGACY_BODY = '## Code\n\n```python\nbody\n```\n';
+  const NON_LC_BODY = '## Code\n\n```bash\necho hi\n```\n';
+
+  it('frontmatter-source — Branch A: leetcode-solve fence + lc-language=java → lang=java', () => {
+    const result = extractFirstFencedBlock(V13_BODY, { 'lc-language': 'java' });
+    expect(result).not.toBeNull();
+    expect(result?.lang).toBe('java');
+    expect(result?.code).toBe('body');
+  });
+
+  it('frontmatter-source — Branch B: leetcode-solve fence + missing lc-language → lang=null (caller resolves)', () => {
+    const result = extractFirstFencedBlock(V13_BODY, {});
+    expect(result).not.toBeNull();
+    expect(result?.lang).toBeNull();
+    expect(result?.code).toBe('body');
+  });
+
+  it('frontmatter-source — Branch B alt: leetcode-solve fence + empty lc-language → lang=null', () => {
+    const result = extractFirstFencedBlock(V13_BODY, { 'lc-language': '' });
+    expect(result).not.toBeNull();
+    expect(result?.lang).toBeNull();
+    expect(result?.code).toBe('body');
+  });
+
+  it('frontmatter-source — Branch C: legacy ```python fence + lc-language=java → lang=python (transition contract)', () => {
+    // CRITICAL: legacy fence tags ignore frontmatter so unmigrated notes keep
+    // working until they're migrated by fenceMigrator. After migration, the
+    // fence becomes `leetcode-solve` and frontmatter takes over.
+    const result = extractFirstFencedBlock(LEGACY_BODY, { 'lc-language': 'java' });
+    expect(result).not.toBeNull();
+    expect(result?.lang).toBe('python');
+    expect(result?.code).toBe('body');
+  });
+
+  it('frontmatter-source — undefined frontmatter falls through to legacy behavior', () => {
+    // Backward-compat: callers that haven't been updated to pass the second arg
+    // continue to get the legacy 1-arg path.
+    const result = extractFirstFencedBlock(LEGACY_BODY, undefined);
+    expect(result).not.toBeNull();
+    expect(result?.lang).toBe('python');
+    expect(result?.code).toBe('body');
+  });
+
+  it('frontmatter-source — non-LC fence (```bash) ignores lc-language', () => {
+    // The frontmatter-source dispatch ONLY fires for the leetcode-solve opener.
+    // Non-LC fences keep their tag — same as legacy fence behavior.
+    const result = extractFirstFencedBlock(NON_LC_BODY, { 'lc-language': 'java' });
+    expect(result).not.toBeNull();
+    expect(result?.lang).toBe('bash');
+    expect(result?.code).toBe('echo hi');
+  });
+
+  it('frontmatter-source — leetcode-solve fence with no ## Code heading still applies frontmatter dispatch', () => {
+    const body = '```leetcode-solve\nx = 1\n```\n';
+    const result = extractFirstFencedBlock(body, { 'lc-language': 'rust' });
+    expect(result).not.toBeNull();
+    expect(result?.lang).toBe('rust');
+    expect(result?.code).toBe('x = 1');
+  });
+});

@@ -969,6 +969,17 @@
   padding-top: 8px !important;
 }
 
+/* Phase 22 D-polish-03 — action row chrome reads as UI, not as code.
+ * The chevron + buttons inherit var(--font-monospace) from the surrounding
+ * .cm-editor / .cm-content cascade when the action row is mounted inside
+ * the widget DOM. Override to var(--font-text) so the controls render as
+ * UI chrome. The descendant selector (`.leetcode-code-actions *`) covers
+ * chevron text, button labels, and the language-name display. */
+.leetcode-code-actions,
+.leetcode-code-actions * {
+  font-family: var(--font-text);
+}
+
 /* Phase 05.5 (POLISH) — section-lock heading-marker hide.
  *
  * Lines decorated with .leetcode-locked-heading-line are heading lines whose
@@ -1930,11 +1941,72 @@ button.leetcode-language-chevron:hover {
 
 /* Phase 13 — Nested editor container styling. Darker background matching
  * Obsidian code block rendering (D-05). Uses only CSS variables — no
- * hardcoded colors. */
+ * hardcoded colors.
+ *
+ * Phase 20 Plan 20-10 Task 6 (gap-closure T8 — action-row DOM hierarchy):
+ * the grey paint MOVED from `.cm-editor .lc-nested-editor` to its inner
+ * `.leetcode-widget-codeblock` wrapper (introduced in
+ * src/widget/WidgetController.ts mountLeetCodeWidget). The outer container
+ * is now transparent so the action-row sibling sits on the parent note
+ * background, matching the v1.2 Reading-mode layout
+ * (codeActionsPostProcessor.ts:17-23 `pre.insertAdjacentElement('afterend',
+ * row)`). Existing descendant selectors (`.cm-content`, `.cm-gutters`,
+ * `.cm-activeLine`, `.cm-scroller`) below still match because `.cm-editor`
+ * remains a descendant of `.lc-nested-editor` (depth 2 instead of 1) — the
+ * descendant combinator is depth-agnostic.
+ *
+ * REGRESSION GUARD (Plan 20-10 paint-invariant test in
+ * tests/widget/widgetActionRow.test.ts): if a future CSS edit moves the
+ * grey paint back to `.lc-nested-editor`, the assertion fails the build. */
 .cm-editor .lc-nested-editor {
+  background: transparent;
+}
+.cm-editor .lc-nested-editor .leetcode-widget-codeblock {
   background: var(--code-background, var(--background-secondary));
   border-radius: 4px;
   padding: 8px 0;
+}
+/* Phase 22 D-polish-02 — suppress Obsidian's `.cm-embed-block:hover`
+ * box-shadow on the widget surface.
+ *
+ * Source rule (Obsidian core app.css):
+ *   @media (hover: hover) {
+ *     .markdown-source-view.mod-cm6
+ *       .cm-embed-block:not(.cm-table-widget, .cm-lang-base):hover {
+ *       box-shadow: var(--embed-block-shadow-hover);
+ *       border-radius: var(--radius-s);
+ *       cursor: text;
+ *     }
+ *   }
+ *
+ * Our widget is mounted as a `.cm-embed-block` (the standard CM6 block
+ * widget mount), so it falls inside the hover-shadow scope. The exclusion
+ * list (`cm-table-widget`, `cm-lang-base`) doesn't cover us. We override
+ * by matching the source selector with `:has(.lc-nested-editor)` to scope
+ * strictly to widget-bearing embed blocks, then suppress the same three
+ * properties the source rule sets.
+ *
+ * Border / outline are also zeroed defensively so theme-level hover
+ * treatments that happen to land on the same element are also caught. */
+@media (hover: hover) {
+  .markdown-source-view.mod-cm6 .cm-embed-block:has(.lc-nested-editor):hover {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    cursor: auto !important;
+  }
+}
+.cm-editor .lc-nested-editor:hover:not(:focus-within),
+.cm-editor .lc-nested-editor .leetcode-widget-codeblock:hover:not(:focus-within) {
+  border: none !important;
+  outline: none !important;
+}
+/* Defensive — ensure the action row shows the note background even when
+ * an outer theme rule paints `.lc-nested-editor`. The Phase 20 widget
+ * action row is a child of the outer transparent shell (sibling of the
+ * inner .leetcode-widget-codeblock wrapper); a custom theme could
+ * override the shell-transparent rule above. */
+.lc-nested-editor > .leetcode-code-actions {
+  background: transparent;
 }
 .cm-editor .lc-nested-editor .cm-editor {
   background: transparent;
@@ -1945,9 +2017,37 @@ button.leetcode-language-chevron:hover {
   font-family: var(--font-monospace);
   font-size: 14px;
 }
+/* Phase 22 D-polish-04 — read-mode widget code matches Live Preview size.
+ * Reading mode (.markdown-rendered) inherits prose 16px from the surrounding
+ * note cascade because the existing .cm-editor-anchored rule above only fires
+ * in Live Preview (where .cm-editor wraps the widget). Force read-mode back
+ * to the same 14px Live Preview uses, keeping the two modes visually
+ * consistent. Live (Edit) mode is untouched because the .markdown-rendered
+ * ancestor is not present there. Literal 14px chosen to match the existing
+ * Live Preview rule above verbatim — if the cascade variable that drives the
+ * Live Preview value is ever lifted to var(--code-size) or similar, both
+ * rules should be migrated together. */
+.markdown-rendered .lc-nested-editor .cm-editor,
+.markdown-rendered .lc-nested-editor .cm-content,
+.markdown-rendered .lc-nested-editor .cm-line {
+  font-size: 14px;
+}
 .cm-editor .lc-nested-editor .cm-gutters {
   background: transparent;
   border-right: none;
+}
+/* Phase 22 D-polish-06 — line-number gutter visual treatment.
+ * Muted color + smaller than 14px content so the gutter reads as chrome,
+ * not as content. Right-aligned numbers + small min-width so the gutter
+ * is consistently sized whether numbers are 1-digit, 2-digit, or 3-digit. */
+.cm-editor .lc-nested-editor .cm-lineNumbers {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 0 8px 0 4px;
+}
+.cm-editor .lc-nested-editor .cm-lineNumbers .cm-gutterElement {
+  text-align: right;
+  min-width: 1.5em;
 }
 .cm-editor .lc-nested-editor .cm-activeLine {
   background: var(--background-modifier-hover);
@@ -1968,34 +2068,72 @@ button.leetcode-language-chevron:hover {
  * site (src/main/childEditorTheme.ts: `var(--code-keyword, #ff7b72)`),
  * so Obsidian's native --code-* wins via cascade and the GitHub-dark
  * hex codes only fire when --code-* is genuinely undefined. */
-/* Phase 17 gap-closure (17-11, 17-UAT.md Issue 5) — force cursor
- * visibility so vim Insert-mode caret renders deterministically.
- * @replit/codemirror-vim relies on a measure-pass after Normal → Insert
- * transition; the Decoration.widget({block:true}) mount can leave the
- * cursor element transparent until the next user keystroke. Forcing
- * opacity + visibility makes the cursor visible regardless of the
- * vim package's measure timing. Applies to both .cm-cursor (Insert
- * mode caret) and .cm-fat-cursor (Normal mode block cursor).
+/* Phase 22 D-polish-07 — clean cursor rendering by vim mode.
  *
- * Scoped to .lc-nested-editor so the rule applies ONLY to the child
- * editor — Obsidian's parent editor and other CM6 instances elsewhere
- * in the vault are unaffected. */
-/* Phase 18: Force both cursor layers visible. The pipe cursor always renders
- * as a fallback — in Normal mode, vim's fat cursor overlays on top. After
- * focus-steal events (hotkeys, property editor), the pipe remains visible
- * even when vim's fat cursor doesn't render. No blink on either layer. */
-.lc-nested-editor .cm-vimCursorLayer {
-  display: block !important;
+ * Replaces the v1.2 "force both cursor layers visible" compromise (Phase 17
+ * gap-closure 17-11 + Phase 18) — v1.2 needed both layers always visible
+ * because the vim fat-cursor measure-pass was unreliable in the nested-
+ * editor mount after focus-steal events. The v1.3 widget mount is more
+ * stable, so we can render only the cursor matching the current mode.
+ *
+ * Background on what vim actually does (verified in @replit/codemirror-vim
+ * source 2026-06-02):
+ *   - vim() extension sets `caret-color: transparent !important` on the
+ *     CM editor wrapper, which hides the OS-native text-input caret.
+ *   - vim then renders its own `.cm-fat-cursor` div inside `.cm-vimCursorLayer`
+ *     for Normal/Visual mode (red default block, blinking via cm-blink
+ *     animation on the cursor layer's animationName).
+ *   - In Insert mode vim does NOT render `.cm-fat-cursor` — it relies on
+ *     the OS-native caret being visible. But the `caret-color: transparent`
+ *     stays applied, hiding the caret entirely (this was the bug we just hit).
+ *
+ * Mode discrimination via TWO classes on the widget container, toggled by
+ * createVimModeClassExtension in WidgetController.ts:
+ *   - `.lc-vim-active` → vim extension is loaded
+ *   - `.lc-vim-insert` → vim is loaded AND in Insert mode (subset)
+ *
+ * Three-state design:
+ *   - Vim OFF (no `.lc-vim-active`)             → CM6 default pipe; no override
+ *   - Vim Normal/Visual (active, not insert)    → solid fat block (no blink),
+ *                                                  caret transparent
+ *   - Vim Insert (active and insert)            → restore caret-color so the
+ *                                                  OS native caret renders
+ *                                                  (with native blink); hide
+ *                                                  any leftover fat-cursor
+ */
+
+/* Vim Normal/Visual mode: solid fat block (no blink) — vim's own animation-
+ * name on .cm-vimCursorLayer is cm-blink/cm-blink2; force it off here. */
+.lc-nested-editor.lc-vim-active:not(.lc-vim-insert) .cm-vimCursorLayer {
   animation: none !important;
 }
-.lc-nested-editor .cm-editor .cm-cursorLayer,
-.lc-nested-editor .cm-editor:not(.cm-focused) .cm-cursorLayer,
-.lc-nested-editor .cm-layer-above.cm-cursorLayer {
-  display: block !important;
-  animation: none !important;
+.lc-nested-editor.lc-vim-active:not(.lc-vim-insert) .cm-fat-cursor {
+  display: block;
 }
-.lc-nested-editor .cm-cursor {
-  display: block !important;
+
+/* Vim Insert mode: hide vim's fat cursor (defensive — vim already removes
+ * .cm-fat-cursor children when entering Insert, but if any straggler exists
+ * we want it gone) AND restore the OS-native caret-color that vim() set
+ * to transparent at the editor-root level. The native caret is what
+ * provides the blinking pipe in Insert mode.
+ *
+ * Specificity note: vim's `caret-color: transparent !important` is
+ * generated through CM6's EditorView.theme system, which produces classes
+ * like `.ͼ1` etc. We override with maximum specificity by targeting all
+ * three relevant levels (.cm-editor, .cm-content, .cm-line) and using
+ * `var(--text-normal, currentColor)` instead of `auto` — the explicit
+ * color ensures the caret renders even if `auto` would otherwise resolve
+ * to a transparent inherited value. */
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-fat-cursor {
+  display: none !important;
+}
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-scroller,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-content,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-content .cm-line,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-line,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor .cm-line * {
+  caret-color: var(--text-normal, currentColor) !important;
 }
 
 /* Phase 17 gap-closure (17-11, 17-UAT.md Issue 6 sibling) — vim mode
@@ -2012,4 +2150,216 @@ button.leetcode-language-chevron:hover {
   background: var(--background-secondary);
   color: var(--text-muted);
   border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Phase 20 Plan 20-03 — ConflictModal 3-pane diff layout (D-conflict-02) +
+ * UI-SPEC §Color diff color contract.
+ *
+ * No raw hex values — Obsidian CSS variables only (the platform-mandated
+ * palette for community plugins). The diff colors blend the column
+ * background (`--background-secondary`) with the verdict color tokens
+ * (`--color-green` / `--color-red` / `--color-yellow`) via `color-mix` so
+ * the highlight is visible against any theme.
+ *
+ * The reduced-motion-gated `--updated` flash signals D-conflict-04 second
+ * external edits (UI-SPEC §"Visual Layout Contracts §2"). Default theme
+ * users see a 200ms outline flash; users with `prefers-reduced-motion`
+ * see the External pane update silently.
+ *
+ * Mobile / narrow-pane fallback: at <600px the 3-column grid collapses to
+ * a single column so each pane gets full width with its own scroll.
+ */
+.lc-conflict-diff {
+  margin-top: 16px;
+}
+.lc-conflict-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+.lc-conflict-mine,
+.lc-conflict-external,
+.lc-conflict-merged {
+  background: var(--background-secondary);
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-normal);
+  border-radius: 4px;
+}
+.lc-diff-same {
+  color: var(--text-normal);
+}
+.lc-diff-mine-only {
+  color: var(--color-green);
+  background: color-mix(
+    in srgb,
+    var(--background-secondary) 85%,
+    var(--color-green) 15%
+  );
+}
+.lc-diff-external-only {
+  color: var(--color-red);
+  background: color-mix(
+    in srgb,
+    var(--background-secondary) 85%,
+    var(--color-red) 15%
+  );
+}
+.lc-diff-changed {
+  color: var(--color-yellow);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lc-conflict-external--updated {
+    outline: 1px solid var(--text-muted);
+    transition: outline-color 200ms ease;
+  }
+}
+@media (max-width: 600px) {
+  .lc-conflict-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/*
+ * Phase 20 Plan 20-04 — Multi-pane "Take over" affordance (UI-SPEC §3).
+ *
+ * The container's `data-pane-state` attribute is the visual state machine:
+ *   - "active" (default): no overlay; widget is editable
+ *   - "peer":             overlay + "Click to take over" CTA covers the
+ *                         widget at 55% opacity; pointer-events: auto on
+ *                         the overlay captures clicks BEFORE they reach the
+ *                         underlying CM6 editor (T-20-04-01 mitigation —
+ *                         keystrokes cannot reach a peer widget's view).
+ *
+ * `position: relative` on the container is ALSO declared by Phase 19's
+ * cm-editor host rules at line 1934, but we re-declare here so the
+ * absolute-positioned overlay is anchored even when the lc-nested-editor
+ * lives outside a `.cm-editor` ancestor (Reading-mode mount).
+ *
+ * Tokens are Obsidian CSS variables only — no raw hex (UI-SPEC §Color).
+ */
+.lc-nested-editor[data-pane-state] {
+  position: relative;
+}
+.lc-nested-editor[data-pane-state="active"] > .lc-takeover-overlay,
+/* Phase 22 D-polish-05 — peer-mode overlay is redundant chrome.
+ * Focus-driven takeover already promotes the peer pane to active when the
+ * user clicks into the second pane (multiPaneCoordinator listens for
+ * active-leaf-change). The overlay element still mounts so its keyboard
+ * handler stays available, but it's invisible and pointer-transparent so
+ * clicks pass through to the underlying CM6 instance. */
+.lc-nested-editor[data-pane-state="peer"] > .lc-takeover-overlay {
+  display: none;
+  pointer-events: none;
+}
+.lc-nested-editor[data-pane-state="peer"] > .lc-takeover-overlay:hover {
+  border: 1px solid var(--interactive-accent);
+}
+.lc-takeover-cta {
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.lc-takeover-cta:hover {
+  border-color: var(--interactive-accent);
+}
+
+/*
+ * PHASE_22_DELETE_WITH_V1_2_PATH — Phase 21 Plan 21-15 (UAT R4 closure)
+ * Live-Preview legacy migration banner CSS isolation.
+ *
+ * The legacy banner host element is wrapped by CM6's block-decoration
+ * container in Live Preview, which inherits the surrounding code-block
+ * visual treatment (background tint, monospace font, fence-block border).
+ * Without explicit overrides the banner copy + [Migrate now] CTA appear
+ * to be inside the fence rather than UI chrome wrapping it.
+ *
+ * Scope: rules apply only when the host carries `.lc-legacy-banner--
+ * livepreview` (added at AutoMigratingBannerWidget.toDOM + ManualPromptBanner-
+ * Widget.toDOM in src/widget/liveModeBannerStateField.ts). Reading-mode
+ * banner — rendered via mountLegacyFenceBanner from
+ * src/widget/codeBlockProcessor.ts:223-230 directly into the post-processor's
+ * `el` — does NOT carry this class and is unaffected (matches UAT R3 pass).
+ *
+ * Phase 22 deletes the legacyBannerStateField + the toDOM call sites that
+ * add the class; this CSS section must be deleted in the same sweep — the
+ * literal token PHASE_22_DELETE_WITH_V1_2_PATH at the top of this comment
+ * is the grep anchor.
+ */
+
+/*
+ * Plan 21-15 cycle-2 follow-up — UAT R4 expects visual parity with
+ * Reading mode (R3 passes). Reading mode renders the banner inline in
+ * the post-processor's `el` with no plugin-specific CSS, picking up
+ * Obsidian's defaults (loose copy, neutral default button, single dark
+ * code block). Cycle-1's LP-scoped rules wrapped everything in an extra
+ * rounded box and gave the button blue-accent styling — visually
+ * different from Reading mode.
+ *
+ * Cycle-2 minimum: ONLY neutralize CM6's block-decoration container
+ * contamination so the inner banner DOM renders as if it were inline
+ * (matching Reading mode). NO outer wrapper background/border, NO
+ * button accent override.
+ */
+
+/* Plan 21-15 cycle-2 — accent-color [Migrate now] button. Applies in
+ * BOTH Reading mode and Live Preview (selector is unscoped to the
+ * banner CTA class). Uses Obsidian's interactive-accent CSS variables
+ * so the button respects the user's theme. */
+button.leetcode-migration-banner__cta,
+.leetcode-migration-banner__cta {
+  background-color: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  border: none !important;
+  border-radius: var(--radius-s);
+  padding: var(--size-4-1) var(--size-4-3);
+  cursor: pointer;
+}
+
+button.leetcode-migration-banner__cta:hover,
+.leetcode-migration-banner__cta:hover {
+  background-color: var(--interactive-accent-hover) !important;
+}
+
+/* LP-specific within-fence layout. CM6's block-decoration-replace
+ * container always wraps the host in a code-block-tinted box when the
+ * range spans line breaks; we work WITH that constraint rather than
+ * fighting it. Within the outer fence, separate the banner header
+ * (copy + CTA) from the read-only source preview using a horizontal
+ * rule + spacing so the structure reads clearly. The host itself stays
+ * transparent so it inherits CM6's natural background. */
+.lc-legacy-banner--livepreview {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+}
+
+/* CM6 fence-block descendants inherit monospace + fence font-size in
+ * Live Preview; restore Obsidian UI font on the banner header so the
+ * copy + CTA read as plugin chrome rather than as code content. The
+ * inner `<pre>` source preview keeps monospace by Obsidian default. */
+.lc-legacy-banner--livepreview .leetcode-migration-banner__copy,
+.lc-legacy-banner--livepreview .leetcode-migration-banner__cta {
+  font-family: var(--font-text);
+  font-size: var(--font-ui-small);
+}
+
+/* Visual separator between the banner header (copy + CTA) and the
+ * read-only source preview, so the two zones read distinctly within
+ * CM6's outer fence container. */
+.lc-legacy-banner--livepreview .leetcode-migration-banner {
+  padding-bottom: var(--size-4-2);
+  margin-bottom: var(--size-4-2);
+  border-bottom: 1px solid var(--background-modifier-border);
 }

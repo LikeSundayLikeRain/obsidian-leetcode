@@ -1,0 +1,40 @@
+# Obsidian fileManager.processFrontMatter — Shim Validation Capture
+#
+# Producer: .planning/phases/21-v1-2-migration/21-02-PLAN.md Task 4 Test 7
+#   Live dev-vault probe (Plan 21-02 axis 2). Captured during /gsd-verify-work
+#   for Phase 21, executed interactively with the human runner.
+#
+# Capture method:
+#   1. Authored synthetic v1.2 fixture at <dev-vault>/leetcode/test-shim-capture.md
+#      with frontmatter { lc-slug: shim-capture-test } (NO lc-language) and
+#      body: '## Code\n\n```python\ndef solve(): pass\n```\n'.
+#   2. Snapshotted pre-migration bytes to /tmp/test-shim-capture.before.md.
+#   3. Opened the note in live Obsidian (autoMigrateOnOpen=ON, default
+#      language=java); migrateLegacyFenceIfNeeded ran the auto-on path:
+#      fence opener rewritten + lc-language injected.
+#   4. cat <dev-vault>/leetcode/test-shim-capture.md > /tmp/obsidian-actual.txt
+#      (post-migration bytes, 103 bytes).
+#   5. Ran the same applyFrontmatterMutation logic + fence-rewrite regex from
+#      tests/fixtures/migration/index.test.ts against the pre-migration text;
+#      output captured in /tmp/shim-output.txt (103 bytes).
+#   6. diff /tmp/obsidian-actual.txt /tmp/shim-output.txt → empty.
+#
+# Result:
+   capture_date: 2026-06-01T19:06:45Z
+   obsidian_plugin_version: 1.0.1
+   default_language_setting: java
+   pre_migration_bytes: 77
+   post_migration_bytes: 103
+   shim_output_bytes: 103
+   shim_validation: captured
+   DIFF: empty
+#
+# Resume signal for Plan 21-02 axis 2: shim_validation=captured.
+# Plan 21-04 Task 3 BLOCKER 4 acceptance criterion satisfied:
+#   test -f tests/fixtures/migration/.obsidian-shim-validation.txt → ok
+#   grep -q '^   DIFF: empty' tests/fixtures/migration/.obsidian-shim-validation.txt → ok
+#
+# Byte-level frontmatter layout produced by Obsidian (and matched by shim):
+#   ---\nlc-slug: shim-capture-test\nlc-language: java\n---\n\n
+#   (newly-injected key appended at end of frontmatter block, single blank
+#   line after closing delimiter, body bytes preserved verbatim).

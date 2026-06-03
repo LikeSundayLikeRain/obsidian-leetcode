@@ -35,6 +35,15 @@ import {
 import { LC_LANG_SLUGS, resolveLangSlug } from './languages';
 import { logger } from '../shared/logger';
 import type { DetailCacheEntry } from '../settings/SettingsStore';
+// Phase 20 Plan 20-10 (gap-closure T9 underlying / T10 — DATA CORRUPTION) —
+// reuse the EXISTING fence-locator primitives from src/widget/. SSoT
+// discipline: rewriteFenceBody is property-tested in
+// tests/widget/fenceSerialization.property.test.ts (Plan 19-04 nested-triple-
+// backticks rule); countLeetCodeSolveFenceOpeners is the canonical
+// legacy-vs-v1.3 gate. Do NOT introduce duplicate scan logic here.
+import { rewriteFenceBody } from '../widget/fenceSerialization';
+import { countLeetCodeSolveFenceOpeners } from '../widget/fenceLocator';
+import { findFirstLeetCodeSolveFenceIndexInCodeSection } from '../widget/fenceMigrator';
 
 const FENCE_OPEN = /^```([a-zA-Z0-9_+#-]*)\s*$/;
 const FENCE_CLOSE = /^```\s*$/;
@@ -43,20 +52,71 @@ const H2 = /^## /;
 export interface InjectOptions {
   starterCode: string;
   langSlug: string;
+  /**
+   * Phase 20 Plan 20-10 (gap-closure T9 underlying layer + T10 DATA CORRUPTION).
+   * When `'leetcode-solve'` AND the note already contains at least one
+   * `\`\`\`leetcode-solve` fence, `forceInjectCodeSection` short-circuits to
+   * `rewriteFenceBody` — body-only replace that preserves the v1.3 fence
+   * opener byte-for-byte. Mode 'legacy' (or omitted) keeps the v1.2 langSlug
+   * behavior unchanged.
+   *
+   * NOTE: when fenceKind === 'leetcode-solve' but the note has NO v1.3 fence
+   * (count === 0), the function falls through to the legacy path so transitional
+   * notes (frontmatter says lc-solve but no body yet) still get a starter
+   * injected. The kind tag is a HINT, not a hard requirement.
+   */
+  fenceKind?: 'leetcode-solve' | 'legacy';
 }
 
 /**
  * Pure string transform. Idempotent when `## Code` already contains a fenced
  * block whose tag is a recognized LC langSlug (D-07). Inserts starter BEFORE
  * existing unrecognized blocks (Pitfall 6).
+ *
+ * Phase 21 Plan 21-03 (D-emit-02) — mirrors the `fenceKind` short-circuit on
+ * `forceInjectCodeSection`. When `opts.fenceKind === 'leetcode-solve'` AND
+ * the note already contains at least one `\`\`\`leetcode-solve` fence,
+ * delegate to `rewriteFenceBody` for body-only replacement (preserving the
+ * v1.3 opener byte-for-byte). When the v1.3 fence is absent (transitional
+ * note), fall through to the legacy path so the starter still lands.
+ *
+ * Plan 21-07 WR-07 — the v1.3 short-circuit now scopes the target fence
+ * index to the `## Code` section via
+ * `findFirstLeetCodeSolveFenceIndexInCodeSection`, mirroring
+ * `forceInjectCodeSection`'s ## Code-scoped discipline (Phase 20 Plan 20-10
+ * lines 188-208). A user with a stray `\`\`\`leetcode-solve` reference in
+ * `## Problem` or `## Notes` (e.g. documenting the v1.3 fence syntax) no
+ * longer has the wrong fence overwritten by `rewriteFenceBody(text, 0, ...)`.
+ * When `## Code` is missing OR contains no v1.3 fence, the helper returns
+ * null and the function falls through to the existing legacy path.
  */
 export function injectCodeSection(current: string, opts: InjectOptions): string {
+  // Phase 21 Plan 21-03 (D-emit-02) — kind-aware short-circuit.
+  // SSoT: REUSES rewriteFenceBody + findFirstLeetCodeSolveFenceIndexInCodeSection.
+  // Same shape as forceInjectCodeSection's lines 164-179 short-circuit (Phase
+  // 20 Plan 20-10). Without this gate, the legacy path would scan for a
+  // recognized langSlug fence, miss the leetcode-solve opener (not in
+  // LC_LANG_SLUGS), treat the section as having no recognized fence, and
+  // graft a sibling ```python langSlug fence on top of the v1.3 fence —
+  // the same data-corruption pattern Plan 20-10 fixed for the force variant.
+  //
+  // WR-07 (Plan 21-07): the fence index passed to rewriteFenceBody is now
+  // scoped to ## Code rather than the whole file. A stray ```leetcode-solve
+  // in ## Problem or ## Notes is no longer overwritten.
+  if (opts.fenceKind === 'leetcode-solve') {
+    const v13IndexInCode = findFirstLeetCodeSolveFenceIndexInCodeSection(current);
+    if (v13IndexInCode !== null) {
+      return rewriteFenceBody(current, v13IndexInCode, opts.starterCode.trim());
+    }
+    // fall through — no v1.3 fence inside ## Code; behave as legacy path.
+  }
+
   const lines = current.split('\n');
   const codeStart = indexOfLine(lines, CODE_HEADING_LINE);
   const notesStart = indexOfLine(lines, NOTES_HEADING_LINE);
   const problemStart = indexOfLine(lines, PROBLEM_HEADING_LINE);
 
-  const starterBlock = codeBlockFor(opts.langSlug, opts.starterCode);
+  const starterBlock = codeBlockFor(opts.starterCode);
 
   if (codeStart >= 0) {
     const codeEnd = findSectionEnd(lines, codeStart);
@@ -114,6 +174,48 @@ export function injectCodeSection(current: string, opts: InjectOptions): string 
  *   - Pure; safe inside vault.process retry
  */
 export function forceInjectCodeSection(current: string, opts: InjectOptions): string {
+  // Phase 20 Plan 20-10 (gap-closure T9/T10) — kind-aware short-circuit.
+  //
+  // When the caller signals fenceKind === 'leetcode-solve' AND the note
+  // actually contains a v1.3 fence opener, replace the body in place via
+  // the existing rewriteFenceBody primitive. This preserves the
+  // ```leetcode-solve opener byte-for-byte (no langSlug-tagged sibling
+  // grafted on top). The legacy stripFirstRecognizedCodeBlock path is
+  // structurally blind to the leetcode-solve tag (it walks LC_LANG_SLUGS
+  // membership), so without this gate the legacy path silently corrupts
+  // v1.3 fences — the T10 DATA CORRUPTION root cause.
+  //
+  // SSoT discipline: this REUSES rewriteFenceBody (line 141 of
+  // src/widget/fenceSerialization.ts) and countLeetCodeSolveFenceOpeners
+  // (lines 118-138 of src/widget/fenceLocator.ts). Do NOT introduce a
+  // private detector or a parallel body-replace helper — the existing
+  // primitives are property-tested (Plan 19-04 nested-triple-backticks
+  // rule) and CRLF-tolerant.
+  //
+  // Fall-through cases when this gate does NOT short-circuit:
+  //   - fenceKind === 'legacy' or undefined → existing v1.2 path runs
+  //     byte-for-byte unchanged (legacy fixture invariance preserved).
+  //   - fenceKind === 'leetcode-solve' BUT count === 0 → no v1.3 fence
+  //     yet (transitional note with lc-solve frontmatter but no body) →
+  //     fall through to the existing path so a fresh starter still
+  //     lands.
+  if (opts.fenceKind === 'leetcode-solve') {
+    const v13Count = countLeetCodeSolveFenceOpeners(
+      current,
+      Number.MAX_SAFE_INTEGER,
+    );
+    if (v13Count > 0) {
+      // Body content is the trimmed starter (matches `codeBlockFor`'s
+      // `starterCode.trim()` invariant — same bytes the fence wraps in
+      // the legacy path). rewriteFenceBody returns input unchanged when
+      // the fence is malformed (unterminated), per its documented
+      // contract — we honor that contract by returning its result
+      // verbatim (no spurious starter graft, no exception).
+      return rewriteFenceBody(current, 0, opts.starterCode.trim());
+    }
+    // fall through — no v1.3 fence to replace; behave as legacy path.
+  }
+
   const lines = current.split('\n');
   const codeStart = indexOfLine(lines, CODE_HEADING_LINE);
 
@@ -123,7 +225,7 @@ export function forceInjectCodeSection(current: string, opts: InjectOptions): st
   }
 
   const codeEnd = findSectionEnd(lines, codeStart);
-  const starterBlock = codeBlockFor(opts.langSlug, opts.starterCode);
+  const starterBlock = codeBlockFor(opts.starterCode);
 
   const stripped = stripFirstRecognizedCodeBlock(lines, codeStart + 1, codeEnd);
   if (stripped === null) {
@@ -150,6 +252,11 @@ export function forceInjectCodeSection(current: string, opts: InjectOptions): st
 /**
  * Side-effect wrapper: runs injectCodeSection via vault.process.
  * Silent on success; debug-log on failure. Never Notices (D-09).
+ *
+ * Phase 22 — `useInlineWidget` master gate retired with the v1.2 path.
+ * `fenceKind` is unconditionally `'leetcode-solve'`, engaging the v1.3
+ * short-circuit at `injectCodeSection.ts` that preserves the
+ * `\`\`\`leetcode-solve` opener byte-for-byte via `rewriteFenceBody`.
  */
 export async function retrofit(
   app: App,
@@ -161,7 +268,11 @@ export async function retrofit(
     const defaultLang = settings.getDefaultLanguage();
     const starter = resolveStarter(detail, defaultLang);
     await app.vault.process(file, (current) =>
-      injectCodeSection(current, { starterCode: starter, langSlug: defaultLang }),
+      injectCodeSection(current, {
+        starterCode: starter,
+        langSlug: defaultLang,
+        fenceKind: 'leetcode-solve',
+      }),
     );
   } catch (err) {
     logger.debug('solve.retrofit: non-fatal failure', err);

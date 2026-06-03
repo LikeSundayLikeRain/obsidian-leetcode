@@ -49,7 +49,6 @@ import { rewriteProblemSection } from './HeadingRegion';
 import { ensureLeetcodeBase } from './BaseFile';
 import type { DetailCacheEntry } from './types';
 // Phase 3 Plan 07 — retrofit hook for existing + new notes (D-06/D-07/D-09).
-import { retrofit as retrofitStarterCodeRaw } from '../solve/starterCodeInjector';
 
 /** D-11 / D-14: 7 days between forced background refreshes. */
 export const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -154,6 +153,32 @@ export class NoteWriter {
    *  still renders with a Log in button but the click is a no-op. */
   private login: (() => void | Promise<void>) | null = null;
 
+  /**
+   * Phase 21 Plan 21-16 (UAT R6 closure) — post-write rerender hand-off
+   * fired AFTER the new-note creation path completes (vault.create →
+   * applyFrontmatter → openLinkText → fireOnNoteOpen). The callback
+   * receives the just-opened file's path string and is responsible for
+   * dispatching the appropriate rerender (Reading-mode previewMode.
+   * rerender(true) AND/OR Live-Preview leetcodeRefreshAnnotation).
+   *
+   * Symmetric to Plan 21-08's migrate-path rerender + Plan 21-14's
+   * repair-path rerender. The new-note path needs the same hand-off
+   * because the widget mount path (WidgetController.resolveLanguageSlug)
+   * reads frontmatter from metadataCache at MOUNT time — and metadata-
+   * Cache may not yet have absorbed the post-applyFrontmatter snapshot
+   * when openLinkText triggers the first render cycle. The post-write
+   * rerender forces a remount against the now-finalized buffer.
+   *
+   * Injected via setter (same rationale as setOnNoteOpen above) so
+   * existing NoteWriter tests don't need to wire the widget rerender
+   * subsystem to construct a NoteWriter. When null (the default), the
+   * callback is a no-op.
+   *
+   * Gated on `useInlineWidget=ON` at the call site so the legacy v1.2
+   * path (no widget to remount) is undisturbed.
+   */
+  private rerenderAfterNoteWritten: ((path: string) => void) | null = null;
+
   constructor(
     private readonly app: App,
     private readonly client: NoteWriterClient,
@@ -175,6 +200,17 @@ export class NoteWriter {
     this.login = login;
   }
 
+  /**
+   * Phase 21 Plan 21-16 (UAT R6 closure) — install the post-write
+   * rerender callback. Production wiring in main.ts passes a callback
+   * that walks markdown leaves and dispatches `rerenderReadingModePanes`
+   * (Plan 21-08) and `leetcodeRefreshAnnotation` (Plan 21-14) per leaf.
+   * Latest setter wins; passing null detaches.
+   */
+  setRerenderAfterNoteWritten(cb: ((path: string) => void) | null): void {
+    this.rerenderAfterNoteWritten = cb;
+  }
+
   /** Fire the on-open hook if installed. Swallows synchronous throws so a
    *  faulty hook never breaks the reveal path. The hook itself is responsible
    *  for its async error handling (D-12 silent-offline). */
@@ -185,6 +221,53 @@ export class NoteWriter {
     } catch (err) {
       logger.debug('notes.onNoteOpen: hook threw synchronously', err);
     }
+  }
+
+  /**
+   * Plan 21-16 — fire the post-write rerender callback. Pattern S-05
+   * silent-on-failure: a throwing callback must NOT propagate to
+   * openProblem so the user's reveal is never blocked.
+   */
+  private fireRerenderAfterNoteWritten(filePath: string): void {
+    if (!this.rerenderAfterNoteWritten) return;
+    // CR-04 (Phase 21 cycle-2 review-fix) — defer until CM6 has hydrated
+    // and Obsidian's preview pipeline has run its initial rAF cycle.
+    // openLinkText resolves AS SOON AS the leaf is created, NOT when CM6
+    // has evaluated its initial StateField factory. A dispatch against
+    // a half-hydrated `view.editor.cm` either silently no-ops (cm
+    // undefined) or fires before any decoration state exists, collapsing
+    // the leetcodeRefreshAnnotation update to a no-op.
+    //
+    // Two rAF ticks is the canonical cross-browser pattern for "next
+    // paint": tick #1 aligns with browser layout; tick #2 guarantees
+    // the CM6 initial transaction has flushed AND Obsidian's
+    // requestAnimationFrame-debounced preview render has run.
+    const fire = (): void => {
+      try {
+        this.rerenderAfterNoteWritten?.(filePath);
+      } catch (err) {
+        logger.debug(
+          'notes.rerenderAfterNoteWritten: callback threw',
+          err,
+        );
+      }
+    };
+    const raf =
+      typeof window !== 'undefined' &&
+      typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : null;
+    if (!raf) {
+      // Test / non-browser fallback — fire synchronously so unit-test
+      // assertions on call ordering remain deterministic.
+      fire();
+      return;
+    }
+    raf(() => {
+      raf(() => {
+        fire();
+      });
+    });
   }
 
   /**
@@ -209,27 +292,38 @@ export class NoteWriter {
   }
 
   /**
-   * Phase 3 Plan 07 — retrofit wrapper with D-09 pre-guards.
+   * Plan 21.1-01 R6 fresh-create — bounded poll until metadataCache reports
+   * `lc-slug` for the freshly-written file, OR ticks budget exhausts.
    *
-   * starterCodeInjector.retrofit is silent-on-failure internally, but it is
-   * not silent-on-no-language: with an empty langSlug and no starter it
-   * would still write an empty tag-less fenced block under a fresh `## Code`
-   * heading (malformed). We short-circuit that case here so the user's note
-   * is left structurally unchanged until they either configure a default
-   * language in settings or invoke the explicit "Insert starter code"
-   * command (Plan 07 Task 2).
+   * Why: applyFrontmatter resolves before metadataCache.changed fires. If
+   * we call openLinkText immediately after applyFrontmatter, CM6 builds
+   * the EditorView while metadataCache still returns null for the new
+   * file. The leetCodeWidgetStateField returns Decoration.none on its
+   * first call (slug not visible), and Obsidian's built-in markdown
+   * CodeBlockWidget claims the fence range. The later metadataCache.changed
+   * dispatch can't reliably evict Obsidian's widget from the rendered
+   * viewport, leaving the user with a read-only Java-highlighted fence.
+   *
+   * This poll guarantees that EditorState.create runs against a populated
+   * metadataCache — same path as opening any existing note.
+   *
+   * Bounded: ticks * delayMs ceiling so a metadata-indexer hang cannot
+   * block the UI. The default 16 * 50 = ~800ms ceiling matches Plan 21-14's
+   * cycle-2 follow-up poll in liveModeBannerStateField.ts:444-461.
    */
-  private async retrofitStarterCode(
+  private async waitForFrontmatterIndexed(
     file: TFile,
-    detail: DetailCacheEntry | null,
+    ticks: number,
+    delayMs: number,
   ): Promise<void> {
-    const defaultLang = this.settings.getDefaultLanguage();
-    const hasAnyStarter = Array.isArray(detail?.codeSnippets) && (detail?.codeSnippets?.length ?? 0) > 0;
-    if (!defaultLang && !hasAnyStarter) {
-      logger.debug('notes.retrofitStarterCode: skipped — no default language and no starter snippets');
-      return;
+    for (let i = 0; i < ticks; i++) {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+        | Record<string, unknown>
+        | undefined;
+      const slug = fm?.['lc-slug'];
+      if (typeof slug === 'string' && slug.length > 0) return;
+      await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
     }
-    await retrofitStarterCodeRaw(this.app, file, detail, this.settings);
   }
 
   async openProblem(
@@ -259,9 +353,9 @@ export class NoteWriter {
       await ensureLeetcodeBase(this.app, folder).catch((err) => {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
       });
-      // Phase 3 Plan 07 — retrofit starter code on re-open path (D-07 idempotent).
-      // Silent on every failure per D-09 (retrofit owns its own error surface).
-      await this.retrofitStarterCode(existingFile, cached);
+      // Phase 22 — legacy retrofit path retired with the v1.2 fence emitter.
+      // The v1.3 widget owns its own fence body via `vault.process` writes;
+      // grafting a sibling fence here would corrupt notes (Plan 21-13 Gap B).
       // D-11/D-12: background-refresh if cache is stale; silent on failure.
       const now = Date.now();
       const cacheStale = !cached || (now - cached.fetchedAt) > CACHE_TTL_MS;
@@ -331,8 +425,7 @@ export class NoteWriter {
       await ensureLeetcodeBase(this.app, folder).catch((err) => {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
       });
-      // Silent retrofit (D-09) — starterCodeInjector handles all error surfaces.
-      await this.retrofitStarterCode(existingAtCanonical, newEntry);
+      // Phase 22 — legacy retrofit path retired with the v1.2 fence emitter.
       // Union-merge frontmatter so lc-* keys track the fresh detail, mirroring
       // backgroundRefresh's posture.
       try {
@@ -354,6 +447,8 @@ export class NoteWriter {
     // Create the file with body; frontmatter comes on a separate pass via processFrontMatter.
     const defaultLang = this.settings.getDefaultLanguage();
     const starterCode = pickStarterCode(newEntry, defaultLang);
+    // Phase 22 — `useInlineWidget` master gate retired; the v1.3 emitter
+    // (`\`\`\`leetcode-solve`) is now the unconditional path.
     const body = buildNoteBody({
       problemMarkdown: htmlToMarkdown(newEntry.contentHtml),
       langSlug: defaultLang || undefined,
@@ -398,17 +493,29 @@ export class NoteWriter {
       );
     }
 
-    // Phase 3 Plan 07 — belt-and-suspenders retrofit on the new-note path.
-    // buildNoteBody above already emits `## Code` with the starter block, so
-    // this call is typically an idempotent no-op (recognized langSlug fence
-    // detected → early return). Retained so a future change to buildNoteBody
-    // that drops `## Code` doesn't silently break new-note creation.
-    await this.retrofitStarterCode(file, newEntry);
+    // Phase 22 — legacy belt-and-suspenders retrofit retired with the v1.2
+    // fence emitter. The v1.3 path's `buildNoteBody` emits the
+    // `\`\`\`leetcode-solve` fence + starter directly; no second pass needed
+    // (Plan 21-16 R6 closure made this call deterministic on the v1.3 path).
 
     // D-18 lazy ship — opportunistic, non-fatal.
     await ensureLeetcodeBase(this.app, folder).catch((err) => {
       logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
     });
+
+    // Plan 21.1-01 R6 fresh-create — wait for metadataCache to index
+    // the freshly-written frontmatter BEFORE openLinkText creates the
+    // CM6 EditorView. Without this, EditorState.create runs while
+    // metadataCache is still null for the new file, leetCodeWidgetStateField
+    // returns Decoration.none (no slug visible), and Obsidian's built-in
+    // markdown CodeBlockWidget claims the fence range. The later
+    // metadataCache.changed dispatch can't reliably swap the widget in
+    // because CM6 has already committed to Obsidian's render.
+    //
+    // Polling shape mirrors the Plan 21-14 cycle-2 follow-up in
+    // liveModeBannerStateField.ts: 16-tick budget @ ~50ms each = ~800ms
+    // ceiling. Bounded so a metadata-indexer hang never blocks UI.
+    await this.waitForFrontmatterIndexed(file, 16, 50);
 
     // Reveal the newly-created note.
     // Phase 18: tab idempotency — reuse existing leaf if already open.
@@ -417,6 +524,12 @@ export class NoteWriter {
     }
     // Phase 4 Plan 05 (D-02) — fire on-open hook after new-note reveal.
     this.fireOnNoteOpen(slug);
+    // Phase 21 Plan 21-16 (UAT R6 closure) — fire the post-write rerender
+    // hand-off so the v1.3 widget mounts against the finalized buffer.
+    // Symmetric to Plan 21-08's migrate-path rerender + Plan 21-14's
+    // repair-path rerender. Phase 22 dropped the `useInlineWidget` gate;
+    // the rerender is unconditional on the v1.3 path.
+    this.fireRerenderAfterNoteWritten(file.path);
   }
 
   /**
@@ -433,11 +546,9 @@ export class NoteWriter {
     const freshMarkdown = htmlToMarkdown(entry.contentHtml);
     // Body rewrite — vault.process is atomic; rewriteProblemSection is pure.
     await this.app.vault.process(file, (current) => rewriteProblemSection(current, freshMarkdown));
-    // Phase 3 Plan 07 — retrofit starter code if the note still lacks `## Code`
-    // (e.g., cached entry had no codeSnippets when first written but a later
-    // refresh returns them). Idempotent on notes that already have the
-    // section. Silent on failure per D-09.
-    await this.retrofitStarterCode(file, entry);
+    // Phase 22 — legacy retrofit path retired; the v1.3 widget owns the fence
+    // body. Notes missing `## Code` are repaired through the migration
+    // pipeline (`fenceMigrator.ts`) at file open, not via background refresh.
     // Frontmatter update — same pass, union-merge semantics inside applyFrontmatter.
     await applyFrontmatter(
       this.app,

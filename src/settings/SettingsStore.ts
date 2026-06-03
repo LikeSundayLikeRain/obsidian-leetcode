@@ -72,11 +72,22 @@ export interface PluginData {
    *  Default true (existing-user behavior preserved). When false, onload
    *  skips registerEditorExtension(buildNestedEditorExtension), skips
    *  registerVaultModifyRepairTrigger, and skips the file-open repair hook.
-   *  Reload-required apply mode — toggling persists immediately but does
-   *  NOT live-destroy children; user is prompted via Notice to reload.
-   *  Shape-guard at load collapses non-boolean raw to true (preserves
-   *  current behavior for every existing user). */
-  useNestedEditor: boolean;
+  /** Phase 21 MIGRATE-06 — auto-migrate v1.2 notes on file open. Default true.
+   *  When ON, opening a v1.2 LC note silently rewrites the legacy fence opener
+   *  to ```leetcode-solve and fills `lc-language` if missing. When OFF, the
+   *  widget mount path renders a `legacyFenceBanner` instead with a
+   *  [Migrate now] button. Strict-match predicate gates entry — non-LC fences
+   *  never touched. Shape-guard at load: non-boolean / missing / corrupt
+   *  collapses to true (default ON). */
+  autoMigrateOnOpen: boolean;
+  /** Phase 19 C-06 — debounced widget writer delay in milliseconds.
+   *  Default 400ms. Configurable via Settings → Experimental: 300/400/500/
+   *  1000/2000ms (CONTEXT D-08). Strict-equality shape-guard at load:
+   *  anything that isn't literally one of those five numbers (string '400',
+   *  null, missing field, typo) collapses to 400. Mirrors indentSizeOverride
+   *  posture at lines 664-668. Plan 19-02 owns the debouncedWriter; Plan
+   *  19-01 only ships the persistence + UI wire-up. */
+  widgetSyncDebounceMs: 300 | 400 | 500 | 1000 | 2000;
   problemIndex: ProblemIndex | null;
   /** Compound filter rules from the filter modal. Null = no filter active.
    *  Persisted so filter survives plugin reload / Obsidian restart. */
@@ -255,9 +266,13 @@ const DEFAULT_DATA: PluginData = {
   // exception is enforced by the consumer (childEditorLanguage.ts).
   indentSizeOverride: 'auto',
   showRelativeLineNumbers: false,
-  // Phase 19 vq4 — default true preserves Phase 13–18 nested-editor behavior
-  // for every existing user. Toggle is reload-required.
-  useNestedEditor: true,
+  // Phase 21 MIGRATE-06 — default ON; user must explicitly opt out.
+  // Phase 22 (D-settings-01) — `useInlineWidget` / `useNestedEditor` master
+  // gates retired with the v1.2 path. The v1.3 widget is the only mount path,
+  // and migration runs unconditionally on file open.
+  autoMigrateOnOpen: true,
+  // Phase 19 C-06 — default 400ms debounced writer delay (Plan 19-02 wires it).
+  widgetSyncDebounceMs: 400,
   problemIndex: null,
   filter: null,
   problemDetails: {},
@@ -669,12 +684,29 @@ export class SettingsStore {
       showRelativeLineNumbers: typeof raw.showRelativeLineNumbers === 'boolean'
         ? raw.showRelativeLineNumbers
         : false,
-      // Phase 19 vq4 — non-boolean raw / missing field / corrupt data.json all
-      // collapse to DEFAULT_DATA.useNestedEditor (= true), which preserves
-      // Phase 13–18 nested-editor behavior for every existing user.
-      useNestedEditor: typeof raw.useNestedEditor === 'boolean'
-        ? raw.useNestedEditor
-        : DEFAULT_DATA.useNestedEditor,
+      // Phase 22 (D-settings-01) — `useInlineWidget` / `useNestedEditor` are
+      // dropped from the in-memory shape. Persisted values in 1.2.x carry-over
+      // `data.json` files are silently ignored on load; the next `persist()`
+      // writes the new canonical shape and the legacy fields disappear from
+      // disk naturally (read-and-ignore).
+      // Phase 21 MIGRATE-06 — non-boolean raw / missing field / corrupt
+      // data.json all collapse to true (DEFAULT_DATA.autoMigrateOnOpen).
+      // Default ON matches MIGRATE-06; user explicitly opts out via the
+      // Settings → Experimental toggle.
+      autoMigrateOnOpen: typeof raw.autoMigrateOnOpen === 'boolean'
+        ? raw.autoMigrateOnOpen
+        : DEFAULT_DATA.autoMigrateOnOpen,
+      // Phase 19 C-06 — strict-equality shape-guard. Only literal numbers
+      // 300/400/500/1000/2000 pass; everything else (string '400', null,
+      // missing field, invalid number 250, the literal string 'auto') collapses
+      // to 400. Mirrors the indentSizeOverride posture at lines 664-668.
+      widgetSyncDebounceMs: (raw.widgetSyncDebounceMs === 300 ||
+                             raw.widgetSyncDebounceMs === 400 ||
+                             raw.widgetSyncDebounceMs === 500 ||
+                             raw.widgetSyncDebounceMs === 1000 ||
+                             raw.widgetSyncDebounceMs === 2000)
+        ? raw.widgetSyncDebounceMs
+        : DEFAULT_DATA.widgetSyncDebounceMs,
       problemIndex: isValidProblemIndex(raw.problemIndex) ? raw.problemIndex : DEFAULT_DATA.problemIndex,
       filter: isValidCompoundFilter(raw.filter)
         ? sanitizeCompoundFilter(raw.filter)
@@ -834,15 +866,30 @@ export class SettingsStore {
     await this.persist();
   }
 
-  /** Phase 19 vq4 — read the nested-editor master toggle. Read once at
-   *  onload time in main.ts; toggling at runtime does NOT live-apply. */
-  getUseNestedEditor(): boolean { return this.data.useNestedEditor; }
+  /** Phase 21 MIGRATE-06 — read auto-migrate setting. Read at every
+   *  `migrateLegacyFenceIfNeeded` call site (mount path); live-applies
+   *  (toggle takes effect on next file open without reload — no widget
+   *  destroy needed). */
+  getAutoMigrateOnOpen(): boolean { return this.data.autoMigrateOnOpen; }
 
-  /** Phase 19 vq4 — persist the nested-editor master toggle. Reload-required:
-   *  the SettingsTab onChange handler shows a `Reload Obsidian to apply`
-   *  Notice; this setter only persists. */
-  async setUseNestedEditor(v: boolean): Promise<void> {
-    this.data.useNestedEditor = v;
+  /** Phase 21 MIGRATE-06 — persist auto-migrate setting. Live-apply: no
+   *  reload required (next mount-path read picks up the new value). */
+  async setAutoMigrateOnOpen(v: boolean): Promise<void> {
+    this.data.autoMigrateOnOpen = v;
+    await this.persist();
+  }
+
+  /** Phase 19 C-06 — read the debounced writer delay (ms). Plan 19-02 owns
+   *  the debouncedWriter that consumes this; Plan 19-01 only ships the
+   *  persistence + UI plumbing. */
+  getWidgetSyncDebounceMs(): 300 | 400 | 500 | 1000 | 2000 {
+    return this.data.widgetSyncDebounceMs;
+  }
+
+  /** Phase 19 C-06 — persist the debounced writer delay. Bound to the
+   *  Settings tab → Experimental → Save delay dropdown (5 options). */
+  async setWidgetSyncDebounceMs(v: 300 | 400 | 500 | 1000 | 2000): Promise<void> {
+    this.data.widgetSyncDebounceMs = v;
     await this.persist();
   }
 

@@ -72,7 +72,7 @@ describe('buildLanguageChevron DOM render', () => {
   // the literal `▼ {label}` textContent. RED until Plan 04 ships the swap.
   it('renders Python 3 label + icon-child when currentSlug = python3 (G-PYTHON-LABEL disambiguation; D-12b)', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
 
     expect(wrapper.classList.contains('leetcode-language-chevron-wrapper')).toBe(true);
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
@@ -85,7 +85,7 @@ describe('buildLanguageChevron DOM render', () => {
 
   it('renders Java label + icon-child when currentSlug = java (D-12b)', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'java');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'java');
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
     const labelSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-label');
@@ -96,7 +96,7 @@ describe('buildLanguageChevron DOM render', () => {
 
   it('renders C++ label + icon-child when currentSlug = cpp (D-12b)', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'cpp');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'cpp');
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
     const labelSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-label');
@@ -107,7 +107,7 @@ describe('buildLanguageChevron DOM render', () => {
 
   it('passes through unknown slug as raw label-span text + icon-child (no LC_LANG_DISPLAY_LABELS entry; D-12b)', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'xyz');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'xyz');
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
     const labelSpan = button!.querySelector<HTMLSpanElement>('.leetcode-language-chevron-label');
@@ -118,7 +118,7 @@ describe('buildLanguageChevron DOM render', () => {
 
   it('button has aria-haspopup=listbox and aria-expanded=false initially', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
     expect(button!.getAttribute('aria-haspopup')).toBe('listbox');
@@ -127,7 +127,7 @@ describe('buildLanguageChevron DOM render', () => {
 
   it('button does NOT have a title attribute (UI-SPEC §Copywriting "zero hover tooltip")', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
     expect(button!.hasAttribute('title')).toBe(false);
@@ -138,7 +138,7 @@ describe('buildLanguageChevron DOM render', () => {
     // (portal pattern: only attached to body during open). After open, the
     // dropdown is in document.body with display=block. Closing detaches it.
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     // Initially detached — querySelector across document returns null.
@@ -158,7 +158,7 @@ describe('buildLanguageChevron DOM render', () => {
 
   it('dropdown lists exactly 8 items in LC_CHEVRON_LANG_ORDER with role=option', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
@@ -177,7 +177,7 @@ describe('buildLanguageChevron DOM render', () => {
 
   it('marks the currently-selected language item with .is-current', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'java');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'java');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
@@ -202,7 +202,7 @@ describe('buildLanguageChevron DOM render', () => {
 describe('buildLanguageChevron click toggles dropdown', () => {
   it('first click attaches dropdown to body with display=block; second click detaches', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
@@ -218,7 +218,7 @@ describe('buildLanguageChevron click toggles dropdown', () => {
 
   it('updates aria-expanded matching dropdown visibility', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
 
@@ -233,7 +233,7 @@ describe('buildLanguageChevron click toggles dropdown', () => {
 describe('buildLanguageChevron item click', () => {
   it('clicking a different language item invokes plugin.switchLanguage(file, slug) once', () => {
     const { plugin, switchLanguage } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     // Open dropdown first.
@@ -254,7 +254,7 @@ describe('buildLanguageChevron item click', () => {
 
   it('clicking the currently-selected language is a no-op (no switchLanguage call)', () => {
     const { plugin, switchLanguage } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'java');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'java');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
@@ -277,7 +277,7 @@ describe('buildLanguageChevron item click', () => {
 
   it('item click closes the dropdown (instant feedback per UI-SPEC §State machine)', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
@@ -303,7 +303,7 @@ describe('buildLanguageChevron item click', () => {
 describe('Esc dismissal (C6)', () => {
   it('Esc on document closes the dropdown regardless of focus location', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
@@ -326,7 +326,7 @@ describe('Esc dismissal (C6)', () => {
 
   it('Esc handler is removed when dropdown closes (no leak across open/close cycles)', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
@@ -352,7 +352,7 @@ describe('Esc dismissal (C6)', () => {
 describe('Click-through prevention (G-CLICK-THROUGH)', () => {
   it('pointerdown on dropdown item does NOT propagate to document (CM6 caret stays)', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     // Open dropdown.
@@ -389,7 +389,7 @@ describe('Click-through prevention (G-CLICK-THROUGH)', () => {
 
   it('pointerdown on chevron button does NOT propagate to document', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const docSpy = vi.fn();
@@ -418,7 +418,7 @@ describe('Click-through prevention (G-CLICK-THROUGH)', () => {
 describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
   it('dropdown is a child of document.body when open (not a descendant of wrapper)', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
@@ -434,7 +434,7 @@ describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
 
   it('dropdown is removed from document.body when closed', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron');
@@ -456,7 +456,7 @@ describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
 
   it('dropdown.style.top is set from button.getBoundingClientRect().bottom + 4 when open', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron')!;
@@ -484,7 +484,7 @@ describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
 
   it('dropdown.style.left is set from button.getBoundingClientRect().left when open', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron')!;
@@ -517,7 +517,7 @@ describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
     const removeSpy = vi.spyOn(window, 'removeEventListener');
 
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     const button = wrapper.querySelector<HTMLButtonElement>('button.leetcode-language-chevron')!;
@@ -551,7 +551,7 @@ describe('G-DROPDOWN-CLIPPED: portal pattern', () => {
 
   it('outside-click on document body (outside both wrapper and dropdown) closes the dropdown', () => {
     const { plugin } = makeHost();
-    const wrapper = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
+    const { wrapper } = buildLanguageChevron(document, plugin, FAKE_FILE, 'python3');
     document.body.appendChild(wrapper);
 
     // Add an unrelated outside element to dispatch the click on.
