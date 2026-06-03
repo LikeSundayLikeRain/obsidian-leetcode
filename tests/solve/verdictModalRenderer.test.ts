@@ -234,9 +234,14 @@ describe('Phase 5.4 — Run-mode redesign (RED)', () => {
 
   it('D-04: per-case FAIL chip when outputs differ', () => {
     // Synthesize a 2-case mismatch: case 0 passes, case 1 fails.
+    // compare_result: '10' is LC's per-case bitmask (case 0 pass, case 1 fail);
+    // correct_answer: false is LC's aggregate verdict. Both must be set so the
+    // LC-authoritative compare logic in Step 3 produces the expected chips.
     const mismatch = {
       ...runMultiCase,
       correct_answer: false,
+      compare_result: '10',
+      total_testcases: 2,
       code_answer: ['[0,1]', '[1,0]'], // case 1 differs from expected '[1,2]'
       expected_code_answer: ['[0,1]', '[1,2]'],
     };
@@ -248,6 +253,34 @@ describe('Phase 5.4 — Run-mode redesign (RED)', () => {
     const failChips = contentEl.querySelectorAll('.leetcode-verdict-case-chip--fail');
     expect(passChips.length).toBeGreaterThanOrEqual(1);
     expect(failChips.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('regression: order-agnostic answer (Two Sum [1,0] vs [0,1]) shows PASS when LC says correct_answer=true', () => {
+    // Two Sum: "you may return the answer in any order". LC's judge accepts
+    // [1,0] when expected is [0,1]; correct_answer=true and compare_result='1'
+    // are LC's authoritative signals. The renderer must trust them, not local
+    // string-compare.
+    const orderAgnostic = {
+      ...runMultiCase,
+      correct_answer: true,
+      compare_result: '1',
+      code_answer: ['[1,0]'],
+      expected_code_answer: ['[0,1]'],
+      total_testcases: 1,
+      total_correct: 1,
+    };
+    const { titleEl, contentEl } = renderFixtureRun(orderAgnostic, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9',
+    });
+    // Aggregate verdict must be Accepted, not Wrong Answer.
+    expect(titleEl.textContent ?? '').toContain('Accepted');
+    expect(titleEl.textContent ?? '').not.toContain('Wrong Answer');
+    // Per-case chip must show PASS, not FAIL.
+    const passChips = contentEl.querySelectorAll('.leetcode-verdict-case-chip--pass');
+    const failChips = contentEl.querySelectorAll('.leetcode-verdict-case-chip--fail');
+    expect(passChips.length).toBe(1);
+    expect(failChips.length).toBe(0);
   });
 
   it('D-13: header chrome contains verdict + "Runtime: " but NOT the problem title', () => {
@@ -379,7 +412,11 @@ describe('Phase 08 — AI Debug button on Run-mode failure paths', () => {
     const contentEl = document.createElement('div');
     const onOpenAIDebug = vi.fn();
     const failing = JSON.parse(JSON.stringify(runMultiCase)) as Record<string, unknown>;
+    // Must set LC's authoritative signals to false/fail so the renderer
+    // correctly identifies this as a WA and shows the AI Debug button.
     failing.expected_code_answer = ['DIFFERENT', 'DIFFERENT'];
+    failing.correct_answer = false;
+    failing.compare_result = '00';
     renderVerdict({ titleEl, contentEl, payload: failing, onOpenAIDebug });
     const aiBtn = Array.from(contentEl.querySelectorAll('button')).find(
       (b) => (b.textContent ?? '').trim() === 'AI: Debug',
@@ -392,7 +429,11 @@ describe('Phase 08 — AI Debug button on Run-mode failure paths', () => {
     const contentEl = document.createElement('div');
     const onOpenAIDebug = vi.fn();
     const failing = JSON.parse(JSON.stringify(runMultiCase)) as Record<string, unknown>;
+    // Must set LC's authoritative signals to false/fail so the renderer
+    // correctly identifies this as a WA and shows the AI Debug button.
     failing.expected_code_answer = ['DIFFERENT', 'DIFFERENT'];
+    failing.correct_answer = false;
+    failing.compare_result = '00';
     renderVerdict({ titleEl, contentEl, payload: failing, onOpenAIDebug });
     const aiBtn = Array.from(contentEl.querySelectorAll('button')).find(
       (b) => (b.textContent ?? '').trim() === 'AI: Debug',
@@ -417,7 +458,11 @@ describe('Phase 08 — AI Debug button on Run-mode failure paths', () => {
     const titleEl = document.createElement('div');
     const contentEl = document.createElement('div');
     const failing = JSON.parse(JSON.stringify(runMultiCase)) as Record<string, unknown>;
+    // Set LC's authoritative signals to failure so aggregatePass=false;
+    // the button must still be absent because no onOpenAIDebug is wired.
     failing.expected_code_answer = ['DIFFERENT', 'DIFFERENT'];
+    failing.correct_answer = false;
+    failing.compare_result = '00';
     renderVerdict({ titleEl, contentEl, payload: failing });
     const aiBtn = Array.from(contentEl.querySelectorAll('button')).find(
       (b) => (b.textContent ?? '').trim() === 'AI: Debug',
