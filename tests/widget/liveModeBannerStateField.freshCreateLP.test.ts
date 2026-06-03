@@ -262,22 +262,10 @@ describe('R6 LP regression — main.ts metadataCache.on(changed) handler', () =>
     expect(dispatchSpy).toHaveBeenCalledWith(fakePlugin.app, FILE_PATH);
   });
 
-  // LP-R6-D: useInlineWidget=OFF → dispatch must NOT fire (master gate).
-  it('LP-R6-D: useInlineWidget=OFF → dispatchLeetcodeRefreshToLivePreviewLeaves NOT called', () => {
-    const helper = (LeetCodePlugin.prototype as unknown as Record<string, unknown>)
-      .handleMetadataCacheChangedForLP as
-      | ((file: { path: string }, cache: { frontmatter?: Record<string, unknown> }) => void)
-      | undefined;
-    expect(helper).toBeDefined();
-
-    const fakePlugin = makeHandlerPlugin(false);
-    const fakeFile = { path: FILE_PATH };
-    const cache = { frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'java' } };
-
-    helper!.call(fakePlugin, fakeFile, cache);
-
-    expect(dispatchSpy).not.toHaveBeenCalled();
-  });
+  // LP-R6-D: REMOVED in Phase 22 v1.2 path removal.
+  //   The `useInlineWidget` master-gate setting was deleted along with the
+  //   v1.2 nested-editor path — the widget is now the only path. The handler
+  //   no longer reads `getUseInlineWidget()`, so this dead-branch test is gone.
 
   // LP-R6-E: lc-slug absent → dispatch must NOT fire (non-LC note guard).
   it('LP-R6-E: lc-slug absent → dispatchLeetcodeRefreshToLivePreviewLeaves NOT called', () => {

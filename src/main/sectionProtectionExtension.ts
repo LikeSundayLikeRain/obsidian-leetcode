@@ -20,11 +20,12 @@
 // the trailing \n) so selecting the heading line + Backspace cannot delete the
 // newline and orphan the body underneath (RESEARCH Pitfall 3).
 //
-// D-04 escape hatch (RESEARCH Pitfall 5): plugin-side `cm.dispatch` callsites
-// (e.g., the Phase 5.3 chevron switch which writes the fence opener — a
-// locked range under D-09) MUST set a `userEvent: 'leetcode.*'` annotation;
-// the changeFilter checks this first and threads such transactions through
-// unfiltered. Without this bypass the chevron silently breaks.
+// In v1.3 the section-protection extension does NOT filter on userEvent:
+// the v1.2 'leetcode.*' bypass convention has been retired (Phase 22). The
+// narrow v1.3 protection covers the `## Problem` body and `## Techniques`
+// heading only — fence opener/closer protection is moot because the inline
+// widget owns the fence. Plugin-side dispatches no longer need to carry any
+// userEvent annotation to thread through.
 //
 // Filter inputs use `tr.startState` (NEVER the post-transaction state) per
 // RESEARCH Pitfall 2 — reading the post-transaction state inside the filter

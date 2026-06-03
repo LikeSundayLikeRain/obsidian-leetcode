@@ -57,7 +57,6 @@ import {
 
 type PluginHost = Plugin & WidgetMountHost & {
   settings: WidgetMountHost['settings'] & {
-    getUseInlineWidget?(): boolean;
     getAutoMigrateOnOpen?(): boolean;
     getDefaultLanguage?(): string;
   };

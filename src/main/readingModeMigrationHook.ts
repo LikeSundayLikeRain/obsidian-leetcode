@@ -43,7 +43,6 @@ import { leetcodeRefreshAnnotation } from '../widget/liveModeBannerStateField';
 export interface ReadingModeMigrationHookDeps {
   app: App;
   settings: {
-    getUseInlineWidget(): boolean;
     getAutoMigrateOnOpen(): boolean;
     getDefaultLanguage?(): string;
   };
@@ -108,9 +107,8 @@ export interface ReadingModeMigrationHookDeps {
  *
  * The handler self-gates on:
  *   1. file !== null               (workspace transition guard)
- *   2. settings.getUseInlineWidget (master gate, L9)
- *   3. fm['lc-slug'] non-empty     (per-note gate)
- *   4. !migrateInFlight.has(path)  (cross-mode dedupe; WR-01)
+ *   2. fm['lc-slug'] non-empty     (per-note gate)
+ *   3. !migrateInFlight.has(path)  (cross-mode dedupe; WR-01)
  *
  * After gates pass, branches on settings.getAutoMigrateOnOpen.
  */
@@ -121,15 +119,13 @@ export function makeReadingModeMigrationHandler(
     // 1. Workspace transition with no active file (Obsidian fires
     //    file-open with null when the user closes the last leaf).
     if (!file) return;
-    // 2. Master gate (L9). useInlineWidget=OFF ⇒ Phase 21 is a no-op.
-    if (!deps.settings.getUseInlineWidget()) return;
-    // 3. Per-note gate (lc-slug presence).
+    // 2. Per-note gate (lc-slug presence).
     const fm = deps.app.metadataCache.getFileCache(file)?.frontmatter as
       | Record<string, unknown>
       | undefined;
     const slug = fm?.['lc-slug'];
     if (typeof slug !== 'string' || slug.length === 0) return;
-    // 4. Cross-mode dedupe (WR-01).
+    // 3. Cross-mode dedupe (WR-01).
     if (deps.migrateInFlight.has(file.path)) return;
 
     if (deps.settings.getAutoMigrateOnOpen()) {

@@ -49,7 +49,6 @@ import { rewriteProblemSection } from './HeadingRegion';
 import { ensureLeetcodeBase } from './BaseFile';
 import type { DetailCacheEntry } from './types';
 // Phase 3 Plan 07 — retrofit hook for existing + new notes (D-06/D-07/D-09).
-import { retrofit as retrofitStarterCodeRaw } from '../solve/starterCodeInjector';
 
 /** D-11 / D-14: 7 days between forced background refreshes. */
 export const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -94,14 +93,6 @@ export interface NoteWriterSettings {
   getDefaultLanguage(): string;
   getProblemDetail(slug: string): DetailCacheEntry | null;
   setProblemDetail(slug: string, detail: DetailCacheEntry): Promise<void>;
-  /** Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08) — read at new-note creation
-   *  to gate the fence emitter. ON → `\`\`\`leetcode-solve` (codeBlockForV13);
-   *  OFF → legacy `\`\`\`<langSlug>` (codeBlockFor). Optional to preserve
-   *  back-compat for test fixtures that construct a minimal settings port
-   *  (test fixtures predate this field — they exercise legacy emit paths and
-   *  don't need to opt into v1.3 emission). Falls back to false (legacy) when
-   *  the port omits the getter. Phase 22 deletes this gate. */
-  getUseInlineWidget?(): boolean;
 }
 
 /** Minimal file-like shape the mocked Vault returns; real Obsidian returns TFile. */
@@ -335,73 +326,12 @@ export class NoteWriter {
     }
   }
 
-  /**
-   * Phase 3 Plan 07 — retrofit wrapper with D-09 pre-guards.
-   *
-   * starterCodeInjector.retrofit is silent-on-failure internally, but it is
-   * not silent-on-no-language: with an empty langSlug and no starter it
-   * would still write an empty tag-less fenced block under a fresh `## Code`
-   * heading (malformed). We short-circuit that case here so the user's note
-   * is left structurally unchanged until they either configure a default
-   * language in settings or invoke the explicit "Insert starter code"
-   * command (Plan 07 Task 2).
-   *
-   * Phase 21 Plan 21-13 (Post-UAT Gap B closure) — defense-in-depth gate:
-   * when `useInlineWidget=ON` (the v1.3 path), the v1.3 widget owns its own
-   * fence body via `vault.process` writes; running the legacy retrofit on
-   * top would graft a sibling `\`\`\`<langSlug>` fence ahead of the existing
-   * `\`\`\`leetcode-solve` fence — the duplicate-fence corruption reported
-   * in `21-HUMAN-UAT.md` Gap B. Mirrors Phase 20 Plan 20-09's
-   * `main.ts:1421-1429` file-open gate that closed a near-identical
-   * corruption pattern. The four call sites of this wrapper (lines 272,
-   * 343, 419, 453 below — re-open with cached detail / cache-cleared
-   * recovery / new-note belt-and-suspenders / backgroundRefresh after TTL)
-   * are all protected by this single gate.
-   */
-  private async retrofitStarterCode(
-    file: TFile,
-    detail: DetailCacheEntry | null,
-    // WR-05 (Phase 21 cycle-2 review-fix) — accept an override so the
-    // openProblem caller can pass the value it captured at the top of the
-    // call. This collapses the race where the user toggles useInlineWidget
-    // mid-call (e.g., between the network fetch and the post-write
-    // retrofit). Defaults to a fresh settings read for the OTHER three
-    // call sites (re-open / cache-cleared recovery / backgroundRefresh).
-    useInlineWidgetOverride?: boolean,
-  ): Promise<void> {
-    const useInlineWidget =
-      useInlineWidgetOverride ?? (this.settings.getUseInlineWidget?.() ?? false);
-    if (useInlineWidget) {
-      // v1.3 widget owns the fence body; retrofit is structurally meaningless
-      // and would corrupt the note by stacking a sibling fence (Plan 21-13).
-      logger.debug(
-        'notes.retrofitStarterCode: skipped — v1.3 widget owns the fence body via vault.process writes; retrofit is structurally meaningless on the v1.3 path',
-      );
-      return;
-    }
-    const defaultLang = this.settings.getDefaultLanguage();
-    const hasAnyStarter = Array.isArray(detail?.codeSnippets) && (detail?.codeSnippets?.length ?? 0) > 0;
-    if (!defaultLang && !hasAnyStarter) {
-      logger.debug('notes.retrofitStarterCode: skipped — no default language and no starter snippets');
-      return;
-    }
-    await retrofitStarterCodeRaw(this.app, file, detail, this.settings);
-  }
-
   async openProblem(
     slug: string,
     initialStatus?: 'solved' | 'attempted' | 'untouched',
   ): Promise<void> {
     const folder = this.settings.getProblemsFolder();
     const cached = this.settings.getProblemDetail(slug);
-    // WR-05 (Phase 21 cycle-2 review-fix) — cache useInlineWidget once at
-    // entry. The setting was previously read in three places (retrofit
-    // wrapper, buildNoteBody arg, belt-and-suspenders retrofit gate); a
-    // user toggling the setting mid-call (settings tab in another window
-    // or programmatic flip via API while the network fetch is in flight)
-    // could see the three reads disagree, regressing into the Plan 21-13
-    // Gap B sibling-fence corruption.
-    const useInlineWidget = this.settings.getUseInlineWidget?.() ?? false;
 
     // Re-open path (D-11): existing file + cached detail → reveal first, optionally background-refresh.
     const existingPath = cached ? buildNotePath(folder, cached.id, slug) : null;
@@ -423,11 +353,9 @@ export class NoteWriter {
       await ensureLeetcodeBase(this.app, folder).catch((err) => {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
       });
-      // Phase 3 Plan 07 — retrofit starter code on re-open path (D-07 idempotent).
-      // Silent on every failure per D-09 (retrofit owns its own error surface).
-      // WR-05: pass the captured useInlineWidget so a mid-call toggle does
-      // not split the view of "should this fence be the v1.3 widget body".
-      await this.retrofitStarterCode(existingFile, cached, useInlineWidget);
+      // Phase 22 — legacy retrofit path retired with the v1.2 fence emitter.
+      // The v1.3 widget owns its own fence body via `vault.process` writes;
+      // grafting a sibling fence here would corrupt notes (Plan 21-13 Gap B).
       // D-11/D-12: background-refresh if cache is stale; silent on failure.
       const now = Date.now();
       const cacheStale = !cached || (now - cached.fetchedAt) > CACHE_TTL_MS;
@@ -497,9 +425,7 @@ export class NoteWriter {
       await ensureLeetcodeBase(this.app, folder).catch((err) => {
         logger.debug('notes.ensureLeetcodeBase: non-fatal failure', err);
       });
-      // Silent retrofit (D-09) — starterCodeInjector handles all error surfaces.
-      // WR-05: pass the captured useInlineWidget for race-free gating.
-      await this.retrofitStarterCode(existingAtCanonical, newEntry, useInlineWidget);
+      // Phase 22 — legacy retrofit path retired with the v1.2 fence emitter.
       // Union-merge frontmatter so lc-* keys track the fresh detail, mirroring
       // backgroundRefresh's posture.
       try {
@@ -521,18 +447,13 @@ export class NoteWriter {
     // Create the file with body; frontmatter comes on a separate pass via processFrontMatter.
     const defaultLang = this.settings.getDefaultLanguage();
     const starterCode = pickStarterCode(newEntry, defaultLang);
-    // Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08) — gate the fence emitter on
-    // `useInlineWidget`. ON emits `\`\`\`leetcode-solve`; OFF (the milestone
-    // default through Phase 21) emits the legacy `\`\`\`<langSlug>` opener.
-    // Phase 22 deletes the gate and the legacy branch.
+    // Phase 22 — `useInlineWidget` master gate retired; the v1.3 emitter
+    // (`\`\`\`leetcode-solve`) is now the unconditional path.
     const body = buildNoteBody({
       problemMarkdown: htmlToMarkdown(newEntry.contentHtml),
       langSlug: defaultLang || undefined,
       starterCode,
       title: newEntry.title,
-      // WR-05: use the captured value so the emitter and the downstream
-      // retrofit gate see the same setting view across the call.
-      useInlineWidget,
     });
     const createdRaw = await this.app.vault.create(filePath, body);
     const file = narrowToTFile(createdRaw);
@@ -572,30 +493,10 @@ export class NoteWriter {
       );
     }
 
-    // Phase 3 Plan 07 — belt-and-suspenders retrofit on the new-note path.
-    // buildNoteBody above already emits `## Code` with the starter block, so
-    // this call is typically an idempotent no-op (recognized langSlug fence
-    // detected → early return). Retained so a future change to buildNoteBody
-    // that drops `## Code` doesn't silently break new-note creation.
-    //
-    // Phase 21 Plan 21-16 (UAT R6 closure) — defense-in-depth: drop this
-    // call entirely on the v1.3 path (useInlineWidget=ON). Plan 21-13's
-    // wrapper at retrofitStarterCode:246-254 already short-circuits when
-    // useInlineWidget=ON; eliminating the call site here makes the mount
-    // sequence between applyFrontmatter and openLinkText deterministic
-    // (no intermediate vault operation can trigger a metadataCache modify
-    // event mid-render). The wrapper gate stays in place (belt) for the
-    // OTHER three call sites (re-open / cache-cleared recovery /
-    // backgroundRefresh) — those are not in the R6 reproduction. Phase 22
-    // mechanically deletes the entire `if (!useInlineWidget)` branch when
-    // the v1.2 path is removed.
-    // WR-05: the captured useInlineWidget at the top of openProblem is
-    // the single source of truth for this call; the prior re-read at this
-    // line could disagree with the value passed to buildNoteBody if the
-    // setting flipped between the two reads.
-    if (!useInlineWidget) {
-      await this.retrofitStarterCode(file, newEntry, useInlineWidget);
-    }
+    // Phase 22 — legacy belt-and-suspenders retrofit retired with the v1.2
+    // fence emitter. The v1.3 path's `buildNoteBody` emits the
+    // `\`\`\`leetcode-solve` fence + starter directly; no second pass needed
+    // (Plan 21-16 R6 closure made this call deterministic on the v1.3 path).
 
     // D-18 lazy ship — opportunistic, non-fatal.
     await ensureLeetcodeBase(this.app, folder).catch((err) => {
@@ -626,12 +527,9 @@ export class NoteWriter {
     // Phase 21 Plan 21-16 (UAT R6 closure) — fire the post-write rerender
     // hand-off so the v1.3 widget mounts against the finalized buffer.
     // Symmetric to Plan 21-08's migrate-path rerender + Plan 21-14's
-    // repair-path rerender. Gated on useInlineWidget=ON: legacy v1.2
-    // notes have no widget to remount and the production callback is
-    // a no-op when null (older tests that don't wire it).
-    if (useInlineWidget) {
-      this.fireRerenderAfterNoteWritten(file.path);
-    }
+    // repair-path rerender. Phase 22 dropped the `useInlineWidget` gate;
+    // the rerender is unconditional on the v1.3 path.
+    this.fireRerenderAfterNoteWritten(file.path);
   }
 
   /**
@@ -648,11 +546,9 @@ export class NoteWriter {
     const freshMarkdown = htmlToMarkdown(entry.contentHtml);
     // Body rewrite — vault.process is atomic; rewriteProblemSection is pure.
     await this.app.vault.process(file, (current) => rewriteProblemSection(current, freshMarkdown));
-    // Phase 3 Plan 07 — retrofit starter code if the note still lacks `## Code`
-    // (e.g., cached entry had no codeSnippets when first written but a later
-    // refresh returns them). Idempotent on notes that already have the
-    // section. Silent on failure per D-09.
-    await this.retrofitStarterCode(file, entry);
+    // Phase 22 — legacy retrofit path retired; the v1.3 widget owns the fence
+    // body. Notes missing `## Code` are repaired through the migration
+    // pipeline (`fenceMigrator.ts`) at file open, not via background refresh.
     // Frontmatter update — same pass, union-merge semantics inside applyFrontmatter.
     await applyFrontmatter(
       this.app,

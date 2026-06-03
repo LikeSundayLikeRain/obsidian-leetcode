@@ -39,10 +39,6 @@ export interface ContestFinalizerSettings {
   getProblemsFolder(): string;
   getDefaultLanguage(): string;
   getProblemDetail(slug: string): ContestFinalizerDetail | null;
-  /** Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08) — gate buildNoteBody fence
-   *  emitter. Optional to preserve back-compat for tests that build a minimal
-   *  ContestFinalizerSettings; falls back to legacy emit when omitted. */
-  getUseInlineWidget?(): boolean;
 }
 
 export interface ContestFinalizerDetail {
@@ -136,7 +132,7 @@ export function rewriteCodeSection(body: string, code: string, language: string)
   const lines = body.split('\n');
   const codeHeadingIdx = lines.findIndex((l) => l === CODE_HEADING_LINE);
 
-  const newBlock = codeBlockFor(language, code);
+  const newBlock = codeBlockFor(code);
 
   if (codeHeadingIdx === -1) {
     // No ## Code heading — append at end
@@ -304,15 +300,12 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
     } else {
       // Create full problem note (same as normal note creation)
       const problemMd = detail.contentHtml ? htmlToMarkdown(detail.contentHtml) : '';
-      // Phase 21 Plan 21-03 (D-emit-01, MIGRATE-08) — gate fence emitter on
-      // useInlineWidget. Optional getter falls back to legacy emit when the
-      // settings port omits it (test fixtures).
+      // Phase 22 — `useInlineWidget` master gate retired; the v1.3 emitter
+      // (`\`\`\`leetcode-solve`) is the unconditional path.
       const body = buildNoteBody({
         problemMarkdown: problemMd,
-        langSlug: problem.language || settings.getDefaultLanguage(),
         starterCode: problem.code || undefined,
         title: detail.title,
-        useInlineWidget: settings.getUseInlineWidget?.() ?? false,
       });
       let file: TFile;
       try {
@@ -402,7 +395,7 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
 
 /** Build a minimal problem note body for contest-created notes. */
 function buildContestProblemBody(problem: ContestProblemState): string {
-  const codeBlock = codeBlockFor(problem.language, problem.code);
+  const codeBlock = codeBlockFor(problem.code);
   return `## Problem\n\n\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
 }
 

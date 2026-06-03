@@ -280,25 +280,6 @@ describe('registerLegacyBannerPostProcessor (Plan 21-10 Task 1)', () => {
     expect(root.querySelector('pre > code.language-java')).not.toBeNull();
   });
 
-  it('Test 2: useInlineWidget=OFF → no DOM mutation', async () => {
-    const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
-    const app = await makeApp({
-      fmByPath: { 'LC/two-sum.md': { 'lc-slug': 'two-sum' } },
-      textByPath: { 'LC/two-sum.md': V12_NOTE },
-    });
-    const plugin = makePlugin(app, {
-      useInlineWidget: false,
-      autoMigrateOnOpen: false,
-      defaultLanguage: 'python3',
-    });
-    mod.registerLegacyBannerPostProcessor(plugin as never);
-    const processor = plugin.registerMarkdownPostProcessor.mock.calls[0]![0] as ProcessorFn;
-    const { root } = buildPreRoot('java', 'class Solution {}');
-    await processor(root, makeCtx('LC/two-sum.md', sectionInfoFor(V12_NOTE, '```java')));
-    expect(mountLegacyFenceBannerMock).not.toHaveBeenCalled();
-    expect(root.querySelector('pre > code.language-java')).not.toBeNull();
-  });
-
   it('Test 3: autoMigrateOnOpen=ON → no DOM mutation (auto path takes over)', async () => {
     const mod = await import('../../src/main/readingModeLegacyBannerPostProcessor');
     const app = await makeApp({

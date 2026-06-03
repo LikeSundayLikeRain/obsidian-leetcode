@@ -27,9 +27,11 @@ describe('copyToCode (GRAPH-01 revised)', () => {
 
     const body = m.getContent('LeetCode/1-two-sum.md') ?? '';
     expect(body).toContain('## Code');
-    expect(body).toContain('```java');
+    // v1.3: emitter writes only ```leetcode-solve fence, regardless of submission language.
+    // Language is tracked via lc-language frontmatter, not the fence opener.
+    expect(body).toContain('```leetcode-solve');
     expect(body).toContain('class Solution {}');
-    expect(body).not.toContain('```python3\nOLD');
+    expect(body).not.toContain('OLD');
     // Sibling regions preserved.
     expect(body).toContain('## Problem');
     expect(body).toContain('## Notes');

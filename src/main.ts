@@ -88,21 +88,11 @@ import { retrofit as retrofitStarterCode } from './solve/starterCodeInjector';
 import { resetCodeWithConfirm, extractFenceBodyFromFullNote } from './solve/resetCodeWithConfirm';
 import { makeFileOpenHandler } from './main/fileOpenHook';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
-import { resolveLangSlug, lcSlugToFenceTag, LC_LANG_DISPLAY_LABELS } from './solve/languages';
-// Phase 5.3 D-13 parity — chevron's atomic dispatch reuses Phase 5.1's exported
-// `findCodeFence` so fence detection has one source of truth.
-import { findCodeFence, languageRefreshEffect } from './main/codeActionsEditorExtension';
+import { resolveLangSlug } from './solve/languages';
 // Phase 20 Plan 20-10 (gap-closure T9/T10) — countLeetCodeSolveFenceOpeners is
 // the canonical "is there a leetcode-solve fence in this text?" predicate.
 // Used by resolveFenceKind in resetCode (T10 fix) and copyToCode (T9 fix).
 // SSoT discipline: same primitive as the registry-key computation.
-//
-// Phase 20 Plan 20-10 Task 4 retired the parent-CM6 dispatch path in
-// switchLanguageFromWidget — `findLcCodeFence` and `syncAnnotation` were the
-// last surviving widget-path consumers of those imports. The legacy
-// switchFenceLanguage / chevron path uses the parallel `findCodeFence` from
-// `./main/codeActionsEditorExtension` (different module, different SSoT
-// scope) and is unchanged.
 import { countLeetCodeSolveFenceOpeners } from './widget/fenceLocator';
 // CR-03 (Phase 21 cycle-2 review-fix) — Plan 21-14 has shipped, so the
 // previous defensive dynamic require() against the hypothetical case
@@ -115,7 +105,7 @@ import { countLeetCodeSolveFenceOpeners } from './widget/fenceLocator';
 import { leetcodeRefreshAnnotation } from './widget/liveModeBannerStateField';
 // Phase 21 Plan 21-02 Task 3 — command palette entry `Migrate current note`
 // dispatches the v1.2 → v1.3 migration with force: true (D-auto-03 escape
-// hatch). Gated via editorCheckCallback on useInlineWidget=ON + lc-slug.
+// hatch). Gated via editorCheckCallback on lc-slug presence.
 //
 // Phase 21 Plan 21-05 Task 2 (CR-01) — workspace.on('file-open') Reading-mode
 // trigger consults `isMigrationCandidate` for the autoMigrateOnOpen=OFF
@@ -133,21 +123,8 @@ import {
   dispatchLeetcodeRefreshToLivePreviewLeaves,
 } from './main/readingModeMigrationHook';
 // Phase 21 Plan 21-04 Task 1 — 30-day TTL backup cleanup (MIGRATE-05).
-// Fire-and-forget microtask scheduled from Plugin.onload(). Runs
-// UNCONDITIONALLY regardless of useInlineWidget per D-backup-03.
+// Fire-and-forget microtask scheduled from Plugin.onload().
 import { runMigrationBackupGc } from './widget/migrationBackupGc';
-// Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment.
-// `switchFenceLanguage` dispatches a Compartment.reconfigure on the child
-// (when present) immediately after the parent CM6 dispatch, so the child's
-// parser, indent unit, closeBrackets, and Cmd-/ keymap binding switch in
-// lock-step with the visible fence-tag flip.
-import { languageCompartment, buildLanguageExtensions } from './main/childEditorLanguage';
-// @codemirror/view is a transitive peer of obsidian@1.12.3; external in esbuild.
-// `view.editor.cm as EditorView` is the canonical (undocumented internal) path
-// for plugins reaching CM6 from a click handler — RESEARCH §Pitfall 6 +
-// CLAUDE.md acknowledged.
- 
-import type { EditorView } from '@codemirror/view';
 import { interpretSolution, authHeaders } from './solve/leetcodeRest';
 import {
   RateLimitError,
@@ -158,27 +135,17 @@ import {
 } from './shared/errors';
 import { showSessionExpiredNotice } from './solve/SessionExpiredNotice';
 import { classifyStatus } from './solve/statusMap';
-// Phase 5 Plan 05 (D-11) — reading-mode Run/Submit buttons below fenced code blocks.
-import { registerCodeBlockActionProcessor } from './main/codeActionsPostProcessor';
-// Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) — edit-mode Run/Submit buttons in CM6.
-import { buildCodeActionsEditorExtension } from './main/codeActionsEditorExtension';
-// Phase 05.5 (POLISH) — section locking for lc-slug notes. Hard read-only
-// enforcement on plugin-owned regions via CM6 EditorState.changeFilter.
-import { buildSectionLockExtension } from './main/sectionLockExtension';
-// Phase 20 Plan 01 — narrowed v1.3 protection extension. Mutually exclusive
-// with sectionLockExtension via the useInlineWidget gate (D-protect-03).
-import { buildSectionProtectionExtension } from './main/sectionProtectionExtension';
-// Phase 13 — nested child EditorView for ## Code fence (Plans 01-03).
-import { ChildEditorRegistry } from './main/childEditorRegistry';
-import { buildNestedEditorExtension, nestedEditorRebuildEffect } from './main/nestedEditorExtension';
 // Phase 5.2 D-13 — python3 → python language-tag alias for Reading-Mode Prism highlighting.
 import { registerPython3Highlighter } from './main/python3Highlighter';
 // PHASE_22_DELETE_WITH_V1_2_PATH — Phase 21 v1.2 banner discovery import; remove with the module.
 import { registerLegacyBannerPostProcessor } from './main/readingModeLegacyBannerPostProcessor';
-import { registerVaultModifyRepairTrigger } from './main/childEditorSync';
-// Phase 19 Plan 01 — v1.3 inline widget primitives. Hard-gated behind
-// useInlineWidget=ON (default OFF) per CONTEXT D-05; v1.2 nested-editor
-// stays the user-facing default through Phase 21.
+// Phase 22 narrow protection extension (v1.3-only). The retired v1.2
+// `sectionLockExtension` (deleted in Phase 22 sub-step C) is no longer in
+// tree; this is the only protection extension.
+import { buildSectionProtectionExtension } from './main/sectionProtectionExtension';
+// Phase 19 Plan 01 — v1.3 inline widget primitives. Phase 22 made these the
+// unconditional path; the v1.2 nested-editor extensions retired with the
+// `useInlineWidget` master gate.
 import { WidgetRegistry } from './widget/widgetRegistry';
 import {
   leetCodeBlockProcessor,
@@ -351,8 +318,6 @@ export default class LeetCodePlugin extends Plugin {
   contestListService!: ContestListService;
   contestScratch!: ContestScratchManager;
 
-  // Phase 13 — LRU cache for nested child EditorViews (cap=5, per D-12).
-  childEditorRegistry!: ChildEditorRegistry;
   // Phase 21 Plan 21-05 (WR-01) — cross-mode dedupe Set for the v1.2 → v1.3
   // migration. Shared between the Plan 21-05 workspace.on('file-open')
   // Reading-mode trigger (this file) and the liveModeViewPlugin.ts
@@ -381,22 +346,18 @@ export default class LeetCodePlugin extends Plugin {
   // on tab-switch.
   migrateAttempted: Set<string> = new Set();
   repairAttempted: Set<string> = new Set();
-  // Phase 19 Plan 01 — instantiated only when useInlineWidget=ON (D-05
-  // hard-gate). Optional field; main.ts onunload uses optional chaining when
-  // calling destroyAll() so the v1.2 baseline path remains unaffected.
-  widgetRegistry?: WidgetRegistry;
-  // Phase 19 Plan 02 — plugin-singleton self-write suppression map. Same
-  // gating as widgetRegistry (instantiated under useInlineWidget=ON only).
+  // Phase 19 Plan 01 — v1.3 widget registry. Phase 22 made this the
+  // unconditional mount path (was useInlineWidget-gated).
+  widgetRegistry!: WidgetRegistry;
+  // Phase 19 Plan 02 — plugin-singleton self-write suppression map.
   // Consumed by the vault.on('modify') handler to drop self-write echoes;
   // armed by DebouncedWriter.flush BEFORE vault.process (CONTEXT C-04).
-  selfWriteSuppression?: SelfWriteSuppression;
+  selfWriteSuppression!: SelfWriteSuppression;
   // Phase 19 Plan 03 — plugin-singleton state persistence map (CONTEXT C-09
-  // + D-01). Same gating as widgetRegistry (instantiated under
-  // useInlineWidget=ON only). Captures cursor + scroll + history JSON on
-  // mount/unmount; hydrates on remount within 30s TTL. CONTEXT D-02
-  // belt-and-suspenders companion to the Plan 19-01 mousedown.stopPropagation
-  // listener.
-  statePersistence?: StatePersistenceMap;
+  // + D-01). Captures cursor + scroll + history JSON on mount/unmount;
+  // hydrates on remount within 30s TTL. CONTEXT D-02 belt-and-suspenders
+  // companion to the Plan 19-01 mousedown.stopPropagation listener.
+  statePersistence!: StatePersistenceMap;
 
   // Phase 20 Plan 20-05 — gap-closure for widget-thrash-on-type. Hook 1
   // flushAll fires only on cross-file leaf transitions; same-leaf focus
@@ -419,29 +380,6 @@ export default class LeetCodePlugin extends Plugin {
   // decide between updating the External pane in place vs. constructing a
   // fresh modal. NEVER stack two modals.
   activeConflictModal: ConflictModal | null = null;
-
-  /**
-   * Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12) — per-child
-   * slug tracker. Records the language slug currently applied to each child
-   * editor's `languageCompartment`. Updated whenever a Compartment.reconfigure
-   * dispatch lands (chevron switch path AND fm-reactivity listener path).
-   *
-   * Gate 3 of the fm-reactivity listener
-   * (`handleFmChangeForLanguageReactivity`) reads from this tracker — NOT
-   * from the parent fence opener tag — because per D-14 the listener does
-   * not rewrite the opener, so reading "current applied child language" from
-   * the opener is unsound and produces the asymmetric round-trip bug
-   * described in 17-UAT.md Issue 3 (Java → Python3 swaps but Python3 → Java
-   * silently no-ops).
-   *
-   * WeakMap auto-GCs entries when the EditorView is destroyed (registry
-   * destroy + browser GC) — no explicit cleanup needed. Pre-mount or
-   * pre-first-dispatch the tracker has no entry; Gate 3 treats absent
-   * entries as "unknown current" and proceeds to dispatch (idempotent —
-   * Compartment.reconfigure with an equal LanguageSupport is a no-op
-   * visually but updates the tracker for the next swap).
-   */
-  childLanguageTracker: WeakMap<EditorView, string> = new WeakMap();
 
   // Phase 07 Plan 04 — single-in-flight gate for AIClient.probe. Keys are
   // AIProvider; values are the in-flight probe Promise. Cleared in the
@@ -471,9 +409,7 @@ export default class LeetCodePlugin extends Plugin {
 
     // Phase 21 Plan 21-04 Task 1 (MIGRATE-05; D-backup-03; T-21-load) —
     // schedule a fire-and-forget microtask to sweep `migration-backup-*`
-    // folders older than 30 days. Runs UNCONDITIONALLY regardless of the
-    // `useInlineWidget` setting (backups exist on disk regardless of the
-    // current widget setting). The microtask uses `Promise.resolve().then`
+    // folders older than 30 days. The microtask uses `Promise.resolve().then`
     // (NOT setTimeout) so cleanup runs inside the same tick but never
     // blocks plugin readiness; the routine is silent-on-failure
     // (Pattern S-05) so first-install vaults (no plugin folder) do NOT
@@ -843,7 +779,7 @@ export default class LeetCodePlugin extends Plugin {
 
     // Phase 21 Plan 21-02 Task 3 — D-auto-03 keyboard escape hatch. Registered
     // UNCONDITIONALLY (visible regardless of autoMigrateOnOpen); the
-    // editorCheckCallback self-gates on useInlineWidget=ON + lc-slug presence.
+    // editorCheckCallback self-gates on lc-slug presence.
     // Plugin-store rules per main.ts:580-584: id does NOT contain 'leetcode'
     // or 'command'; name is sentence case and does NOT start with the plugin
     // name; NO `hotkeys` field. Dispatches with force: true (bypasses the
@@ -854,7 +790,6 @@ export default class LeetCodePlugin extends Plugin {
       editorCheckCallback: (checking, _editor, view) => {
         const file = view.file;
         if (!file) return false;
-        if (!this.settings.getUseInlineWidget()) return false;
         const cache = this.app.metadataCache.getFileCache(file);
         const fm: Record<string, unknown> | undefined = cache?.frontmatter;
         const slug = fm?.['lc-slug'];
@@ -1094,501 +1029,412 @@ export default class LeetCodePlugin extends Plugin {
     // Step 6d — settings tab.
     this.addSettingTab(new LeetCodeSettingTab(this.app, this));
 
-    // Phase 19 gap-closure (UAT Test 1 BLOCKER 2 / CONTEXT D-03 + D-05):
-    // The v1.2 codeActionsPostProcessor and codeActionsEditorExtension are
-    // FENCE-TAG-AGNOSTIC — they match `lc-slug + first <pre> under ## Code`
-    // and `lc-slug + first ``` fence under ## Code` respectively. With
-    // useInlineWidget=ON, both happily fire on the new `leetcode-solve` fence
-    // and render Run/Submit/AI Debug buttons under the widget — but Phase 19
-    // D-03 explicitly excludes the action row (Phase 20 territory). Hard-gate
-    // them off when the widget is active. When useInlineWidget=OFF, BOTH must
-    // fire (D-05 — v1.2 path unchanged). useInlineWidget is read at onload
-    // only (reload-apply-only per CONTEXT D-05 hard-gate).
-    if (!this.settings.getUseInlineWidget()) {
-      // Step 6e — Phase 5 Plan 05 (D-11) reading-mode Run/Submit buttons.
-      // Registers a MarkdownPostProcessor that appends neutral Run + Submit
-      // buttons below each <pre><code> inside notes with `lc-slug` frontmatter.
-      // Click handlers dispatch `${manifest.id}:run` / `:submit` via
-      // executeCommandById (Pitfall 14); idempotent per Pitfall 3.
-      registerCodeBlockActionProcessor(this);
+    // Phase 22 — v1.3 inline widget mount. The v1.2 codeActionsPostProcessor /
+    // codeActionsEditorExtension / sectionLockExtension / nestedEditorExtension
+    // / childEditorRegistry / childEditorSync paths retired wholesale; the
+    // `useInlineWidget` master gate is gone (POLISH-01 default-ON). v1.2 → v1.3
+    // upgrade path: the legacy data.json field is read-and-ignored on the next
+    // SettingsStore.persist() (D-settings-01).
+    this.widgetRegistry = new WidgetRegistry();
+    this.selfWriteSuppression = new SelfWriteSuppression();
+    // Phase 19 Plan 03 — state persistence map. Captures cursor + scroll +
+    // history JSON on unmount/destroy; hydrates on remount within 30s TTL.
+    // Sweep stale entries every 60s via registerInterval (auto-cleans on
+    // plugin unload). 60s sweep beats 30s TTL — entries are at most ~90s
+    // stale before the sweep, but a remount past TTL also lazy-evicts.
+    this.statePersistence = new StatePersistenceMap();
+    const persistenceForInterval = this.statePersistence;
+    this.registerInterval(
+      window.setInterval(() => {
+        persistenceForInterval.sweepExpired();
+      }, 60_000),
+    );
+    this.registerMarkdownCodeBlockProcessor(
+      'leetcode-solve',
+      leetCodeBlockProcessor(this),
+    );
+    // PHASE_22_DELETE_WITH_V1_2_PATH — Phase 21 v1.2 banner registration; remove with the module.
+    // Plan 21-10: surfaces the legacy migration banner in Reading mode for
+    // v1.2-shaped notes (langSlug fence under ## Code, lc-slug present)
+    // when autoMigrateOnOpen=OFF. Closes UAT Gap 3 / Test 4a — the
+    // tag-bound `registerMarkdownCodeBlockProcessor('leetcode-solve', ...)`
+    // above only fires for fences literally tagged `leetcode-solve`, so
+    // a separate non-tag-bound post-processor is required to discover
+    // v1.2 fences and replace them with `mountLegacyFenceBanner('manual-prompt')`.
+    registerLegacyBannerPostProcessor(this);
+    this.registerEditorExtension([leetCodeFenceViewPlugin(this)]);
 
-      // Step 6f — Phase 5.1 (POLISH-07 / 05-UAT G1 gap-closure) edit-mode Run/Submit buttons.
-      // Registers a CM6 StateField<DecorationSet> that paints an inline widget below
-      // the `## Code` fence in Live Preview + Source Mode. Gated on `lc-slug`
-      // frontmatter (D-06). WidgetType.eq() guards idempotency (RESEARCH Pitfall 2).
-      // Click handlers call plugin.runFromActive() / submitFromActive() directly
-      // (D-05 — avoids editorCheckCallback gate regression from 05-05 live smoke).
-      this.registerEditorExtension(buildCodeActionsEditorExtension(this));
-    }
+    // Plan 19-02 — six flush-on-transition hooks (CONTEXT C-07).
 
-    // Phase 13 — child editor registry (must exist before extensions fire).
-    this.childEditorRegistry = new ChildEditorRegistry(5);
+    // Hook 1: leaf change (file/leaf switch). Flush all live widgets.
+    // Phase 20 Plan 20-05 — gate flushAll on actual file-path transition.
+    // Same-leaf focus reaffirmations (mousedown inside widget →
+    // contentDOM.focus → active-leaf-change refire) MUST NOT trigger
+    // flushAll, because each flush produces a vault.process echo on the
+    // parent CM6 that rebuilds the ViewPlugin's DecorationSet (sourceHash
+    // changes) and remounts the widget — destroying focus/cursor/vim
+    // state on every keystroke. See
+    // .planning/debug/widget-thrash-on-type.md for full trace.
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', () => {
+        let currentPath: string | null = null;
+        try {
+          const av = this.app.workspace.getActiveViewOfType(MarkdownView);
+          currentPath = av?.file?.path ?? null;
+        } catch {
+          currentPath = null;
+        }
+        if (this.lastActiveLeafFilePath === currentPath) {
+          // Same file (including null === null transitions) — no flush needed.
+          return;
+        }
+        this.lastActiveLeafFilePath = currentPath;
+        void this.widgetRegistry?.flushAll();
+      }),
+    );
 
-    // Phase 19 vq4 — read once: the nested-editor toggle is reload-apply-only.
-    let useNestedEditor = this.settings.getUseNestedEditor();
-    // Phase 19 Plan 01 / Phase 22 D-cutover-02 — read the v1.3 inline-widget
-    // master toggle. Mutable because the inversion guard below force-flips
-    // it on 1.2.x carry-over `data.json` so the registration blocks below
-    // see the post-flip value.
-    let useInlineWidget = this.settings.getUseInlineWidget();
+    // Hook 2: workspace 'quit' — primary graceful-shutdown path. The
+    // tasks.add(promise) shape lets us delay Obsidian's quit until the
+    // flush resolves. Verified obsidian.d.ts:7195 (since 1.4.4). RESEARCH
+    // Open Question A8 — `Tasks` shape introspection: console.log once
+    // on first invocation to confirm; if shape differs, fall back to
+    // beforeunload only.
+    let quitTasksLogged = false;
+    this.registerEvent(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- workspace 'quit' Tasks shape unverified at type level
+      this.app.workspace.on('quit' as never, ((tasks: { add?: (p: Promise<unknown>) => void }) => {
+        if (!quitTasksLogged) {
+          quitTasksLogged = true;
+          try { logger.debug('LC widget: quit tasks shape', tasks); } catch { /* ignore */ }
+        }
+        if (typeof tasks?.add === 'function') {
+          tasks.add(this.widgetRegistry?.flushAll() ?? Promise.resolve());
+        }
+      }) as never),
+    );
 
-    // Phase 22 D-cutover-02 — mutual-exclusion inversion. After the v1.3
-    // default flip (POLISH-01), 1.2.x users carrying `useInlineWidget: false`
-    // AND `useNestedEditor: true` in `data.json` are force-flipped to v1.3
-    // here. Without this guard, persisted explicit-`false` would still mount
-    // the v1.2 path (which becomes deleted code in sub-step C+). The Notice
-    // is one-time per `Plugin.onload`; the v1.2 nested-editor path retires
-    // wholesale in sub-step E along with the `useNestedEditor` field itself.
-    // Local-var sync after the setter call ensures the v1.2 nested-editor
-    // registration block below is bypassed for the carry-over upgrade path
-    // (`truths` invariant from PLAN frontmatter).
-    if (!useInlineWidget && useNestedEditor) {
-      new Notice('v1.2 nested-editor path retired in 1.3.0 — using v1.3 widget', 5000);
-      await this.settings.setUseInlineWidget(true);
-      useInlineWidget = true;
-      useNestedEditor = false;
-    }
+    // Hook 3: file rename — flush widgets keyed under the OLD path before
+    // the rename lands. Plan 19-04+ may also clearForPath the suppression
+    // map; Plan 19-02 ships only the flush.
+    this.registerEvent(
+      this.app.vault.on('rename', (_file, oldPath) => {
+        if (typeof oldPath === 'string') {
+          void this.widgetRegistry?.flushFile(oldPath);
+          this.selfWriteSuppression?.clearForPath(oldPath);
+          // Plan 19-03 — drain any persisted state under the old path so
+          // the renamed file's widget doesn't hydrate stale cursor/scroll.
+          this.statePersistence?.clearForPath(oldPath);
+          // Plan 21.1-01 (MIGRATE-FLICKER-01) — clear all three attempt
+          // sentinels for the old path so the renamed file gets a fresh
+          // attempt-once gate on its next render.
+          this.migrateAttempted?.delete(oldPath);
+          this.repairAttempted?.delete(oldPath);
+          clearCodeBlockProcessorAttempted(oldPath);
+        }
+      }),
+    );
 
-    // Step 6f-nested — Phase 13: nested child EditorView for ## Code fence.
-    // Mounts a block widget containing a child CM6 EditorView with Python
-    // syntax highlighting; hides raw fence lines via CSS Decoration.line.
-    // Registered BETWEEN code-actions and section-lock so the cursor-redirect
-    // transactionFilter processes before section-lock's cursor snap (Pitfall 3).
-    if (useNestedEditor) {
-      this.registerEditorExtension(buildNestedEditorExtension(this));
-    }
+    // Hook 4: beforeunload — synchronous-issue best-effort flush
+    // (RESEARCH Pitfall 19-B). Belt-and-suspenders to workspace.on('quit').
+    this.registerDomEvent(window, 'beforeunload', () => {
+      this.widgetRegistry?.flushAllSync();
+    });
 
-    // Step 6f-widget — Phase 19 Plan 01+02: v1.3 inline widget mount (hard-gated).
-    // Plan 19-01 registered:
-    //   1. registerMarkdownCodeBlockProcessor('leetcode-solve', …) — Reading mode
-    //   2. registerEditorExtension([leetCodeFenceViewPlugin(this)]) — Live Preview
-    //      with EditorView.atomicRanges Facet contribution.
-    // Plan 19-02 adds:
-    //   3. selfWriteSuppression instance for echo suppression.
-    //   4. Six flush-on-transition hooks (CONTEXT C-07; RESEARCH Pattern 5).
-    //   5. vault.on('modify') consumer that drops self-writes via the
-    //      suppression map; external writes log a Plan 20 reload-TBD message.
-    if (useInlineWidget) {
-      this.widgetRegistry = new WidgetRegistry();
-      this.selfWriteSuppression = new SelfWriteSuppression();
-      // Phase 19 Plan 03 — state persistence map. Captures cursor + scroll +
-      // history JSON on unmount/destroy; hydrates on remount within 30s TTL.
-      // Sweep stale entries every 60s via registerInterval (auto-cleans on
-      // plugin unload). 60s sweep beats 30s TTL — entries are at most ~90s
-      // stale before the sweep, but a remount past TTL also lazy-evicts.
-      this.statePersistence = new StatePersistenceMap();
-      const persistenceForInterval = this.statePersistence;
-      this.registerInterval(
-        window.setInterval(() => {
-          persistenceForInterval.sweepExpired();
-        }, 60_000),
-      );
-      this.registerMarkdownCodeBlockProcessor(
-        'leetcode-solve',
-        leetCodeBlockProcessor(this),
-      );
-      // PHASE_22_DELETE_WITH_V1_2_PATH — Phase 21 v1.2 banner registration; remove with the module.
-      // Plan 21-10: surfaces the legacy migration banner in Reading mode for
-      // v1.2-shaped notes (langSlug fence under ## Code, lc-slug present)
-      // when autoMigrateOnOpen=OFF. Closes UAT Gap 3 / Test 4a — the
-      // tag-bound `registerMarkdownCodeBlockProcessor('leetcode-solve', ...)`
-      // above only fires for fences literally tagged `leetcode-solve`, so
-      // a separate non-tag-bound post-processor is required to discover
-      // v1.2 fences and replace them with `mountLegacyFenceBanner('manual-prompt')`.
-      registerLegacyBannerPostProcessor(this);
-      this.registerEditorExtension([leetCodeFenceViewPlugin(this)]);
+    // Phase 20 Plan 20-04 (THEME-04) — live theme retheme dispatcher.
+    // Single global `app.workspace.on('css-change')` listener (verified
+    // at obsidian.d.ts:7137 in 1.12.3) iterates `widgetRegistry.values()`
+    // and calls `ctl.cssRetheme()` per widget. cssRetheme calls only
+    // `view.requestMeasure()` — no EditorView rebuild; cursor + scroll +
+    // undo state preserved. The cascading CSS classes (lc-nested-editor +
+    // HyperMD-codeblock + childEditorSemanticClasses) already inherit
+    // Obsidian's CSS variables; this listener exists only to nudge CM6
+    // to recompute layout-affected metrics after the new computed styles
+    // apply. MutationObserver fallback documented in 20-RESEARCH §"Pattern
+    // 7" but NOT shipped (event verified to exist).
+    registerThemeListener(this);
 
-      // Plan 19-02 — six flush-on-transition hooks (CONTEXT C-07).
+    // Phase 20 Plan 20-04 (multi-pane "Take over" affordance) — single
+    // global `app.workspace.on('active-leaf-change')` + `layout-change`
+    // listener walks widgetRegistry.values() on every focus transition.
+    // For widgets matching the focused note's file path: same-leaf →
+    // setPaneState('active'), other-leaf → setPaneState('peer'). Peer
+    // widgets get a `.lc-takeover-overlay` + "Click to take over" CTA per
+    // UI-SPEC §3; clicking it calls app.workspace.setActiveLeaf which
+    // synchronously fires active-leaf-change so the listener flips state
+    // in the same animation frame (~16ms race window). Embed widgets
+    // (Phase 19 EMBED-01..04) skip the affordance via the controller's
+    // `isEmbed` flag (defense-in-depth: coordinator filter + setPaneState
+    // gate). L10 single-active-per-file invariant preserved — peer panes
+    // show CTA only, do NOT live-mirror typing (MULTI-01/02 v1.4+ deferred).
+    registerMultiPaneCoordinator(this);
 
-      // Hook 1: leaf change (file/leaf switch). Flush all live widgets.
-      // Phase 20 Plan 20-05 — gate flushAll on actual file-path transition.
-      // Same-leaf focus reaffirmations (mousedown inside widget →
-      // contentDOM.focus → active-leaf-change refire) MUST NOT trigger
-      // flushAll, because each flush produces a vault.process echo on the
-      // parent CM6 that rebuilds the ViewPlugin's DecorationSet (sourceHash
-      // changes) and remounts the widget — destroying focus/cursor/vim
-      // state on every keystroke. See
-      // .planning/debug/widget-thrash-on-type.md for full trace.
-      this.registerEvent(
-        this.app.workspace.on('active-leaf-change', () => {
-          let currentPath: string | null = null;
-          try {
-            const av = this.app.workspace.getActiveViewOfType(MarkdownView);
-            currentPath = av?.file?.path ?? null;
-          } catch {
-            currentPath = null;
+    // Phase 20 Plan 20-01 (VIM-02) — vim live-reconfigure dispatcher.
+    // Obsidian fires no documented event for the Settings → Editor →
+    // Vim key bindings toggle, but `workspace.on('layout-change')`
+    // fires when settings save (verified existence at obsidian.d.ts:7119,
+    // since 0.9.20). On every layout-change we re-read the current
+    // `vimMode` value via the canonical `readVimModeFromVault` helper
+    // and fan out to every registered widget; each controller's
+    // `reconfigureVim` early-returns when the cached value matches
+    // (so the dispatcher is cheap on every other layout change). When
+    // the value flipped, the controller dispatches
+    // `vimCompartment.reconfigure(vim() ↔ [])` which preserves cursor +
+    // scroll + undo state (Phase 16 Pitfall C analog). The dev-vault
+    // probe outcome (Plan 20-01 SUMMARY §"Probe Outcome") confirms or
+    // pre-accepts the VIM-03 banner fallback at Phase 22 (CONTEXT L4).
+    this.registerEvent(
+      this.app.workspace.on('layout-change', () => {
+        const newVim = readVimModeFromVault(this);
+        if (this.widgetRegistry) {
+          for (const ctl of this.widgetRegistry.values()) {
+            ctl.reconfigureVim?.(newVim);
           }
-          if (this.lastActiveLeafFilePath === currentPath) {
-            // Same file (including null === null transitions) — no flush needed.
-            return;
-          }
-          this.lastActiveLeafFilePath = currentPath;
-          void this.widgetRegistry?.flushAll();
-        }),
-      );
+        }
+      }),
+    );
 
-      // Hook 2: workspace 'quit' — primary graceful-shutdown path. The
-      // tasks.add(promise) shape lets us delay Obsidian's quit until the
-      // flush resolves. Verified obsidian.d.ts:7195 (since 1.4.4). RESEARCH
-      // Open Question A8 — `Tasks` shape introspection: console.log once
-      // on first invocation to confirm; if shape differs, fall back to
-      // beforeunload only.
-      let quitTasksLogged = false;
-      this.registerEvent(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- workspace 'quit' Tasks shape unverified at type level
-        this.app.workspace.on('quit' as never, ((tasks: { add?: (p: Promise<unknown>) => void }) => {
-          if (!quitTasksLogged) {
-            quitTasksLogged = true;
-            try { logger.debug('LC widget: quit tasks shape', tasks); } catch { /* ignore */ }
-          }
-          if (typeof tasks?.add === 'function') {
-            tasks.add(this.widgetRegistry?.flushAll() ?? Promise.resolve());
-          }
-        }) as never),
-      );
+    // Hook 5: MarkdownRenderChild.onunload (Reading mode) — owned by
+    // LeetCodeWidgetRenderChild.onunload in src/widget/WidgetController.ts.
+    // No registration needed here.
 
-      // Hook 3: file rename — flush widgets keyed under the OLD path before
-      // the rename lands. Plan 19-04+ may also clearForPath the suppression
-      // map; Plan 19-02 ships only the flush.
-      this.registerEvent(
-        this.app.vault.on('rename', (_file, oldPath) => {
-          if (typeof oldPath === 'string') {
-            void this.widgetRegistry?.flushFile(oldPath);
-            this.selfWriteSuppression?.clearForPath(oldPath);
-            // Plan 19-03 — drain any persisted state under the old path so
-            // the renamed file's widget doesn't hydrate stale cursor/scroll.
-            this.statePersistence?.clearForPath(oldPath);
-            // Plan 21.1-01 (MIGRATE-FLICKER-01) — clear all three attempt
-            // sentinels for the old path so the renamed file gets a fresh
-            // attempt-once gate on its next render.
-            this.migrateAttempted?.delete(oldPath);
-            this.repairAttempted?.delete(oldPath);
-            clearCodeBlockProcessorAttempted(oldPath);
-          }
-        }),
-      );
+    // Hook 6: Plugin.onunload — extends below in onunload() with flushAll
+    // followed by destroyAll + selfWriteSuppression.clear.
 
-      // Hook 4: beforeunload — synchronous-issue best-effort flush
-      // (RESEARCH Pitfall 19-B). Belt-and-suspenders to workspace.on('quit').
-      this.registerDomEvent(window, 'beforeunload', () => {
-        this.widgetRegistry?.flushAllSync();
-      });
-
-      // Phase 20 Plan 20-04 (THEME-04) — live theme retheme dispatcher.
-      // Single global `app.workspace.on('css-change')` listener (verified
-      // at obsidian.d.ts:7137 in 1.12.3) iterates `widgetRegistry.values()`
-      // and calls `ctl.cssRetheme()` per widget. cssRetheme calls only
-      // `view.requestMeasure()` — no EditorView rebuild; cursor + scroll +
-      // undo state preserved. The cascading CSS classes (lc-nested-editor +
-      // HyperMD-codeblock + childEditorSemanticClasses) already inherit
-      // Obsidian's CSS variables; this listener exists only to nudge CM6
-      // to recompute layout-affected metrics after the new computed styles
-      // apply. MutationObserver fallback documented in 20-RESEARCH §"Pattern
-      // 7" but NOT shipped (event verified to exist).
-      registerThemeListener(this);
-
-      // Phase 20 Plan 20-04 (multi-pane "Take over" affordance) — single
-      // global `app.workspace.on('active-leaf-change')` + `layout-change`
-      // listener walks widgetRegistry.values() on every focus transition.
-      // For widgets matching the focused note's file path: same-leaf →
-      // setPaneState('active'), other-leaf → setPaneState('peer'). Peer
-      // widgets get a `.lc-takeover-overlay` + "Click to take over" CTA per
-      // UI-SPEC §3; clicking it calls app.workspace.setActiveLeaf which
-      // synchronously fires active-leaf-change so the listener flips state
-      // in the same animation frame (~16ms race window). Embed widgets
-      // (Phase 19 EMBED-01..04) skip the affordance via the controller's
-      // `isEmbed` flag (defense-in-depth: coordinator filter + setPaneState
-      // gate). L10 single-active-per-file invariant preserved — peer panes
-      // show CTA only, do NOT live-mirror typing (MULTI-01/02 v1.4+ deferred).
-      registerMultiPaneCoordinator(this);
-
-      // Phase 20 Plan 20-01 (VIM-02) — vim live-reconfigure dispatcher.
-      // Obsidian fires no documented event for the Settings → Editor →
-      // Vim key bindings toggle, but `workspace.on('layout-change')`
-      // fires when settings save (verified existence at obsidian.d.ts:7119,
-      // since 0.9.20). On every layout-change we re-read the current
-      // `vimMode` value via the canonical `readVimModeFromVault` helper
-      // and fan out to every registered widget; each controller's
-      // `reconfigureVim` early-returns when the cached value matches
-      // (so the dispatcher is cheap on every other layout change). When
-      // the value flipped, the controller dispatches
-      // `vimCompartment.reconfigure(vim() ↔ [])` which preserves cursor +
-      // scroll + undo state (Phase 16 Pitfall C analog). The dev-vault
-      // probe outcome (Plan 20-01 SUMMARY §"Probe Outcome") confirms or
-      // pre-accepts the VIM-03 banner fallback at Phase 22 (CONTEXT L4).
-      this.registerEvent(
-        this.app.workspace.on('layout-change', () => {
-          const newVim = readVimModeFromVault(this);
+    // Plan 19-02 + Phase 20 Plan 20-03 + Plan 21-17 — vault.on('modify')
+    // decision tree (SYNC-04 / SYNC-05 / split-pane peer-sync). RESEARCH
+    // Specific Findings §4 gated body — useInlineWidget can be flipped
+    // mid-session; gate at fire time, not registration time.
+    //
+    // Decision tree (Plan 21-17 amends step (c) — peer-sync fan-out):
+    //   (a) gating: useInlineWidget on; file is TFile; ≥1 matching widget
+    //       found in registry. If no match → no-op.
+    //   (b) Pitfall P2 early-return — fence body unchanged: if
+    //       observedFenceHash === firstMatch.currentDocHash, the modify
+    //       event is a frontmatter-only echo (canonical case: chevron-
+    //       switch's processFrontMatter via switchLanguageFromWidget).
+    //       Return without invoking suppression. (Multi-pane: every
+    //       widget on the file has the same hash because they're driven
+    //       by the same flush path — firstMatch is a representative.)
+    //   (c) selfWriteSuppression — capture originator BEFORE tryConsume,
+    //       then call tryConsume:
+    //         'consumed' → self-write echo. Route via routePeerSync:
+    //                      - peer-fan-out: skip originator, dispatch
+    //                        applyPeerSync(observedBody) on each peer
+    //                        (incremental ChangeSpec with mapped
+    //                        selection + 'leetcode.peer-sync' userEvent
+    //                        + addToHistory.of(false)). Plan 21-17.
+    //                      - single-pane-consumed: existing silent return.
+    //         'stale' | 'miss' → fall through to (d) — external edit.
+    //       Plan 21-17 — the originator capture uses the new
+    //       selfWriteSuppression.peekOriginator(path) read-only accessor;
+    //       it must run BEFORE tryConsume drops the entry.
+    //   (d) hasPending() branch (external edit only):
+    //       false → firstMatch.reloadFromDisk('silent') (line/col cursor
+    //               clamp per D-conflict-03; addToHistory.of(false)
+    //               annotation). UNCHANGED — preserves R8 byte-identical.
+    //       true  → if activeConflictModal?.isOpen, fire
+    //               updateExternalContent(observedBody) (D-conflict-04 —
+    //               in-place update, NEVER stack a second modal).
+    //               Otherwise construct a new ConflictModal with the
+    //               constructor-callback approach (WARNING #6 fix —
+    //               cleanup via callback fired inside onClose).
+    this.registerEvent(
+      this.app.vault.on('modify', async (file) => {
+        if (!(file instanceof TFile)) return;
+        if (!this.selfWriteSuppression) return;
+        try {
+          // (a) gate — find ALL widgets matching this file's path. Plan
+          // 21-17 amends the previous "first matching widget" pick to
+          // collect every controller on the file so the peer-sync fan-out
+          // in step (c) can iterate them. firstMatch (the original
+          // single-controller anchor) is preserved for the Pitfall P2
+          // early-return AND for the external-edit reload-silent path —
+          // both of which are unchanged from Plan 20-03.
+          const allMatching: WidgetController[] = [];
           if (this.widgetRegistry) {
             for (const ctl of this.widgetRegistry.values()) {
-              ctl.reconfigureVim?.(newVim);
-            }
-          }
-        }),
-      );
-
-      // Hook 5: MarkdownRenderChild.onunload (Reading mode) — owned by
-      // LeetCodeWidgetRenderChild.onunload in src/widget/WidgetController.ts.
-      // No registration needed here.
-
-      // Hook 6: Plugin.onunload — extends below in onunload() with flushAll
-      // followed by destroyAll + selfWriteSuppression.clear.
-
-      // Plan 19-02 + Phase 20 Plan 20-03 + Plan 21-17 — vault.on('modify')
-      // decision tree (SYNC-04 / SYNC-05 / split-pane peer-sync). RESEARCH
-      // Specific Findings §4 gated body — useInlineWidget can be flipped
-      // mid-session; gate at fire time, not registration time.
-      //
-      // Decision tree (Plan 21-17 amends step (c) — peer-sync fan-out):
-      //   (a) gating: useInlineWidget on; file is TFile; ≥1 matching widget
-      //       found in registry. If no match → no-op.
-      //   (b) Pitfall P2 early-return — fence body unchanged: if
-      //       observedFenceHash === firstMatch.currentDocHash, the modify
-      //       event is a frontmatter-only echo (canonical case: chevron-
-      //       switch's processFrontMatter via switchLanguageFromWidget).
-      //       Return without invoking suppression. (Multi-pane: every
-      //       widget on the file has the same hash because they're driven
-      //       by the same flush path — firstMatch is a representative.)
-      //   (c) selfWriteSuppression — capture originator BEFORE tryConsume,
-      //       then call tryConsume:
-      //         'consumed' → self-write echo. Route via routePeerSync:
-      //                      - peer-fan-out: skip originator, dispatch
-      //                        applyPeerSync(observedBody) on each peer
-      //                        (incremental ChangeSpec with mapped
-      //                        selection + 'leetcode.peer-sync' userEvent
-      //                        + addToHistory.of(false)). Plan 21-17.
-      //                      - single-pane-consumed: existing silent return.
-      //         'stale' | 'miss' → fall through to (d) — external edit.
-      //       Plan 21-17 — the originator capture uses the new
-      //       selfWriteSuppression.peekOriginator(path) read-only accessor;
-      //       it must run BEFORE tryConsume drops the entry.
-      //   (d) hasPending() branch (external edit only):
-      //       false → firstMatch.reloadFromDisk('silent') (line/col cursor
-      //               clamp per D-conflict-03; addToHistory.of(false)
-      //               annotation). UNCHANGED — preserves R8 byte-identical.
-      //       true  → if activeConflictModal?.isOpen, fire
-      //               updateExternalContent(observedBody) (D-conflict-04 —
-      //               in-place update, NEVER stack a second modal).
-      //               Otherwise construct a new ConflictModal with the
-      //               constructor-callback approach (WARNING #6 fix —
-      //               cleanup via callback fired inside onClose).
-      this.registerEvent(
-        this.app.vault.on('modify', async (file) => {
-          if (!this.settings.getUseInlineWidget()) return;
-          if (!(file instanceof TFile)) return;
-          if (!this.selfWriteSuppression) return;
-          try {
-            // (a) gate — find ALL widgets matching this file's path. Plan
-            // 21-17 amends the previous "first matching widget" pick to
-            // collect every controller on the file so the peer-sync fan-out
-            // in step (c) can iterate them. firstMatch (the original
-            // single-controller anchor) is preserved for the Pitfall P2
-            // early-return AND for the external-edit reload-silent path —
-            // both of which are unchanged from Plan 20-03.
-            const allMatching: WidgetController[] = [];
-            if (this.widgetRegistry) {
-              for (const ctl of this.widgetRegistry.values()) {
-                const candidate = ctl as unknown as WidgetController & { file: { path: string } };
-                if (candidate.file.path === file.path) {
-                  allMatching.push(candidate);
-                }
+              const candidate = ctl as unknown as WidgetController & { file: { path: string } };
+              if (candidate.file.path === file.path) {
+                allMatching.push(candidate);
               }
             }
-            if (allMatching.length === 0) return;
-            // CR-02 (Phase 21 cycle-2 review-fix) — Map iteration is
-            // insertion-order. With a Reading-mode read-only widget
-            // registered before the editable LP widget on the same file
-            // (split pane: Reading on left registered first, LP on right
-            // registered second), `allMatching[0]` would be the read-only
-            // pane. Read-only widgets carry `writer === undefined` (set
-            // only on `!readOnly` mounts) and never refresh
-            // `currentDocHash`, so:
-            //   • the Pitfall P2 hash gate at (b) becomes dead (empty
-            //     hash never matches the observed disk hash); AND
-            //   • the external-edit branch at (d) sees `hasPending` false
-            //     and silently reload-silent-clobbers the LP pane's
-            //     in-flight typing — Plan 20-03's conflict modal never
-            //     fires.
-            // Prefer an editable representative (non-readOnly, non-embed)
-            // and fall back to the first match only when no editable
-            // widget exists.
-            const editableMatching = allMatching.filter(
-              (c) => !c.readOnly && !c.isEmbed,
-            );
-            const firstMatch = editableMatching[0] ?? allMatching[0]!;
-
-            const disk = await this.app.vault.read(file);
-            const observedBody = extractFenceBody(disk, firstMatch.fenceIndex) ?? '';
-            const observedHash = await sha1(observedBody);
-
-            // (b) Pitfall P2 early-return — fence body unchanged. If the
-            // widget's currentDocHash matches what we just observed on
-            // disk, the file changed but the FENCE BODY did not
-            // (frontmatter-only write — chevron-switch path). Multi-pane
-            // case: every widget on the file has the same hash because
-            // they're driven by the same flush path (firstMatch is a
-            // representative).
-            if (
-              typeof firstMatch.currentDocHash === 'string' &&
-              firstMatch.currentDocHash.length > 0 &&
-              firstMatch.currentDocHash === observedHash
-            ) {
-              return;
-            }
-
-            // (c) Plan 21-17 — capture originator BEFORE tryConsume drops
-            // the entry. peekOriginator is read-only (does NOT mutate the
-            // suppression map); tryConsume below is the sole mutator.
-            const originatingRegistryKey = this.selfWriteSuppression.peekOriginator(file.path);
-
-            // Phase 20 BL-04 (review-fix) — selfWriteSuppression consume.
-            // The DebouncedWriter arms a per-path suppression entry BEFORE
-            // vault.process; the modify event echo lands here. tryConsume
-            // drops the entry on a hash match (silent self-write echo);
-            // a stale or miss falls through to (d).
-            const consumeResult = this.selfWriteSuppression.tryConsume(
-              file.path,
-              observedHash,
-            );
-
-            // Plan 21-17 — peer-sync fan-out routing. The pure helper
-            // returns the per-controller decision; we invoke the
-            // corresponding method below. External edits (consumeResult !==
-            // 'consumed') route to 'reload-silent' which falls through to
-            // step (d) — preserves R8 byte-identical.
-            const peerLikes: PeerSyncControllerLike[] = allMatching.map((c) => ({
-              registryKey: c.registryKey,
-              filePath: c.file.path,
-              isEmbed: c.isEmbed,
-              readOnly: c.readOnly,
-            }));
-            const decision = routePeerSync({
-              filePath: file.path,
-              originatingRegistryKey,
-              consumeResult,
-              controllers: peerLikes,
-            });
-
-            if (decision.kind === 'single-pane-consumed') {
-              // Self-write echo with no peer to fan out to. Silent return —
-              // existing single-pane behavior is byte-identical.
-              return;
-            }
-
-            if (decision.kind === 'peer-fan-out') {
-              // Plan 21-17 — fan out applyPeerSync(observedBody) to every
-              // editable peer; skip the originating pane (its caret is
-              // already correct because its own typing produced the new
-              // doc state). Embed/readOnly widgets are filtered by the
-              // routing helper.
-              const byKey = new Map<string, WidgetController>();
-              for (const c of allMatching) byKey.set(c.registryKey, c);
-              for (const perCtl of decision.perController) {
-                if (perCtl.action !== 'apply-peer-sync') continue;
-                const peer = byKey.get(perCtl.registryKey);
-                if (!peer) continue;
-                try {
-                  peer.applyPeerSync(observedBody);
-                } catch {
-                  // Defensive — peer view may be in teardown.
-                }
-              }
-              return;
-            }
-
-            // decision.kind === 'reload-silent' — external edit. Fall
-            // through to the existing childDoc backup + reload-silent path
-            // below. UNCHANGED from pre-Plan-21-17 behavior.
-
-            // Backup self-write detection for the case where the
-            // suppression entry was missed (stale TTL, hash mismatch
-            // race per RESEARCH §1 fail-safe). When the observed disk
-            // body equals the child's current doc, the modify event
-            // is the auto-save echo of our own typing → silent no-op.
-            // Plan 21-17 — uses firstMatch as the representative; in the
-            // multi-pane case Plan 21-17 handles fan-out at step (c) and
-            // never reaches this fallthrough (it returns from the
-            // peer-fan-out branch above).
-            const childDoc = firstMatch.view.state.doc.toString();
-            if (observedBody === childDoc) return;
-
-            // (d) Disk diverges from child = external write (Sync from
-            // another device, manual edit in source mode, etc.). Default
-            // to silent reload — the parent→child push in the ViewPlugin
-            // update path (Plan 20-09 Task 7) ALSO handles this when the
-            // parent doc updates, so this path is the modify-event
-            // backup. The conflict modal opens only if the user
-            // explicitly wants to compare both versions before
-            // resolution. Under Plan 20-09, "in-flight typing" is
-            // always real-time-mirrored to the parent, so there is no
-            // separate writer.hasPending() signal — we route the modal
-            // open on every divergence. The legacy hasPending() gate
-            // is collapsed into "always show modal" because the user
-            // typing IS the parent doc state.
-            const hasPending = firstMatch.writer?.hasPending() === true;
-            if (!hasPending) {
-              // Idle widget — silent reload with line/col cursor clamp.
-              await firstMatch.reloadFromDisk('silent');
-              return;
-            }
-
-            // In-flight typing — open OR update the conflict modal.
-            // D-conflict-04: a second modify while modal open updates
-            // the External pane in place; NEVER stack a second modal.
-            if (this.activeConflictModal && this.activeConflictModal.isOpen) {
-              this.activeConflictModal.updateExternalContent(observedBody);
-              return;
-            }
-
-            // Construct a fresh modal with the constructor-callback
-            // approach (WARNING #6 — cleanup is a callback fired inside
-            // onClose; the locked single shape so Modal Test 8 has one
-            // behavior to assert). The callback resets activeConflictModal
-            // exactly once across every close trigger.
-            const modal = new ConflictModal(
-              this.app,
-              firstMatch,
-              firstMatch.view.state.doc.toString(),
-              observedBody,
-              () => {
-                this.activeConflictModal = null;
-              },
-            );
-            this.activeConflictModal = modal;
-            modal.open();
-          } catch {
-            /* swallow — modify is best-effort observability */
           }
-        }),
-      );
-    }
+          if (allMatching.length === 0) return;
+          // CR-02 (Phase 21 cycle-2 review-fix) — Map iteration is
+          // insertion-order. With a Reading-mode read-only widget
+          // registered before the editable LP widget on the same file
+          // (split pane: Reading on left registered first, LP on right
+          // registered second), `allMatching[0]` would be the read-only
+          // pane. Read-only widgets carry `writer === undefined` (set
+          // only on `!readOnly` mounts) and never refresh
+          // `currentDocHash`, so:
+          //   • the Pitfall P2 hash gate at (b) becomes dead (empty
+          //     hash never matches the observed disk hash); AND
+          //   • the external-edit branch at (d) sees `hasPending` false
+          //     and silently reload-silent-clobbers the LP pane's
+          //     in-flight typing — Plan 20-03's conflict modal never
+          //     fires.
+          // Prefer an editable representative (non-readOnly, non-embed)
+          // and fall back to the first match only when no editable
+          // widget exists.
+          const editableMatching = allMatching.filter(
+            (c) => !c.readOnly && !c.isEmbed,
+          );
+          const firstMatch = editableMatching[0] ?? allMatching[0]!;
 
-    // Step 6f-bis — Section protection / lock for lc-slug notes.
+          const disk = await this.app.vault.read(file);
+          const observedBody = extractFenceBody(disk, firstMatch.fenceIndex) ?? '';
+          const observedHash = await sha1(observedBody);
+
+          // (b) Pitfall P2 early-return — fence body unchanged. If the
+          // widget's currentDocHash matches what we just observed on
+          // disk, the file changed but the FENCE BODY did not
+          // (frontmatter-only write — chevron-switch path). Multi-pane
+          // case: every widget on the file has the same hash because
+          // they're driven by the same flush path (firstMatch is a
+          // representative).
+          if (
+            typeof firstMatch.currentDocHash === 'string' &&
+            firstMatch.currentDocHash.length > 0 &&
+            firstMatch.currentDocHash === observedHash
+          ) {
+            return;
+          }
+
+          // (c) Plan 21-17 — capture originator BEFORE tryConsume drops
+          // the entry. peekOriginator is read-only (does NOT mutate the
+          // suppression map); tryConsume below is the sole mutator.
+          const originatingRegistryKey = this.selfWriteSuppression.peekOriginator(file.path);
+
+          // Phase 20 BL-04 (review-fix) — selfWriteSuppression consume.
+          // The DebouncedWriter arms a per-path suppression entry BEFORE
+          // vault.process; the modify event echo lands here. tryConsume
+          // drops the entry on a hash match (silent self-write echo);
+          // a stale or miss falls through to (d).
+          const consumeResult = this.selfWriteSuppression.tryConsume(
+            file.path,
+            observedHash,
+          );
+
+          // Plan 21-17 — peer-sync fan-out routing. The pure helper
+          // returns the per-controller decision; we invoke the
+          // corresponding method below. External edits (consumeResult !==
+          // 'consumed') route to 'reload-silent' which falls through to
+          // step (d) — preserves R8 byte-identical.
+          const peerLikes: PeerSyncControllerLike[] = allMatching.map((c) => ({
+            registryKey: c.registryKey,
+            filePath: c.file.path,
+            isEmbed: c.isEmbed,
+            readOnly: c.readOnly,
+          }));
+          const decision = routePeerSync({
+            filePath: file.path,
+            originatingRegistryKey,
+            consumeResult,
+            controllers: peerLikes,
+          });
+
+          if (decision.kind === 'single-pane-consumed') {
+            // Self-write echo with no peer to fan out to. Silent return —
+            // existing single-pane behavior is byte-identical.
+            return;
+          }
+
+          if (decision.kind === 'peer-fan-out') {
+            // Plan 21-17 — fan out applyPeerSync(observedBody) to every
+            // editable peer; skip the originating pane (its caret is
+            // already correct because its own typing produced the new
+            // doc state). Embed/readOnly widgets are filtered by the
+            // routing helper.
+            const byKey = new Map<string, WidgetController>();
+            for (const c of allMatching) byKey.set(c.registryKey, c);
+            for (const perCtl of decision.perController) {
+              if (perCtl.action !== 'apply-peer-sync') continue;
+              const peer = byKey.get(perCtl.registryKey);
+              if (!peer) continue;
+              try {
+                peer.applyPeerSync(observedBody);
+              } catch {
+                // Defensive — peer view may be in teardown.
+              }
+            }
+            return;
+          }
+
+          // decision.kind === 'reload-silent' — external edit. Fall
+          // through to the existing childDoc backup + reload-silent path
+          // below. UNCHANGED from pre-Plan-21-17 behavior.
+
+          // Backup self-write detection for the case where the
+          // suppression entry was missed (stale TTL, hash mismatch
+          // race per RESEARCH §1 fail-safe). When the observed disk
+          // body equals the child's current doc, the modify event
+          // is the auto-save echo of our own typing → silent no-op.
+          // Plan 21-17 — uses firstMatch as the representative; in the
+          // multi-pane case Plan 21-17 handles fan-out at step (c) and
+          // never reaches this fallthrough (it returns from the
+          // peer-fan-out branch above).
+          const childDoc = firstMatch.view.state.doc.toString();
+          if (observedBody === childDoc) return;
+
+          // (d) Disk diverges from child = external write (Sync from
+          // another device, manual edit in source mode, etc.). Default
+          // to silent reload — the parent→child push in the ViewPlugin
+          // update path (Plan 20-09 Task 7) ALSO handles this when the
+          // parent doc updates, so this path is the modify-event
+          // backup. The conflict modal opens only if the user
+          // explicitly wants to compare both versions before
+          // resolution. Under Plan 20-09, "in-flight typing" is
+          // always real-time-mirrored to the parent, so there is no
+          // separate writer.hasPending() signal — we route the modal
+          // open on every divergence. The legacy hasPending() gate
+          // is collapsed into "always show modal" because the user
+          // typing IS the parent doc state.
+          const hasPending = firstMatch.writer?.hasPending() === true;
+          if (!hasPending) {
+            // Idle widget — silent reload with line/col cursor clamp.
+            await firstMatch.reloadFromDisk('silent');
+            return;
+          }
+
+          // In-flight typing — open OR update the conflict modal.
+          // D-conflict-04: a second modify while modal open updates
+          // the External pane in place; NEVER stack a second modal.
+          if (this.activeConflictModal && this.activeConflictModal.isOpen) {
+            this.activeConflictModal.updateExternalContent(observedBody);
+            return;
+          }
+
+          // Construct a fresh modal with the constructor-callback
+          // approach (WARNING #6 — cleanup is a callback fired inside
+          // onClose; the locked single shape so Modal Test 8 has one
+          // behavior to assert). The callback resets activeConflictModal
+          // exactly once across every close trigger.
+          const modal = new ConflictModal(
+            this.app,
+            firstMatch,
+            firstMatch.view.state.doc.toString(),
+            observedBody,
+            () => {
+              this.activeConflictModal = null;
+            },
+          );
+          this.activeConflictModal = modal;
+          modal.open();
+        } catch {
+          /* swallow — modify is best-effort observability */
+        }
+      }),
+    );
+
+    // Step 6f-bis — Section protection extension for lc-slug notes.
     //
-    // Phase 20 D-protect-03: mutually-exclusive registration based on the
-    // useInlineWidget master toggle. Both extensions register the same CM6
-    // EditorState.changeFilter shape; only ONE is ever active on the parent
-    // CM6, so the `'leetcode.*'` userEvent bypass and atomicRanges contract
-    // never run twice.
-    //
-    //   useInlineWidget=ON  → buildSectionProtectionExtension (v1.3 narrow:
-    //                         ## Problem body + ## Code heading + blank-line
-    //                         pocket + ## Techniques heading; fence body +
-    //                         closer owned by the widget via atomicRanges).
-    //   useInlineWidget=OFF → buildSectionLockExtension (v1.2 unchanged:
-    //                         ## Code heading + opener + closer + body
-    //                         locked; v1.2 nested-editor or codeAction path
-    //                         operates on the locked range via the
-    //                         `'leetcode.*'` userEvent bypass).
-    //
-    // Both honor the `'leetcode.*'` userEvent bypass verbatim per L6 /
-    // D-protect-02. PROTECT-03 (Phase 22) deletes the bypass + the v1.2
-    // path together. `useInlineWidget` is read once at onload (line ~876).
-    if (useInlineWidget) {
-      this.registerEditorExtension(buildSectionProtectionExtension(this));
-    } else {
-      this.registerEditorExtension(buildSectionLockExtension(this));
-    }
+    // Phase 22 — v1.2 `buildSectionLockExtension` retired with the
+    // `useInlineWidget` master gate. The narrow v1.3 protection extension
+    // is the only path: ## Problem body + ## Code heading + blank-line
+    // pocket + ## Techniques heading. The fence body + closer are owned by
+    // the widget via `EditorView.atomicRanges`.
+    this.registerEditorExtension(buildSectionProtectionExtension(this));
 
     // Step 6g-pre — Phase 12 Plan 04 (D-12) — wikilink-to-preview interception.
     // When a user clicks a [[slug]] wikilink to a problem that has no local note,
@@ -1634,118 +1480,24 @@ export default class LeetCodePlugin extends Plugin {
       }),
     );
 
-    // Step 6g — Phase 5.2 D-06 auto-insert starter code on file-open.
-    // Fires for every note reveal; the handler gates on `lc-slug` frontmatter
-    // via `isValidSlug` before calling `retrofit(...)`. retrofit is idempotent
-    // (RESEARCH Pitfall 5) and silent-on-failure (D-09), so double-fire with
-    // the existing row-click retrofit in NoteWriter is safe.
+    // Phase 22 — v1.2 file-open `retrofitStarterCode` hook + child-editor
+    // `nestedEditorRebuildEffect` dispatches + `registerVaultModifyRepairTrigger`
+    // file-open repair retired with the `useInlineWidget` master gate. The
+    // v1.3 NoteWriter path creates leetcode-solve fences directly; widget
+    // reactivity is owned by the per-widget metadataCache 'changed'
+    // subscription in `WidgetController.ts`.
     //
-    // Phase 20 Plan 20-09 — DISABLED when useInlineWidget=true. The
-    // pre-v1.3 retrofit path uses injectCodeSection which doesn't know
-    // about `leetcode-solve` fences (it scans for recognized-langSlug
-    // fences only); on a v1.3 LC note that already has a leetcode-solve
-    // fence, retrofit sees no recognized fence and injects a duplicate
-    // ```javascript fence — corrupting the note structure on every
-    // file-open.  The v1.3 NoteWriter path creates leetcode-solve fences
-    // directly so the retrofit is unnecessary in v1.3 mode.
-    if (!useInlineWidget) {
-      this.registerEvent(
-        this.app.workspace.on(
-          'file-open',
-          makeFileOpenHandler({
-            app: this.app,
-            settings: this.settings,
-            retrofit: retrofitStarterCode,
-          }),
-        ),
-      );
-    }
-
-    // Step 6g.5 — Phase 17 Plan 04 (D-13/D-14, Wave 2) — external `lc-language`
-    // frontmatter reactivity. When a user (or another plugin) writes a
-    // different `lc-language` value to the frontmatter of an open `lc-slug`
-    // note, the child editor reconfigures its language Compartment to match —
-    // reusing the Phase 16 chevron-switch plumbing (`languageCompartment` +
-    // `buildLanguageExtensions`). The listener does NOT rewrite the fence
-    // opener tag (D-14 — frontmatter is the source of truth in this passive-
-    // listener scenario; users who want the fence opener to flip use the
-    // chevron). Pitfall 3 (recursive metadataCache.changed during the plugin's
-    // own processFrontMatter writes) is dedupe-prevented by Gate 3 (slug
-    // equality check inside `handleFmChangeForLanguageReactivity`).
-    //
-    // Analog: src/main/codeActionsEditorExtension.ts:329-359 (parent-side
-    // chevron metadataCache subscription). This block adds the CHILD-side
-    // reactivity dispatching Compartment.reconfigure on the registered child.
+    // Plan 21.1-01 (R6 LP fix) — dispatch `leetcodeRefreshAnnotation` to LP
+    // leaves so `leetCodeWidgetStateField` recomputes against the
+    // now-indexed frontmatter. See `handleMetadataCacheChangedForLP` for the
+    // full rationale and Phase 18 race description.
     this.registerEvent(
       this.app.metadataCache.on('changed', (file, _data, cache) => {
-        this.handleFmChangeForLanguageReactivity(file, cache);
-        // Phase 18: when metadataCache populates lc-slug for the first time
-        // (newly-created note, first open), the parent's nested-editor
-        // StateField needs a transaction to rebuild decorations. Without
-        // this, Gate 2 in buildNestedDecorations short-circuits because
-        // frontmatter wasn't available at initial StateField.create time.
         if (cache?.frontmatter?.['lc-slug']) {
-          const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-          if (view?.file?.path === file.path) {
-            const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
-            if (cm) {
-              cm.dispatch({ effects: nestedEditorRebuildEffect.of(null) });
-            }
-          }
-          // Plan 21.1-01 (R6 LP fix) — dispatch leetcodeRefreshAnnotation to
-          // LP leaves so leetCodeWidgetStateField recomputes against the
-          // now-indexed frontmatter. See handleMetadataCacheChangedForLP for
-          // the full rationale and Phase 18 race description.
           this.handleMetadataCacheChangedForLP(file, cache);
         }
       }),
     );
-
-    // Phase 18 Plan 02 (D-33) — vault.on('modify') runtime repair trigger.
-    // Closes the gap where vim's `dd` Normal-mode keystroke on the fence
-    // closer line edits the doc via Obsidian's vault layer, bypassing the
-    // CM6 transactions that `createParentRepairExtension` observes. Three
-    // short-circuit gates (lc-slug, active-view, findCodeFence === null)
-    // prevent firing during chevron mid-flight (the chevron-blank-on-python3-c
-    // regression that the previous Phase 18 attempt produced). See
-    // `src/main/childEditorSync.ts:registerVaultModifyRepairTrigger` and
-    // `.planning/phases/18-vim-recovery-polish/18-02-PLAN.md`.
-    if (useNestedEditor) {
-      registerVaultModifyRepairTrigger(this);
-    }
-
-    // Phase 18: file-open repair — when switching to a broken-fence LC note,
-    // the nested editor widget won't mount (findCodeFence returns null), so
-    // createParentRepairExtension never gets installed. This file-open hook
-    // catches that case: after a short delay (CM6 state needs to hydrate),
-    // check if the active note has a damaged fence and repair it directly.
-    if (useNestedEditor) {
-      const FILE_OPEN_REPAIR_DELAY_MS = 100; // estimated Obsidian file→CM6 hydration time
-      this.registerEvent(
-        this.app.workspace.on('file-open', (file) => {
-          if (!file) return;
-          window.setTimeout(() => {
-            const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-            if (typeof fm?.['lc-slug'] !== 'string') return;
-            const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-            if (!view || view.file?.path !== file.path) return;
-            const cm = (view.editor as unknown as { cm: import('@codemirror/view').EditorView }).cm;
-            if (!cm) return;
-            cm.dispatch({ effects: nestedEditorRebuildEffect.of(null) });
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { findCodeFence: findFence } = require('./main/codeActionsEditorExtension') as
-              typeof import('./main/codeActionsEditorExtension');
-            if (findFence(cm.state) !== null) return;
-            const lcLang: unknown = fm['lc-language'];
-            const slug = typeof lcLang === 'string' && lcLang.length > 0 ? lcLang : 'python3';
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { repairFenceStructure: repair } = require('./main/childEditorSync') as
-              typeof import('./main/childEditorSync');
-            repair(cm, slug);
-          }, FILE_OPEN_REPAIR_DELAY_MS);
-        }),
-      );
-    }
 
     // ── Phase 21 Plan 21-05 Task 2 (CR-01) ─────────────────────────────
     // Reading-mode auto-migration trigger for legacy v1.2 notes.
@@ -1778,7 +1530,6 @@ export default class LeetCodePlugin extends Plugin {
         makeReadingModeMigrationHandler({
           app: this.app,
           settings: {
-            getUseInlineWidget: () => this.settings.getUseInlineWidget(),
             getAutoMigrateOnOpen: () =>
               this.settings.getAutoMigrateOnOpen(),
             getDefaultLanguage: () =>
@@ -1869,9 +1620,6 @@ export default class LeetCodePlugin extends Plugin {
     // No subscriptions/timers to detach (Map-only), but dispose() resets the
     // in-memory Map so plugin reload starts with a clean slate.
     this.lastVerdictStore?.dispose();
-
-    // Phase 13 — destroy all child EditorViews (D-12 cleanup).
-    this.childEditorRegistry?.destroyAll();
 
     // Phase 19 Plan 01+02 — drain in-flight widget writes via debouncedWriter
     // (Plan 19-02 makes flushAll await each writer.forceFlush). Plugin.onunload
@@ -3305,143 +3053,36 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /**
-   * Phase 20 Plan 20-10 Task 4 (gap-closure T3 — language switch silent
-   * regression). Rewritten from Plan 20-09 Task 6 to dispatch via the
-   * canonical write-path (CLAUDE.md §Conventions Phase 17 D-05) — the
-   * registered child editor — instead of the parent CM6.
+   * Phase 22 (v1.3) — Language switch path for the inline widget.
    *
-   * Sequence:
-   *   (a) flush widget → no-op for v1.3 (writer retired Plan 20-09 Task 3)
-   *       but kept for backward compatibility with Reading-mode mounts.
-   *   (b) read lc-slug; bail silent if missing (chevron rendered on a
-   *       non-LC note via a race).
-   *   (c) fetch starter code via existing client.getProblemDetail (cached;
-   *       7-day TTL via SettingsStore). On rejection: locked Notice copy.
-   *   (d) resolve the dispatch target — childEditorRegistry.get(file.path)
-   *       PRIMARY, widget.view FALLBACK. The registry lookup is keyed on
-   *       file.path so it works regardless of which leaf is active —
-   *       multi-pane / popout / Reading-mode chevron clicks all reach
-   *       the right child. Closes T3's silent-bail anti-pattern (the
-   *       prior implementation consulted getActiveViewOfType + bailed
-   *       on view.file !== file).
-   *   (e) dispatch a single full-doc replace on the resolved target with
-   *       userEvent 'leetcode.lang-switch'. Range 0..doc.length so a
-   *       smaller starter never leaves a stale tail. The registered
-   *       child's existing childEditorSync mirror propagates the change
-   *       to the parent doc with addToHistory.of(false) (Phase 17 D-05),
-   *       preserving Phase 15 D-05 cm-z scope isolation.
-   *   (f) processFrontMatter `lc-language` = newSlug. The per-widget
-   *       metadataCache 'changed' subscription at WidgetController.ts:
-   *       1126-1166 fires Compartment.reconfigure (parser swap) +
-   *       actionRowRefresh (chevron label + .is-current marker, Plan
-   *       20-08) without a remount.
+   * v1.3 architecture: the fence opener is fixed at `leetcode-solve`
+   * (Phase 19 C-01) and language is owned by `lc-language` frontmatter.
+   * The chevron click only needs to:
+   *   (a) flush widget edits BEFORE the frontmatter write so any pending
+   *       characters land under the OLD slug (Pattern F flush-before-fm).
+   *   (b) write `lc-language: <newSlug>` via processFrontMatter.
    *
-   * Empty starter code (LC API quirk for some langs/problems): dispatch
-   * empty body. User sees a blank fence with the new language's parser.
+   * No CM6 dispatch is needed — neither parent (fence opener is fixed)
+   * nor child (v1.3 has no nested-editor child registry; the widget owns
+   * its own EditorView and reacts to the metadataCache 'changed' event
+   * through its own subscription at WidgetController to swap the parser
+   * Compartment + refresh the action-row chevron without remount).
    *
-   * Reference: .planning/debug/widget-plugin-handoff-cluster.md (T3 root
-   * cause) + CLAUDE.md §Conventions "Canonical plugin write-path pattern
-   * (Phase 17 D-05)".
+   * Reference: tests/widget/languageSwitch.test.ts pins this contract.
    */
   async switchLanguageFromWidget(
     widget: WidgetController,
     file: TFile,
     newSlug: string,
   ): Promise<void> {
-    // Step (a) — flush widget; no-op under Plan 20-09 typing-path retire,
-    // kept for backward compat (Reading-mode + test fixtures).
+    // Step (a) — flush widget edits before the frontmatter write so any
+    // pending characters land under the OLD slug (Pattern F).
     await widget.flushNow();
 
-    // Step (b) — read lc-slug; silent no-op if missing.
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
-      | Record<string, unknown>
-      | undefined;
-    const lcSlugRaw = fm?.['lc-slug'];
-    if (typeof lcSlugRaw !== 'string' || lcSlugRaw.length === 0) return;
-    const lcSlug = lcSlugRaw;
-    const newLabel = LC_LANG_DISPLAY_LABELS[newSlug] ?? newSlug;
-
-    // Step (c) — fetch starter code.
-    let snippet: string;
-    try {
-      const detail = await this.client.getProblemDetail(lcSlug);
-      snippet = detail?.codeSnippets?.find((s) => s.langSlug === newSlug)?.code ?? '';
-    } catch {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- locked Notice copy
-      new Notice(`Couldn't fetch starter code for ${newLabel}.`, 6000);
-      return;
-    }
-
-    // Step (d) — resolve canonical write target (Phase 17 D-05). Per
-    // CLAUDE.md §Conventions, plugin writes touching the fence body
-    // dispatch through `childEditorRegistry.get(file.path)` when one is
-    // registered. Falls back to widget.view only when the registry
-    // returns null (rare embed-context where mountLeetCodeWidget ran but
-    // registry wiring did not). The active-view guard is REMOVED — the
-    // registry lookup is keyed on file.path, independent of which leaf
-    // is active. Closes T3 silent-bail anti-pattern (multi-pane / popout
-    // chevron clicks).
-    const dispatchTarget =
-      this.childEditorRegistry?.get(file.path) ?? widget.view;
-
-    // Step (e) — full-doc replace on the resolved target. Range
-    // 0..doc.length so a smaller new starter never leaves a stale tail.
-    // userEvent 'leetcode.lang-switch' set defensively per CLAUDE.md
-    // §Conventions ('leetcode.*' bypass convention). The registered
-    // child does not currently have section-protection on its CM6, but
-    // the annotation is zero-risk and future-proofs against registry
-    // → section-protection wiring changes.
-    try {
-      dispatchTarget.dispatch({
-        changes: {
-          from: 0,
-          to: dispatchTarget.state.doc.length,
-          insert: snippet,
-        },
-        userEvent: 'leetcode.lang-switch',
-      });
-    } catch (err) {
-      logger.debug('switchLanguageFromWidget: child dispatch failed', err);
-      return;
-    }
-
-    // Plan 20-10 hotfix part 5 — apply the language parser swap directly
-    // on the same target instead of waiting for the metadataCache 'changed'
-    // event to drive it. The downstream listener races Obsidian's
-    // metadata-parse pipeline: 'changed' can fire while the cache it
-    // hands the listener still reflects the PRIOR frontmatter, producing
-    // a one-cycle lag where the body shows new code but the parser keeps
-    // the old slug until a second click. Dispatching here is the
-    // load-bearing path; the per-widget listener becomes a defensive
-    // backstop and is idempotent (Compartment.reconfigure with an equal
-    // payload is a no-op).
-    //
-    // Wrapped in its own try so test scaffolding that does not stub
-    // `settings.getIndentSizeOverride` or `childLanguageTracker` does not
-    // break — the parser swap is best-effort here.
-    try {
-      const indent = this.settings.getIndentSizeOverride?.() ?? 4;
-      dispatchTarget.dispatch({
-        effects: languageCompartment.reconfigure(
-          buildLanguageExtensions(newSlug, indent),
-        ),
-      });
-      this.childLanguageTracker?.set(dispatchTarget, newSlug);
-    } catch (err) {
-      logger.debug('switchLanguageFromWidget: parser reconfigure failed', err);
-    }
-    // Refresh the chevron label + .is-current marker immediately so the
-    // user sees the visible state flip on the same click that issued the
-    // dispatch — no wait for the metadataCache event.
-    try {
-      widget.actionRowRefresh?.(newSlug);
-    } catch {
-      // Defensive — chevron UI must never block the dispatch path.
-    }
-
-    // Step (f) — atomic frontmatter rewrite. The per-widget metadataCache
-    // 'changed' subscription fires Compartment.reconfigure + actionRowRefresh
-    // so the chevron label + parser update without remount.
+    // Step (b) — atomic frontmatter rewrite. The per-widget metadataCache
+    // 'changed' subscription drives Compartment.reconfigure (parser swap)
+    // + actionRowRefresh (chevron label + .is-current marker) without
+    // remount.
     try {
       await this.app.fileManager.processFrontMatter(
         file,
@@ -3794,244 +3435,12 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /**
-   * Phase 5.3 (POLISH-09 / D-05..D-12) — chevron-driven LC language switch on
-   * the active note's `## Code` fence.
-   *
-   * Sequence is LOAD-BEARING (UI-SPEC §"Dropdown item click → language switch"):
-   *
-   *   Step A — Fetch starter code via `client.getProblemDetail` (cache-then-
-   *            network; existing `LeetCodeClient` path with 7-day TTL). On
-   *            rejection: ONE Notice "Couldn't fetch starter code for {Label}."
-   *            and return — fence + frontmatter unchanged (Pitfall 4).
-   *   Step B — Single CM6 `view.dispatch({ changes: [openerChange, bodyChange],
-   *            userEvent: 'leetcode.lang-switch' })`. ONE transaction → ONE
-   *            Cmd-Z reverts opener + body atomically (D-08).
-   *   Step B′ — Phase 16 Plan 04 (LANG-01, D-12). If a child EditorView is
-   *            registered for `file.path`, dispatch
-   *            `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(
-   *            newSlug, getIndentSizeOverride())), userEvent: 'leetcode.lang-switch' }`
-   *            on the CHILD so its parser, indent unit, closeBrackets, and
-   *            Cmd-/ keymap switch in lock-step with the parent fence-tag
-   *            flip. Effects-only — `childEditorSync.ts:89` `docChanged`
-   *            guard skips it for child→parent propagation; the parent's
-   *            nestedEditor StateField never sees it (the dispatch goes to
-   *            the child, not the parent). userEvent is the CLAUDE.md
-   *            `'leetcode.*'` convention. Silent no-op when no child is
-   *            registered. Wrapped in try/catch matching the project
-   *            convention in `childEditorSync.ts` (child may be in teardown).
-   *   Step C — `await app.fileManager.processFrontMatter(file, fm => { … })`.
-   *            Lands on Obsidian's vault undo stack — separate from CM6's
-   *            editor undo (Pitfall 1; accepted divergence).
-   *
-   * Order matters: doing C before B opens a 5–20 ms window where `lc-language`
-   * says the new language but the fence still has the old one (Run during
-   * that window dispatches mismatched language to LC). Step B′ between B and
-   * C keeps the visible fence-tag flip first; the child reconfigure is
-   * effects-only and idempotent w.r.t. ordering.
-   *
-   * Silent no-ops:
-   *   - Active leaf moved off `file` between click and execution → bail.
-   *   - `findCodeFence(state)` returns null (fence deleted mid-edit) → bail.
-   *
-   * Atomicity guard: a single `cm.dispatch({ changes: [...] })` carries BOTH
-   * range edits. NEVER split into two dispatch calls — that would create two
-   * undo steps and break D-08.
-   */
-  async switchFenceLanguage(file: TFile, newSlug: string): Promise<void> {
-    // Step 1 — active-view guard (UI-SPEC §"silent" cases). Raced with leaf
-    // change → bail silently; no Notice.
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view || view.file !== file) return;
-
-    // Read current note's lc-slug from frontmatter so we can fetch the LC
-    // detail. Same shape as getActiveProblemContext.
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
-      | Record<string, unknown>
-      | undefined;
-    const lcSlugRaw = fm?.['lc-slug'];
-    if (!isValidSlug(lcSlugRaw)) return; // silent no-op — chevron rendered on a non-lc-slug note (race)
-    const lcSlug = lcSlugRaw;
-
-    // Friendly label for the network-failure Notice.
-    const newLabel = LC_LANG_DISPLAY_LABELS[newSlug] ?? newSlug;
-
-    // Step A — Fetch starter code. Existing client path (`requestUrl` +
-    // throttle + 7-day cache via SettingsStore.getProblemDetail). On
-    // rejection: locked Notice copy from UI-SPEC §Copywriting.
-    let snippet: string;
-    try {
-      const detail = await this.client.getProblemDetail(lcSlug);
-      snippet = detail?.codeSnippets?.find((s) => s.langSlug === newSlug)?.code ?? '';
-    } catch {
-       
-      new Notice(`Couldn't fetch starter code for ${newLabel}.`, 6000);
-      return;
-    }
-
-    // Step B — atomic CM6 dispatch. `view.editor.cm` is undocumented internal
-    // API; canonical path for plugin click handlers (RESEARCH §Pitfall 6 +
-    // CLAUDE.md acknowledged). Double-cast through `unknown` because the
-    // public `Editor` interface doesn't expose `cm` in obsidian.d.ts.
-    const cm = (view.editor as unknown as { cm: EditorView }).cm;
-    const fence = findCodeFence(cm.state);
-    if (!fence) return; // silent no-op — fence missing/unterminated mid-edit (UI-SPEC §"Error state — findCodeFence returns null")
-
-    const openerLine = cm.state.doc.line(fence.openerLine);
-    const closerLine = cm.state.doc.line(fence.closerLine);
-    const newFenceTag = lcSlugToFenceTag(newSlug);
-    // Preserve any leading whitespace on the opener line (rare but possible
-    // in nested-list contexts) — RESEARCH §Pattern 1.
-    const tagMatch = /^(\s*```)\s*\S*\s*$/.exec(openerLine.text);
-    const newOpenerText = tagMatch
-      ? `${tagMatch[1]}${newFenceTag}`
-      : `\`\`\`${newFenceTag}`;
-
-    // Body spans from start-of-line-after-opener to start-of-closer-line.
-    const bodyStart = openerLine.to + 1; // newline after opener
-    const bodyEnd = closerLine.from;
-
-    // Single dispatch — both edits + the chevron-refresh effect land in one
-    // transaction. D-08 atomicity (one undo step) is preserved because
-    // CM6 only counts `changes` toward the undo history; the effect rides
-    // along without creating an extra undo entry.
-    //
-    // Phase 05.5 chevron-refresh hardening: the effect carries `newSlug` as
-    // payload so `buildDecorations` paints the correct language immediately
-    // even though the metadataCache's `lc-language` value won't reflect the
-    // new slug until `processFrontMatter` (Step C) resolves AND Obsidian's
-    // metadataCache subscriber fires `'changed'`. Without this payload, the
-    // chevron's StateField would re-read stale frontmatter and paint the
-    // old label until the user typed in the fence body.
-    cm.dispatch({
-      changes: [
-        { from: openerLine.from, to: openerLine.to, insert: newOpenerText },
-        { from: bodyStart, to: bodyEnd, insert: snippet + '\n' },
-      ],
-      effects: languageRefreshEffect.of(newSlug),
-      userEvent: 'leetcode.lang-switch',
-    });
-
-    // Step B′ — Phase 16 Plan 04 (LANG-01, D-12). Child editor language
-    // Compartment reconfigure. Effects-only dispatch carries the CLAUDE.md
-    // 'leetcode.lang-switch' userEvent so the child sync extension's
-    // docChanged guard at childEditorSync.ts:89 short-circuits without
-    // echoing back to the parent. The dispatch goes to the CHILD; the
-    // parent's nestedEditor StateField never sees it, so no widget rebuild.
-    // Silent no-op when no child is registered. Reads the live override at
-    // dispatch time so a settings change is picked up on the next switch.
-    this.dispatchChildLanguageReconfigure(file.path, newSlug);
-
-    // Step C — frontmatter write (separate undo stack — Pitfall 1 accepted).
-    // The metadataCache `'changed'` listener will fire later and dispatch a
-    // second `languageRefreshEffect.of(undefined)` once the cache is fresh;
-    // by then `buildDecorations` reads the correctly-flushed `lc-language`
-    // and the override-payload path becomes unnecessary. The two refresh
-    // paths converge to the same DOM state.
-    await this.app.fileManager.processFrontMatter(file, (fmObj: Record<string, unknown>) => {
-      fmObj['lc-language'] = newSlug;
-    });
-  }
-
-  /**
-   * Phase 16 Plan 04 (LANG-01, D-12) — child editor language Compartment
-   * reconfigure helper extracted from `switchFenceLanguage` Step B′ for unit
-   * testability (see tests/main/switchFenceLanguage.test.ts).
-   *
-   * Dispatch shape:
-   *   `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(
-   *     newSlug, override)), userEvent: 'leetcode.lang-switch' }`
-   *
-   * Invariants:
-   *   - Effects-only — no `changes`, no `selection`. The child sync
-   *     extension's `if (!update.docChanged) return` guard at
-   *     `childEditorSync.ts:89` skips this transaction, so it cannot echo
-   *     back to the parent as a content edit (RESEARCH §6, VERIFIED).
-   *   - userEvent `'leetcode.lang-switch'` matches the CLAUDE.md
-   *     `'leetcode.*'` convention; identical to the parent-side annotation.
-   *   - Silent no-op when `childEditorRegistry.get(filePath)` returns
-   *     undefined (no open child for that file) — many notes can be
-   *     switched via the chevron without ever opening a child editor.
-   *   - try/catch matches `childEditorSync.ts:115` defensive convention —
-   *     the child may be in teardown when the chevron handler runs.
-   *   - `getIndentSizeOverride()` is read at dispatch time so the user's
-   *     current preference (D-06, Phase 16 Plan 02) is picked up on every
-   *     switch.
-   */
-  private dispatchChildLanguageReconfigure(filePath: string, newSlug: string): void {
-    const childView = this.childEditorRegistry?.get(filePath);
-    if (!childView) return; // silent no-op — no open child for this file
-    const indentOverride = this.settings.getIndentSizeOverride();
-    try {
-      childView.dispatch({
-        effects: languageCompartment.reconfigure(
-          buildLanguageExtensions(newSlug, indentOverride),
-        ),
-        userEvent: 'leetcode.lang-switch',
-      });
-      // Phase 17 Plan 09 — record the slug now applied to this child's
-      // languageCompartment. Gate 3 of the fm-reactivity listener consults
-      // this tracker (NOT the parent fence opener tag) so round-trip fm
-      // swaps (Java → Python3 → Java) dispatch symmetrically.
-      this.childLanguageTracker.set(childView, newSlug);
-    } catch {
-      // Silently ignore — child may be in teardown (defensive per project
-      // convention; mirrors childEditorSync.ts:115).
-    }
-  }
-
-  /**
-   * Phase 17 Plan 04 (D-13 / D-14, Wave 2) — external frontmatter reactivity
-   * listener body. Extracted from the inline `metadataCache.on('changed')`
-   * callback in `onload` for unit testability (see
-   * tests/main/fmReactivity.test.ts).
-   *
-   * Gates (in order — short-circuit on first miss):
-   *
-   *   Gate 1 (lc-slug). The note must carry `lc-slug` in frontmatter.
-   *           Non-LC notes never receive a dispatch.
-   *   Gate 2 (child registered). A child EditorView must be present in
-   *           `childEditorRegistry` for `file.path`. Notes that are not
-   *           open in a MarkdownView have no child to reconfigure.
-   *   Gate 3 (slug equality / Pitfall 3 dedupe). The new `lc-language`
-   *           value must differ from the slug currently applied to the
-   *           parent fence opener. This is the canonical dedupe — when
-   *           the plugin's own `processFrontMatter` writes a slug that
-   *           the fence opener already reflects (e.g., chevron switch
-   *           Step C reaches metadataCache after Step B has already
-   *           reconfigured the child), Gate 3 trips and the listener
-   *           short-circuits.
-   *
-   * On all three gates passing, dispatches the same Compartment payload
-   * the chevron switch path (D-12) uses on the child:
-   *
-   *   `{ effects: languageCompartment.reconfigure(buildLanguageExtensions(
-   *     fmLang, getIndentSizeOverride())) }`
-   *
-   * The dispatch is INTENTIONALLY effect-only — no `changes:` payload, no
-   * `userEvent` annotation. Effect-only dispatches are not subject to the
-   * section-lock changeFilter (CLAUDE.md §Conventions), so the convention
-   * `'leetcode.<verb>'` userEvent is not required here. See Plan 17-04
-   * Task 1 Test 6 (the inline guard comment that codifies this).
-   *
-   * D-14 invariant: the listener does NOT rewrite the fence opener tag.
-   * In passive-listener mode, frontmatter is the source of truth for the
-   * child editor's language; the visible fence opener stays whatever it
-   * currently says (users who want the fence opener flipped use the
-   * chevron). The unit test asserts neither `vault.process` nor
-   * `fileManager.processFrontMatter` is called from this code path.
-   *
-   * Defensive try/catch wraps the dispatch — the child may be in teardown
-   * when the listener fires (mirrors the `dispatchChildLanguageReconfigure`
-   * convention at lines ~2473-2476).
-   */
-  /**
    * Plan 21.1-01 (R6 LP fix) — LP-specific metadataCache.changed handler.
    *
    * When `metadataCache.changed` fires for a file that now has `lc-slug` in
-   * its frontmatter AND `useInlineWidget=ON`, dispatch
-   * `leetcodeRefreshAnnotation` to all LP/source-mode leaves for that file
-   * so `leetCodeWidgetStateField` recomputes against the now-indexed
-   * frontmatter.
+   * its frontmatter, dispatch `leetcodeRefreshAnnotation` to all LP/source-
+   * mode leaves for that file so `leetCodeWidgetStateField` recomputes
+   * against the now-indexed frontmatter.
    *
    * Context: `leetCodeWidgetStateField.create()` fires when Obsidian
    * constructs the CM6 EditorState (inside `openLinkText`). If
@@ -4047,163 +3456,19 @@ export default class LeetCodePlugin extends Plugin {
    * `metadataCache.changed` is the definitive "frontmatter indexed" signal.
    * Dispatching here guarantees the LP StateField gets a recompute trigger
    * after `metadataCache` populates — regardless of whether the two-rAF
-   * window raced ahead of metadata indexing. Mirrors the
-   * `nestedEditorRebuildEffect` dispatch above for the v1.2 nested-editor
-   * path (same Phase 18 race, same fix shape).
+   * window raced ahead of metadata indexing.
    *
    * Extracted into a private method so unit tests can invoke it via
    * `helper.call(fakePlugin, file, cache)` without spinning up a full
-   * plugin (mirrors `handleFmChangeForLanguageReactivity` test strategy).
+   * plugin.
    */
   private handleMetadataCacheChangedForLP(
     file: { path: string },
     cache: { frontmatter?: Record<string, unknown> } | null | undefined,
   ): void {
-    if (!this.settings.getUseInlineWidget?.()) return;
     const slug = cache?.frontmatter?.['lc-slug'];
     if (typeof slug !== 'string' || slug.length === 0) return;
     dispatchLeetcodeRefreshToLivePreviewLeaves(this.app, file.path);
-  }
-
-  private handleFmChangeForLanguageReactivity(
-    file: { path: string },
-    cache: { frontmatter?: Record<string, unknown> } | null | undefined,
-  ): void {
-    // Gate 1 — lc-slug note only.
-    const slugRaw = cache?.frontmatter?.['lc-slug'];
-    if (typeof slugRaw !== 'string' || slugRaw.length === 0) return;
-
-    // Gate 2 — child registered for this file path.
-    const childView = this.childEditorRegistry?.get(file.path);
-    if (!childView) return;
-
-    // Gate 3 — Phase 17 Plan 09 (gap closure 17-UAT.md Issue 3 / Test 12):
-    // read the child's currently-applied language from the per-child
-    // `childLanguageTracker`, NOT from the parent fence opener tag. Per
-    // D-14 the listener does not rewrite the opener, so reading from
-    // `readActiveFenceSlug` makes round-trip swaps (Java → Python3 → Java)
-    // silently asymmetric: after the first swap the opener still says
-    // `java`, so the second swap reads `currentSlug = 'java'` from the
-    // unchanged opener, matches the new fm `java`, and trips Gate 3 early
-    // — no dispatch fires, child syntax stays Python3.
-    //
-    // The tracker is populated by both dispatch sites — chevron switch
-    // (`dispatchChildLanguageReconfigure`) AND the fm-reactivity dispatch
-    // below — so subsequent fm changes always see the freshest applied
-    // slug. Pitfall 3 dedupe still holds: when the plugin's own
-    // `processFrontMatter` writes lc-language during chevron switch /
-    // Reset, the chevron path's tracker.set has already recorded the new
-    // slug, and Gate 3 trips on tracker equality.
-    //
-    // Empty-tracker case (e.g., first metadataCache.changed event after
-    // note open, before any chevron or fm dispatch has seeded it):
-    // tracker.get returns undefined, undefined !== fmLangRaw, so the
-    // listener proceeds to dispatch. This is safe because
-    // Compartment.reconfigure with an equal LanguageSupport is idempotent
-    // (visually a no-op) but updates the tracker — the next fm change
-    // sees the correct current.
-    const fmLangRaw = cache?.frontmatter?.['lc-language'];
-    if (typeof fmLangRaw !== 'string' || fmLangRaw.length === 0) return;
-    const currentSlug = this.childLanguageTracker.get(childView);
-    if (currentSlug === fmLangRaw) return;
-
-    // All gates passed — dispatch Compartment.reconfigure on the child.
-    // Effect-only dispatches (no changes: payload) are not subject to the
-    // section-lock changeFilter per CLAUDE.md §Conventions, so the dispatch
-    // does NOT carry a 'leetcode.*' userEvent annotation.
-    try {
-      childView.dispatch({
-        effects: languageCompartment.reconfigure(
-          buildLanguageExtensions(
-            fmLangRaw,
-            this.settings.getIndentSizeOverride(),
-          ),
-        ),
-        // Per D-14: NO `changes:` payload. Frontmatter is the source of
-        // truth in passive-listener mode; the fence opener tag is not
-        // rewritten.
-      });
-      // Phase 17 Plan 09 — record the slug now applied to this child's
-      // languageCompartment. Placed inside the try block so a failed
-      // dispatch leaves the tracker untouched (next fm change retries).
-      this.childLanguageTracker.set(childView, fmLangRaw);
-    } catch {
-      // Silently ignore — child may be in teardown (defensive per project
-      // convention; mirrors childEditorSync.ts:115 and
-      // dispatchChildLanguageReconfigure above).
-    }
-  }
-
-  /**
-   * Phase 17 Plan 04 (D-13 helper) — read the language slug currently
-   * applied to the parent fence opener for `file`.
-   *
-   * NOTE (Phase 17 Plan 09 / 17-UAT.md Issue 3): No longer consumed by
-   * `handleFmChangeForLanguageReactivity` Gate 3 — the listener now reads
-   * from the per-child `childLanguageTracker` because per D-14 the
-   * listener does not rewrite the fence opener, so the opener tag is an
-   * unsound proxy for "current applied child language" (it never changes
-   * on the listener path, producing the asymmetric round-trip bug). The
-   * helper is retained because (a) the production caller in 17-08's
-   * `resetCode` resolver may still consult fence-opener slugs and (b)
-   * future work may need a "what does the parent fence opener currently
-   * say?" primitive. If a future refactor confirms zero callers, the
-   * helper can be removed.
-   *
-   * Strategy:
-   *   1. If the active MarkdownView is showing this file, parse its CM6
-   *      state via `findCodeFence` and extract the slug from the opener
-   *      line. This is the freshest source of truth — the chevron switch
-   *      path updates the parent doc atomically via CM6 dispatch BEFORE
-   *      `processFrontMatter` lands.
-   *   2. Fallback to the metadataCache's `lc-language` value when no
-   *      active CM6 view is available (e.g., note open in a background
-   *      leaf). This is sufficient for Gate 3 because in non-active
-   *      contexts the child editor cannot exist either (Gate 2 already
-   *      tripped).
-   *   3. Return undefined if neither source yields a slug — Gate 3 will
-   *      then proceed to dispatch (treats unknown current as a forced
-   *      reconfigure rather than a silent skip; safe given Gates 1-2
-   *      already gated this path).
-   */
-  private readActiveFenceSlug(file: { path: string }): string | undefined {
-    try {
-      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-      if (view && view.file && view.file.path === file.path) {
-        const cm = (view.editor as unknown as { cm: EditorView }).cm;
-        const fence = findCodeFence(cm.state);
-        if (fence) {
-          const openerText = cm.state.doc.line(fence.openerLine).text;
-          // Match the opener tag: ```python3 or ```python or ```\tjava etc.
-          const m = /^\s*```\s*(\S+)\s*$/.exec(openerText);
-          if (m && m[1]) return m[1];
-        }
-      }
-    } catch {
-      // defensive — fall through to metadataCache fallback.
-    }
-    // Fallback: read lc-language from the metadataCache directly. Mirrors
-    // the source-of-truth used by Phase 16 D-12 when the chevron is
-    // re-rendered for a non-active leaf.
-    try {
-      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
-      const fm = this.app.metadataCache.getFileCache(file as TFile)
-        ?.frontmatter as Record<string, unknown> | undefined;
-      const fmLang = fm?.['lc-language'];
-      if (typeof fmLang === 'string' && fmLang.length > 0) return fmLang;
-    } catch {
-      // defensive — return undefined.
-    }
-    return undefined;
-  }
-
-  /**
-   * Phase 5.3 D-06 — `LanguageChevronHost` interface alias. Chevron widget
-   * calls `plugin.switchLanguage(file, slug)`; thin wrapper around
-   * `switchFenceLanguage` for naming hygiene at the host-contract layer.
-   */
-  switchLanguage(file: TFile, newSlug: string): Promise<void> {
-    return this.switchFenceLanguage(file, newSlug);
   }
 
   /** D-25 — "Copy failing testcase" affordance from VerdictModal. Appends the
@@ -4493,19 +3758,13 @@ export default class LeetCodePlugin extends Plugin {
    *  fence is empty or absent. Success Notice copy is locked to
    *  "Code reset to starter." per UI-SPEC §Copywriting.
    *
-   *  Phase 17 D-03 / D-05 — `getDispatchHandle` looks up the child editor
-   *  via `this.childEditorRegistry?.get(file.path)`; when a child is
-   *  registered, the helper routes the write through the child's CM6
-   *  instance (userEvent `'leetcode.reset.child'`) so the undo entry
-   *  lands on the child. The existing `createChildSyncExtension` mirror
-   *  in `src/main/childEditorSync.ts:82-121` propagates the change to the
-   *  parent with `addToHistory.of(false)`. When no child is registered
-   *  (note not open in a MarkdownView), the helper falls back to
-   *  `app.vault.process(...)` per D-04. This restores the Phase 15 D-05
-   *  cm-z scope isolation invariant for Reset — Cmd-Z after Reset never
-   *  inserts the prior solution body into adjacent sections. The chevron
-   *  switch wiring at `dispatchChildLanguageReconfigure` is the
-   *  structural template for this lookup pattern. */
+   *  Phase 22 (v1.3) — `getDispatchHandle` is omitted; the helper falls
+   *  back to `app.vault.process(...)` for the body replace. The v1.3
+   *  widget picks up the disk change via its modify-event listener and
+   *  reloads its EditorView from disk (`reloadFromDisk('silent')`). The
+   *  v1.2 child-editor dispatch (`'leetcode.reset.child'`) retired with
+   *  the v1.2 path; Reset's Cmd-Z scope isolation now lives at the
+   *  vault undo stack level rather than the per-child CM6 history. */
   private async resetCode(file: TFile, slug: string): Promise<void> {
     await resetCodeWithConfirm({
       app: this.app,
@@ -4523,83 +3782,21 @@ export default class LeetCodePlugin extends Plugin {
       notify: (message) => {
         new Notice(message, 3000);
       },
-      getDispatchHandle: (targetFile: TFile) => {
-        // Phase 17 D-03 — child-first lookup. The chevron switch at
-        // `dispatchChildLanguageReconfigure` (~line 2462) is the
-        // structural template — same `childEditorRegistry?.get` pattern,
-        // same `userEvent: 'leetcode.<verb>'` convention, same null-guard
-        // semantics. When a child is registered, return a handle that
-        // dispatches a full-body replace on the child; when not, return
-        // null so the helper falls back to vault.process (D-04).
-        const childView = this.childEditorRegistry?.get(targetFile.path);
-        if (!childView) return null;
-        return {
-          replaceFullBody: (next: string) => {
-            // The child's doc IS the fence body — slice the body-only
-            // payload out of the full-note string produced by
-            // forceInjectCodeSection. Defensive fallback in
-            // extractFenceBodyFromFullNote keeps the dispatch a no-op-ish
-            // identity when fence detection fails (should never happen
-            // since forceInjectCodeSection just produced it).
-            const bodyOnly = extractFenceBodyFromFullNote(next);
-            try {
-              childView.dispatch({
-                changes: {
-                  from: 0,
-                  to: childView.state.doc.length,
-                  insert: bodyOnly,
-                },
-                userEvent: 'leetcode.reset.child',
-                // NOTE: NO Transaction.addToHistory.of(false) here. Reset
-                // is a normal child edit and deserves a child undo entry;
-                // the existing parent-side mirror in
-                // childEditorSync.ts:108-114 carries
-                // addToHistory.of(false) so the parent never picks up
-                // the Reset entry — that's the Phase 15 D-05 invariant.
-              });
-            } catch {
-              // Silent — child may be in teardown; vault on disk still
-              // gets updated by the next sync mirror dispatch when the
-              // child re-attaches. Mirrors the defensive try/catch in
-              // dispatchChildLanguageReconfigure / childEditorSync.ts.
-            }
-          },
-        };
-      },
       resolveActiveLangSlug: (targetFile: TFile): string | undefined => {
-        // Phase 17 gap-closure (17-08, 17-UAT.md Issue 2 / Test 10) — restore
-        // Phase 16 D-06 canonical priority chain: lc-language frontmatter >
-        // fence opener tag > settings.getDefaultLanguage(). The Phase 17 D-03
-        // dispatch path swap (Plan 17-01) inadvertently dropped this chain
-        // because the helper hardcoded settings.getDefaultLanguage() — see
-        // .planning/debug/reset-code-language-regression.md for the original
-        // fix. We do NOT call this.readActiveFenceSlug(file) here because
-        // that helper's internal metadataCache fallback collapses the
-        // priority distinction by treating fence-opener-fallback and
-        // fm-fallback as the same source. The resolver's Priority 1 must be
-        // EXPLICIT-fm-only so unset fm correctly drops to fence opener.
+        // Phase 22 (v1.3) — language source-of-truth is `lc-language`
+        // frontmatter only. The v1.3 fence opener is fixed at
+        // `leetcode-solve` (Phase 19 C-01) and carries no language
+        // metadata, so the v1.2 fence-opener-fallback branch retired
+        // with the v1.2 path.
         try {
-          // Priority 1 — lc-language frontmatter (canonical, chevron's SoT).
           const fm = this.app.metadataCache.getFileCache(targetFile)
             ?.frontmatter as Record<string, unknown> | undefined;
           const fmLang = fm?.['lc-language'];
           if (typeof fmLang === 'string' && fmLang.length > 0) return fmLang;
-
-          // Priority 2 — active fence opener tag. Active MarkdownView only.
-          const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-          if (view && view.file && view.file.path === targetFile.path) {
-            const cm = (view.editor as unknown as { cm: EditorView }).cm;
-            const fence = findCodeFence(cm.state);
-            if (fence) {
-              const openerText = cm.state.doc.line(fence.openerLine).text;
-              const m = /^\s*```\s*(\S+)\s*$/.exec(openerText);
-              if (m && m[1]) return m[1];
-            }
-          }
         } catch {
           // Defensive — fall through to undefined → helper uses default.
         }
-        // Priority 3 — let the helper fall back to settings.getDefaultLanguage().
+        // Fall back to settings.getDefaultLanguage() inside the helper.
         return undefined;
       },
       resolveFenceKind: async (

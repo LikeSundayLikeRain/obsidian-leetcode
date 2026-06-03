@@ -12,13 +12,12 @@
 //     the parent (~2s after last parent docChange — well after our 300ms).
 //
 // Bidirectional echo prevention:
-//   - Child→Parent: dispatch carries `userEvent: 'leetcode.child-sync'`.
+//   - Child→Parent: dispatch is a plain CM6 transaction (no userEvent annotation).
 //   - Parent→Child: dispatch carries `syncAnnotation.of(true)`.
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   Annotation,
-  Transaction,
   type Extension,
 } from '@codemirror/state';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
@@ -95,7 +94,6 @@ export function createChildParentSyncExtension(
     try {
       parentView.dispatch({
         changes: { from: bodyStart, to: bodyEnd, insert: childInsert },
-        annotations: [Transaction.userEvent.of('leetcode.child-sync')],
       });
     } catch {
       // Defensive — parent may be in teardown.

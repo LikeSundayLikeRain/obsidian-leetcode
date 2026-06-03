@@ -78,7 +78,6 @@ import { mountLegacyFenceBanner } from './legacyFenceBanner';
  */
 export type StateFieldPluginHost = Plugin & WidgetMountHost & {
   settings: WidgetMountHost['settings'] & {
-    getUseInlineWidget?(): boolean;
     getAutoMigrateOnOpen?(): boolean;
     getDefaultLanguage?(): string;
   };
@@ -272,10 +271,6 @@ class ManualPromptBannerWidget extends WidgetType {
   }
 }
 
-function isInlineWidgetEnabled(plugin: StateFieldPluginHost): boolean {
-  return plugin.settings?.getUseInlineWidget?.() !== false;
-}
-
 function isAutoMigrateEnabled(plugin: StateFieldPluginHost): boolean {
   return plugin.settings?.getAutoMigrateOnOpen?.() === true;
 }
@@ -297,7 +292,6 @@ function buildLegacyBannerDecorations(state: EditorState): DecorationSet {
   if (!plugin) return Decoration.none;
   const file = state.field(editorInfoField, false)?.file as TFile | null | undefined;
   if (!file) return Decoration.none;
-  if (!isInlineWidgetEnabled(plugin)) return Decoration.none;
 
   const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter as
     | Record<string, unknown>
@@ -406,7 +400,6 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
     typeof lcLang !== 'string' || lcLang.length === 0;
   if (
     needsRepair &&
-    isInlineWidgetEnabled(plugin) &&
     isAutoMigrateEnabled(plugin)
   ) {
     // Plan 21.1-01 (MIGRATE-FLICKER-01) — attempt-once-this-session gate.

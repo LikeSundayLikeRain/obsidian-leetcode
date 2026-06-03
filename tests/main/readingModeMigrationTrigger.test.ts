@@ -254,30 +254,11 @@ describe('Phase 21 Plan 21-05 — Reading-mode workspace.on(file-open) trigger',
     expect(plugin.migrateInFlight.has(file.path)).toBe(false);
   });
 
-  it('Test 2 [CR-01-fix master gate] useInlineWidget=OFF short-circuits before any I/O', async () => {
-    const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;
-    const app = makeApp({
-      fmByPath: {
-        'LeetCode/two-sum.md': { 'lc-slug': 'two-sum' },
-      },
-      textByPath: { 'LeetCode/two-sum.md': V12_LEGACY_NOTE },
-    });
-    const plugin = makeMockPlugin(app, {
-      useInlineWidget: false,
-      autoMigrateOnOpen: true,
-      defaultLanguage: 'python3',
-    });
-    const handler = wireHook({ plugin, migrate, isMigrationCandidate, logDebug });
-
-    handler(file);
-    await flushPromises();
-
-    expect(migrate).not.toHaveBeenCalled();
-    expect(app.vault.read).not.toHaveBeenCalled();
-    // metadataCache should not be consulted either — the master gate
-    // returns BEFORE the per-note gate.
-    expect(app.metadataCache.getFileCache).not.toHaveBeenCalled();
-  });
+  // Test 2 [CR-01-fix master gate] useInlineWidget=OFF — REMOVED in Phase 22
+  // Plan 22-01-E. The v1.2 nested-editor path was deleted; the widget is the
+  // only path; useInlineWidget setting no longer exists; the master gate
+  // short-circuit it pinned was removed from
+  // src/main/readingModeMigrationHook.ts. PIN_DEAD_BEHAVIOR.
 
   it('Test 3 [CR-01-fix auto=OFF] candidate accepted → vault.read + logger.debug; migrate NOT called', async () => {
     const file = { path: 'LeetCode/two-sum.md' } as unknown as TFile;

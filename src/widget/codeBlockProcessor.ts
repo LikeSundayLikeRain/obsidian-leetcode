@@ -102,10 +102,9 @@ type ProcessorHost = Plugin & WidgetMountHost & {
       getAbstractFileByPath(path: string): unknown;
     };
   };
-  // Phase 21 — settings access for the master gate + auto-migrate gate +
-  // user's defaultLanguage (threaded into the migrator for D-edge-03 fill).
+  // Phase 21 — settings access for auto-migrate gate + user's defaultLanguage
+  // (threaded into the migrator for D-edge-03 fill).
   settings: WidgetMountHost['settings'] & {
-    getUseInlineWidget?(): boolean;
     getAutoMigrateOnOpen?(): boolean;
     getDefaultLanguage?(): string;
   };
@@ -199,7 +198,6 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
     const settings = plugin.settings;
     if (
       hasLcSlug &&
-      settings?.getUseInlineWidget?.() === true &&
       settings?.getAutoMigrateOnOpen?.() === true
     ) {
       // Plan 21.1-01 (MIGRATE-FLICKER-01) — attempt-once-this-session gate.
@@ -289,7 +287,6 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
     }
     if (
       hasLcSlug &&
-      settings?.getUseInlineWidget?.() === true &&
       settings?.getAutoMigrateOnOpen?.() !== true
     ) {
       // The strict-match predicate consults the FULL note text (it walks

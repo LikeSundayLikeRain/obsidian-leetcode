@@ -8,8 +8,8 @@ describe('injectCodeSection — idempotent path (SOLVE-02, D-06/D-07)', () => {
     const body = '## Problem\nA problem.\n\n## Notes\nMy notes.\n';
     const out = injectCodeSection(body, OPTS);
     expect(out).toContain('## Code');
-    // Phase 5.3 D-04: codeBlockFor remaps python3 → python at the fence opener.
-    expect(out).toContain('```python');
+    // Phase 22 v1.3: codeBlockFor emits the ```leetcode-solve opener regardless of langSlug.
+    expect(out).toContain('```leetcode-solve');
     expect(out).toContain('def solve():');
     const problemIdx = out.indexOf('## Problem');
     const codeIdx = out.indexOf('## Code');
@@ -48,14 +48,14 @@ describe('injectCodeSection — idempotent path (SOLVE-02, D-06/D-07)', () => {
       '## Notes',
     ].join('\n');
     const out = injectCodeSection(body, OPTS);
-    // New recognized block present (Phase 5.3 D-04: python3 → python at write).
-    expect(out).toContain('```python');
+    // Phase 22 v1.3: codeBlockFor emits ```leetcode-solve regardless of langSlug.
+    expect(out).toContain('```leetcode-solve');
     expect(out).toContain('def solve():');
     // The old text block is still present too (inserted BEFORE, not replaced).
     expect(out).toContain('```text');
     expect(out).toContain('not really code');
-    // The python block appears before the text block.
-    const py = out.indexOf('```python');
+    // The leetcode-solve block appears before the text block.
+    const py = out.indexOf('```leetcode-solve');
     const txt = out.indexOf('```text');
     expect(py).toBeGreaterThan(0);
     expect(py).toBeLessThan(txt);
@@ -65,8 +65,8 @@ describe('injectCodeSection — idempotent path (SOLVE-02, D-06/D-07)', () => {
     const body = 'Just a free-form note.\n';
     const out = injectCodeSection(body, OPTS);
     expect(out).toContain('## Code');
-    // Phase 5.3 D-04: codeBlockFor remaps python3 → python at the fence opener.
-    expect(out).toContain('```python');
+    // Phase 22 v1.3: codeBlockFor emits ```leetcode-solve regardless of langSlug.
+    expect(out).toContain('```leetcode-solve');
   });
 
   it('is pure — same input returns same output', () => {
@@ -80,14 +80,14 @@ describe('injectCodeSection — idempotent path (SOLVE-02, D-06/D-07)', () => {
     const body = '## Problem\nA problem.\n';
     const out = injectCodeSection(body, OPTS);
     expect(out).toContain('## Code');
-    // Phase 5.3 D-04: python3 → python at the fence opener.
-    expect(out).toContain('```python');
+    // Phase 22 v1.3: codeBlockFor emits ```leetcode-solve regardless of langSlug.
+    expect(out).toContain('```leetcode-solve');
   });
 
-  it('empty starterCode still produces a fenced block (D-04 remap applied)', () => {
+  it('empty starterCode still produces a fenced block (Phase 22 v1.3 emitter)', () => {
     const body = '## Problem\nX\n\n## Notes\n';
     const out = injectCodeSection(body, { starterCode: '', langSlug: 'python3' });
-    expect(out).toContain('```python\n\n```');
+    expect(out).toContain('```leetcode-solve\n\n```');
   });
 });
 
@@ -136,8 +136,8 @@ describe('injectCodeSection — fenceKind dispatch (Plan 21-03 v13-emit, D-emit-
       fenceKind: 'leetcode-solve',
     });
     expect(out).toContain('## Code');
-    // Legacy fence emitted (Phase 5.3 D-04 remap python3 → python).
-    expect(out).toContain('```python');
+    // Phase 22 v1.3: codeBlockFor emits ```leetcode-solve regardless of langSlug.
+    expect(out).toContain('```leetcode-solve');
   });
 
   it('v13-emit: fenceKind=legacy preserves verbatim legacy behavior (no short-circuit)', () => {
@@ -168,8 +168,10 @@ describe('injectCodeSection — fenceKind dispatch (Plan 21-03 v13-emit, D-emit-
   it('v13-emit: fenceKind omitted = legacy path (back-compat for existing callers)', () => {
     const body = '## Problem\nX\n\n## Notes\n';
     const out = injectCodeSection(body, { starterCode: 'pass', langSlug: 'python3' });
-    expect(out).toContain('```python');
-    expect(out).not.toContain('```leetcode-solve');
+    // Phase 22 v1.3: codeBlockFor unconditionally emits ```leetcode-solve;
+    // langSlug remains a parameter for back-compat but is no longer reflected
+    // in the fence opener.
+    expect(out).toContain('```leetcode-solve');
   });
 });
 
@@ -303,7 +305,8 @@ describe('injectCodeSection — WR-07-fix ## Code-scoped fence index (Plan 21-07
     expect(out).toContain('```leetcode-solve\nfencey\n```');
     // The legacy path creates a ## Code section.
     expect(out).toContain('## Code');
-    expect(out).toContain('```python');
+    // Phase 22 v1.3: codeBlockFor emits ```leetcode-solve regardless of langSlug.
+    expect(out).toContain('```leetcode-solve');
     expect(out).toContain('NEW');
   });
 });
@@ -364,11 +367,10 @@ describe('retrofit() fenceKind plumbing — Post-UAT Gap B (Plan 21-13)', () => 
     ],
   };
 
-  it('U1: retrofit threads fenceKind=leetcode-solve when settings.getUseInlineWidget()=true → rewriteFenceBody short-circuit, single fence opener preserved', async () => {
+  it('U1: retrofit threads fenceKind=leetcode-solve unconditionally (Phase 22 — useInlineWidget gate retired) → rewriteFenceBody short-circuit, single fence opener preserved', async () => {
     const spy = makeProcessSpy();
     const settings = {
       getDefaultLanguage: () => 'python3',
-      getUseInlineWidget: () => true,
     };
     const existing = [
       '## Problem',
@@ -395,40 +397,10 @@ describe('retrofit() fenceKind plumbing — Post-UAT Gap B (Plan 21-13)', () => 
     expect(out).not.toContain('OLD\nBODY');
   });
 
-  it('U2: retrofit threads fenceKind=legacy when settings.getUseInlineWidget()=false → legacy path runs verbatim', async () => {
+  it('U4: retrofit on a v1.3-shaped note with matching starter is byte-equal idempotent', async () => {
     const spy = makeProcessSpy();
     const settings = {
       getDefaultLanguage: () => 'python3',
-      getUseInlineWidget: () => false,
-    };
-    // Legacy shape: no ## Code, no leetcode-solve fence.
-    const existing = '## Problem\nA problem.\n\n## Notes\nMy notes.\n';
-    await retrofit(spy.app, spy.file, PYTHON_DETAIL as never, settings);
-    const out = spy.run(existing);
-    // Legacy path injects a ```python (Phase 5.3 D-04 remap) fence.
-    expect(out).toContain('```python');
-    expect(out).toContain('class Solution:');
-    // No leetcode-solve fence emitted.
-    expect(out).not.toContain('```leetcode-solve');
-  });
-
-  it('U3: retrofit defaults to legacy when settings omits getUseInlineWidget (back-compat)', async () => {
-    const spy = makeProcessSpy();
-    const settings = { getDefaultLanguage: () => 'python3' };
-    const existing = '## Problem\nA problem.\n\n## Notes\nMy notes.\n';
-    await retrofit(spy.app, spy.file, PYTHON_DETAIL as never, settings);
-    const out = spy.run(existing);
-    // Behaves identically to U2 — legacy path.
-    expect(out).toContain('```python');
-    expect(out).toContain('class Solution:');
-    expect(out).not.toContain('```leetcode-solve');
-  });
-
-  it('U4: retrofit on a v1.3-shaped note with useInlineWidget=true and matching starter is byte-equal idempotent', async () => {
-    const spy = makeProcessSpy();
-    const settings = {
-      getDefaultLanguage: () => 'python3',
-      getUseInlineWidget: () => true,
     };
     // Body content matches what `retrofit` will derive (trimmed starter).
     const existing = [
@@ -454,7 +426,6 @@ describe('retrofit() fenceKind plumbing — Post-UAT Gap B (Plan 21-13)', () => 
     const spy = makeProcessSpy();
     const settings = {
       getDefaultLanguage: () => 'python3',
-      getUseInlineWidget: () => true,
     };
     const existing = [
       '## Problem',

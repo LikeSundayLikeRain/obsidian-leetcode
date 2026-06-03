@@ -72,26 +72,13 @@ export interface PluginData {
    *  Default true (existing-user behavior preserved). When false, onload
    *  skips registerEditorExtension(buildNestedEditorExtension), skips
    *  registerVaultModifyRepairTrigger, and skips the file-open repair hook.
-   *  Reload-required apply mode — toggling persists immediately but does
-   *  NOT live-destroy children; user is prompted via Notice to reload.
-   *  Shape-guard at load collapses non-boolean raw to true (preserves
-   *  current behavior for every existing user). */
-  useNestedEditor: boolean;
-  /** Phase 19 D-05 — master toggle for the v1.3 inline widget editor.
-   *  Default false (CONTEXT D-05 hard-gate). When true, onload registers
-   *  registerMarkdownCodeBlockProcessor('leetcode-solve', …) +
-   *  leetCodeFenceViewPlugin and asserts useNestedEditor=false (D-06
-   *  mutual exclusion). Reload-required apply mode mirrors useNestedEditor.
-   *  Shape-guard at load collapses non-boolean raw to false. */
-  useInlineWidget: boolean;
   /** Phase 21 MIGRATE-06 — auto-migrate v1.2 notes on file open. Default true.
    *  When ON, opening a v1.2 LC note silently rewrites the legacy fence opener
    *  to ```leetcode-solve and fills `lc-language` if missing. When OFF, the
    *  widget mount path renders a `legacyFenceBanner` instead with a
    *  [Migrate now] button. Strict-match predicate gates entry — non-LC fences
-   *  never touched. Self-gated on `useInlineWidget=ON` (no-op when master
-   *  toggle is OFF, per Phase 21 L9). Shape-guard at load: non-boolean /
-   *  missing / corrupt collapses to true (default ON). */
+   *  never touched. Shape-guard at load: non-boolean / missing / corrupt
+   *  collapses to true (default ON). */
   autoMigrateOnOpen: boolean;
   /** Phase 19 C-06 — debounced widget writer delay in milliseconds.
    *  Default 400ms. Configurable via Settings → Experimental: 300/400/500/
@@ -279,21 +266,10 @@ const DEFAULT_DATA: PluginData = {
   // exception is enforced by the consumer (childEditorLanguage.ts).
   indentSizeOverride: 'auto',
   showRelativeLineNumbers: false,
-  // Phase 19 vq4 — default true preserves Phase 13–18 nested-editor behavior
-  // for every existing user. Toggle is reload-required.
-  useNestedEditor: true,
-  // Phase 22 POLISH-01 / D-cutover-01 sub-step A — default flipped to true.
-  // The v1.3 inline widget is now the canonical mount path on fresh installs.
-  // 1.2.x users carrying explicit `useInlineWidget: false` in `data.json`
-  // are force-flipped on boot via the inversion guard in Plugin.onload (the
-  // mutual-exclusion Notice — see src/main.ts inversion site for D-cutover-02).
-  useInlineWidget: true,
-  // Phase 21 MIGRATE-06 — default ON; user must explicitly opt out. The
-  // master gate `useInlineWidget` still has to be ON for migration to fire
-  // (L9), so the user-visible default for fresh installs that haven't flipped
-  // useInlineWidget remains "no migration". Once useInlineWidget=ON, the
-  // default flips to silent auto-migrate so the v1.2 → v1.3 transition is
-  // invisible in the majority case.
+  // Phase 21 MIGRATE-06 — default ON; user must explicitly opt out.
+  // Phase 22 (D-settings-01) — `useInlineWidget` / `useNestedEditor` master
+  // gates retired with the v1.2 path. The v1.3 widget is the only mount path,
+  // and migration runs unconditionally on file open.
   autoMigrateOnOpen: true,
   // Phase 19 C-06 — default 400ms debounced writer delay (Plan 19-02 wires it).
   widgetSyncDebounceMs: 400,
@@ -708,19 +684,11 @@ export class SettingsStore {
       showRelativeLineNumbers: typeof raw.showRelativeLineNumbers === 'boolean'
         ? raw.showRelativeLineNumbers
         : false,
-      // Phase 19 vq4 — non-boolean raw / missing field / corrupt data.json all
-      // collapse to DEFAULT_DATA.useNestedEditor (= true), which preserves
-      // Phase 13–18 nested-editor behavior for every existing user.
-      useNestedEditor: typeof raw.useNestedEditor === 'boolean'
-        ? raw.useNestedEditor
-        : DEFAULT_DATA.useNestedEditor,
-      // Phase 19 D-05 — non-boolean raw / missing field / corrupt data.json
-      // all collapse to false (DEFAULT_DATA.useInlineWidget). Hard-gate keeps
-      // bisection clean: any unexpected widget activation must come from the
-      // user explicitly flipping the toggle, never from data.json corruption.
-      useInlineWidget: typeof raw.useInlineWidget === 'boolean'
-        ? raw.useInlineWidget
-        : DEFAULT_DATA.useInlineWidget,
+      // Phase 22 (D-settings-01) — `useInlineWidget` / `useNestedEditor` are
+      // dropped from the in-memory shape. Persisted values in 1.2.x carry-over
+      // `data.json` files are silently ignored on load; the next `persist()`
+      // writes the new canonical shape and the legacy fields disappear from
+      // disk naturally (read-and-ignore).
       // Phase 21 MIGRATE-06 — non-boolean raw / missing field / corrupt
       // data.json all collapse to true (DEFAULT_DATA.autoMigrateOnOpen).
       // Default ON matches MIGRATE-06; user explicitly opts out via the
@@ -895,32 +863,6 @@ export class SettingsStore {
 
   async setShowRelativeLineNumbers(v: boolean): Promise<void> {
     this.data.showRelativeLineNumbers = v;
-    await this.persist();
-  }
-
-  /** Phase 19 vq4 — read the nested-editor master toggle. Read once at
-   *  onload time in main.ts; toggling at runtime does NOT live-apply. */
-  getUseNestedEditor(): boolean { return this.data.useNestedEditor; }
-
-  /** Phase 19 vq4 — persist the nested-editor master toggle. Reload-required:
-   *  the SettingsTab onChange handler shows a `Reload Obsidian to apply`
-   *  Notice; this setter only persists. */
-  async setUseNestedEditor(v: boolean): Promise<void> {
-    this.data.useNestedEditor = v;
-    await this.persist();
-  }
-
-  /** Phase 19 D-05 — read the inline widget master toggle. Read once at
-   *  Plugin.onload() time in main.ts; toggling at runtime does NOT live-apply.
-   *  Mutually exclusive with useNestedEditor (D-06 — onload assert + UI). */
-  getUseInlineWidget(): boolean { return this.data.useInlineWidget; }
-
-  /** Phase 19 D-05 — persist the inline widget master toggle. Reload-required:
-   *  the SettingsTab onChange handler shows a `Reload Obsidian to apply`
-   *  Notice and forces useNestedEditor=false (D-06); this setter only
-   *  persists the new value. */
-  async setUseInlineWidget(v: boolean): Promise<void> {
-    this.data.useInlineWidget = v;
     await this.persist();
   }
 

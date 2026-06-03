@@ -255,57 +255,16 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         }),
       );
 
-    // Phase 19 vq4 — master toggle for the nested CM6 child-editor stack.
-    // Reload-required apply mode: persists immediately but does NOT live-
-    // destroy children. The Notice prompts the user to reload Obsidian.
-    new Setting(codeEditorGroup)
-      .setName('Use nested code editor')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- '## Code' is the literal Markdown heading rendered inside locked LC notes (proper noun in this domain); 'Obsidian' is the host application brand.
-      .setDesc('When enabled, the ## Code fence renders as an embedded code editor with syntax highlighting. Disable to use Obsidian\'s native markdown editor instead. Reload Obsidian to apply changes.')
-      .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.getUseNestedEditor())
-        .onChange(async (v) => {
-          await this.plugin.settings.setUseNestedEditor(v);
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'Obsidian' is the host application brand (proper noun).
-          new Notice('Reload Obsidian to apply', 5000);
-        }),
-      );
+    // Phase 22 (D-settings-01) — `useInlineWidget` / `useNestedEditor`
+    // toggles retired with the v1.2 path. The v1.3 inline widget is the only
+    // mount path and migration runs unconditionally on file open.
 
     // =============================
-    //   Experimental section (Phase 19 D-08)
+    //   Migration section
     // =============================
-    // Cordoned subsection for under-development features. Includes the v1.3
-    // useInlineWidget toggle (D-05 hard-gate) and the Save delay dropdown
-    // (C-06 / 5 options 300/400/500/1000/2000ms). Removed in Phase 22 when
-    // useInlineWidget becomes unconditional (POLISH-01).
-    new Setting(containerEl).setName('Experimental').setHeading();
+    new Setting(containerEl).setName('Migration').setHeading();
 
     const expGroup = containerEl.createDiv('lc-settings-group');
-    // Banner — descriptive paragraph (NOT a Setting). createEl with text option
-    // per CLAUDE.md no-innerHTML rule.
-    expGroup.createEl('p', {
-      text: 'These features are under development and may change between releases.',
-      cls: 'setting-item-description',
-    });
-
-    new Setting(expGroup)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'v1.3 alpha' is a version identifier (proper noun in this domain).
-      .setName('Use inline widget editor (v1.3 alpha)')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'Obsidian' is the host application brand (proper noun).
-      .setDesc('Renders LC code blocks as a self-contained inline widget with one-way sync. Mutually exclusive with the nested code editor. Reload Obsidian to apply changes.')
-      .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.getUseInlineWidget())
-        .onChange(async (v) => {
-          // D-06 — flipping useInlineWidget=ON forces useNestedEditor=false.
-          if (v && this.plugin.settings.getUseNestedEditor()) {
-            await this.plugin.settings.setUseNestedEditor(false);
-          }
-          await this.plugin.settings.setUseInlineWidget(v);
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'Obsidian' is the host application brand (proper noun).
-          new Notice('Reload Obsidian to apply', 5000);
-          this.display();
-        }),
-      );
 
     // Phase 21 MIGRATE-06 — auto-migrate v1.2 notes when opened. Default ON
     // (D-auto-01). When OFF, the widget mount path renders a legacy banner

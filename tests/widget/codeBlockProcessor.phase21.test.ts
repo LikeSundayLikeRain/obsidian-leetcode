@@ -234,29 +234,6 @@ describe('Phase 21 mount-path migration', () => {
     expect(ctx.addChild).not.toHaveBeenCalled();
   });
 
-  it('Case 3: useInlineWidget=OFF → neither migration nor banner invoked (legacy v1.2 path preserved)', async () => {
-    const metadataCache = createFakeMetadataCache();
-    metadataCache.setFrontmatter('LeetCode/two-sum.md', { 'lc-slug': 'two-sum' });
-    const plugin = createFakePlugin({ metadataCache });
-    const settings: FakeSettings = {
-      getUseInlineWidget: () => false,
-      getAutoMigrateOnOpen: () => true,
-      getDefaultLanguage: () => 'python3',
-      getIndentSizeOverride: () => 'auto',
-    };
-    const processor = await getProcessor(plugin, settings);
-    const el = makeHost();
-    const ctx = makeCtx('LeetCode/two-sum.md', V12_SECTION);
-
-    await processor(V12_SOURCE, el, ctx as never);
-
-    expect(migrateSpy).not.toHaveBeenCalled();
-    expect(bannerSpy).not.toHaveBeenCalled();
-    // The original codeBlockProcessor behavior continues — for an
-    // lc-slug + valid section, addChild fires (existing v1.2 path).
-    expect(ctx.addChild).toHaveBeenCalledTimes(1);
-  });
-
   // ───────────────────────────────────────────────────────────────────────
   // Phase 21 Plan 21-09 — Reading-mode post-processor invokes repair when
   // migrate is not a candidate (post-processor only fires for the

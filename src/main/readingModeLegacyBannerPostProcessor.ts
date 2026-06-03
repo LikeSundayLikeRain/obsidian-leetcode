@@ -76,7 +76,6 @@ interface BannerHost {
     };
   };
   settings: {
-    getUseInlineWidget(): boolean;
     getAutoMigrateOnOpen(): boolean;
     getDefaultLanguage(): string;
   };
@@ -85,11 +84,10 @@ interface BannerHost {
 /**
  * Register a Reading-mode markdown post-processor that surfaces the
  * legacy-fence migration banner on v1.2-shaped LC notes when
- * `useInlineWidget=ON` AND `autoMigrateOnOpen=OFF`.
+ * `autoMigrateOnOpen=OFF`.
  *
  * No-op for: non-LC notes, v1.3 already-migrated notes, notes whose first
  * fence under ## Code is unrecognized (e.g. ```text), notes with
- * `useInlineWidget=OFF` (master gate honored), notes with
  * `autoMigrateOnOpen=ON` (auto path takes precedence — D-trigger-01).
  */
 export function registerLegacyBannerPostProcessor(
@@ -128,10 +126,7 @@ async function processBlock(
   const lcSlug = fm?.['lc-slug'];
   if (typeof lcSlug !== 'string' || lcSlug.length === 0) return;
 
-  // Step 3 — master gate.
-  if (plugin.settings.getUseInlineWidget() !== true) return;
-
-  // Step 4 — mode gate. autoMigrateOnOpen=ON → auto-path owns the migration;
+  // Step 3 — mode gate. autoMigrateOnOpen=ON → auto-path owns the migration;
   // banner does NOT shadow it.
   if (plugin.settings.getAutoMigrateOnOpen() === true) return;
 

@@ -276,37 +276,6 @@ describe('resetCodeWithConfirm — fenceKind seam (Plan 20-10 T10)', () => {
     expect(body).not.toContain('OLD_CODE');
   });
 
-  it('T10-4: legacy discrimination — fixture without leetcode-solve fence runs the v1.2 path verbatim', async () => {
-    const initial =
-      '---\nlc-slug: two-sum\nlc-language: python3\n---\n\n## Code\n```python3\nOLD\n```\n';
-    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
-    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
-    const settings = makeSettings({
-      codeSnippets: [
-        { lang: 'Python3', langSlug: 'python3', code: 'class S: pass' },
-      ],
-    });
-
-    await resetCodeWithConfirm({
-      app: m.app as never,
-      file: file as never,
-      slug: 'two-sum',
-      settings,
-      confirm: vi.fn(async () => true),
-      notify: vi.fn(),
-      resolveFenceKind: async (f: never) => {
-        const text = await m.app.vault.read(f as never);
-        return text.includes('```leetcode-solve') ? 'leetcode-solve' : 'legacy';
-      },
-    } as never);
-
-    const body = m.getContent('LeetCode/1-two-sum.md')!;
-    // Legacy path replaces the python3 block — no leetcode-solve appears.
-    expect(body).toContain('class S: pass');
-    expect(body).not.toContain('OLD');
-    expect(body).not.toMatch(/^```leetcode-solve$/m);
-  });
-
   it('T10-5: malformed v1.3 fence (unterminated opener) — rewriteFenceBody returns input unchanged, no spurious starter graft', async () => {
     // Unterminated leetcode-solve fence at EOF (no closer line). The
     // rewriteFenceBody primitive's contract returns input unchanged in this

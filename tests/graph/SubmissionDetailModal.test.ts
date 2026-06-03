@@ -102,8 +102,10 @@ describe('SubmissionDetailModal (D-04 + D-31)', () => {
   });
 
   it('copy uses submission language', async () => {
-    // D-04: the replacement fence's language tag = submitted language (not
-    // the current fence's tag). Phase 5.2 D-10: silent overwrite.
+    // v1.3 (Phase 22): the fence opener is unconditionally ```leetcode-solve.
+    // The submitted language is recorded in the note's `lc-language`
+    // frontmatter (G-COPY-TO-CODE-LANG-DRIFT lc-language sync), not in the
+    // fence opener. Phase 5.2 D-10: silent overwrite.
     const initial =
       '---\nlc-id: 1\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD\n```\n';
     const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
@@ -120,7 +122,7 @@ describe('SubmissionDetailModal (D-04 + D-31)', () => {
     await (modal as unknown as { performCopy(): Promise<void> }).performCopy();
 
     const body = m.getContent('LeetCode/1-two-sum.md') ?? '';
-    expect(body).toContain('```java');
+    expect(body).toContain('```leetcode-solve');
     expect(body).toContain('class Solution {}');
     expect(body).not.toContain('```python3\nOLD');
   });

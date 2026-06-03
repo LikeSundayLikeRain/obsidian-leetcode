@@ -42,8 +42,8 @@ describe('forceInjectCodeSection — forced path (Blocker 2 fix, D-07 on-demand)
       '## Notes',
     ].join('\n');
     const out = forceInjectCodeSection(body, OPTS);
-    // Phase 5.3 D-04: codeBlockFor remaps python3 → python at the fence opener.
-    expect(out).toContain('```python');
+    // Phase 22 v1.3 unification: codeBlockFor emits only ```leetcode-solve.
+    expect(out).toContain('```leetcode-solve');
     expect(out).toContain('# new');
     // Existing text block preserved.
     expect(out).toContain('```text');
@@ -98,7 +98,10 @@ describe('forceInjectCodeSection — forced path (Blocker 2 fix, D-07 on-demand)
       starterCode: 'class Solution {}',
       langSlug: 'java',
     });
-    expect(out).toContain('```java');
+    // Phase 22 v1.3 unification: starter blocks are emitted with the
+    // ```leetcode-solve opener regardless of langSlug. The langSlug is now
+    // a frontmatter / runtime attribute — not the fence tag.
+    expect(out).toContain('```leetcode-solve');
     expect(out).toContain('class Solution {}');
     expect(out).not.toContain('python-code');
   });
@@ -144,65 +147,10 @@ describe('forceInjectCodeSection — fenceKind: leetcode-solve short-circuit (Pl
     expect(out).toContain('## Notes');
   });
 
-  it('Case B (kind discrimination): omitting fenceKind on a v1.3 fixture leaves the leetcode-solve fence alone (legacy path runs)', () => {
-    // Without fenceKind, the legacy path treats `leetcode-solve` as
-    // unrecognized (not in LC_LANG_SLUGS) and inserts a fresh starter
-    // block at the top of the section. The existing leetcode-solve fence
-    // is preserved as a sibling block. This is the v1.2 invariance pin —
-    // a future refactor must NOT silently change this shape.
-    const body = [
-      '## Problem',
-      'X',
-      '',
-      '## Code',
-      '```leetcode-solve',
-      'OLD_CODE',
-      '```',
-      '',
-      '## Notes',
-    ].join('\n');
-    const out = forceInjectCodeSection(body, {
-      starterCode: 'class S: pass',
-      langSlug: 'python3',
-      // fenceKind: omitted → legacy path
-    });
-    // Fresh python fence injected at the top (Pitfall-6 path emits
-    // ```python via lcSlugToFenceTag remap of python3).
-    expect(out).toMatch(/```python\b/);
-    expect(out).toContain('class S: pass');
-    // Legacy leetcode-solve fence preserved as a sibling — body intact.
-    expect(out).toMatch(/^```leetcode-solve$/m);
-    expect(out).toContain('OLD_CODE');
-  });
-
-  it('Case C (legacy fallthrough): fenceKind: leetcode-solve with no v1.3 fence falls through to legacy path', () => {
-    // Transitional note — frontmatter says lc-solve but body still has
-    // a v1.2 ```python3 fence. countLeetCodeSolveFenceOpeners returns 0
-    // → short-circuit doesn't fire → existing v1.2 stripFirstRecognizedCodeBlock
-    // path runs verbatim.
-    const body = [
-      '## Problem',
-      'X',
-      '',
-      '## Code',
-      '```python3',
-      'OLD',
-      '```',
-      '',
-      '## Notes',
-    ].join('\n');
-    const out = forceInjectCodeSection(body, {
-      starterCode: 'class S: pass',
-      langSlug: 'python3',
-      fenceKind: 'leetcode-solve',
-    });
-    // Legacy path replaces the python3 block — no new leetcode-solve opener
-    // (we don't emit them; that's the upstream widget's job).
-    expect(out).toContain('class S: pass');
-    expect(out).not.toContain('OLD');
-    expect(out).not.toMatch(/^```leetcode-solve$/m);
-    expect(out).toMatch(/```python\b/);
-  });
+  // Phase 22 v1.2 path removal: Case B and Case C deleted — they pinned
+  // the legacy langSlug-tagged fence path (```python / ```java / ```python3)
+  // that no longer exists. The widget is now the only path and
+  // forceInjectCodeSection unconditionally emits ```leetcode-solve.
 
   it('Case D (malformed v1.3 fence): unterminated leetcode-solve opener returns input unchanged', () => {
     // rewriteFenceBody's documented contract: returns input unchanged when

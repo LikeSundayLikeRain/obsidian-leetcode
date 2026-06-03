@@ -111,9 +111,7 @@ export interface ResetCodeWithConfirmDeps {
    * helper falls back to `app.vault.process(...)` — D-04 fallback semantics
    * preserved for the no-MarkdownView path.
    *
-   * The dispatch on the child MUST carry `userEvent: 'leetcode.reset.child'`
-   * (CLAUDE.md §Conventions audited callsites — child-origin Reset). It must
-   * NOT carry `Transaction.addToHistory.of(false)` — Reset deserves a child
+   * The dispatch on the child must NOT carry `Transaction.addToHistory.of(false)` — Reset deserves a child
    * undo entry; the existing parent-side mirror already runs with
    * `addToHistory.of(false)` on the parent.
    *
