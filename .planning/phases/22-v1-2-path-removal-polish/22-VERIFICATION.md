@@ -107,6 +107,24 @@ The override (a) matches the source selector path so specificity wins, (b) restr
 
 **Acceptance:** PASS pending user dogfood confirmation. If specificity insufficient (read-mode still 16px), add `!important` and document.
 
+## 22-02-05 Takeover Overlay Hidden (D-polish-05)
+
+**Status:** PASS — confirmed in dev vault by user 2026-06-02. Added during 22-01-B dogfood when user observed the takeover CTA was redundant chrome.
+
+**Finding:** Multi-pane takeover already happens implicitly via `multiPaneCoordinator`'s `active-leaf-change` listener — clicking into the peer pane promotes it to active in the same animation frame. The Phase 20 Plan 20-04 overlay (greyed surface + "Click to take over" CTA at lines 818-855 of `WidgetController.ts`) is redundant chrome.
+
+**Fix:** CSS-only override on `.lc-nested-editor[data-pane-state="peer"] > .lc-takeover-overlay`:
+- `display: none` — hides the overlay
+- `pointer-events: none` — defensive; ensures clicks pass to the underlying CM6 instance even if browser were to render display:none differently in some edge case
+
+The overlay element still mounts so its keyboard handler stays available as a defensive fallback for keyboard-only navigation.
+
+**Build:** `npm run build` clean.
+**Deploy:** commit `367622d`.
+**Visual check (human-confirmed):** opening the same LC file in two panes shows identical visual treatment in both panes (no overlay, no CTA in the peer pane). Clicking into the peer pane promotes it to active without intermediate UI step.
+
+**Note for 22-01-E:** Task E may delete the entire overlay mount path (lines 818-855 of `WidgetController.ts`) as part of the unwiring — verify whether the multi-pane peer-affordance code is reachable post-cutover or if it's vestigial Phase 20 infrastructure.
+
 ## 22-02-01 Vim-Tab Probe
 
 **Status:** _Held for later execution. Will run after 22-01-B dogfood completes and 22-01 Task E lands. See orchestrator plan 22-02-PLAN.md._
