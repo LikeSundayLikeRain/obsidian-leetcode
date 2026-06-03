@@ -177,13 +177,13 @@
 | THEME-02 | Phase 19 | Pending |
 | THEME-03 | Phase 19 | Pending |
 | THEME-04 | Phase 20 | Pending |
-| THEME-05 | Phase 22 | Pending |
+| THEME-05 | Phase 22 | Resolved by Phase 22 |
 | PROTECT-01 | Phase 20 | Pending |
 | PROTECT-02 | Phase 20 | Pending |
-| PROTECT-03 | Phase 22 | Pending |
+| PROTECT-03 | Phase 22 | Resolved by Phase 22 |
 | VIM-01 | Phase 19 | Pending |
 | VIM-02 | Phase 20 | Pending |
-| VIM-03 | Phase 22 | Pending |
+| VIM-03 | Phase 22 | Resolved by 'reload required' documentation. The Phase 20 reconfigureVim path works for plugin-driven dispatches but Settings-panel toggle requires app reload — accepted as v1.3 contract; banner explicitly NOT shipped per user decision 2026-06-03 during 22-01-B dogfood. |
 | VIM-04 | Phase 19 | Pending |
 | MIGRATE-01 | Phase 21 | Pending |
 | MIGRATE-02 | Phase 21 | Pending |
@@ -196,20 +196,20 @@
 | MIGRATE-09 | Phase 21 | Pending |
 | MIGRATE-10 | Phase 21 | Pending |
 | MIGRATE-FLICKER-01 | Phase 21.1 | Resolved |
-| DELETE-01 | Phase 22 | Pending |
-| DELETE-02 | Phase 22 | Pending |
-| DELETE-03 | Phase 22 | Pending |
-| DELETE-04 | Phase 22 | Pending |
-| DELETE-05 | Phase 22 | Pending |
-| DELETE-06 | Phase 22 | Pending |
-| DELETE-07 | Phase 22 | Pending |
-| DELETE-08 | Phase 22 | Pending |
-| POLISH-01 | Phase 22 | Pending |
-| POLISH-02 | Phase 22 | Pending |
-| POLISH-03 | Phase 22 | Pending |
-| POLISH-04 | Phase 22 | Pending |
-| POLISH-05 | Phase 22 | Pending |
-| POLISH-06 | Phase 22 | Pending |
+| DELETE-01 | Phase 22 | Resolved by Phase 22 |
+| DELETE-02 | Phase 22 | Resolved by Phase 22 |
+| DELETE-03 | Phase 22 | Resolved by Phase 22 |
+| DELETE-04 | Phase 22 | Resolved by Phase 22 |
+| DELETE-05 | Phase 22 | Resolved by Phase 22 |
+| DELETE-06 | Phase 22 | Resolved by Phase 22 |
+| DELETE-07 | Phase 22 | Resolved by Phase 22 |
+| DELETE-08 | Phase 22 | Resolved by Phase 22 |
+| POLISH-01 | Phase 22 | Resolved by Phase 22 |
+| POLISH-02 | Phase 22 | Resolved by Phase 22 |
+| POLISH-03 | Phase 22 | Resolved by Phase 22 (innerHTML scan PASS in src/widget/; pre-existing eslint baseline deferred — see deferred-items.md) |
+| POLISH-04 | Phase 22 | Resolved by Phase 22 |
+| POLISH-05 | Phase 22 | Resolved by Phase 22 |
+| POLISH-06 | Phase 22 | Resolved by Phase 22 (in-tree gates complete; BRAT 7-day window + plugin-store re-review pending — see Plan 22-03 SUMMARY) |
 
 **Coverage:**
 - v1.3 requirements: 57 total
@@ -220,6 +220,8 @@
 
 **2026-06-01 — Phase 21.1 follow-up requirement added:** MIGRATE-FLICKER-01 covers the typing-flicker fix surfaced as UAT R10 during Phase 21 cycle-2 verification.
 
+**2026-06-03 — Phase 22 closed (in-tree gates complete; BRAT 7-day window + plugin-store re-review pending):** 16 Phase 22 requirements marked Resolved (DELETE-01..08, POLISH-01..06, PROTECT-03, THEME-05). VIM-03 marked Resolved-via-documentation (vim-toggle reload requirement accepted as v1.3 contract per 22-01-B dogfood; banner explicitly NOT shipped). POLISH-03 carries a Phase-22.5 backlog flag for the pre-existing eslint baseline. POLISH-06 carries a manual checkpoint flag pending the BRAT alpha 7-day dogfood + plugin-store version-bump-trigger re-review.
+
 ---
 *Requirements defined: 2026-05-29*
-*Last updated: 2026-05-29 — phase boundaries finalized by gsd-roadmapper*
+*Last updated: 2026-06-03 — Phase 22 close (Plan 22-03 release gates wired; BRAT alpha + plugin-store re-review checkpoints pending)*
