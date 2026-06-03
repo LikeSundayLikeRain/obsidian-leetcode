@@ -1955,6 +1955,16 @@ button.leetcode-language-chevron:hover {
   border-radius: 4px;
   padding: 8px 0;
 }
+/* Phase 22 D-polish-02 — suppress Obsidian's default :hover border bleed
+ * on the widget surface. Scoped to outer wrapper + inner wrapper to leave
+ * cursor-marker / focus-ring rules at lines 2014-2035 unaffected. Limited
+ * strictly to border + outline so the grey paint at lines 1953-1955 is
+ * preserved. */
+.cm-editor .lc-nested-editor:hover,
+.cm-editor .lc-nested-editor .leetcode-widget-codeblock:hover {
+  border: none;
+  outline: none;
+}
 /* Defensive — ensure the action row shows the note background even when
  * an outer theme rule paints `.lc-nested-editor`. The Phase 20 widget
  * action row is a child of the outer transparent shell (sibling of the
