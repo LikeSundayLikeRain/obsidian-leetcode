@@ -1,7 +1,7 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.3
-milestone_name: architecture overview, migration docs, sync interaction notes, and Cmd-Z/Cmd-F scoping behavior.
+milestone_name: Inline Widget Architecture
 status: executing
 stopped_at: Phase 22 Plan 22-03 in-tree wave complete; THEME-05 manual checklist + BRAT 7-day dogfood surfaced as checkpoints
 last_updated: "2026-06-03T12:30:00.000Z"
