@@ -242,7 +242,12 @@ export function buildNoteBody(input: {
     ? codeBlockForV13(starter)
     : codeBlockFor(langSlug, starter);
   const h1 = input.title ? `# ${input.title}\n` : '';
-  return `${h1}## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
+  // Phase 22 D-polish-08 — blank line between `## Code` and the fence
+  // (regression from v1.2 — pre-v1.3 templates had this gap; the v1.3
+  // emitter rewrite collapsed it to a single newline). Visual breathing
+  // room + reader-source consistency. Mirrors the existing `## Notes\n\n`
+  // pattern at the end of the body.
+  return `${h1}## Problem\n${input.problemMarkdown.trim()}\n\n${CODE_HEADING_LINE}\n\n${codeBlock}\n\n## Notes\n\n`;
 }
 
 /**

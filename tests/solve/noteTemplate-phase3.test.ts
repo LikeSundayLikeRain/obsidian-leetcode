@@ -65,6 +65,26 @@ describe('NoteTemplate Phase 3 schema additions (CONTEXT D-06, D-18, D-20)', () 
       expect(notesIdx).toBeGreaterThan(codeIdx);
     });
 
+    // Phase 22 D-polish-08 regression guard — `## Code` heading must be
+    // followed by a blank line before the fence opener. v1.3 emitter
+    // rewrite (Phase 21 D-emit-01 introducing codeBlockForV13) collapsed
+    // this gap; the rest of the codebase already synthetically used
+    // `## Code\n\n` in test fixtures, so production output drifted from
+    // the assumed convention. This test pins the convention so future
+    // emitter changes don't silently regress the spacing.
+    it('emits a blank line between `## Code` heading and the fence opener', () => {
+      const body = buildNoteBody({ problemMarkdown: 'X', langSlug: 'python3' });
+      expect(body).toContain('## Code\n\n```');
+      // Mirror with the v1.3 emitter as well — both branches must obey
+      // the same convention.
+      const v13Body = buildNoteBody({
+        problemMarkdown: 'X',
+        langSlug: 'python3',
+        useInlineWidget: true,
+      });
+      expect(v13Body).toContain('## Code\n\n```leetcode-solve');
+    });
+
     it('defaults langSlug to `python3` when omitted (backward-compat for Phase 2 callers)', () => {
       // Phase 5.3 D-04: the default `python3` slug is remapped to `python` at
       // the fence opener so Obsidian's lang-markdown nested parser highlights
