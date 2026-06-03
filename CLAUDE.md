@@ -195,7 +195,15 @@ An Obsidian community plugin that fetches LeetCode problems, lets users write an
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
+**v1.3 inline-widget architecture (post-Phase-22).**
+
+The plugin's editing model is a single `registerMarkdownCodeBlockProcessor('leetcode-solve', ...)` + `registerEditorExtension(leetCodeFenceViewPlugin)` pair (Reading mode + Live Preview, both calling `mountLeetCodeWidget`). The widget owns its own embedded CM6 `EditorView`; widget edits flow through `app.vault.process(file, fn)` — the only mutation primitive in the plugin. `lc-language` frontmatter is the single source of truth for Run / Submit / AI dispatch (read via `extractFirstFencedBlock(noteBody, frontmatter)` in `src/solve/codeExtractor.ts`).
+
+`src/main/sectionProtectionExtension.ts` (narrow scope: `## Problem` body + `## Techniques` heading) is the only protection extension. Section locking on the fence opener / closer is moot — the widget owns the fence range via `EditorView.atomicRanges`, so the parent doc's cursor cannot enter the fence at all.
+
+Migration infrastructure (`src/widget/fenceMigrator.ts`, `src/widget/legacyFenceBanner.ts`, `src/widget/migrationBackupGc.ts`, `autoMigrateOnOpen` setting) stays in tree indefinitely so users upgrading 1.2.x → 1.3.x late still get lazy single-fence migration. Backups land at `.obsidian/plugins/obsidian-leetcode/migration-backup-{slug}-{ISO}/` with 30-day retention; the GC runs on plugin load.
+
+`src/widget/widgetRegistry.ts` is a thin `Map<key, EditorView>` keyed by `${file.path}::${fenceIdentity}` — replaces v1.2's `childEditorRegistry`. Self-write echo suppression uses a per-path content-hash map with 2-second TTL (NOT a boolean flag). External edits arriving during local in-flight typing surface a conflict modal (`Keep mine / Keep external / View diff`).
 <!-- GSD:architecture-end -->
 
 <!-- GSD:skills-start source:skills/ -->
