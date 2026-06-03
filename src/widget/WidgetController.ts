@@ -26,6 +26,8 @@
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   EditorView,
+  GutterMarker,
+  gutter,
   keymap,
   drawSelection,
   highlightActiveLine,
@@ -38,7 +40,6 @@ import {
   Compartment,
   EditorSelection,
   EditorState,
-  StateField,
   Transaction,
   type Extension,
 } from '@codemirror/state';
@@ -1008,51 +1009,66 @@ function resolveLanguageSlug(plugin: WidgetMountHost, file: TFile): string {
  *   - syncExtensions parameter (Plan 19-02 will wire updateListener inline)
  *
 /**
- * Phase 22 D-polish-06 — line-number gutter Compartment.
+ * Phase 22 D-polish-06 — line-number gutter.
  *
- * Module-singleton (matches `languageCompartment` pattern, NOT the per-widget
- * `vimCompartment` pattern). Multiple widgets share one Compartment because
- * the only mutation is "rebuild the line-numbers extension when vim toggles".
+ * Module-singleton Compartment matches the `languageCompartment` pattern.
  *
- * `buildLineNumbersExtension` produces:
- *   - vim OFF: plain `lineNumbers()` — absolute numbering (1, 2, 3, ...)
- *   - vim ON:  hybrid mode — current line shows the absolute line number;
- *              all other lines show their distance from the current line
- *              (matches `:set number relativenumber`).
+ * Vim OFF → standard `lineNumbers()` (absolute 1, 2, 3, ...).
+ * Vim ON  → custom `gutter()` with `lineMarker` + `lineMarkerChange` that
+ *           computes relative distance from the cursor's line each render.
  *
- * Cursor-line tracking via StateField. CM6's lineNumbers gutter caches its
- * rendered output by the doc state, so reading `state.selection` directly
- * inside `formatNumber` doesn't trigger redraws on pure selection changes —
- * the gutter only refreshes when something it actually depends on changes.
+ * **Why a custom gutter() and not `lineNumbers({ formatNumber })`**: the
+ * standard `lineNumbers` extension caches its rendered markers by doc state
+ * and ignores selection changes — `formatNumber` is only re-invoked when
+ * something it explicitly depends on changes. Empirically (Phase 22 dogfood,
+ * StateField + ViewPlugin + updateListener approaches all failed to trigger
+ * redraw on cursor movement). The custom `gutter()` API exposes
+ * `lineMarkerChange(update)` which lets us return `true` for any transaction
+ * with `selectionSet`, forcing the gutter to re-run its `lineMarker` for
+ * every line. This is the same pattern v1.2 used in
+ * `src/main/childEditorFactory.ts:createRelativeLineNumberGutter` (LINENUM-01,
+ * Phase 17 Plan 12) — porting it verbatim avoids re-hitting the same caching
+ * dead-end that the standard API leads into.
  *
- * The fix: register a `cursorLineField` StateField that holds the cursor's
- * 1-indexed line number and updates on every transaction. `formatNumber`
- * reads the value via `state.field(cursorLineField)`, which establishes a
- * dependency edge that invalidates the gutter cache the moment the field
- * value changes. No ViewPlugin / requestMeasure needed.
+ * The `class: 'cm-lineNumbers'` keeps existing CSS rules in styles.css
+ * targeting `.cm-lineNumbers` working unchanged.
  */
 const lineNumbersCompartment = new Compartment();
 
-const cursorLineField = StateField.define<number>({
-  create(state) {
-    return state.doc.lineAt(state.selection.main.head).number;
-  },
-  update(value, tr) {
-    if (!tr.docChanged && !tr.selection) return value;
-    const line = tr.state.doc.lineAt(tr.state.selection.main.head).number;
-    return line;
-  },
-});
+class RelativeLineNumberMarker extends GutterMarker {
+  constructor(readonly text: string) {
+    super();
+  }
+  eq(other: GutterMarker): boolean {
+    return (other as RelativeLineNumberMarker).text === this.text;
+  }
+  toDOM(): Text {
+    return document.createTextNode(this.text);
+  }
+}
+
+function createRelativeLineNumberGutter(): Extension {
+  return gutter({
+    class: 'cm-lineNumbers',
+    lineMarker(view, line) {
+      const cursorLine = view.state.doc.lineAt(
+        view.state.selection.main.head,
+      ).number;
+      const lineNo = view.state.doc.lineAt(line.from).number;
+      const text =
+        lineNo === cursorLine
+          ? String(lineNo)
+          : String(Math.abs(lineNo - cursorLine));
+      return new RelativeLineNumberMarker(text);
+    },
+    lineMarkerChange(update) {
+      return update.selectionSet || update.docChanged;
+    },
+  });
+}
 
 function buildLineNumbersExtension(vimEnabled: boolean): Extension {
-  if (!vimEnabled) {
-    return lineNumbers();
-  }
-  const formatNumber = (n: number, state: EditorState): string => {
-    const cursorLine = state.field(cursorLineField, false) ?? n;
-    return n === cursorLine ? String(n) : String(Math.abs(n - cursorLine));
-  };
-  return [cursorLineField, lineNumbers({ formatNumber })];
+  return vimEnabled ? createRelativeLineNumberGutter() : lineNumbers();
 }
 
 /*
