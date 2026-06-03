@@ -2,14 +2,25 @@
 
 Out-of-scope discoveries logged during execution per Rule 3 SCOPE BOUNDARY.
 
-## Pre-existing test failure (not caused by Phase 22)
+## Pre-existing test failure (not caused by Phase 22) — RESOLVED
 
 - **File**: `tests/widget/liveModeBannerStateField.test.ts:683`
 - **Test**: `Plan 21-11 Task 2 — legacyBannerStateField + leetCodeWidgetStateField > R2 — post-repair StateField recompute (Plan 21-14) > post-repair scheduled dispatch fires leetcodeRefreshAnnotation against each known EditorView for the file path`
-- **Symptom**: `expected "vi.fn()" to be called 1 times, but got 0 times`
-- **Verification**: Reproduced with Phase 22 changes stashed (clean Phase-21.1 baseline) — failure is pre-existing.
-- **Discovered during**: Plan 22-01 Task A (default flip) test verification.
-- **Disposition**: Out of scope for Phase 22. File a follow-up under v1.3.x backlog if not already tracked.
+- **Symptom (was)**: `expected "vi.fn()" to be called 1 times, but got 0 times`
+- **Root cause**: Commit `d6e41d0` (2026-06-01) wrapped post-repair `dispatchLeetCodeRefresh` in a `setTimeout`-based `metadataCache` poll (`waitForCacheAndDispatch`). The R2.LP.5 test was authored before that change for the original Plan 21-14 contract that dispatched synchronously inside the `.then` handler. Test only flushed microtasks; never advanced timers; never seeded `lc-language` into the mock metadataCache after the repair resolved → first poll iteration saw `lcLangNow === undefined` → scheduled a 50ms `setTimeout` → assertion fired before any timer callback ran.
+- **Resolution (commit `43f7e0a`, 2026-06-03)**: Fixed in test only — seeded mock metadataCache with `lc-language: python3` AFTER `EditorState.create` (which queues the repair) but BEFORE `flushMicrotasks` (which awaits the `.then` handler). The poll's first iteration now finds `lc-language` populated and dispatches synchronously, exercising the canonical happy path. Production code untouched.
+
+## CI-only timing flake — `debouncedWriter.test.ts:149` (deferred)
+
+- **File**: `tests/widget/debouncedWriter.test.ts:149`
+- **Test**: `DebouncedWriter > run() called repeatedly within delay window resets the timer (one flush)`
+- **Symptom**: `AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times` after `await vi.runAllTimersAsync()`. **Passes locally; fails on GitHub Actions Ubuntu runners**.
+- **Discovered during**: PR #10 CI run, 2026-06-03 (post-merge of main).
+- **Hypothesis**: timing-sensitive interaction between `vi.useFakeTimers()` + `vi.runAllTimersAsync()` and the production `setTimeout`-based rate-limit window in `src/widget/debouncedWriter.ts:155-175`. Slower CI runner may not flush async chains in the same micro-tick that local environments do.
+- **Disposition**: Pre-existing test (Phase 19 origin). Not caused by Phase 22 work. Two paths to ship Phase 22 around it:
+  - **Phase 22 quick fix**: mark `npm test` `continue-on-error: true` in `.github/workflows/ci.yml`, mirroring the existing `npm run lint` advisory pattern. Honest about pre-existing flake; ships immediately.
+  - **Phase 22.5 proper fix**: replace `vi.runAllTimersAsync()` with `vi.advanceTimersByTimeAsync(<exact delay>)` for deterministic timer advancement. ~30 min focused work.
+- **Tracked for**: Phase 22.5 mini-phase (alongside the eslint baseline reset below).
 
 ## Pre-existing eslint baseline (not caused by Phase 22)
 
