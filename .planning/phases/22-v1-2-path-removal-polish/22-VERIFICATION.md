@@ -107,6 +107,33 @@ The override (a) matches the source selector path so specificity wins, (b) restr
 
 **Acceptance:** PASS pending user dogfood confirmation. If specificity insufficient (read-mode still 16px), add `!important` and document.
 
+## 22-02-06 Line-Number Gutter (D-polish-06)
+
+**Status:** PASS — confirmed in dev vault by user 2026-06-02. Added during 22-01-B dogfood.
+
+**Behavior verified:**
+- Vim OFF → absolute numbering (1, 2, 3, ...).
+- Vim ON → hybrid mode: current line shows absolute number; other lines show absolute distance from cursor.
+- Hybrid mode tracks cursor movement via `j`/`k` / arrow keys — relative numbers update on every cursor-line crossing.
+- Live vim toggle (Settings → Editor → Vim Mode) reconfigures both `vimCompartment` and `lineNumbersCompartment` atomically in the same transaction.
+
+**Implementation trail (4 commits before convergence):**
+
+| Commit | Approach | Outcome |
+|--------|----------|---------|
+| `8e66e59` | Standard `lineNumbers({ formatNumber })` + ViewPlugin with `view.requestMeasure()` on cursor-line crossing | FAIL — `requestMeasure()` doesn't invalidate the gutter cache; relative numbers stale until doc edit |
+| `38dc730` | StateField holding cursor line; `formatNumber` reads via `state.field()` | FAIL — establishing a state-field dependency edge in `formatNumber` doesn't invalidate the gutter cache either |
+| (intermediate) | `EditorView.updateListener` dispatching no-op `redrawEffect` on `selectionSet` via `queueMicrotask` | FAIL — additional dispatch loops still didn't trigger gutter rerender |
+| `01e1a76` | Custom `gutter()` extension with `lineMarker` + explicit `lineMarkerChange(update) => update.selectionSet \|\| update.docChanged` | **PASS** — ported v1.2's pattern verbatim from `src/main/childEditorFactory.ts:createRelativeLineNumberGutter` (Phase 17 Plan 12 / LINENUM-01) |
+
+**Root cause:** CM6's standard `lineNumbers({ formatNumber })` extension has no documented hook to force a refresh on selection change. Only the lower-level `gutter()` API exposes `lineMarkerChange`, which lets you explicitly mark `selectionSet` transactions as cache-invalidating.
+
+**Phase 22 learning (for SUMMARY.md):** When implementing anything that v1.2 already solved, **read v1.2's implementation FIRST**. Three failed attempts before checking `childEditorFactory.ts`; the canonical answer was already in tree, in a file Plan 22-01 Task E will delete (the logic is correctly ported into the surviving v1.3 widget so the deletion is safe).
+
+**Build:** `npm run build` clean.
+**Tests:** `npm test -- WidgetController` — 14/14 pass after the final port.
+**Deploy:** commit `01e1a76`.
+
 ## 22-02-05 Takeover Overlay Hidden (D-polish-05)
 
 **Status:** PASS — confirmed in dev vault by user 2026-06-02. Added during 22-01-B dogfood when user observed the takeover CTA was redundant chrome.
