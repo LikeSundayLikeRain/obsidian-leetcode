@@ -237,3 +237,30 @@ The overlay element still mounts so its keyboard handler stays available as a de
 - The 22-02-01 task block in `22-02-PLAN.md` can stay as-is for the audit trail; just mark its `<done>` outcome as "supplanted by D-polish-07 — no probe required, no defer required."
 
 **Closing the carry-over:** all 7 polish items in Plan 22-02 are resolved (6 shipped + 1 no-repro). Plan 22-02 is feature-complete — SUMMARY.md can be written once 22-01 closes its remaining sub-steps (C/D/E).
+
+## 22-03-02 ESLint + innerHTML Scan
+
+**Status:** PARTIAL PASS — 2026-06-03.
+
+**innerHTML scan in `src/widget/` (the operative D-gate-02 concern):** PASS.
+
+`grep -rn 'innerHTML' src/widget/` returned 7 hits across 4 files (`legacyFenceBanner.ts`, `conflictDiff.ts`, `codeBlockProcessor.ts`, `WidgetController.ts`). Every match is a comment line documenting the no-innerHTML rule (e.g., `// Pattern S-07 — no innerHTML`, `* helpers. NEVER assigns innerHTML.`, `// CLAUDE.md: NO innerHTML — use createEl with text option.`). **Zero active `.innerHTML =` assignments anywhere in `src/widget/`** — the plugin-store rejection guard is intact (Pitfall 13).
+
+`grep` filter for active assignments (`grep -n 'innerHTML' src/widget/*.ts | grep -E '\.innerHTML\s*='`) returned nothing.
+
+**`npm run lint` clean run:** FAIL — pre-existing baseline regression, not Phase 22 caused.
+
+`npm run lint` reports `161 problems (81 errors, 80 warnings)`. Verified pre-existing by checking out commit `245f45b` (Plan 22-01 close, before any 22-03 work) and running `npm run lint` — output is identical. The baseline existed at Phase 22's entry. RESEARCH §7's "baseline already passing per Phase 21.1 close" claim was stale.
+
+Categories of pre-existing errors (concentrated in `src/main.ts`, `src/widget/ConflictModal.ts`, `src/types/`, and `tests/widget/`):
+- `obsidianmd/prefer-window-timers` (bare `setTimeout`/`clearTimeout`) — most numerous.
+- `@typescript-eslint/no-unnecessary-type-assertion` — concentrated in `src/main.ts` (~9 sites) and `src/widget/ConflictModal.ts`.
+- `@typescript-eslint/no-floating-promises`, `no-misused-promises` — single sites in `src/main.ts`.
+- `obsidianmd/prefer-file-manager-trash-file` — warnings.
+- `@typescript-eslint/no-empty-object-type`, `no-base-to-string`, `obsidianmd/hardcoded-config-path` — single sites.
+
+**Scope-boundary application:** per the executor SCOPE BOUNDARY rule, fixing pre-existing errors in unrelated files is out of scope. The eslint baseline reset is logged in `deferred-items.md` with a recommended mini-phase scope (`Phase 22.5 — eslint baseline reset`, ~3 hours: `--fix` auto-corrections + ~26 hand-fixes + baseline gate wiring).
+
+**Plugin-store re-review impact:** the reviewer's automated checks scope to runtime-observable concerns (innerHTML, eval, isDesktopOnly, no remote code, no telemetry). All of those are PASS. The `obsidianmd/prefer-window-timers` lint rule is a popout-window correctness suggestion; the `@typescript-eslint/*` rules are type-strictness hygiene. None are plugin-store auto-rejection criteria.
+
+**Acceptance:** PARTIAL PASS — the operative D-gate-02 concern (innerHTML in widget) passes; the broader eslint cleanup is deferred. Phase 22 ships under this disposition.
