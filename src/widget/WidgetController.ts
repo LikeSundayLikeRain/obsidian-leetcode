@@ -30,7 +30,6 @@ import {
   drawSelection,
   highlightActiveLine,
   lineNumbers,
-  ViewPlugin,
   type ViewUpdate,
 } from '@codemirror/view';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
@@ -39,6 +38,7 @@ import {
   Compartment,
   EditorSelection,
   EditorState,
+  StateField,
   Transaction,
   type Extension,
 } from '@codemirror/state';
@@ -1012,9 +1012,7 @@ function resolveLanguageSlug(plugin: WidgetMountHost, file: TFile): string {
  *
  * Module-singleton (matches `languageCompartment` pattern, NOT the per-widget
  * `vimCompartment` pattern). Multiple widgets share one Compartment because
- * the only mutation is "rebuild the line-numbers extension when vim toggles",
- * and `Compartment.reconfigure` dispatches per-EditorView regardless of the
- * Compartment's identity scope.
+ * the only mutation is "rebuild the line-numbers extension when vim toggles".
  *
  * `buildLineNumbersExtension` produces:
  *   - vim OFF: plain `lineNumbers()` — absolute numbering (1, 2, 3, ...)
@@ -1022,42 +1020,39 @@ function resolveLanguageSlug(plugin: WidgetMountHost, file: TFile): string {
  *              all other lines show their distance from the current line
  *              (matches `:set number relativenumber`).
  *
- * The cursor-redraw ViewPlugin is required only in hybrid mode. CM6's gutter
- * caches by doc state; pure selection changes don't invalidate the cache, so
- * relative numbers stay stale until a doc edit. The plugin watches for
- * `selectionSet` updates that cross a line boundary and calls
- * `view.requestMeasure()` to force a re-render. Pattern verified against the
- * Obsidian community plugin "Relative Line Numbers".
+ * Cursor-line tracking via StateField. CM6's lineNumbers gutter caches its
+ * rendered output by the doc state, so reading `state.selection` directly
+ * inside `formatNumber` doesn't trigger redraws on pure selection changes —
+ * the gutter only refreshes when something it actually depends on changes.
+ *
+ * The fix: register a `cursorLineField` StateField that holds the cursor's
+ * 1-indexed line number and updates on every transaction. `formatNumber`
+ * reads the value via `state.field(cursorLineField)`, which establishes a
+ * dependency edge that invalidates the gutter cache the moment the field
+ * value changes. No ViewPlugin / requestMeasure needed.
  */
 const lineNumbersCompartment = new Compartment();
+
+const cursorLineField = StateField.define<number>({
+  create(state) {
+    return state.doc.lineAt(state.selection.main.head).number;
+  },
+  update(value, tr) {
+    if (!tr.docChanged && !tr.selection) return value;
+    const line = tr.state.doc.lineAt(tr.state.selection.main.head).number;
+    return line;
+  },
+});
 
 function buildLineNumbersExtension(vimEnabled: boolean): Extension {
   if (!vimEnabled) {
     return lineNumbers();
   }
   const formatNumber = (n: number, state: EditorState): string => {
-    const cursorLine = state.doc.lineAt(state.selection.main.head).number;
+    const cursorLine = state.field(cursorLineField, false) ?? n;
     return n === cursorLine ? String(n) : String(Math.abs(n - cursorLine));
   };
-  const cursorLineRedraw = ViewPlugin.fromClass(
-    class {
-      private lastLine: number;
-      constructor(view: EditorView) {
-        this.lastLine = view.state.doc.lineAt(
-          view.state.selection.main.head,
-        ).number;
-      }
-      update(u: ViewUpdate): void {
-        if (!u.selectionSet) return;
-        const line = u.state.doc.lineAt(u.state.selection.main.head).number;
-        if (line !== this.lastLine) {
-          this.lastLine = line;
-          u.view.requestMeasure();
-        }
-      }
-    },
-  );
-  return [lineNumbers({ formatNumber }), cursorLineRedraw];
+  return [cursorLineField, lineNumbers({ formatNumber })];
 }
 
 /*
