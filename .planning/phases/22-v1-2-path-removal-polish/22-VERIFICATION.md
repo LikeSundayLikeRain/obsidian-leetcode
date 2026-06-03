@@ -59,7 +59,7 @@ The override (a) matches the source selector path so specificity wins, (b) restr
 
 ## 22-02-03 Action Row Font
 
-**Status:** Ready for visual check post-deploy.
+**Status:** PASS — confirmed in dev vault by user 2026-06-02.
 **CSS rule added:** `.leetcode-code-actions, .leetcode-code-actions * { font-family: var(--font-text); }` — inserted after line 970 (after the `!important` cascade-override block at lines 961-970). Base-class specificity should win against `.cm-content`'s monospace cascade since `.cm-content` does not declare `font-family` with `!important`. If dev-vault check shows monospace still wins, add `!important` and document.
 **Build:** `npm run build` clean.
 **Deploy:** see commit log.
@@ -68,7 +68,7 @@ The override (a) matches the source selector path so specificity wins, (b) restr
 
 ## 22-02-04 Read-Mode Font-Size
 
-**Status:** Ready for visual check post-deploy.
+**Status:** PASS — confirmed in dev vault by user 2026-06-02. Reading mode widget renders at 14px matching Live Preview; Live Preview unchanged.
 
 **Empirical baseline (reported by user during 22-01-B dogfood):**
 - Live Preview mode: widget code content renders at **14px**.
