@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Inline Widget Architecture
 status: executing
-stopped_at: Phase 22 Plan 22-03 in-tree wave complete; THEME-05 manual checklist + BRAT 7-day dogfood surfaced as checkpoints
-last_updated: "2026-06-03T12:30:00.000Z"
-last_activity: 2026-06-03 -- Phase 22 Plan 22-03 in-tree gates wired (bundle-size + innerHTML + README + CLAUDE.md + version-bump + REQUIREMENTS); 6 commits e6f4aef..04690a1
+stopped_at: PR #10 merged + 1.3.0-beta.1 released; awaiting BRAT 7-day dogfood window
+last_updated: "2026-06-03T20:01:00.000Z"
+last_activity: 2026-06-03 -- PR #10 merged via --admin (1c20e68); tag 1.3.0-beta.1 pushed; release workflow shipped main.js+manifest+styles.css as prerelease
 progress:
   total_phases: 1
   completed_phases: 0
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 
 ## Current Position
 
-Phase: 22 (v1-2-path-removal-polish) — EXECUTING (Plan 22-03 in-tree wave wired; BRAT alpha pending)
+Phase: 22 (v1-2-path-removal-polish) — EXECUTING (PR #10 merged; 1.3.0-beta.1 released; BRAT 7-day window pending)
 Plan: 3 of 3 in-tree wave complete (22-01 cutover ✓, 22-02 polish ✓, 22-03 in-tree gates ✓ — all shipped 2026-06-03)
-Status: Plan 22-03 release gates wired in-tree; awaiting two manual checkpoints — THEME-05 5-theme regression checklist (~80 min) + BRAT 7-day dogfood + plugin-store version-bump-trigger re-review
-Last activity: 2026-06-03 -- Plan 22-03 in-tree wave complete (commits `e6f4aef`..`04690a1` — bundle-size gate, innerHTML scan, README, CLAUDE.md architecture, manifest 1.3.0-beta.1 bump, REQUIREMENTS traceability)
+Status: PR #10 merged to main (1c20e68 admin merge); tag 1.3.0-beta.1 pushed; GitHub Release published as prerelease with main.js+manifest+styles.css attached. Awaiting BRAT 7-day dogfood window. On BRAT pass: bump to 1.3.0 + plugin-store re-review submission.
+Last activity: 2026-06-03 -- debouncedWriter test flake fixed (a416dd3 — drainFlushAsyncChain helper, 15/15 deterministic); CI green; PR #10 merged via --admin; 1.3.0-beta.1 tag + release shipped
 
 ## Performance Metrics
 
@@ -121,7 +121,7 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-06-03T12:30:00.000Z
-Stopped at: Plan 22-03 in-tree wave complete; THEME-05 + BRAT manual checkpoints surfaced to user
+Last session: 2026-06-03T20:01:00.000Z
+Stopped at: PR #10 merged; 1.3.0-beta.1 tag + release published; BRAT 7-day dogfood window starting
 Resume file: .planning/phases/22-v1-2-path-removal-polish/22-03-SUMMARY.md
-Next action: User executes THEME-05 manual checklist (Task 22-03-03, ~80 min) + pushes `1.3.0-beta.1` tag and runs BRAT 7-day dogfood (Task 22-03-07). On BRAT pass: GA tag bump (`1.3.0`) + plugin-store re-review submission. On BRAT fail: hotfix lane to `1.3.0-beta.2` re-tag or mini-phase 22.1 escalation.
+Next action: Install/refresh in BRAT (`LikeSundayLikeRain/obsidian-leetcode` @ 1.3.0-beta.1), run 7-day dogfood logging daily entries in `22-VERIFICATION.md` § "22-03-07 BRAT 7-Day Dogfood", watch GitHub Issues for P0/P1. On BRAT pass: bump manifest+package to `1.3.0` (lockstep), commit, tag, push, file plugin-store re-review against `community-plugins.json` entry. On BRAT fail: hotfix → `1.3.0-beta.2` re-tag or mini-phase 22.1 escalation.
