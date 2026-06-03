@@ -5,12 +5,57 @@
 
 ## 22-02-02 Widget Hover Border
 
-**Status:** Ready for visual check post-deploy.
-**CSS rule added:** `.cm-editor .lc-nested-editor:hover, .cm-editor .lc-nested-editor .leetcode-widget-codeblock:hover { border: none; outline: none; }` — inserted after line 1955 (after `.leetcode-widget-codeblock` rule, before `.lc-nested-editor > .leetcode-code-actions` rule).
+**Status:** PASS — confirmed in dev vault by user 2026-06-02.
+
+**Three-round investigation:**
+
+| Round | Commit | Approach | Outcome |
+|-------|--------|----------|---------|
+| 1 | `439b029` | `.cm-editor .lc-nested-editor:hover { border: none; outline: none; }` | Hover effect persisted — round 1 missed the actual property and selector. |
+| 2 | `b039e51` | Added `box-shadow: none`, `:not(:focus-within)` scope, parent `.cm-editor:has(...)` selector with `!important` | Still failed — guesses without DevTools evidence. |
+| 3 | `e8401a3` | DevTools confirmed source rule (Obsidian core `app.css`); override matches the source selector path | **PASS** — hover effect gone. |
+
+**Root cause (round-3 finding):**
+
+Obsidian core `app.css` paints hover on every CM6 embed block:
+
+```css
+@media (hover: hover) {
+  .markdown-source-view.mod-cm6
+    .cm-embed-block:not(.cm-table-widget, .cm-lang-base):hover {
+    box-shadow: var(--embed-block-shadow-hover);
+    border-radius: var(--radius-s);
+    cursor: text;
+  }
+}
+```
+
+Our v1.3 widget mounts as `.cm-embed-block` (the standard CM6 block-widget mount path). Obsidian's exclusion list (`.cm-table-widget`, `.cm-lang-base`) does not cover us, so we fall in scope.
+
+**Final rule** (lines ~1969-1995 of `styles.css`):
+
+```css
+@media (hover: hover) {
+  .markdown-source-view.mod-cm6 .cm-embed-block:has(.lc-nested-editor):hover {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    cursor: auto !important;
+  }
+}
+.cm-editor .lc-nested-editor:hover:not(:focus-within),
+.cm-editor .lc-nested-editor .leetcode-widget-codeblock:hover:not(:focus-within) {
+  border: none !important;
+  outline: none !important;
+}
+```
+
+The override (a) matches the source selector path so specificity wins, (b) restricts via `:has(.lc-nested-editor)` so other CM6 embed blocks keep their hover behavior, and (c) keeps a defensive `border`/`outline` reset on the inner widget surface in case a theme adds those.
+
 **Build:** `npm run build` clean.
-**Deploy:** see commit log.
-**Visual check (human-driven, dogfood):** hover the v1.3 widget surface — confirm no border paints. Click into widget — confirm focus ring + cursor marker unchanged. Selection highlight unchanged.
-**Acceptance:** PASS pending user dogfood confirmation.
+**Deploy:** see commit log (final state in `e8401a3`).
+**Visual check (human-confirmed):** hover the v1.3 widget — no box-shadow, no border-radius change, no cursor flicker. Focus ring + cursor marker unchanged when widget is focused.
+
+**Lesson for SUMMARY.md:** Round 1+2 burned three commits guessing. The DevTools "Force element state → :hover" path produced the answer in seconds once the user found the right button. Document this as a Phase 22 learning.
 
 ## 22-02-03 Action Row Font
 
