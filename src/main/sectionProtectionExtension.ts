@@ -486,6 +486,13 @@ export function buildSectionProtectionExtension(plugin: Plugin): Extension {
     EditorState.transactionFilter.of((tr) => {
       if (!tr.selection) return tr;
 
+      // Snap ONLY on pure selection moves. Vault-sync / programmatic dispatches
+      // (processFrontMatter, vault.process) carry an explicit selection too, so
+      // they reach this filter — rewriting their snapped cursor corrupts the
+      // buffer (Gate 0 in the changeFilter guards the same class). Bailing here
+      // also keeps `tr.state.doc === tr.startState.doc` for the read below.
+      if (tr.docChanged) return tr;
+
       const file = tr.startState.field(editorInfoField)?.file;
       if (!file) return tr;
       const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter as
