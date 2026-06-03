@@ -23,7 +23,44 @@
 
 ## 22-02-04 Read-Mode Font-Size
 
-**Status:** _Pending — Task 22-02-04 next._
+**Status:** Ready for visual check post-deploy.
+
+**Empirical baseline (reported by user during 22-01-B dogfood):**
+- Live Preview mode: widget code content renders at **14px**.
+- Reading mode (pre-fix): widget code content renders at **16px** (inherited from `.markdown-rendered` prose font-size).
+- Goal: Reading mode renders at the SAME 14px as Live Preview. Live Preview unchanged.
+
+**CSS rule added** (after the existing `.cm-editor .lc-nested-editor .cm-content` rule at lines 1971-1974):
+
+```css
+.markdown-rendered .lc-nested-editor .cm-editor,
+.markdown-rendered .lc-nested-editor .cm-content,
+.markdown-rendered .lc-nested-editor .cm-line {
+  font-size: 14px;
+}
+```
+
+**Variable choice rationale:** literal `14px` chosen to match the existing Live Preview rule (`.cm-editor .lc-nested-editor .cm-content { font-size: 14px; }` at line 1973) verbatim. The Live Preview rule itself uses a literal — there is no upstream CSS variable to follow. If a future refactor lifts both to `var(--code-size)` or similar, the two rules should be migrated together. Inline comment in `styles.css` documents this coupling.
+
+**Selector scoping:** anchored on `.markdown-rendered` ancestor, which is present ONLY in Reading mode. Live Preview's `.markdown-source-view` ancestor is never affected — Live Preview rendering remains untouched.
+
+**Specificity check:** `.markdown-rendered` (1-class) + `.lc-nested-editor` (1-class) + `.cm-content` (1-class) = 3-class specificity. Beats the cascade-default `.markdown-rendered { font-size: ...; }` (1-class). No `!important` needed unless dev-vault verification shows otherwise.
+
+**Build:** `npm run build` clean.
+**Deploy:** see commit log.
+
+**Visual check (human-driven, dogfood):**
+- Reading mode (Cmd-E off) — widget code now renders at 14px (matching Live Preview). Adjacent rendered code blocks unchanged.
+- Live Preview mode (Cmd-E on) — widget code still 14px (unchanged from baseline; the `.markdown-source-view` ancestor scopes the new rule out).
+
+**DevTools verification (record after dogfood):**
+
+| Mode | Pre-fix `font-size` (Computed) | Post-fix `font-size` (Computed) | Source rule cited |
+| ---- | ------------------------------ | ------------------------------- | ----------------- |
+| Live Preview | 14px | 14px | `.cm-editor .lc-nested-editor .cm-content` (line 1973, unchanged) |
+| Reading mode | 16px | 14px | `.markdown-rendered .lc-nested-editor .cm-content` (new rule, line ~1976) |
+
+**Acceptance:** PASS pending user dogfood confirmation. If specificity insufficient (read-mode still 16px), add `!important` and document.
 
 ## 22-02-01 Vim-Tab Probe
 

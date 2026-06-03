@@ -1993,6 +1993,21 @@ button.leetcode-language-chevron:hover {
   font-family: var(--font-monospace);
   font-size: 14px;
 }
+/* Phase 22 D-polish-04 — read-mode widget code matches Live Preview size.
+ * Reading mode (.markdown-rendered) inherits prose 16px from the surrounding
+ * note cascade because the existing .cm-editor-anchored rule above only fires
+ * in Live Preview (where .cm-editor wraps the widget). Force read-mode back
+ * to the same 14px Live Preview uses, keeping the two modes visually
+ * consistent. Live (Edit) mode is untouched because the .markdown-rendered
+ * ancestor is not present there. Literal 14px chosen to match the existing
+ * Live Preview rule above verbatim — if the cascade variable that drives the
+ * Live Preview value is ever lifted to var(--code-size) or similar, both
+ * rules should be migrated together. */
+.markdown-rendered .lc-nested-editor .cm-editor,
+.markdown-rendered .lc-nested-editor .cm-content,
+.markdown-rendered .lc-nested-editor .cm-line {
+  font-size: 14px;
+}
 .cm-editor .lc-nested-editor .cm-gutters {
   background: transparent;
   border-right: none;
