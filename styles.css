@@ -2071,38 +2071,57 @@ button.leetcode-language-chevron:hover {
 /* Phase 22 D-polish-07 — clean cursor rendering by vim mode.
  *
  * Replaces the v1.2 "force both cursor layers visible" compromise (Phase 17
- * gap-closure 17-11 + Phase 18) — the v1.2 nested editor needed both layers
- * always visible because the vim fat-cursor measure-pass was unreliable
- * after focus-steal events. The v1.3 widget mount is more stable
- * (verified empirically during 22-01-B dogfood), so we can render only the
- * cursor layer matching the current mode.
+ * gap-closure 17-11 + Phase 18) — v1.2 needed both layers always visible
+ * because the vim fat-cursor measure-pass was unreliable in the nested-
+ * editor mount after focus-steal events. The v1.3 widget mount is more
+ * stable, so we can render only the cursor matching the current mode.
+ *
+ * Background on what vim actually does (verified in @replit/codemirror-vim
+ * source 2026-06-02):
+ *   - vim() extension sets `caret-color: transparent !important` on the
+ *     CM editor wrapper, which hides the OS-native text-input caret.
+ *   - vim then renders its own `.cm-fat-cursor` div inside `.cm-vimCursorLayer`
+ *     for Normal/Visual mode (red default block, blinking via cm-blink
+ *     animation on the cursor layer's animationName).
+ *   - In Insert mode vim does NOT render `.cm-fat-cursor` — it relies on
+ *     the OS-native caret being visible. But the `caret-color: transparent`
+ *     stays applied, hiding the caret entirely (this was the bug we just hit).
  *
  * Mode discrimination via TWO classes on the widget container, toggled by
  * createVimModeClassExtension in WidgetController.ts:
- *   - `.lc-vim-active` → vim extension is loaded (Insert OR Normal OR Visual)
- *   - `.lc-vim-insert` → vim is loaded AND in Insert mode (subset of active)
+ *   - `.lc-vim-active` → vim extension is loaded
+ *   - `.lc-vim-insert` → vim is loaded AND in Insert mode (subset)
  *
- * Three-state mapping:
- *   - Vim OFF (no `.lc-vim-active`)            → CM6 default pipe (no override).
- *   - Vim Normal/Visual (active, not insert)  → fat block visible, pipe hidden.
- *   - Vim Insert (active and insert)          → pipe visible (with blink),
- *                                                fat block hidden.
- *
- * Critical correctness: only override `.cm-cursor` when vim is ACTIVE.
- * `.lc-nested-editor:not(.lc-vim-active) .cm-cursor` retains the CM6 default
- * blinking pipe, so non-vim users don't get a hidden cursor.
+ * Three-state design:
+ *   - Vim OFF (no `.lc-vim-active`)             → CM6 default pipe; no override
+ *   - Vim Normal/Visual (active, not insert)    → solid fat block (no blink),
+ *                                                  caret transparent
+ *   - Vim Insert (active and insert)            → restore caret-color so the
+ *                                                  OS native caret renders
+ *                                                  (with native blink); hide
+ *                                                  any leftover fat-cursor
  */
+
+/* Vim Normal/Visual mode: solid fat block (no blink) — vim's own animation-
+ * name on .cm-vimCursorLayer is cm-blink/cm-blink2; force it off here. */
+.lc-nested-editor.lc-vim-active:not(.lc-vim-insert) .cm-vimCursorLayer {
+  animation: none !important;
+}
 .lc-nested-editor.lc-vim-active:not(.lc-vim-insert) .cm-fat-cursor {
   display: block;
 }
-.lc-nested-editor.lc-vim-active:not(.lc-vim-insert) .cm-cursor {
-  display: none !important;
-}
-.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-cursor {
-  display: block !important;
-}
+
+/* Vim Insert mode: hide vim's fat cursor (defensive — vim already removes
+ * .cm-fat-cursor children when entering Insert, but if any straggler exists
+ * we want it gone) AND restore the OS-native caret-color that vim() set
+ * to transparent at the editor-root level. The native caret is what
+ * provides the blinking pipe in Insert mode. */
 .lc-nested-editor.lc-vim-active.lc-vim-insert .cm-fat-cursor {
   display: none !important;
+}
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-editor,
+.lc-nested-editor.lc-vim-active.lc-vim-insert .cm-content {
+  caret-color: auto !important;
 }
 
 /* Phase 17 gap-closure (17-11, 17-UAT.md Issue 6 sibling) — vim mode
