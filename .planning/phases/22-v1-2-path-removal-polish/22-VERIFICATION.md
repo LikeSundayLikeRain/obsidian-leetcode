@@ -107,6 +107,22 @@ The override (a) matches the source selector path so specificity wins, (b) restr
 
 **Acceptance:** PASS pending user dogfood confirmation. If specificity insufficient (read-mode still 16px), add `!important` and document.
 
+## 22-02-08 Blank Line Between `## Code` and Fence (D-polish-08)
+
+**Status:** PASS — confirmed in dev vault by user 2026-06-02. Added during 22-01-B dogfood.
+
+**Regression caught:** `buildNoteBody` at `src/notes/NoteTemplate.ts:245` emitted `## Code\n${codeBlock}` (no blank line) since the v1.3 emitter rewrite (Phase 21 D-emit-01 introducing `codeBlockForV13`). Visually cramped in Reading mode; inconsistent with the trailing `## Notes\n\n` pattern on the same line; regression from pre-v1.3 template shape.
+
+**Fix:** insert `\n\n` between `CODE_HEADING_LINE` and `codeBlock` in `buildNoteBody` — single-character semantic change, atomic commit `e163c04`.
+
+**Why no automated test caught the regression:** the only `buildNoteBody` test (`tests/solve/noteTemplate-phase3.test.ts`) asserted on heading **order** via `indexOf`, never on exact whitespace. Other tests across the codebase used `## Code\n\n` in synthetic body fixtures (`tests/widget/codeBlockProcessor.phase21.test.ts`, `tests/widget/childParentSync.test.ts`, `tests/solve/submissionOrchestrator.test.ts`) but those were inputs for parsers/sync — they never validated `buildNoteBody`'s actual output. Internal inconsistency went unnoticed.
+
+**Regression guard added:** new test in `noteTemplate-phase3.test.ts` pinning `'## Code\n\n```'` and `'## Code\n\n```leetcode-solve'` for both emitter branches. Future emitter rewrites can't silently regress the spacing.
+
+**Scope of fix:** only affects NEW notes created after this commit. Existing notes keep their tight spacing because the migration infrastructure (`fenceMigrator.ts`) deliberately does not normalize whitespace (Phase 21 user-data preservation rule). User accepted this scope — no whitespace migration needed for existing notes.
+
+**Tests:** `npm test -- noteTemplate-phase3` — 23/23 pass after fix + regression guard.
+
 ## 22-02-07 Clean Cursor by Vim Mode (D-polish-07)
 
 **Status:** PASS — confirmed in dev vault by user 2026-06-02. Added during 22-01-B dogfood.
