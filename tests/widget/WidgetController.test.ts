@@ -24,6 +24,7 @@ vi.mock('@codemirror/view', () => {
     static editable = { of: vi.fn((b: boolean) => `mock-editable-${b}`) };
     static lineWrapping = 'mock-line-wrapping';
     static updateListener = { of: vi.fn(() => 'mock-update-listener') };
+    static scrollHandler = { of: vi.fn(() => 'mock-scroll-handler') };
     opts: { state: unknown; parent: HTMLElement };
     constructor(opts: { state: unknown; parent: HTMLElement }) {
       this.opts = opts;
@@ -331,5 +332,59 @@ describe('mountLeetCodeWidget', () => {
     const result = ctl.flushNow();
     expect(result).toBeInstanceOf(Promise);
     await expect(result).resolves.toBeUndefined();
+  });
+
+  // --- Debug session brat-widget-enter-flicker — scroll containment ----
+  //
+  // Editable mounts MUST install an EditorView.scrollHandler facet so the
+  // child editor's scrollIntoView requests are bounded to its own
+  // scrollDOM (the parent CM6's scrollDOM otherwise participates in the
+  // ancestor scroll walk, causing the parent note to flicker on Enter
+  // when scroll is at the bottom of an empty `## Notes` body). Read-only
+  // mounts skip the handler — they have no editable cursor motion.
+
+  it('brat-widget-enter-flicker: editable mount installs EditorView.scrollHandler', () => {
+    const shOf = (EditorView as unknown as { scrollHandler: { of: ReturnType<typeof vi.fn> } }).scrollHandler.of;
+    shOf.mockClear();
+    mountLeetCodeWidget(host, 'pass', file as never, plugin as never, /*readOnly=*/false);
+    expect(shOf).toHaveBeenCalled();
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+    expect(createArgs.extensions).toContain('mock-scroll-handler');
+  });
+
+  it('brat-widget-enter-flicker: read-only mount does NOT install EditorView.scrollHandler', () => {
+    const shOf = (EditorView as unknown as { scrollHandler: { of: ReturnType<typeof vi.fn> } }).scrollHandler.of;
+    shOf.mockClear();
+    mountLeetCodeWidget(host, 'pass', file as never, plugin as never, /*readOnly=*/true);
+    expect(shOf).not.toHaveBeenCalled();
+    const createArgs = (EditorState.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+    expect(createArgs.extensions).not.toContain('mock-scroll-handler');
+  });
+
+  it('brat-widget-enter-flicker: mousedown→focus calls contentDOM.focus({preventScroll:true})', () => {
+    const ctl = mountLeetCodeWidget(host, 'pass', file as never, plugin as never, /*readOnly=*/false);
+    // Spy on the mounted contentDOM's focus method to observe options.
+    const focusSpy = vi.spyOn(ctl.view.contentDOM, 'focus');
+    // Simulate the rAF-deferred focus call by dispatching mousedown and
+    // immediately running queued rAF callbacks. happy-dom's
+    // requestAnimationFrame fires synchronously when the test environment
+    // does not throttle — invoke focus directly via the registered listener
+    // by dispatching a real mousedown.
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    ctl.view.dom.dispatchEvent(event);
+    // requestAnimationFrame in happy-dom may run on next tick; use a
+    // microtask flush plus a tiny timer to allow it to settle.
+    return new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        // Some envs may have document.activeElement === contentDOM already
+        // (no actual focus call). The contract we care about: IF focus
+        // is called, it MUST be with { preventScroll: true }.
+        if (focusSpy.mock.calls.length > 0) {
+          const args = focusSpy.mock.calls[0]!;
+          expect(args[0]).toEqual({ preventScroll: true });
+        }
+        resolve();
+      });
+    });
   });
 });

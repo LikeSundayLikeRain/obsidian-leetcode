@@ -84,6 +84,7 @@ vi.mock('@codemirror/view', () => {
       lineWrapping: 'mock-line-wrapping-ext',
       theme: vi.fn(() => 'mock-theme-ext'),
       updateListener: { of: vi.fn(() => 'mock-update-listener') },
+      scrollHandler: { of: vi.fn(() => 'mock-scroll-handler') },
     }),
     keymap: { of: vi.fn(() => 'mock-keymap-ext') },
     drawSelection: vi.fn(() => 'mock-draw-selection-ext'),

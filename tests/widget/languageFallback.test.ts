@@ -28,6 +28,7 @@ vi.mock('@codemirror/view', () => {
     static editable = { of: vi.fn((b: boolean) => `mock-editable-${b}`) };
     static lineWrapping = 'mock-line-wrapping';
     static updateListener = { of: vi.fn(() => 'mock-update-listener') };
+    static scrollHandler = { of: vi.fn(() => 'mock-scroll-handler') };
     opts: { state: unknown; parent: HTMLElement };
     constructor(opts: { state: unknown; parent: HTMLElement }) {
       this.opts = opts;
