@@ -46,7 +46,7 @@ import {
   type ViewUpdate,
   EditorView,
 } from '@codemirror/view';
-import { editorInfoField, type Plugin, type TFile } from 'obsidian';
+import { editorInfoField, type Plugin } from 'obsidian';
 import { findCodeFence, extractFenceBody } from './fenceLocator';
 import type { WidgetMountHost } from './WidgetController';
 import { syncAnnotation } from './childParentSync';
@@ -109,10 +109,7 @@ class LeetCodeLiveViewPlugin {
  * the body matches the child already, or when the fence is missing/legacy.
  */
 function pushParentToChild(view: EditorView, plugin: PluginHost): void {
-  const file = view.state.field(editorInfoField, false)?.file as
-    | TFile
-    | null
-    | undefined;
+  const file = view.state.field(editorInfoField, false)?.file;
   if (!file) return;
   const fence = findCodeFence(view.state, { preferLeetCodeSolve: true });
   if (!fence || fence.kind !== 'leetcode-solve') return;
@@ -135,7 +132,7 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
       : registry.values();
 
   for (const ctl of iter) {
-    const candidate = ctl as unknown as {
+    const candidate = ctl as {
       file?: { path?: string };
       view?: EditorView;
       writer?: { hasPending?: () => boolean };

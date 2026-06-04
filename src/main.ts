@@ -22,9 +22,6 @@
 import { Component, MarkdownRenderer, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SettingsStore } from './settings/SettingsStore';
-// Phase 08 Plan 04 — type-only import; openAIDebug coerces a freshly-fetched
-// LeetCodeProblemDetail into the cached shape (both share contentHtml).
-import type { DetailCacheEntry } from './settings/SettingsStore';
 import { installRequestUrlFetcher, throttledRequestUrl } from './api/requestUrlFetcher';
 import { LeetCodeClient } from './api/LeetCodeClient';
 import { AIClient } from './ai/AIClient';
@@ -84,9 +81,7 @@ import { RunModal } from './solve/RunModal';
 import { EphemeralTabStore } from './solve/ephemeralTabStore';
 import { deriveArity } from './solve/runArity';
 import { registerRunCommand } from './solve/runCommandRegistration';
-import { retrofit as retrofitStarterCode } from './solve/starterCodeInjector';
-import { resetCodeWithConfirm, extractFenceBodyFromFullNote } from './solve/resetCodeWithConfirm';
-import { makeFileOpenHandler } from './main/fileOpenHook';
+import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
 // Phase 20 Plan 20-10 (gap-closure T9/T10) — countLeetCodeSolveFenceOpeners is
@@ -418,7 +413,7 @@ export default class LeetCodePlugin extends Plugin {
     // blocks plugin readiness; the routine is silent-on-failure
     // (Pattern S-05) so first-install vaults (no plugin folder) do NOT
     // throw and DO NOT block onload. NEVER awaited.
-    Promise.resolve().then(() => runMigrationBackupGc(this.app));
+    void Promise.resolve().then(() => runMigrationBackupGc(this.app));
 
     // Step 2 — install requestUrl fetcher BEFORE any LC construction (RESEARCH.md Pitfall 1).
     // @leetnotion/leetcode-api's Credential.init() fires an eager fetch; if our shim isn't
@@ -662,7 +657,7 @@ export default class LeetCodePlugin extends Plugin {
       new ContestSolveView(leaf, this));
 
     // Step 6b — ribbon icon (BROWSE-01). Lucide name from UI-SPEC.md § Icons.
-     
+
     this.addRibbonIcon('code-2', 'Open LeetCode browser', () => {
       void this.activateBrowser();
     });
@@ -1105,7 +1100,7 @@ export default class LeetCodePlugin extends Plugin {
     // beforeunload only.
     let quitTasksLogged = false;
     this.registerEvent(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- workspace 'quit' Tasks shape unverified at type level
+
       this.app.workspace.on('quit' as never, ((tasks: { add?: (p: Promise<unknown>) => void }) => {
         if (!quitTasksLogged) {
           quitTasksLogged = true;
@@ -1481,7 +1476,7 @@ export default class LeetCodePlugin extends Plugin {
         // All gates pass — delete the blank file and open preview
         void (async () => {
           try {
-            await this.app.vault.delete(file);
+            await this.app.fileManager.trashFile(file);
             await openOrReusePreview(this, slug);
           } catch (err) {
             logger.debug('wikilink-to-preview: intercept failed (non-fatal)', err);
@@ -1638,7 +1633,9 @@ export default class LeetCodePlugin extends Plugin {
     // (RESEARCH Pitfall 19-B). The destroy below cancels any pending writer
     // timers regardless.
     const flushP = this.widgetRegistry?.flushAll();
-    if (flushP && typeof flushP.catch === 'function') flushP.catch(() => undefined);
+    if (flushP !== undefined && typeof flushP.catch === 'function') {
+      flushP.catch(() => undefined);
+    }
     this.widgetRegistry?.destroyAll();
     // Phase 20 BL-01 (review-fix) + WR-15 — dispose the parking lot static
     // AFTER destroyAll. destroyAll tears down each controller's EditorView;
@@ -2055,14 +2052,14 @@ export default class LeetCodePlugin extends Plugin {
     if (existing[0]) {
       // revealLeaf is a Promise<void> in Obsidian 1.7.2+; we await it. For older Obsidian it
       // returns void (Promise semantics still safe to await via microtask).
-       
+
       await workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = workspace.getRightLeaf(false);
     if (!leaf) return;
     await leaf.setViewState({ type: BROWSER_VIEW_TYPE, active: true });
-     
+
     await workspace.revealLeaf(leaf);
   }
 
@@ -2096,7 +2093,7 @@ export default class LeetCodePlugin extends Plugin {
    *  Fires the locked Notice and returns false when an in-flight op exists. */
   private guardSingleFlight(): boolean {
     if (!this.activeSolve) return true;
-     
+
     new Notice(
       'A submission is already in progress. Cancel it first or wait for the verdict.',
       6000,
@@ -2914,11 +2911,11 @@ export default class LeetCodePlugin extends Plugin {
     }
     const lcSlug = lcSlugRaw;
     const lcLanguage =
-      typeof fm?.['lc-language'] === 'string' && (fm['lc-language'] as string).length > 0
-        ? (fm['lc-language'] as string)
+      typeof fm?.['lc-language'] === 'string' && fm['lc-language'].length > 0
+        ? fm['lc-language']
         : 'python3';
     const lcTitle =
-      typeof fm?.['lc-title'] === 'string' ? (fm['lc-title'] as string) : lcSlug;
+      typeof fm?.['lc-title'] === 'string' ? fm['lc-title'] : lcSlug;
     // Synthesize a ProblemContext for the runInterpretedInput re-resolver.
     // The widget mount path NEVER returns to active-leaf — the modal's onRun
     // closure invokes this resolver, which produces a synthetic ctx based on
@@ -2934,12 +2931,12 @@ export default class LeetCodePlugin extends Plugin {
       if (typeof freshSlug !== 'string' || freshSlug.length === 0) return null;
       const freshLanguage =
         typeof freshFm?.['lc-language'] === 'string' &&
-        (freshFm['lc-language'] as string).length > 0
-          ? (freshFm['lc-language'] as string)
+        freshFm['lc-language'].length > 0
+          ? freshFm['lc-language']
           : 'python3';
       const freshTitle =
         typeof freshFm?.['lc-title'] === 'string'
-          ? (freshFm['lc-title'] as string)
+          ? freshFm['lc-title']
           : freshSlug;
       // The synthesized ctx omits `view` (no MarkdownView for widget path);
       // runInterpretedInput only consults file/slug/title/lcLanguage/currentBody,
@@ -2983,11 +2980,11 @@ export default class LeetCodePlugin extends Plugin {
     }
     const lcSlug = lcSlugRaw;
     const lcLanguage =
-      typeof fm?.['lc-language'] === 'string' && (fm['lc-language'] as string).length > 0
-        ? (fm['lc-language'] as string)
+      typeof fm?.['lc-language'] === 'string' && fm['lc-language'].length > 0
+        ? fm['lc-language']
         : 'python3';
     const lcTitle =
-      typeof fm?.['lc-title'] === 'string' ? (fm['lc-title'] as string) : lcSlug;
+      typeof fm?.['lc-title'] === 'string' ? fm['lc-title'] : lcSlug;
     // The submitWithCode body re-reads code via getCurrentBody() — close
     // over widget.view.state.doc so the orchestrator picks up any edits made
     // while the verdict modal is open.
@@ -3356,17 +3353,17 @@ export default class LeetCodePlugin extends Plugin {
         try { modal.close(); } catch { /* headless */ }
       } else if (isNetworkError(err)) {
         // D-19 LOCKED copy + D-22 command-palette Notice surface.
-         
+
         new Notice("Couldn't reach LeetCode. Check your connection.", 8000);
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof TimeoutError || (err as Error).name === 'TimeoutError') {
         // D-20 LOCKED copy + D-22 command-palette Notice surface.
-         
+
         new Notice('LeetCode is slow to respond. Try again.', 8000);
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof RateLimitError) {
         const seconds = Math.ceil(err.retryAfterMs / 1000);
-         
+
         new Notice(`LeetCode rate limit reached. Wait ${String(seconds)}s before retrying.`, 6000);
         try { modal.close(); } catch { /* headless */ }
       } else {
@@ -3488,7 +3485,7 @@ export default class LeetCodePlugin extends Plugin {
   private openRunModalWithSeedAppended(seedInput: string): void {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
-       
+
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
@@ -3641,17 +3638,17 @@ export default class LeetCodePlugin extends Plugin {
         try { modal.close(); } catch { /* headless */ }
       } else if (isNetworkError(err)) {
         // D-19 LOCKED copy + D-22 command-palette Notice surface.
-         
+
         new Notice("Couldn't reach LeetCode. Check your connection.", 8000);
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof TimeoutError || (err as Error).name === 'TimeoutError') {
         // D-20 LOCKED copy + D-22 command-palette Notice surface.
-         
+
         new Notice('LeetCode is slow to respond. Try again.', 8000);
         try { modal.close(); } catch { /* headless */ }
       } else if (err instanceof RateLimitError) {
         const seconds = Math.ceil(err.retryAfterMs / 1000);
-         
+
         new Notice(`LeetCode rate limit reached. Wait ${String(seconds)}s before retrying.`, 6000);
         try { modal.close(); } catch { /* headless */ }
       } else {
@@ -3675,7 +3672,7 @@ export default class LeetCodePlugin extends Plugin {
   private async openSubmissionPickerFromActive(): Promise<void> {
     const ctx = this.getActiveProblemContext();
     if (!ctx) {
-       
+
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
@@ -3730,18 +3727,18 @@ export default class LeetCodePlugin extends Plugin {
       }
       if (isNetworkError(err)) {
         // D-19 LOCKED copy + D-22 command-palette Notice surface.
-         
+
         new Notice("Couldn't reach LeetCode. Check your connection.", 8000);
         return;
       }
       if (err instanceof TimeoutError || (err as Error).name === 'TimeoutError') {
         // D-20 LOCKED copy + D-22 command-palette Notice surface.
-         
+
         new Notice('LeetCode is slow to respond. Try again.', 8000);
         return;
       }
       logger.debug('graph.openSubmissionDetail: fetch failed', err);
-       
+
       new Notice("Couldn't load submission. Check your connection.", 4000);
       return;
     }

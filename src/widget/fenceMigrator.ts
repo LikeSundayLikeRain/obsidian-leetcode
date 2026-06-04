@@ -105,8 +105,15 @@ import { rewriteFenceOpenerTag } from './fenceSerialization';
 import { BACKUP_FOLDER_RE } from './migrationBackupGc';
 import { logger } from '../shared/logger';
 
-/** Plugin folder under the vault root (mirrors migrationBackupGc.BASE_DIR). */
-const PLUGIN_DIR = '.obsidian/plugins/obsidian-leetcode';
+/**
+ * Plugin folder under the vault config dir. Mirrors
+ * migrationBackupGc.pluginBackupRoot(app). Built per-call from
+ * `app.vault.configDir` (NOT a hardcoded `.obsidian/`) so non-default
+ * config dirs (`--config-dir` launch flag) work correctly.
+ */
+function pluginDir(app: App): string {
+  return `${app.vault.configDir}/plugins/obsidian-leetcode`;
+}
 
 // Sentinel string for resolveLangSlug — fenceTag → sentinel means unknown tag.
 const SLUG_SENTINEL = '__sentinel__';
@@ -334,14 +341,15 @@ async function backupAlreadyExistsForSlug(
   app: App,
   slug: string,
 ): Promise<boolean> {
+  const baseDir = pluginDir(app);
   let listing: { files: string[]; folders: string[] };
   try {
-    listing = await app.vault.adapter.list(PLUGIN_DIR);
+    listing = await app.vault.adapter.list(baseDir);
   } catch {
     // First-install vault or transient I/O error — no backup exists; proceed.
     return false;
   }
-  const prefix = `${PLUGIN_DIR}/`;
+  const prefix = `${baseDir}/`;
   for (const folderFull of listing.folders ?? []) {
     const folderName = folderFull.startsWith(prefix)
       ? folderFull.slice(prefix.length)

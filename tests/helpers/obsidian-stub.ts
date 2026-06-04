@@ -224,7 +224,7 @@ export const MarkdownRenderer = {
 // via node_modules); we don't declare it in package.json because esbuild marks it
 // external and Obsidian supplies it at runtime. The lint rule reports this as a
 // false-positive for the transitive-peer case.
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+
 import { StateField } from '@codemirror/state';
 
 export const editorInfoField = StateField.define<{ file: { path: string } | null }>({

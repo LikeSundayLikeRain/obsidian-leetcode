@@ -218,7 +218,10 @@ describe('Language fallback Notice (Plan 19-04 / WIDGET-06)', () => {
     expect(noticeSpy).toHaveBeenCalledTimes(1);
     const msg = String(noticeSpy.mock.calls[0]![0]);
     expect(msg).toMatch(/lc-language/);
-    expect(msg).toMatch(/Python/);
+    // Sentence-case lint rule (obsidianmd/ui/sentence-case) requires the
+    // word after the `;` to be lowercase: "...falling back to python." —
+    // case-insensitive match keeps the test robust if copy changes again.
+    expect(msg).toMatch(/python/i);
   });
 
   it('separate mounts each emit their own Notice (per-mount semantics — VALIDATION 19-04-03)', () => {

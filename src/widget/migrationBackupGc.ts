@@ -42,8 +42,18 @@
 import type { App } from 'obsidian';
 import { logger } from '../shared/logger';
 
-/** Plugin folder under the vault root. Backup folders live as siblings. */
-const BASE_DIR = '.obsidian/plugins/obsidian-leetcode';
+/**
+ * Plugin folder under the vault config dir. Backup folders live as siblings.
+ *
+ * Built from `app.vault.configDir` (NOT a hardcoded `.obsidian/`) — Obsidian
+ * users may configure a non-default config folder via the launch flag
+ * `--config-dir`, and the rule `obsidianmd/hardcoded-config-path` requires
+ * code to honour that. The plugin id `obsidian-leetcode` IS hardcoded —
+ * it's literally this plugin's id.
+ */
+function pluginBackupRoot(app: App): string {
+  return `${app.vault.configDir}/plugins/obsidian-leetcode`;
+}
 
 /**
  * Strict folder-name regex (T-21-gc mitigation). Captures:
@@ -132,9 +142,10 @@ function parseSanitizedIso(captured: string): number {
  * Pattern S-05); never blocks plugin readiness.
  *
  * Steps:
- *   1. List `BASE_DIR` via `adapter.list`. On rejection (likely first-install
- *      vault — plugin folder does not yet exist), debug-log and return.
- *   2. For each folder under `BASE_DIR`, strip the prefix to get the
+ *   1. List `pluginBackupRoot(app)` via `adapter.list`. On rejection (likely
+ *      first-install vault — plugin folder does not yet exist), debug-log
+ *      and return.
+ *   2. For each folder under that base dir, strip the prefix to get the
  *      bare folder name; skip if it doesn't match the strict regex.
  *   3. Parse the ISO timestamp from the regex match; skip on NaN.
  *   4. If `Date.now() - parsed > TTL_MS`, delete via `adapter.rmdir(path,
@@ -155,10 +166,12 @@ export async function runMigrationBackupGc(app: App): Promise<void> {
   gcRunning = true;
 
   try {
+    const baseDir = pluginBackupRoot(app);
+
     // Step 1 — defensive list. First-install vaults reject here (Pitfall 4).
     let listing: { files: string[]; folders: string[] };
     try {
-      listing = await app.vault.adapter.list(BASE_DIR);
+      listing = await app.vault.adapter.list(baseDir);
     } catch (err) {
       logger.debug(
         'migrationBackupGc: adapter.list failed (likely first-install)',
@@ -171,11 +184,11 @@ export async function runMigrationBackupGc(app: App): Promise<void> {
 
     // Step 2 — iterate folders.
     for (const folderFull of listing.folders ?? []) {
-      // Strip the BASE_DIR prefix to get the bare folder name.
+      // Strip the baseDir prefix to get the bare folder name.
       // adapter.list returns paths relative to the vault root, e.g.
-      //   '.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-...'
+      //   '<configDir>/plugins/obsidian-leetcode/migration-backup-two-sum-...'
       // We want just 'migration-backup-two-sum-...' for regex matching.
-      const prefix = `${BASE_DIR}/`;
+      const prefix = `${baseDir}/`;
       const folderName = folderFull.startsWith(prefix)
         ? folderFull.slice(prefix.length)
         : folderFull;

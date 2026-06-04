@@ -375,7 +375,7 @@ describe('mountLeetCodeWidget', () => {
     // requestAnimationFrame in happy-dom may run on next tick; use a
     // microtask flush plus a tiny timer to allow it to settle.
     return new Promise<void>((resolve) => {
-      requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         // Some envs may have document.activeElement === contentDOM already
         // (no actual focus call). The contract we care about: IF focus
         // is called, it MUST be with { preventScroll: true }.

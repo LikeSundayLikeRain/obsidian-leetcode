@@ -33,7 +33,7 @@ const FENCE_OPENER_RE = /^\s*```leetcode-solve\b/;
  *  a hand-rolled deterministic hash if `crypto.subtle` is unavailable
  *  (happy-dom test envs may omit it). */
 export async function sha1(s: string): Promise<string> {
-  const subtle = (globalThis as { crypto?: { subtle?: SubtleCrypto } }).crypto?.subtle;
+  const subtle = (window as { crypto?: { subtle?: SubtleCrypto } }).crypto?.subtle;
   if (subtle && typeof subtle.digest === 'function') {
     try {
       const enc = new TextEncoder().encode(s);
@@ -59,7 +59,7 @@ export class DebouncedWriter {
   private lastFlushAt = 0;
   private rateLimitMs = 200;
   private delayMs: number;
-  private rateLimitTimer: ReturnType<typeof setTimeout> | null = null;
+  private rateLimitTimer: number | null = null;
   /** Phase 20 Plan 20-03 (SYNC-05) — sentinel for `hasPending()`. Set to true
    *  whenever `run()` schedules a debounced flush; reset to false on every
    *  flush completion (success or error path) and on `cancel()`. The
@@ -100,7 +100,7 @@ export class DebouncedWriter {
   cancel(): void {
     this.deb.cancel();
     if (this.rateLimitTimer !== null) {
-      clearTimeout(this.rateLimitTimer);
+      window.clearTimeout(this.rateLimitTimer);
       this.rateLimitTimer = null;
     }
     this.pending = false;
@@ -162,7 +162,7 @@ export class DebouncedWriter {
         // forceFlush clears before re-entering flush). Don't add a
         // pre-clear here — it would re-arm the wait window on every
         // burst and never fire.
-        this.rateLimitTimer = setTimeout(() => {
+        this.rateLimitTimer = window.setTimeout(() => {
           this.rateLimitTimer = null;
           void this.flush();
         }, wait);
@@ -196,7 +196,7 @@ export class DebouncedWriter {
       // happened above — abort and surface a Notice.
       const actualCount = countLcOpeners(currentDisk);
       if (actualCount > expectedFenceIndex + 1) {
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- intentional capitalization for the user-facing Notice
+
         new Notice('Fence position changed; reload to continue editing.', 5000);
         return;
       }
@@ -231,7 +231,7 @@ export class DebouncedWriter {
       const observedBody = extractFenceBody(postWriteText, expectedFenceIndex) ?? '';
       const [obsHash, expHashWidget] = await Promise.all([sha1(observedBody), sha1(newBody)]);
       if (obsHash !== expHashWidget) {
-        // eslint-disable-next-line no-console -- D-09 runtime diagnostic
+
         console.warn(`LC widget: post-flush hash drift for ${this.file.path}`);
       }
     } finally {

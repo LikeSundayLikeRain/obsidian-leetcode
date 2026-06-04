@@ -18,7 +18,6 @@
 import type { App, TFile } from 'obsidian';
 import type { DetailCacheEntry } from '../settings/SettingsStore';
 import { forceInjectCodeSection } from './starterCodeInjector';
-import { hasExistingCodeBlock } from '../graph/copyToCode';
 
 /**
  * Phase 17 D-03 helper — slice the fence body out of a full-note string.

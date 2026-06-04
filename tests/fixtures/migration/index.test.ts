@@ -155,6 +155,20 @@ function parseFrontmatter(
  * appended in insertion order at the end of the block, just before the
  * closing `---`. Body text after the closing `---` is preserved BYTE-EXACT.
  */
+/**
+ * Coerce a frontmatter value to its YAML scalar form for re-serialization.
+ * Phase 21 fixtures only set string / number / boolean / null; for objects
+ * the test would need explicit JSON intent so we fall through to JSON.stringify
+ * rather than silently emit `[object Object]` (the no-base-to-string lint
+ * rule's exact concern).
+ */
+function stringifyFmValue(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v);
+}
+
 export function applyFrontmatterMutation(
   noteText: string,
   mutator: (fm: Record<string, unknown>) => void,
@@ -188,7 +202,7 @@ export function applyFrontmatterMutation(
       if (v === parsed.values[k]) {
         newLines.push(`${k}: ${parsed.values[k]}`);
       } else {
-        newLines.push(`${k}: ${String(v ?? '')}`);
+        newLines.push(`${k}: ${stringifyFmValue(v)}`);
       }
     }
     // (Keys deleted by the mutator drop out — Phase 21 doesn't exercise
@@ -199,7 +213,7 @@ export function applyFrontmatterMutation(
   for (const k of Object.keys(obj)) {
     if (preKeys.has(k)) continue;
     const v = obj[k];
-    newLines.push(`${k}: ${String(v ?? '')}`);
+    newLines.push(`${k}: ${stringifyFmValue(v)}`);
   }
   newLines.push(FM_DELIM);
 
@@ -222,7 +236,9 @@ interface RunnerSpies {
 }
 
 interface RunnerHandle {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional `any` so callers don't each need an `as never` cast when passing through to production functions typed `app: App`, `file: TFile`.
   app: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see app field above.
   file: any;
   spies: RunnerSpies;
   /** The current note text after all writes. */

@@ -146,8 +146,8 @@ export class WidgetRegistry {
       // Fire-and-forget — promise rejections swallowed (best-effort).
       try {
         const p = ctl.flushNow();
-        if (p && typeof (p as Promise<void>).catch === 'function') {
-          (p as Promise<void>).catch(() => undefined);
+        if (p && typeof (p).catch === 'function') {
+          (p).catch(() => undefined);
         }
       } catch {
         /* swallow — beforeunload best-effort */

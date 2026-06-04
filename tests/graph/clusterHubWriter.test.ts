@@ -3,7 +3,7 @@
 // Phase 11 Plan 02 Task 1 — TDD tests for ClusterHubWriter + mergeTechniquesSectionAI.
 // Target: src/graph/ClusterHubWriter.ts, src/graph/mergeTechniquesSection.ts
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { makeMockVaultApp } from '../helpers/mock-vault';
 import { mergeTechniquesSectionAI } from '../../src/graph/mergeTechniquesSection';
 import { ClusterHubWriter } from '../../src/graph/ClusterHubWriter';

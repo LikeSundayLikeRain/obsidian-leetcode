@@ -3,7 +3,7 @@
 // Phase 08.2 Plan 01 Task 2 — unit tests for the credential_process module:
 // parseCommandLine, runCredentialProcess (via spawnSync stub),
 // parseCredentialProcessOutput, getCachedOrRefreshSync (cache + coalescing).
-/* eslint-disable @typescript-eslint/unbound-method */
+
 //
 // Strategy: stub `activeWindow.require` with a fake child_process that returns
 // deterministic spawnSync results per test. Same pattern as awsCredentials.test.ts.

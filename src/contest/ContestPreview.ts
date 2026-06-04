@@ -8,7 +8,7 @@
 // Pattern precedent: src/solve/VerdictModal.ts (Modal pattern).
 // UI-SPEC: §Contest preview, §Copywriting Contract.
 
-import { Modal, Notice, setIcon, type App } from 'obsidian';
+import { Modal, Notice, type App } from 'obsidian';
 import type { CachedContest } from './types';
 import type { LeetCodeClient } from '../api/LeetCodeClient';
 

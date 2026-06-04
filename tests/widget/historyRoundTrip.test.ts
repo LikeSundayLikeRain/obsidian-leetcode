@@ -65,7 +65,7 @@
 //     restore history via a different mechanism.
 
 import { describe, it, expect } from 'vitest';
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian
+
 import { EditorState } from '@codemirror/state';
 
 describe('CM6 history JSON round-trip contract (RESEARCH Pitfall 19-C)', () => {

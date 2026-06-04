@@ -42,9 +42,9 @@
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { EditorSelection } from '@codemirror/state';
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+
 import type { EditorView } from '@codemirror/view';
-// eslint-disable-next-line import/no-extraneous-dependencies -- direct dep
+
 import { historyField } from '@codemirror/commands';
 
 /** Captured snapshot of an embedded child editor's transient state. */

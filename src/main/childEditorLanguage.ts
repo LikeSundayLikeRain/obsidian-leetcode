@@ -17,13 +17,13 @@
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { Compartment, type Extension } from '@codemirror/state';
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+
 import { indentUnit, StreamLanguage } from '@codemirror/language';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { keymap, type Command } from '@codemirror/view';
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+
 import { toggleLineComment } from '@codemirror/commands';
-// eslint-disable-next-line import/no-extraneous-dependencies -- external in esbuild; runtime-provided by Obsidian
+
 import { closeBrackets } from '@codemirror/autocomplete';
 import { python } from '@codemirror/lang-python';
 import { java } from '@codemirror/lang-java';

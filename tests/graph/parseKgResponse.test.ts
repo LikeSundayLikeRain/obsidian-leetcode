@@ -13,7 +13,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { parseKgResponse } from '../../src/graph/parseKgResponse';
-import type { KgClassification } from '../../src/graph/parseKgResponse';
 
 describe('Phase 11 Plan 01 — parseKgResponse defensive parser', () => {
   it('valid JSON string returns parsed KgClassification', () => {

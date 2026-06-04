@@ -116,7 +116,7 @@ export class ContestScratchManager {
   }
 
   async cleanupAll(): Promise<void> {
-    const { vault, workspace } = this.app;
+    const { vault, workspace, fileManager } = this.app;
     const folder = vault.getAbstractFileByPath(this.folder);
     if (!folder) return;
     const files = vault.getFiles().filter(f => f.path.startsWith(this.folder + '/'));
@@ -127,12 +127,12 @@ export class ContestScratchManager {
       for (const leaf of leaves) leaf.detach();
     }
     for (const f of files) {
-      try { await vault.delete(f); } catch { /* already gone */ }
+      try { await fileManager.trashFile(f); } catch { /* already gone */ }
     }
     // Remove the folder itself
     const folderAbstract = vault.getAbstractFileByPath(this.folder);
     if (folderAbstract) {
-      await vault.delete(folderAbstract, true);
+      await fileManager.trashFile(folderAbstract);
     }
   }
 

@@ -20,7 +20,6 @@ import {
   type WorkspaceLeaf,
 } from 'obsidian';
 import type LeetCodePlugin from '../main';
-import type { DetailCacheEntry } from '../settings/SettingsStore';
 import { htmlToMarkdown } from '../notes/htmlToMarkdown';
 import { LC_LANG_DISPLAY_LABELS, LC_CHEVRON_LANG_ORDER } from '../solve/languages';
 import { interpretSolution, authHeaders } from '../solve/leetcodeRest';

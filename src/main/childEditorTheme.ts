@@ -18,7 +18,7 @@
 // reload. See 17-RESEARCH.md Pattern 3 (lines 246-310) for the full Lezer
 // tag → CSS variable mapping.
 
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+
 // Phase 17 Plan 10 round-3: syntaxHighlighting is no longer wired into
 // createThemedHighlight()'s return array (see function comment). The
 // HighlightStyle.define() spec is still exported as `themedHighlightStyle`
@@ -29,7 +29,7 @@ import { HighlightStyle } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { EditorView } from '@codemirror/view';
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+
 import { type Extension } from '@codemirror/state';
 
 /**

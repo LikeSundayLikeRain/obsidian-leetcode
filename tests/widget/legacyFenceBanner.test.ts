@@ -305,7 +305,13 @@ describe('mountLegacyFenceBanner', () => {
       // logger.debug was called once with a 'mount failed' message.
       expect(debugSpy).toHaveBeenCalled();
       const messages = (debugSpy.mock.calls as unknown[][])
-        .map((call) => String((call[0] as unknown) ?? ''))
+        .map((call) => {
+          const m = call[0];
+          // logger.debug(message, ...) — the debug message argument is always
+          // a string; narrow before stringifying so this stays clean under
+          // the @typescript-eslint/no-base-to-string lint rule.
+          return typeof m === 'string' ? m : '';
+        })
         .join(' | ');
       expect(messages).toContain('mount failed');
 

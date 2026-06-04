@@ -3,10 +3,9 @@
 // Phase 11 Plan 02 Task 2 — TDD tests for PatternClusterEngine + OtherPatternModal.
 // Target: src/graph/PatternClusterEngine.ts, src/graph/OtherPatternModal.ts
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { makeMockVaultApp } from '../helpers/mock-vault';
 import { PatternClusterEngine } from '../../src/graph/PatternClusterEngine';
-import type { ClassifyResult } from '../../src/graph/PatternClusterEngine';
 
 // ── Mock factories ────────────────────────────────────────────────────────────
 

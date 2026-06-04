@@ -159,7 +159,7 @@ export class RunModal extends Modal {
 
     contentEl.addEventListener('keydown', (e: KeyboardEvent) => {
       const isModEnter = (e.metaKey || e.ctrlKey) && e.key === 'Enter';
-      const isEnterOutsideTextarea = e.key === 'Enter' && document.activeElement !== textarea;
+      const isEnterOutsideTextarea = e.key === 'Enter' && activeDocument.activeElement !== textarea;
       if (isModEnter || isEnterOutsideTextarea) {
         e.preventDefault();
         runBtn.click();

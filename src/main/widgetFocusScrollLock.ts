@@ -1,3 +1,4 @@
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { ViewPlugin, type EditorView, type PluginValue, type ViewUpdate } from '@codemirror/view';
 
 /**
@@ -57,7 +58,13 @@ function installPrototypePatch(): void {
   if (prototypePatchInstalled) return;
   const desc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
   if (!desc || !desc.get || !desc.set) return;
+  // Capturing the descriptor's getter/setter pair so we can re-invoke them
+  // via `.call(this, ...)` from the patched accessor below — that is the
+  // documented pattern for prototype monkey-patching, NOT a `this`-scoping
+  // bug the unbound-method rule was designed to catch.
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- intentional capture; re-invoked via `.call(this, ...)` below.
   originalScrollTopGetter = desc.get;
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- intentional capture; re-invoked via `.call(this, ...)` below.
   originalScrollTopSetter = desc.set;
   Object.defineProperty(Element.prototype, 'scrollTop', {
     get(this: Element) {
@@ -66,7 +73,7 @@ function installPrototypePatch(): void {
     set(this: Element, v: number) {
       if (
         activeLockCount > 0 &&
-        this instanceof HTMLElement &&
+        this.instanceOf(HTMLElement) &&
         this.getAttribute(LOCK_ATTR) === LOCK_VALUE
       ) {
         return;
@@ -114,7 +121,7 @@ export const widgetFocusScrollLock = ViewPlugin.fromClass(
           window.clearTimeout(this.blurGraceTimer);
         }
         this.blurGraceTimer = window.setTimeout(() => {
-          const active = document.activeElement;
+          const active = activeDocument.activeElement;
           if (
             active instanceof HTMLElement &&
             active.closest('.lc-nested-editor') &&
@@ -132,8 +139,8 @@ export const widgetFocusScrollLock = ViewPlugin.fromClass(
         }, 100);
       };
 
-      document.addEventListener('focusin', this.onFocusIn, true);
-      document.addEventListener('focusout', this.onFocusOut, true);
+      activeDocument.addEventListener('focusin', this.onFocusIn, true);
+      activeDocument.addEventListener('focusout', this.onFocusOut, true);
     }
 
     update(_update: ViewUpdate): void {
@@ -143,8 +150,8 @@ export const widgetFocusScrollLock = ViewPlugin.fromClass(
     }
 
     destroy(): void {
-      document.removeEventListener('focusin', this.onFocusIn, true);
-      document.removeEventListener('focusout', this.onFocusOut, true);
+      activeDocument.removeEventListener('focusin', this.onFocusIn, true);
+      activeDocument.removeEventListener('focusout', this.onFocusOut, true);
       if (this.widgetFocused) {
         activeLockCount = Math.max(0, activeLockCount - 1);
         this.widgetFocused = false;
