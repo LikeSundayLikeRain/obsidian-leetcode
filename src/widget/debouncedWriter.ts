@@ -59,7 +59,7 @@ export class DebouncedWriter {
   private lastFlushAt = 0;
   private rateLimitMs = 200;
   private delayMs: number;
-  private rateLimitTimer: ReturnType<typeof setTimeout> | null = null;
+  private rateLimitTimer: number | null = null;
   /** Phase 20 Plan 20-03 (SYNC-05) — sentinel for `hasPending()`. Set to true
    *  whenever `run()` schedules a debounced flush; reset to false on every
    *  flush completion (success or error path) and on `cancel()`. The

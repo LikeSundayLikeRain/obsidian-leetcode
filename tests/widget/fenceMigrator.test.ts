@@ -39,7 +39,8 @@ interface MockState {
   vaultReadSpy: ReturnType<typeof vi.fn>;
 }
 
-function makeApp(state: MockState): { app: unknown; file: unknown } {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional `any` so call-site fixtures (38+ direct calls into production functions typed `app: App`, `file: TFile`) don't each need an `as never` cast. Loosely-typed test mocks are the established pattern in this file.
+function makeApp(state: MockState): { app: any; file: any } {
   const file = { path: 'LeetCode/two-sum.md', name: 'two-sum.md', extension: 'md' };
   const app = {
     vault: {

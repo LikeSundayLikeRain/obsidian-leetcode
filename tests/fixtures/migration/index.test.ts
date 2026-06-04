@@ -236,8 +236,10 @@ interface RunnerSpies {
 }
 
 interface RunnerHandle {
-  app: unknown;
-  file: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional `any` so callers don't each need an `as never` cast when passing through to production functions typed `app: App`, `file: TFile`.
+  app: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see app field above.
+  file: any;
   spies: RunnerSpies;
   /** The current note text after all writes. */
   getCurrentText: () => string;

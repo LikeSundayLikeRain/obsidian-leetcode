@@ -12,7 +12,7 @@ vi.mock('obsidian', async () => {
     timeout = 0,
     resetTimer = false,
   ) => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let timer: number | null = null;
     let pendingArgs: T | null = null;
     const run = (...args: T): V | undefined => {
       pendingArgs = args;

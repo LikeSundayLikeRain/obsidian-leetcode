@@ -53,7 +53,7 @@ export function createChildParentSyncExtension(
   getFence: () => FenceLocation | null,
   debounceMs = DEFAULT_DEBOUNCE_MS,
 ): { extension: Extension; handle: ChildParentSyncHandle } {
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  let timer: number | null = null;
   let childView: EditorView | null = null;
 
   function doFlush(): void {
