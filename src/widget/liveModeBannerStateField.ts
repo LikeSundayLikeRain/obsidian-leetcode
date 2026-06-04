@@ -201,7 +201,7 @@ class AutoMigratingBannerWidget extends WidgetType {
   }
 
   toDOM(_view: EditorView): HTMLElement {
-    const host = document.createElement('div');
+    const host = activeDocument.createElement('div');
     // Plan 21-15 (UAT R4 closure) — `lc-legacy-banner--livepreview` is the
     // top-level CSS scope class that styles.css uses to reset CM6's block-
     // decoration wrapper styling (background tint, monospace font, fence
@@ -245,7 +245,7 @@ class ManualPromptBannerWidget extends WidgetType {
   }
 
   toDOM(_view: EditorView): HTMLElement {
-    const host = document.createElement('div');
+    const host = activeDocument.createElement('div');
     // Plan 21-15 (UAT R4 closure) — see AutoMigratingBannerWidget.toDOM
     // above for the rationale. Both LP widget hosts carry the LP scope
     // class so styles.css rules apply identically.

@@ -230,5 +230,9 @@ export { findLeafEl as __test_findLeafEl };
 
 // Suppress unused-import warning when WorkspaceLeaf isn't referenced at
 // compile time (the type is part of the structural contract documented above
-// for future readers).
+// for future readers). The underscore-prefix convention does not silence
+// @typescript-eslint/no-unused-vars for `type` aliases in this config, so an
+// inline disable is required. Intentional: kept as a compile-time anchor so
+// imports of WorkspaceLeaf survive tree-shake/auto-import-cleanup tools.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _UnusedLeafTypeReference = WorkspaceLeaf;

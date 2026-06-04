@@ -1,6 +1,6 @@
 // tests/contest/ContestSolveView.test.ts
 // Phase 10 Plan 04 Task 1 — unit tests for ContestSolveView.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // Mock obsidian with shared stub
 vi.mock('obsidian', async () => {

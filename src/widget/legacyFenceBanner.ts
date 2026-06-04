@@ -138,8 +138,8 @@ function renderReadOnly(host: HTMLElement, source: string): void {
     pre.textContent = source;
     return;
   }
-  const pre = document.createElement('pre');
-  const code = document.createElement('code');
+  const pre = activeDocument.createElement('pre');
+  const code = activeDocument.createElement('code');
   code.textContent = source;
   pre.appendChild(code);
   host.appendChild(pre);
@@ -165,7 +165,7 @@ function mk(
 ): HTMLElement {
   const ce = (host as unknown as { createEl?: CreateElFn }).createEl;
   if (typeof ce === 'function') return ce.call(host, tag, opts);
-  const el = document.createElement(tag);
+  const el = activeDocument.createElement(tag);
   if (opts.text !== undefined) el.textContent = opts.text;
   if (opts.cls !== undefined) {
     for (const c of opts.cls.split(/\s+/).filter(Boolean)) el.classList.add(c);

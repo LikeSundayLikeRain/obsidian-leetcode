@@ -46,7 +46,7 @@ import {
   type ViewUpdate,
   EditorView,
 } from '@codemirror/view';
-import { editorInfoField, type Plugin, type TFile } from 'obsidian';
+import { editorInfoField, type Plugin } from 'obsidian';
 import { findCodeFence, extractFenceBody } from './fenceLocator';
 import type { WidgetMountHost } from './WidgetController';
 import { syncAnnotation } from './childParentSync';

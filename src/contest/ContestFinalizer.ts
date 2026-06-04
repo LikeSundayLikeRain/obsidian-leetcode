@@ -28,7 +28,7 @@
 import { TFile, type App } from 'obsidian';
 import { codeBlockFor, CODE_HEADING_LINE, buildNoteBody, buildFrontmatterInput, applyFrontmatter } from '../notes/NoteTemplate';
 import { htmlToMarkdown } from '../notes/htmlToMarkdown';
-import type { ContestSession, ContestProblemState } from './types';
+import type { ContestSession } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -392,12 +392,6 @@ export async function finalizeContest(args: FinalizeContestArgs): Promise<string
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Build a minimal problem note body for contest-created notes. */
-function buildContestProblemBody(problem: ContestProblemState): string {
-  const codeBlock = codeBlockFor(problem.code);
-  return `## Problem\n\n\n\n${CODE_HEADING_LINE}\n${codeBlock}\n\n## Notes\n\n`;
-}
 
 /** Ensure a folder exists in the vault; handle "already exists" gracefully. */
 async function ensureFolder(app: App, path: string): Promise<void> {

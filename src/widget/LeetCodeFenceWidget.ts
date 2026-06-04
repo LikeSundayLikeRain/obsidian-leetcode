@@ -141,7 +141,7 @@ export class LeetCodeFenceWidget extends WidgetType {
    * a sibling pane's controller in a multi-pane scenario.
    */
   toDOM(_view: EditorView): HTMLElement {
-    const host = document.createElement('div');
+    const host = activeDocument.createElement('div');
     // WR-08 (review-fix) — the previous call passed `view` into a
     // `parentView?` parameter on mountLeetCodeWidget that was never read.
     // The parameter was the intended hook for createChildParentSyncExtension

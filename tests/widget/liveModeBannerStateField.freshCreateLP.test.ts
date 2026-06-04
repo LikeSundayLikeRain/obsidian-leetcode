@@ -87,7 +87,6 @@ vi.mock('../../src/widget/fenceMigrator', async () => {
 
 
 import { EditorState } from '@codemirror/state';
-import { Decoration } from '@codemirror/view';
 
 import {
   createFakePlugin,

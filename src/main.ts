@@ -22,9 +22,6 @@
 import { Component, MarkdownRenderer, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SettingsStore } from './settings/SettingsStore';
-// Phase 08 Plan 04 — type-only import; openAIDebug coerces a freshly-fetched
-// LeetCodeProblemDetail into the cached shape (both share contentHtml).
-import type { DetailCacheEntry } from './settings/SettingsStore';
 import { installRequestUrlFetcher, throttledRequestUrl } from './api/requestUrlFetcher';
 import { LeetCodeClient } from './api/LeetCodeClient';
 import { AIClient } from './ai/AIClient';
@@ -84,9 +81,7 @@ import { RunModal } from './solve/RunModal';
 import { EphemeralTabStore } from './solve/ephemeralTabStore';
 import { deriveArity } from './solve/runArity';
 import { registerRunCommand } from './solve/runCommandRegistration';
-import { retrofit as retrofitStarterCode } from './solve/starterCodeInjector';
-import { resetCodeWithConfirm, extractFenceBodyFromFullNote } from './solve/resetCodeWithConfirm';
-import { makeFileOpenHandler } from './main/fileOpenHook';
+import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
 // Phase 20 Plan 20-10 (gap-closure T9/T10) — countLeetCodeSolveFenceOpeners is
@@ -1481,7 +1476,7 @@ export default class LeetCodePlugin extends Plugin {
         // All gates pass — delete the blank file and open preview
         void (async () => {
           try {
-            await this.app.vault.delete(file);
+            await this.app.fileManager.trashFile(file);
             await openOrReusePreview(this, slug);
           } catch (err) {
             logger.debug('wikilink-to-preview: intercept failed (non-fatal)', err);

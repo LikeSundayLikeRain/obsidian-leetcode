@@ -205,14 +205,12 @@ describe('childEditorTheme', () => {
       // each have at least one reference.
       const refs = source.match(/var\(\s*--code-keyword[^)]*\)/g) ?? [];
       expect(refs.length).toBeGreaterThanOrEqual(2);
-      for (const ref of refs) {
-        // The bracket-match theme uses bare var(--code-keyword) by design
-        // (Obsidian guarantees --code-keyword is defined for accent contrast
-        // — see D-16). HighlightStyle binding uses fallback. We only enforce
-        // the fallback shape on token-bound entries (those followed by
-        // `, fontStyle:` or appearing inside the highlight spec). Cheap
-        // approach: at least ONE reference must have a fallback hex.
-      }
+      // The bracket-match theme uses bare var(--code-keyword) by design
+      // (Obsidian guarantees --code-keyword is defined for accent contrast
+      // — see D-16). HighlightStyle binding uses fallback. We only enforce
+      // the fallback shape on token-bound entries (those followed by
+      // `, fontStyle:` or appearing inside the highlight spec). Cheap
+      // approach: at least ONE reference must have a fallback hex.
       expect(source).toMatch(/var\(\s*--code-keyword\s*,\s*#[0-9a-f]{3,8}\s*\)/i);
     });
 

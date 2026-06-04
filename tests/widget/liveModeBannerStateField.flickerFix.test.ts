@@ -56,11 +56,8 @@ import {
 
 import { EditorState } from '@codemirror/state';
 
-import { EditorView } from '@codemirror/view';
-
 import { leetCodeFenceViewPlugin } from '../../src/widget/liveModeViewPlugin';
 import {
-  leetCodeWidgetStateField,
   leetcodeRefreshAnnotation,
 } from '../../src/widget/liveModeBannerStateField';
 

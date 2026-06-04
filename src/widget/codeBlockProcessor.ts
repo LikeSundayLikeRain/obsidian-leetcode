@@ -135,8 +135,8 @@ function renderStaticFallback(el: HTMLElement, source: string): void {
     (pre as unknown as { createEl: CreateElFn }).createEl('code', { text: source });
   } else {
     // happy-dom path — manual DOM. Still no innerHTML.
-    const pre = document.createElement('pre');
-    const code = document.createElement('code');
+    const pre = activeDocument.createElement('pre');
+    const code = activeDocument.createElement('code');
     code.textContent = source;
     pre.appendChild(code);
     el.appendChild(pre);

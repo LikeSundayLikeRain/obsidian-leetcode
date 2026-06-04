@@ -121,7 +121,7 @@ export const widgetFocusScrollLock = ViewPlugin.fromClass(
           window.clearTimeout(this.blurGraceTimer);
         }
         this.blurGraceTimer = window.setTimeout(() => {
-          const active = document.activeElement;
+          const active = activeDocument.activeElement;
           if (
             active instanceof HTMLElement &&
             active.closest('.lc-nested-editor') &&
@@ -139,8 +139,8 @@ export const widgetFocusScrollLock = ViewPlugin.fromClass(
         }, 100);
       };
 
-      document.addEventListener('focusin', this.onFocusIn, true);
-      document.addEventListener('focusout', this.onFocusOut, true);
+      activeDocument.addEventListener('focusin', this.onFocusIn, true);
+      activeDocument.addEventListener('focusout', this.onFocusOut, true);
     }
 
     update(_update: ViewUpdate): void {
@@ -150,8 +150,8 @@ export const widgetFocusScrollLock = ViewPlugin.fromClass(
     }
 
     destroy(): void {
-      document.removeEventListener('focusin', this.onFocusIn, true);
-      document.removeEventListener('focusout', this.onFocusOut, true);
+      activeDocument.removeEventListener('focusin', this.onFocusIn, true);
+      activeDocument.removeEventListener('focusout', this.onFocusOut, true);
       if (this.widgetFocused) {
         activeLockCount = Math.max(0, activeLockCount - 1);
         this.widgetFocused = false;

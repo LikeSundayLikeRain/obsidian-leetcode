@@ -69,11 +69,10 @@ import {
 } from '../main/childEditorLanguage';
 import { createThemedHighlight } from '../main/childEditorTheme';
 import { obsidianSemanticClasses } from '../main/childEditorSemanticClasses';
-import { computeFenceIndex, findCodeFence } from './fenceLocator';
+import { computeFenceIndex } from './fenceLocator';
 import { DebouncedWriter, sha1 } from './debouncedWriter';
 import { extractFenceBody } from './fenceSerialization';
 import type { SelfWriteSuppression } from './selfWriteSuppression';
-import { createChildParentSyncExtension } from './childParentSync';
 import type { StatePersistenceMap } from './statePersistence';
 import { readVimModeFromVault } from './vimMode';
 import { isEmbedContext } from './embedDetect';
@@ -843,7 +842,7 @@ export class WidgetController {
     if (state === 'peer') {
       // Mount overlay if not already present.
       if (!this.takeoverOverlay) {
-        const doc = this.container.ownerDocument ?? document;
+        const doc = this.container.ownerDocument ?? activeDocument;
         const overlay = doc.createElement('div');
         overlay.className = 'lc-takeover-overlay';
         overlay.setAttribute('role', 'button');
@@ -1056,7 +1055,7 @@ class RelativeLineNumberMarker extends GutterMarker {
     return (other as RelativeLineNumberMarker).text === this.text;
   }
   toDOM(): Text {
-    return document.createTextNode(this.text);
+    return activeDocument.createTextNode(this.text);
   }
 }
 
@@ -1364,7 +1363,7 @@ export function mountLeetCodeWidget(
   // CONTEXT C-13 + PATTERNS line 1101 — three classes, two carry-over
   // (lc-nested-editor + HyperMD-codeblock) plus the v1.3-specific
   // lc-leetcode-solve so Phase 22 polish can target widgets specifically.
-  const container = document.createElement('div');
+  const container = activeDocument.createElement('div');
   container.className = 'lc-nested-editor HyperMD-codeblock lc-leetcode-solve';
   // Phase 20 Plan 20-04 — initial pane state is `active`. The CSS rule
   // `.lc-nested-editor[data-pane-state="peer"] > .lc-takeover-overlay`
@@ -1391,7 +1390,7 @@ export function mountLeetCodeWidget(
   //     </div>
   //     <div class="leetcode-code-actions">…</div>  ← sibling on note bg
   //   </div>
-  const codeblockWrap = document.createElement('div');
+  const codeblockWrap = activeDocument.createElement('div');
   codeblockWrap.className = 'leetcode-widget-codeblock';
   container.appendChild(codeblockWrap);
 
@@ -1484,7 +1483,7 @@ export function mountLeetCodeWidget(
     };
     mouseDownFocus = () => {
       window.requestAnimationFrame(() => {
-        if (document.activeElement !== view.contentDOM) {
+        if (activeDocument.activeElement !== view.contentDOM) {
           // Debug session brat-widget-enter-flicker — pass
           // `{ preventScroll: true }` to suppress the browser's default
           // scroll-to-focused-element behavior, which would otherwise
@@ -1688,7 +1687,7 @@ export function mountLeetCodeWidget(
     // mount it. We pass `null` for ctx + info because mount-time has no
     // post-processor context; the host-DOM ancestor walk in isEmbedContext
     // is the load-bearing signal here.
-    const ownerDoc = (host.ownerDocument as Document | null) ?? document;
+    const ownerDoc = (host.ownerDocument as Document | null) ?? activeDocument;
     const fakeCtx = { sourcePath: file.path } as unknown as Parameters<
       typeof isEmbedContext
     >[1];
@@ -1757,12 +1756,12 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
 
   private static getParkingLot(): HTMLDivElement {
     if (!LeetCodeWidgetRenderChild.parkingLot) {
-      const lot = document.createElement('div');
+      const lot = activeDocument.createElement('div');
       // Visual + hit-test setup is in styles.css under `.lc-widget-parking-lot`
       // (D-static-style — eslint `obsidianmd/no-static-styles-assignment`).
       lot.className = 'lc-widget-parking-lot';
       lot.setAttribute('aria-hidden', 'true');
-      document.body.appendChild(lot);
+      activeDocument.body.appendChild(lot);
       LeetCodeWidgetRenderChild.parkingLot = lot;
     }
     return LeetCodeWidgetRenderChild.parkingLot;
@@ -1985,7 +1984,7 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
             }
             // Only focus if we don't already have it. Avoids re-entrant
             // focus events during rapid typing bursts.
-            if (document.activeElement !== view.contentDOM) {
+            if (activeDocument.activeElement !== view.contentDOM) {
               // Debug session brat-widget-enter-flicker — focus the
               // contentDOM directly with `{ preventScroll: true }` so
               // the post-adoption refocus does NOT propagate scroll
@@ -2071,7 +2070,7 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
     // disk flush, and we must not steal focus to the non-typing pane.
     try {
       this.controller.hadFocusBeforeUnload =
-        this.controller.view?.contentDOM === document.activeElement;
+        this.controller.view?.contentDOM === activeDocument.activeElement;
     } catch {
       this.controller.hadFocusBeforeUnload = false;
     }

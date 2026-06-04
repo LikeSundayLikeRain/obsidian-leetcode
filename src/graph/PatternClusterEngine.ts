@@ -31,7 +31,6 @@ import type { KgClassification } from './parseKgResponse';
 import { mergeTechniquesSectionAI } from './mergeTechniquesSection';
 import { mergeRelatedVariantsSection } from './mergeRelatedVariantsSection';
 import type { ClusterHubWriter, HubEntry } from './ClusterHubWriter';
-import { normalizePatternName } from './patternTaxonomy';
 import { logger } from '../shared/logger';
 import TurndownService from 'turndown';
 
@@ -224,7 +223,6 @@ export class PatternClusterEngine {
         patternNames.push('OTHER');
       }
     }
-    const patternName = patternNames[0]!;
 
     // Write lc-pattern frontmatter (array for searchability)
     try {

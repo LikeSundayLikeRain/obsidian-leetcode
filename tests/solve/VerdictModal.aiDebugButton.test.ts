@@ -79,12 +79,6 @@ function getCopyErrorBtn(contentEl: HTMLElement): HTMLButtonElement | undefined 
   ) as HTMLButtonElement | undefined;
 }
 
-function getCloseBtn(contentEl: HTMLElement): HTMLButtonElement | undefined {
-  return Array.from(contentEl.querySelectorAll('button')).find(
-    (b) => (b.textContent ?? '') === 'Close',
-  ) as HTMLButtonElement | undefined;
-}
-
 // ── Test fixtures by status_code ────────────────────────────────────────────
 // `state: 'SUCCESS' as const` so the SubmitCheckResponse literal-state union
 // narrows correctly when these are passed to VerdictModal.renderVerdict.

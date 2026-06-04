@@ -16,7 +16,7 @@
 // src/main.ts is the load-bearing implementation; these tests validate the
 // shape per the must_haves contract.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { sha1 } from '../../src/widget/debouncedWriter';
 import { rewriteFenceBody } from '../../src/widget/fenceSerialization';
 import { extractFenceBody } from '../../src/widget/fenceSerialization';
