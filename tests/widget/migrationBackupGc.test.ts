@@ -40,7 +40,7 @@ interface MockAdapter {
 }
 
 interface MockApp {
-  vault: { adapter: MockAdapter };
+  vault: { configDir: string; adapter: MockAdapter };
 }
 
 function makeApp(opts: {
@@ -51,9 +51,14 @@ function makeApp(opts: {
     list: vi.fn(opts.listImpl ?? (async () => ({ files: [], folders: [] }))),
     rmdir: vi.fn(opts.rmdirImpl ?? (async () => {})),
   };
-  return { vault: { adapter } };
+  // configDir mirrors Obsidian's default — production code builds the
+  // backup root as `${vault.configDir}/plugins/obsidian-leetcode`, which
+  // resolves to the literal `.obsidian/...` paths the BASE/BASE_PREFIX
+  // fixtures expect.
+  return { vault: { configDir: '.obsidian', adapter } };
 }
 
+// eslint-disable-next-line obsidianmd/hardcoded-config-path -- this is the literal output path the production code is expected to produce when configDir='.obsidian' (the default mocked above); not a runtime path-construction site.
 const BASE = '.obsidian/plugins/obsidian-leetcode';
 const BASE_PREFIX = `${BASE}/`;
 

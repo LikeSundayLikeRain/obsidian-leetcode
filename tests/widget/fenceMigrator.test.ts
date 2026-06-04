@@ -43,6 +43,11 @@ function makeApp(state: MockState): { app: unknown; file: unknown } {
   const file = { path: 'LeetCode/two-sum.md', name: 'two-sum.md', extension: 'md' };
   const app = {
     vault: {
+      // configDir mirrors Obsidian's default — production code builds the
+      // backup root as `${vault.configDir}/plugins/obsidian-leetcode`, which
+      // resolves to the literal `.obsidian/...` paths these fixtures expect.
+      // eslint-disable-next-line obsidianmd/hardcoded-config-path -- this IS the configDir mock; production code reads it via app.vault.configDir.
+      configDir: '.obsidian',
       read: state.vaultReadSpy,
       process: state.vaultProcessSpy,
       adapter: {
@@ -272,6 +277,7 @@ describe('writeBackup', () => {
     const { app, file } = makeApp(state);
     const path = await writeBackup(app, file, 'two-sum', 'note content');
     expect(path).toBe(
+      // eslint-disable-next-line obsidianmd/hardcoded-config-path -- expected output of production code given the mock's configDir='.obsidian' (default).
       '.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-2026-06-01T14-32-08Z/two-sum.md',
     );
   });
@@ -587,6 +593,8 @@ describe('migrateLegacyFenceIfNeeded', () => {
     const frontmatter = { 'lc-slug': slug, 'lc-language': 'python3' };
     const app = {
       vault: {
+        // eslint-disable-next-line obsidianmd/hardcoded-config-path -- this IS the configDir mock; production code reads it via app.vault.configDir.
+        configDir: '.obsidian',
         read: vi.fn(async () => currentText),
         process: vaultProcessSpy,
         adapter: {
@@ -662,6 +670,7 @@ describe('migrateLegacyFenceIfNeeded', () => {
       adapterListImpl: async () => ({
         files: [],
         folders: [
+          // eslint-disable-next-line obsidianmd/hardcoded-config-path -- mocked adapter.list output; mirrors what production code writes when configDir='.obsidian'.
           '.obsidian/plugins/obsidian-leetcode/migration-backup-other-slug-2026-01-01T00-00-00Z',
         ],
       }),
@@ -1008,6 +1017,7 @@ describe('migrateLegacyFenceIfNeeded — Plan 21-09 dummy block (kept for symmet
     state.adapterListSpy.mockResolvedValue({
       files: [],
       folders: [
+        // eslint-disable-next-line obsidianmd/hardcoded-config-path -- mocked adapter.list output; mirrors what production code writes when configDir='.obsidian'.
         '.obsidian/plugins/obsidian-leetcode/migration-backup-two-sum-2026-06-01T14-32-08Z',
       ],
     });
