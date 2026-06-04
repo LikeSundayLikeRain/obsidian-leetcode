@@ -223,7 +223,7 @@ describe('WidgetController.applyPeerSync — incremental dispatch with mapped se
     // drains to settle. Poll up to ~50ms for the assignment to land.
     for (let i = 0; i < 50; i++) {
       if (ctl.currentDocHash !== 'old-hash-placeholder') break;
-      await new Promise((r) => setTimeout(r, 1));
+      await new Promise((r) => window.setTimeout(r, 1));
     }
     expect(ctl.currentDocHash).not.toBe('old-hash-placeholder');
     expect(ctl.currentDocHash.length).toBeGreaterThan(0);

@@ -39,7 +39,7 @@ interface MockState {
   vaultReadSpy: ReturnType<typeof vi.fn>;
 }
 
-function makeApp(state: MockState): { app: any; file: any } {
+function makeApp(state: MockState): { app: unknown; file: unknown } {
   const file = { path: 'LeetCode/two-sum.md', name: 'two-sum.md', extension: 'md' };
   const app = {
     vault: {

@@ -100,7 +100,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         if (loggedIn) {
           // AUTH-05: immediate logout, no confirmation modal (UI-SPEC.md § Destructive actions).
           b.setButtonText('Logout')
-             
+
             .setTooltip('Log out of LeetCode')
             .onClick(async () => {
               await this.plugin.auth.logout();
@@ -273,7 +273,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // SettingsStore. The onChange handler ONLY persists; never triggers
     // workspace.detachLeavesOfType or any reload path.
     new Setting(expGroup)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'v1.2' is a version identifier (proper noun in this domain).
+
       .setName('Auto-migrate v1.2 notes when opened')
       .setDesc('When opening a LeetCode note from v1.2 or earlier, silently rewrite the fence to the v1.3 format. When off, a banner offers a manual [Migrate now] button.')
       .addToggle((toggle) => toggle

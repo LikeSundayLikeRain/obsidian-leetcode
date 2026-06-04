@@ -1,6 +1,6 @@
 // tests/contest/ContestPreview.test.ts
 // Phase 10 Plan 03 Task 2 — unit tests for ContestPreview modal + startContest flow.
-/* eslint-disable @typescript-eslint/unbound-method */
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock obsidian with shared stub

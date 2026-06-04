@@ -66,7 +66,7 @@ function installPrototypePatch(): void {
     set(this: Element, v: number) {
       if (
         activeLockCount > 0 &&
-        this instanceof HTMLElement &&
+        this.instanceOf(HTMLElement) &&
         this.getAttribute(LOCK_ATTR) === LOCK_VALUE
       ) {
         return;

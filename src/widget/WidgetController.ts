@@ -54,7 +54,7 @@ import {
   insertTab,
 } from '@codemirror/commands';
 import { closeBracketsKeymap } from '@codemirror/autocomplete';
-// eslint-disable-next-line import/no-extraneous-dependencies -- direct dep
+
 import { vim, getCM } from '@replit/codemirror-vim';
 import {
   MarkdownRenderChild,
@@ -175,7 +175,7 @@ export function resolveLeafId(host: HTMLElement | null | undefined): string {
 }
 
 function generateLeafId(): string {
-  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  const c = (window as { crypto?: { randomUUID?: () => string } }).crypto;
   if (c?.randomUUID) return c.randomUUID();
   // happy-dom fallback — sufficient uniqueness for test envs.
   return `lc-leaf-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
@@ -340,9 +340,7 @@ export class WidgetController {
    * paths that need to know the widget's current slug.
    */
   get currentSlug(): string {
-    const fm = this.plugin.app.metadataCache.getFileCache(this.file)?.frontmatter as
-      | Record<string, unknown>
-      | undefined;
+    const fm = this.plugin.app.metadataCache.getFileCache(this.file)?.frontmatter;
     const raw = fm?.['lc-language'];
     if (typeof raw === 'string' && raw.length > 0) return raw;
     return 'python3';
@@ -988,9 +986,7 @@ const KNOWN_SLUGS: ReadonlyArray<string> = [
  * Notice; that's the contract.
  */
 function resolveLanguageSlug(plugin: WidgetMountHost, file: TFile): string {
-  const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter as
-    | Record<string, unknown>
-    | undefined;
+  const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter;
   const raw = fm?.['lc-language'];
 
   if (typeof raw === 'string' && raw.length > 0) {
@@ -1566,7 +1562,7 @@ export function mountLeetCodeWidget(
     typeof plugin.app.vault.process === 'function'
   ) {
     const delay = plugin.settings.getWidgetSyncDebounceMs?.() ?? 500;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     ctl.writer = new DebouncedWriter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       plugin.app as any,
@@ -1615,14 +1611,12 @@ export function mountLeetCodeWidget(
           // lag where the parser kept the previous slug after a chevron
           // switch and only caught up on the second click.
           const fmFresh =
-            (cache?.frontmatter as Record<string, unknown> | undefined) ??
-            (plugin.app.metadataCache.getFileCache(ctl.file)?.frontmatter as
-              | Record<string, unknown>
-              | undefined);
+            (cache?.frontmatter) ??
+            (plugin.app.metadataCache.getFileCache(ctl.file)?.frontmatter);
           const newSlug =
             typeof fmFresh?.['lc-language'] === 'string' &&
-            (fmFresh['lc-language'] as string).length > 0
-              ? (fmFresh['lc-language'] as string)
+            (fmFresh['lc-language']).length > 0
+              ? (fmFresh['lc-language'])
               : 'python3';
           const indent = plugin.settings.getIndentSizeOverride();
           try {
@@ -1983,7 +1977,7 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
               return;
             }
             if (!view.contentDOM.isConnected) {
-              requestAnimationFrame(refocus);
+              window.requestAnimationFrame(refocus);
               return;
             }
             // Only focus if we don't already have it. Avoids re-entrant
@@ -2009,7 +2003,7 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
             resetFlag();
           }
         };
-        requestAnimationFrame(refocus);
+        window.requestAnimationFrame(refocus);
         return;
       } catch {
         // BL-01 / BL-02 (review-fix) — fall-through catch: the registry

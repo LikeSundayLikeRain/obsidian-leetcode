@@ -469,5 +469,5 @@ describe('Behavioral: closeBrackets and toggleLineComment are wired', () => {
 // because some test bodies above reference `indentUnitFacet` via closure —
 // vitest hoists imports to the top of the module at compile time, so this
 // works even though it appears textually below the describe blocks.
-// eslint-disable-next-line import/order
+
 import { indentUnit as indentUnitFacet } from '@codemirror/language';

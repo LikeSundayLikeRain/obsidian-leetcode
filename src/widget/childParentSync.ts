@@ -58,7 +58,7 @@ export function createChildParentSyncExtension(
 
   function doFlush(): void {
     if (timer !== null) {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       timer = null;
     }
     if (!childView) return;
@@ -101,8 +101,8 @@ export function createChildParentSyncExtension(
   }
 
   function scheduleFlush(): void {
-    if (timer !== null) clearTimeout(timer);
-    timer = setTimeout(doFlush, debounceMs);
+    if (timer !== null) window.clearTimeout(timer);
+    timer = window.setTimeout(doFlush, debounceMs);
   }
 
   const handle: ChildParentSyncHandle = {
@@ -110,7 +110,7 @@ export function createChildParentSyncExtension(
     hasPending: () => timer !== null,
     cancel(): void {
       if (timer !== null) {
-        clearTimeout(timer);
+        window.clearTimeout(timer);
         timer = null;
       }
       childView = null;

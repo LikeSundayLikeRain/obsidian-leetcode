@@ -17,9 +17,9 @@ vi.mock('obsidian', async () => {
     let pendingArgs: T | null = null;
     const run = (...args: T): V | undefined => {
       pendingArgs = args;
-      if (timer && resetTimer) { clearTimeout(timer); timer = null; }
+      if (timer && resetTimer) { window.clearTimeout(timer); timer = null; }
       if (!timer) {
-        timer = setTimeout(() => {
+        timer = window.setTimeout(() => {
           timer = null;
           if (pendingArgs) { const a = pendingArgs; pendingArgs = null; cb(...a); }
         }, timeout);
@@ -27,7 +27,7 @@ vi.mock('obsidian', async () => {
       return undefined;
     };
     const cancel = () => {
-      if (timer) { clearTimeout(timer); timer = null; }
+      if (timer) { window.clearTimeout(timer); timer = null; }
       pendingArgs = null;
       return debounced;
     };

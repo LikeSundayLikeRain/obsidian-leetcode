@@ -39,7 +39,7 @@
 //     `onClose()` BEFORE we empty contentEl, so the plugin's reference is
 //     reset exactly once.
 
-// eslint-disable-next-line import/no-extraneous-dependencies -- direct dep
+
 import { Modal, Setting, Notice, type App } from 'obsidian';
 import { lineDiff } from './conflictDiff';
 import type { WidgetController } from './WidgetController';
@@ -153,9 +153,9 @@ export class ConflictModal extends Modal {
     const diffContainer = contentEl.createDiv({ cls: 'lc-conflict-diff' });
     diffContainer.createEl('h3', { text: 'Diff' });
     const cols = diffContainer.createDiv({ cls: 'lc-conflict-cols' });
-    this.mineEl = cols.createEl('pre', { cls: 'lc-conflict-mine' }) as HTMLPreElement;
-    this.extEl = cols.createEl('pre', { cls: 'lc-conflict-external' }) as HTMLPreElement;
-    this.mergedEl = cols.createEl('pre', { cls: 'lc-conflict-merged' }) as HTMLPreElement;
+    this.mineEl = cols.createEl('pre', { cls: 'lc-conflict-mine' });
+    this.extEl = cols.createEl('pre', { cls: 'lc-conflict-external' });
+    this.mergedEl = cols.createEl('pre', { cls: 'lc-conflict-merged' });
     this.renderDiff();
   }
 

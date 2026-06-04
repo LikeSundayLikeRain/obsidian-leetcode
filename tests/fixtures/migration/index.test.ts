@@ -222,8 +222,8 @@ interface RunnerSpies {
 }
 
 interface RunnerHandle {
-  app: any;
-  file: any;
+  app: unknown;
+  file: unknown;
   spies: RunnerSpies;
   /** The current note text after all writes. */
   getCurrentText: () => string;

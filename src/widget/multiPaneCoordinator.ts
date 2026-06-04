@@ -86,7 +86,7 @@ function findLeafEl(node: HTMLElement | null | undefined): HTMLElement | null {
   if (!node) return null;
   // .workspace-leaf is the canonical Obsidian pane wrapper class. The
   // closest() walk is O(depth) and idempotent.
-  return node.closest('.workspace-leaf') as HTMLElement | null;
+  return node.closest('.workspace-leaf');
 }
 
 /**
@@ -202,7 +202,7 @@ export function registerMultiPaneCoordinator(
     try {
       activeView = (plugin.app.workspace.getActiveViewOfType(
         MarkdownViewClass,
-      ) ?? null) as MarkdownView | null;
+      ) ?? null);
     } catch {
       // Defensive — getActiveViewOfType may throw under hostile test envs;
       // treat as "no active view" and reset every widget to active.

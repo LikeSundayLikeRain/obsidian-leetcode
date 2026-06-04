@@ -65,7 +65,7 @@ vi.mock('../../src/main/readingModeMigrationHook', async () => {
 
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
-  // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer
+
   const cm = await import('@codemirror/state');
   const editorInfoField = cm.StateField.define<{ file: { path: string } | null }>({
     create: () => ({ file: { path: 'LeetCode/0001-two-sum.md' } }),
@@ -85,7 +85,7 @@ vi.mock('../../src/widget/fenceMigrator', async () => {
   };
 });
 
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian
+
 import { EditorState } from '@codemirror/state';
 import { Decoration } from '@codemirror/view';
 

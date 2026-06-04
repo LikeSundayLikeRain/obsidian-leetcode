@@ -14,7 +14,7 @@
 // can route — Phase 19 widget mounts on `kind === 'leetcode-solve'`,
 // Phase 21 migrator handles `kind === 'legacy'`.
 
-// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+
 import type { EditorState } from '@codemirror/state';
 
 export interface FenceLocation {

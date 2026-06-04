@@ -171,7 +171,7 @@ function dispatchLeetCodeRefresh(
           }
         | undefined;
       if (!view || view.file?.path !== path) continue;
-      const cm = (view.editor as unknown as { cm?: { dispatch: (spec: unknown) => void } })
+      const cm = (view.editor as { cm?: { dispatch: (spec: unknown) => void } })
         ?.cm;
       if (!cm || typeof cm.dispatch !== 'function') continue;
       try {
@@ -290,7 +290,7 @@ function isAutoMigrateEnabled(plugin: StateFieldPluginHost): boolean {
 function buildLegacyBannerDecorations(state: EditorState): DecorationSet {
   const plugin = readHost(state);
   if (!plugin) return Decoration.none;
-  const file = state.field(editorInfoField, false)?.file as TFile | null | undefined;
+  const file = state.field(editorInfoField, false)?.file;
   if (!file) return Decoration.none;
 
   const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter as
@@ -368,7 +368,7 @@ function buildLegacyBannerDecorations(state: EditorState): DecorationSet {
 function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
   const plugin = readHost(state);
   if (!plugin) return Decoration.none;
-  const file = state.field(editorInfoField, false)?.file as TFile | null | undefined;
+  const file = state.field(editorInfoField, false)?.file;
   if (!file) return Decoration.none;
 
   const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter as
@@ -449,7 +449,7 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
                 dispatchLeetCodeRefresh(plugin, file.path);
                 return;
               }
-              setTimeout(() => waitForCacheAndDispatch(ticks - 1), 50);
+              window.setTimeout(() => waitForCacheAndDispatch(ticks - 1), 50);
             };
             waitForCacheAndDispatch(16);
           }
