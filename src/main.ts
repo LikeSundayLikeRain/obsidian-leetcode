@@ -1242,6 +1242,32 @@ export default class LeetCodePlugin extends Plugin {
         if (!(file instanceof TFile)) return;
         if (!this.selfWriteSuppression) return;
         try {
+          // BRAT issue #2 diagnostic instrumentation (single-char-rollback) —
+          // ALWAYS-ON for diagnostic build; strip post-diagnosis. Logs every
+          // modify-handler entry so logs show every event Obsidian fires for
+          // an LC note, not just the ones that reach the suppression branch.
+          {
+            let writerPending: string = 'n/a';
+            let originatorPeek: string | null = null;
+            try {
+              if (this.widgetRegistry) {
+                for (const ctl of this.widgetRegistry.values()) {
+                  const candidate = ctl as unknown as WidgetController & { file: { path: string } };
+                  if (candidate.file.path === file.path) {
+                    writerPending = String(candidate.writer?.hasPending() === true);
+                    break;
+                  }
+                }
+              }
+            } catch { /* swallow */ }
+            try {
+              originatorPeek = this.selfWriteSuppression.peekOriginator(file.path);
+            } catch { /* swallow */ }
+            // eslint-disable-next-line no-console -- diagnostic instrumentation
+            console.debug(
+              `[lc-debug] modify:enter path=${file.path} ts=${Date.now()} writerPending=${writerPending} originator=${originatorPeek ?? 'null'}`,
+            );
+          }
           // (a) gate — find ALL widgets matching this file's path. Plan
           // 21-17 amends the previous "first matching widget" pick to
           // collect every controller on the file so the peer-sync fan-out
@@ -1314,6 +1340,13 @@ export default class LeetCodePlugin extends Plugin {
             file.path,
             observedHash,
           );
+          // BRAT issue #2 diagnostic instrumentation — log right after
+          // tryConsume so we can correlate the modify event with the
+          // suppression outcome at the call site.
+          // eslint-disable-next-line no-console -- diagnostic instrumentation
+          console.debug(
+            `[lc-debug] modify:after-consume path=${file.path} observedHash=${observedHash} outcome=${consumeResult} ts=${Date.now()}`,
+          );
 
           // Plan 21-17 — peer-sync fan-out routing. The pure helper
           // returns the per-controller decision; we invoke the
@@ -1334,12 +1367,21 @@ export default class LeetCodePlugin extends Plugin {
           });
 
           if (decision.kind === 'single-pane-consumed') {
+            // BRAT issue #2 diagnostic instrumentation — log branch taken.
+            // eslint-disable-next-line no-console -- diagnostic instrumentation
+            console.debug(
+              `[lc-debug] modify:branch=single-pane-consumed path=${file.path} reason=self-write-echo-no-peers`,
+            );
             // Self-write echo with no peer to fan out to. Silent return —
             // existing single-pane behavior is byte-identical.
             return;
           }
 
           if (decision.kind === 'peer-fan-out') {
+            // eslint-disable-next-line no-console -- diagnostic instrumentation
+            console.debug(
+              `[lc-debug] modify:branch=peer-fan-out path=${file.path} reason=self-write-echo-with-peers peerCount=${decision.perController.length}`,
+            );
             // Plan 21-17 — fan out applyPeerSync(observedBody) to every
             // editable peer; skip the originating pane (its caret is
             // already correct because its own typing produced the new
@@ -1374,7 +1416,16 @@ export default class LeetCodePlugin extends Plugin {
           // never reaches this fallthrough (it returns from the
           // peer-fan-out branch above).
           const childDoc = firstMatch.view.state.doc.toString();
-          if (observedBody === childDoc) return;
+          if (observedBody === childDoc) {
+            // BRAT issue #2 diagnostic instrumentation — log this fall-through
+            // branch (suppression missed but child doc already matches disk;
+            // backup self-write detection per RESEARCH §1 fail-safe).
+            // eslint-disable-next-line no-console -- diagnostic instrumentation
+            console.debug(
+              `[lc-debug] modify:branch=child-doc-matches-disk path=${file.path} reason=backup-self-write-detection`,
+            );
+            return;
+          }
 
           // (d) Disk diverges from child = external write (Sync from
           // another device, manual edit in source mode, etc.). Default
@@ -1391,6 +1442,14 @@ export default class LeetCodePlugin extends Plugin {
           // typing IS the parent doc state.
           const hasPending = firstMatch.writer?.hasPending() === true;
           if (!hasPending) {
+            // BRAT issue #2 diagnostic instrumentation — log silent reload
+            // (idle external edit fell through suppression). This is the
+            // most likely culprit for the BRAT #2 rollback if suppression
+            // is missing self-writes.
+            // eslint-disable-next-line no-console -- diagnostic instrumentation
+            console.debug(
+              `[lc-debug] modify:branch=reload-silent path=${file.path} reason=external-edit-no-pending-writer`,
+            );
             // Idle widget — silent reload with line/col cursor clamp.
             await firstMatch.reloadFromDisk('silent');
             return;
@@ -1400,8 +1459,29 @@ export default class LeetCodePlugin extends Plugin {
           // D-conflict-04: a second modify while modal open updates
           // the External pane in place; NEVER stack a second modal.
           if (this.activeConflictModal && this.activeConflictModal.isOpen) {
+            // eslint-disable-next-line no-console -- diagnostic instrumentation
+            console.debug(
+              `[lc-debug] modify:branch=conflict-modal-update path=${file.path} reason=second-external-edit-while-modal-open`,
+            );
             this.activeConflictModal.updateExternalContent(observedBody);
             return;
+          }
+
+          // BRAT issue #2 diagnostic instrumentation — log conflict modal
+          // open at the construction site (per spec). Includes mineHash
+          // (computed inline) and extHash so logs show what the modal is
+          // about to display.
+          {
+            const mineDoc = firstMatch.view.state.doc.toString();
+            const mineHash = await sha1(mineDoc);
+            // eslint-disable-next-line no-console -- diagnostic instrumentation
+            console.debug(
+              `[lc-debug] conflict:open path=${file.path} writerPending=${hasPending} mineHash=${mineHash} extHash=${observedHash} ts=${Date.now()} reason=external-edit-with-pending-writer`,
+            );
+            // eslint-disable-next-line no-console -- diagnostic instrumentation
+            console.debug(
+              `[lc-debug] modify:branch=conflict-modal-open path=${file.path} reason=external-edit-with-pending-writer`,
+            );
           }
 
           // Construct a fresh modal with the constructor-callback
@@ -2495,7 +2575,28 @@ export default class LeetCodePlugin extends Plugin {
    * never called.
    */
   private startAutoReview(
-    ctx: { file: TFile; slug: string; title: string; currentBody: () => string },
+    ctx: {
+      file: TFile;
+      slug: string;
+      title: string;
+      currentBody: () => string;
+      /**
+       * Debug session ai-review-empty-after-accept-1-3 (gap-closure parity
+       * with Phase 20 Plan 20-10 T7) — when the v1.3 widget caller supplies
+       * `getCurrentCode`, the review path uses the raw fence body directly
+       * and skips `extractFirstFencedBlock` (which would fail on raw widget
+       * code: there are no ``` markers in `widget.view.state.doc.toString()`).
+       * Legacy `*FromActive` callers omit it and the markdown-body extractor
+       * runs verbatim.
+       */
+      getCurrentCode?: () => string;
+      /**
+       * Companion to `getCurrentCode` — when supplied, this is the canonical
+       * `lc-language` slug (frontmatter SSoT). Used as the prompt's language
+       * tag. Falls back to settings default when undefined / null.
+       */
+      lcLanguage?: string | null;
+    },
     reviewAreaEl: HTMLElement,
     component: Component,
   ): { abort: () => void; promise: Promise<void> } {
@@ -2503,7 +2604,11 @@ export default class LeetCodePlugin extends Plugin {
     const RENDER_DEBOUNCE_MS = 100;
     // Snapshot body immediately — before any async work — so edits during the
     // network round-trip don't contaminate the review prompt (CR-02 fix).
+    // Debug session ai-review-empty-after-accept-1-3 — when the widget path
+    // supplies `getCurrentCode`, snapshot the raw code instead; the body
+    // value is unused on this branch.
     const snapshotBody = ctx.currentBody();
+    const snapshotCode = ctx.getCurrentCode?.();
 
     // Show a loading indicator immediately so user knows review is in progress.
     const spinnerEl = reviewAreaEl.createDiv({ cls: 'leetcode-ai-review-loading' });
@@ -2525,16 +2630,42 @@ export default class LeetCodePlugin extends Plugin {
       }
       const problemMd = htmlToMarkdown(problemHtml);
 
-      // Step 2 — extract code from the snapshotted body.
-      // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter so v1.3
-      // leetcode-solve fences resolve language from lc-language SSoT.
-      const body = snapshotBody;
-      const fm = this.app.metadataCache.getFileCache(ctx.file)?.frontmatter as
-        | { 'lc-language'?: string }
-        | undefined;
-      const extracted = extractFirstFencedBlock(body, fm);
-      const code = extracted?.code ?? '';
-      const language = extracted?.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+      // Step 2 — resolve code + language for the prompt.
+      //
+      // Debug session ai-review-empty-after-accept-1-3 — branch on the
+      // optional widget shortcut. When `getCurrentCode` is supplied (v1.3
+      // widget path: `submitFromWidget` → `submitWithCode`), the snapshot
+      // is already the raw fence body (Java/C++/etc. source) and there are
+      // no ``` markers to extract — running `extractFirstFencedBlock` here
+      // returns null and feeds an empty `code` into `buildReviewPrompt`,
+      // producing the "submitted solution is empty" AI reply that this
+      // session was opened to fix.
+      //
+      // Mirrors the same shortcut threaded into `SubmissionOrchestrator`
+      // by Phase 20 Plan 20-10 Task 5 (gap-closure T7). Legacy callers
+      // (`submitFromActive`) omit `getCurrentCode` and the markdown-body
+      // extractor runs verbatim — Phase 21 Plan 21-03 Task 2 frontmatter
+      // threading is preserved on that branch.
+      let code: string;
+      let language: string;
+      if (ctx.getCurrentCode !== undefined) {
+        code = snapshotCode ?? '';
+        const fmLang =
+          typeof ctx.lcLanguage === 'string' && ctx.lcLanguage.length > 0
+            ? ctx.lcLanguage
+            : null;
+        language = fmLang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+      } else {
+        // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter so v1.3
+        // leetcode-solve fences resolve language from lc-language SSoT.
+        const body = snapshotBody;
+        const fm = this.app.metadataCache.getFileCache(ctx.file)?.frontmatter as
+          | { 'lc-language'?: string }
+          | undefined;
+        const extracted = extractFirstFencedBlock(body, fm);
+        code = extracted?.code ?? '';
+        language = extracted?.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+      }
 
       // Step 3 — assemble the prompt.
       const prompt = buildReviewPrompt({ problemMd, code, language });
@@ -3206,7 +3337,26 @@ export default class LeetCodePlugin extends Plugin {
     // the legacy startAutoReview shape; the structural type accepts the
     // same {file, slug, title, currentBody} shape that ProblemContext
     // exposes today.
-    const reviewCtx = { file, slug, title, currentBody: getCurrentBody };
+    //
+    // Debug session ai-review-empty-after-accept-1-3 — when the widget
+    // caller supplies `getCurrentCode`, propagate it (and the canonical
+    // `lcLanguage`) into the review ctx so `startAutoReview` can skip the
+    // markdown-body extractor that fails on raw widget code. See the
+    // shortcut wiring at the top of `startAutoReview` for the rationale.
+    const reviewCtx: {
+      file: TFile;
+      slug: string;
+      title: string;
+      currentBody: () => string;
+      getCurrentCode?: () => string;
+      lcLanguage?: string | null;
+    } = {
+      file,
+      slug,
+      title,
+      currentBody: getCurrentBody,
+      ...(getCurrentCode ? { getCurrentCode, lcLanguage } : {}),
+    };
 
     const modal = new VerdictModal(this.app, {
       problemTitle: title,
