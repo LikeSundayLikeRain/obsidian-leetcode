@@ -2363,3 +2363,19 @@ button.leetcode-migration-banner__cta:hover,
   margin-bottom: var(--size-4-2);
   border-bottom: 1px solid var(--background-modifier-border);
 }
+
+/* Phase 20 BL-01 — off-screen parking lot for parked widget DOM. The
+ * `LeetCodeWidgetRenderChild.parkingLot` static <div> hosts EditorView
+ * containers between unmount + remount so the embedded EditorView's
+ * focus/selection state and DOM identity survive the parent fence's
+ * MarkdownPostProcessor re-render cycle. Off-screen, zero-area, hit-test
+ * inert; visually invisible, accessibility-hidden via `aria-hidden`. */
+.lc-widget-parking-lot {
+  position: fixed;
+  left: -9999px;
+  top: -9999px;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

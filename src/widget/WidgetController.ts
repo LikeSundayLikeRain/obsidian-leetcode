@@ -636,7 +636,11 @@ export class WidgetController {
     // (2) Read fresh disk; extract fence body for this widget's index.
     // The plugin-host shape declares `read` as optional; production
     // LeetCodePlugin satisfies the contract, but we defensively guard to
-    // keep test fixtures (which may omit read) from crashing.
+    // keep test fixtures (which may omit read) from crashing. The bound
+    // method is re-invoked via `.call(this.plugin.app.vault, ...)` two
+    // lines down — the unbound capture is intentional, not a `this`-loss
+    // bug.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- intentional capture; re-invoked via `.call(this.plugin.app.vault, ...)` below.
     const readFn = this.plugin.app.vault.read;
     if (typeof readFn !== 'function') return;
     let newDisk: string;
@@ -1004,7 +1008,7 @@ function resolveLanguageSlug(plugin: WidgetMountHost, file: TFile): string {
 
   // Plan 19-04 — missing lc-language → Python + Notice.
   new Notice(
-    'LeetCode widget: lc-language frontmatter missing; falling back to Python.',
+    'LeetCode widget: lc-language frontmatter missing; falling back to python.',
     5000,
   );
   return 'python';
@@ -1564,7 +1568,11 @@ export function mountLeetCodeWidget(
     const delay = plugin.settings.getWidgetSyncDebounceMs?.() ?? 500;
 
     ctl.writer = new DebouncedWriter(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // The plugin-host shape declares `app` as a structural App-like, but
+      // DebouncedWriter's constructor types it as the full obsidian.App.
+      // Casting through `any` is the smallest bridge; both lint rules are
+      // disabled together at the call site.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
       plugin.app as any,
       file,
       () => ctl.view.state.doc.toString(),
@@ -1750,15 +1758,10 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
   private static getParkingLot(): HTMLDivElement {
     if (!LeetCodeWidgetRenderChild.parkingLot) {
       const lot = document.createElement('div');
+      // Visual + hit-test setup is in styles.css under `.lc-widget-parking-lot`
+      // (D-static-style — eslint `obsidianmd/no-static-styles-assignment`).
       lot.className = 'lc-widget-parking-lot';
       lot.setAttribute('aria-hidden', 'true');
-      lot.style.position = 'fixed';
-      lot.style.left = '-9999px';
-      lot.style.top = '-9999px';
-      lot.style.width = '0';
-      lot.style.height = '0';
-      lot.style.overflow = 'hidden';
-      lot.style.pointerEvents = 'none';
       document.body.appendChild(lot);
       LeetCodeWidgetRenderChild.parkingLot = lot;
     }

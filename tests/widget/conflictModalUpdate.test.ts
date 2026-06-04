@@ -6,7 +6,7 @@
 // SECOND modal. Asserts via spy on updateExternalContent + assertion that the
 // constructor was invoked exactly once for the file's modal session.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { sha1 } from '../../src/widget/debouncedWriter';
 import { extractFenceBody } from '../../src/widget/fenceSerialization';
 import { SelfWriteSuppression } from '../../src/widget/selfWriteSuppression';
@@ -140,8 +140,8 @@ describe('D-conflict-04 — Update Test 1: second external edit while modal open
     expect(host.newConflictModal).toHaveBeenCalledTimes(1);
 
     // Change disk content for second event.
-    (host.app.vault.read as ReturnType<typeof vi.fn>).mockImplementation(
-      () => Promise.resolve(FENCE_NOTE('second-external')),
+    (host.app.vault.read as Mock<(file: { path: string }) => Promise<string>>).mockImplementation(
+      async () => FENCE_NOTE('second-external'),
     );
 
     // Second fire — should update in place.
@@ -155,13 +155,13 @@ describe('D-conflict-04 — Update Test 1: second external edit while modal open
   it('THIRD modify while modal still open → updateExternalContent fires again, no new modal', async () => {
     await dispatchModifyEvent(host, widget.file);
 
-    (host.app.vault.read as ReturnType<typeof vi.fn>).mockImplementation(
-      () => Promise.resolve(FENCE_NOTE('second-external')),
+    (host.app.vault.read as Mock<(file: { path: string }) => Promise<string>>).mockImplementation(
+      async () => FENCE_NOTE('second-external'),
     );
     await dispatchModifyEvent(host, widget.file);
 
-    (host.app.vault.read as ReturnType<typeof vi.fn>).mockImplementation(
-      () => Promise.resolve(FENCE_NOTE('third-external')),
+    (host.app.vault.read as Mock<(file: { path: string }) => Promise<string>>).mockImplementation(
+      async () => FENCE_NOTE('third-external'),
     );
     await dispatchModifyEvent(host, widget.file);
 
@@ -182,8 +182,8 @@ describe('D-conflict-04 — Update Test 1: second external edit while modal open
     // cleanup (the modal's onClose fires the callback that sets activeConflictModal=null).
     host.activeConflictModal = null;
 
-    (host.app.vault.read as ReturnType<typeof vi.fn>).mockImplementation(
-      () => Promise.resolve(FENCE_NOTE('post-close-external')),
+    (host.app.vault.read as Mock<(file: { path: string }) => Promise<string>>).mockImplementation(
+      async () => FENCE_NOTE('post-close-external'),
     );
     await dispatchModifyEvent(host, widget.file);
 

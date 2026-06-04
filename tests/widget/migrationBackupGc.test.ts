@@ -55,6 +55,7 @@ function makeApp(opts: {
   // backup root as `${vault.configDir}/plugins/obsidian-leetcode`, which
   // resolves to the literal `.obsidian/...` paths the BASE/BASE_PREFIX
   // fixtures expect.
+  // eslint-disable-next-line obsidianmd/hardcoded-config-path -- this IS the configDir mock; production code reads it via app.vault.configDir.
   return { vault: { configDir: '.obsidian', adapter } };
 }
 

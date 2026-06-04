@@ -418,7 +418,7 @@ export default class LeetCodePlugin extends Plugin {
     // blocks plugin readiness; the routine is silent-on-failure
     // (Pattern S-05) so first-install vaults (no plugin folder) do NOT
     // throw and DO NOT block onload. NEVER awaited.
-    Promise.resolve().then(() => runMigrationBackupGc(this.app));
+    void Promise.resolve().then(() => runMigrationBackupGc(this.app));
 
     // Step 2 — install requestUrl fetcher BEFORE any LC construction (RESEARCH.md Pitfall 1).
     // @leetnotion/leetcode-api's Credential.init() fires an eager fetch; if our shim isn't
@@ -1638,7 +1638,9 @@ export default class LeetCodePlugin extends Plugin {
     // (RESEARCH Pitfall 19-B). The destroy below cancels any pending writer
     // timers regardless.
     const flushP = this.widgetRegistry?.flushAll();
-    if (flushP && typeof flushP.catch === 'function') flushP.catch(() => undefined);
+    if (flushP !== undefined && typeof flushP.catch === 'function') {
+      flushP.catch(() => undefined);
+    }
     this.widgetRegistry?.destroyAll();
     // Phase 20 BL-01 (review-fix) + WR-15 — dispose the parking lot static
     // AFTER destroyAll. destroyAll tears down each controller's EditorView;

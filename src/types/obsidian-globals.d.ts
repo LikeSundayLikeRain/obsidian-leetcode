@@ -47,7 +47,11 @@ declare global {
   // DocumentFragment (which extends Node) gets them too. The native obsidian
   // typings declare these on Node (obsidian.d.ts:183-191); we mirror that
   // here so source modules can call e.g. `frag.createSpan()` and have it
-  // append the new element to the fragment in one step.
+  // append the new element to the fragment in one step. The interface
+  // declaration must use `extends` (not a type alias) because TS only
+  // permits augmenting a built-in DOM lib type via interface declaration
+  // merging.
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- declaration-merging augmentation; the body is intentionally empty.
   interface Node extends DomCreateHelpers {}
 
   // Same shorthand helpers exist on every Element so chained `parent.createDiv(...)`

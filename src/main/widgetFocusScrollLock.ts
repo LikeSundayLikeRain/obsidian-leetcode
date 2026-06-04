@@ -1,3 +1,4 @@
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { ViewPlugin, type EditorView, type PluginValue, type ViewUpdate } from '@codemirror/view';
 
 /**
@@ -57,7 +58,13 @@ function installPrototypePatch(): void {
   if (prototypePatchInstalled) return;
   const desc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
   if (!desc || !desc.get || !desc.set) return;
+  // Capturing the descriptor's getter/setter pair so we can re-invoke them
+  // via `.call(this, ...)` from the patched accessor below — that is the
+  // documented pattern for prototype monkey-patching, NOT a `this`-scoping
+  // bug the unbound-method rule was designed to catch.
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- intentional capture; re-invoked via `.call(this, ...)` below.
   originalScrollTopGetter = desc.get;
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- intentional capture; re-invoked via `.call(this, ...)` below.
   originalScrollTopSetter = desc.set;
   Object.defineProperty(Element.prototype, 'scrollTop', {
     get(this: Element) {
