@@ -161,6 +161,10 @@ import { registerThemeListener } from './widget/themeListener';
 // and flips each widget's pane state ('active' vs 'peer'). UI-SPEC §3 contract.
 import { registerMultiPaneCoordinator } from './widget/multiPaneCoordinator';
 import { leetCodeFenceViewPlugin } from './widget/liveModeViewPlugin';
+// BRAT #1 (brat-widget-enter-flicker) — pin parent scrollTop while widget
+// focused; suppresses Obsidian/CM6's measure-time scroll-preservation that
+// compensates for widget growth on Enter.
+import { widgetFocusScrollLock } from './main/widgetFocusScrollLock';
 // Phase 19 Plan 02 — selfWriteSuppression + sha1 helper for the modify-event
 // consumer. extractFenceBody for hashing observed disk fence body.
 import { SelfWriteSuppression } from './widget/selfWriteSuppression';
@@ -1435,6 +1439,12 @@ export default class LeetCodePlugin extends Plugin {
     // pocket + ## Techniques heading. The fence body + closer are owned by
     // the widget via `EditorView.atomicRanges`.
     this.registerEditorExtension(buildSectionProtectionExtension(this));
+
+    // BRAT #1 (brat-widget-enter-flicker): pin parent scrollTop while focus
+    // is inside a widget. Suppresses Obsidian/CM6's measure-time scroll-
+    // preservation that compensates for widget growth on Enter (root cause
+    // confirmed by DevTools probe; see widgetFocusScrollLock).
+    this.registerEditorExtension(widgetFocusScrollLock);
 
     // Step 6g-pre — Phase 12 Plan 04 (D-12) — wikilink-to-preview interception.
     // When a user clicks a [[slug]] wikilink to a problem that has no local note,

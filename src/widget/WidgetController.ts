@@ -1202,6 +1202,56 @@ function buildExtensions(
   // Editable mode: full interactive extensions.
   const exts: Extension[] = [
     ...visual,
+    // Debug session brat-widget-enter-flicker — bound the child editor's
+    // scrollIntoView requests to its own scrollDOM. CM6's default scroll-
+    // into-view walks up the DOM ancestor chain, but the child's scrollDOM
+    // is nested inside the parent CM6's `cm-content` with NO scroll
+    // boundary at the widget edge — so the default would propagate into
+    // the parent CM6's scrollDOM (the note scroller) and adjust its
+    // scrollTop on every cursor reposition. With scroll at the bottom of
+    // an empty `## Notes` body, that adjustment becomes visible as a
+    // full-frame note flicker on Enter. The handler below scrolls the
+    // child's own scrollDOM to keep the cursor in view, then returns true
+    // so CM6 stops walking up the ancestor chain.
+    //
+    // Returns false (defers to default) when coordsAtPos is unavailable
+    // (early-mount race / detached view). Always claims handled when it
+    // does adjust scrollTop — even if the cursor is already in view —
+    // so a no-op CM6 default doesn't sneak in and re-enter the bubbling
+    // path.
+    EditorView.scrollHandler.of((view, range, options) => {
+      try {
+        const scrollDOM = view.scrollDOM;
+        if (!scrollDOM) return false;
+        const cursor = view.coordsAtPos(range.head);
+        if (!cursor) return false;
+        const containerRect = scrollDOM.getBoundingClientRect();
+        const yMargin = options.yMargin ?? 5;
+        const xMargin = options.xMargin ?? 5;
+        // Vertical: bound to scrollDOM. Adjust only when cursor is outside
+        // the [top + yMargin, bottom - yMargin] band — matches CM6's own
+        // 'nearest' strategy. Centered/start/end strategies fall back to
+        // 'nearest' here (see fix justification in the debug session).
+        if (cursor.top < containerRect.top + yMargin) {
+          scrollDOM.scrollTop -= (containerRect.top + yMargin) - cursor.top;
+        } else if (cursor.bottom > containerRect.bottom - yMargin) {
+          scrollDOM.scrollTop += cursor.bottom - (containerRect.bottom - yMargin);
+        }
+        // Horizontal: same shape; line-wrapping is on so this rarely fires.
+        if (cursor.left < containerRect.left + xMargin) {
+          scrollDOM.scrollLeft -= (containerRect.left + xMargin) - cursor.left;
+        } else if (cursor.right > containerRect.right - xMargin) {
+          scrollDOM.scrollLeft += cursor.right - (containerRect.right - xMargin);
+        }
+        // Always claim handled — ancestor walk is what we are preventing.
+        return true;
+      } catch {
+        // Defensive — view in teardown / coordsAtPos throws. Falling back
+        // to default is acceptable here because the bug only manifests
+        // during normal interactive typing where coordsAtPos is reliable.
+        return false;
+      }
+    }),
     // Phase 20 Plan 20-01 (VIM-02) — vim is wrapped in a per-widget
     // Compartment so reconfigureVim can swap `vim() ↔ []` live without
     // rebuilding the EditorView. Initial payload mirrors the v1.2 / Phase 19
@@ -1435,7 +1485,16 @@ export function mountLeetCodeWidget(
     mouseDownFocus = () => {
       window.requestAnimationFrame(() => {
         if (document.activeElement !== view.contentDOM) {
-          view.contentDOM.focus();
+          // Debug session brat-widget-enter-flicker — pass
+          // `{ preventScroll: true }` to suppress the browser's default
+          // scroll-to-focused-element behavior, which would otherwise
+          // propagate up the DOM ancestor chain (the child contentDOM is
+          // nested inside the parent CM6's `cm-content` with no scroll
+          // boundary at the widget edge) and adjust the parent CM6's
+          // scrollDOM. Combined with the EditorView.scrollHandler facet
+          // installed in buildExtensions, this keeps all scroll motion
+          // bounded to the child's own scrollDOM.
+          view.contentDOM.focus({ preventScroll: true });
         }
       });
     };
@@ -1930,7 +1989,18 @@ export class LeetCodeWidgetRenderChild extends MarkdownRenderChild {
             // Only focus if we don't already have it. Avoids re-entrant
             // focus events during rapid typing bursts.
             if (document.activeElement !== view.contentDOM) {
-              view.focus();
+              // Debug session brat-widget-enter-flicker — focus the
+              // contentDOM directly with `{ preventScroll: true }` so
+              // the post-adoption refocus does NOT propagate scroll
+              // requests up the DOM ancestor chain (the child contentDOM
+              // is nested inside the parent CM6's `cm-content` with no
+              // scroll boundary at the widget edge). CM6's
+              // `EditorView.focus()` does NOT accept FocusOptions so we
+              // bypass it and call contentDOM.focus directly — equivalent
+              // to view.focus() in production CM6 (which delegates to
+              // contentDOM.focus internally) but with preventScroll
+              // honoured.
+              view.contentDOM.focus({ preventScroll: true });
             }
             // WR-04 — terminal: reset flag on successful focus.
             resetFlag();
