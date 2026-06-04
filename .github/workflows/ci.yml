@@ -18,15 +18,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Phase 22 D-gate-02 partial: lint is advisory until Phase 22.5 baseline
-      # reset (pre-existing 81-error baseline predates Phase 22 — verified at
-      # commit 245f45b). The operative D-gate-02 concern (zero `innerHTML` in
-      # `src/widget/`) is enforced separately and PASSES; plugin-store reviewer
-      # checks scope to runtime-observable concerns (innerHTML, eval, no
-      # remote code, no telemetry) — none of which depend on this lint pass.
-      # Tracked in `.planning/phases/22-v1-2-path-removal-polish/deferred-items.md`.
+      # Phase 22.5 — lint gate is enforced (was advisory under Phase 22 with
+      # `continue-on-error: true` while the 81-error baseline was tracked in
+      # `deferred-items.md`). Baseline cleared in `chore/re-enable-lint-gate`:
+      # 88 errors / 110 warnings → 0 / 0 across auto-fix + 4 manual sweeps.
       - run: npm run lint
-        continue-on-error: true
       - run: npm test
       - run: npm run build
       - run: npm run check:bundle-size
