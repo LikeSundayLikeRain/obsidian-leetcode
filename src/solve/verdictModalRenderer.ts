@@ -281,8 +281,18 @@ function renderRunResult(
     renderInputSection(caseBody, inputChunks[activeIdx] ?? '', md);
 
     // ── Step 7b: Stdout section (print/console.log output) ─────────────
-    const stdoutChunks = splitOutput(res.code_output, arity);
-    const stdout = stdoutChunks[activeIdx] ?? '';
+    // BRAT #2 fix (2026-06-05): LC's `code_output` is the user's combined
+    // stdout for the whole run, NOT a per-case array. When LC returns it as
+    // `string[]`, each element is ONE LINE (verified against
+    // node_modules/@leetnotion/leetcode-api/lib/index.js:1887 — formatTestOutput
+    // joins the array on '\n'). The previous code routed it through
+    // `splitOutput(arr, arity)` which treats array elements as per-case
+    // strings, so a multi-line `print()` showed only line 1 on the active tab
+    // and stranded the remaining lines on phantom case slots. The correct
+    // primitive is `asString(res.code_output)` — same coercion the
+    // submissionOrchestrator uses for `LastVerdict.actualOutput`
+    // (submissionOrchestrator.ts:411 + asString helper at 143).
+    const stdout = asString(res.code_output);
     if (stdout.length > 0) {
       renderValueSection(
         caseBody,
