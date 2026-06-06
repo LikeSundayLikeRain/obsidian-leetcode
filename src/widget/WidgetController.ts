@@ -77,6 +77,10 @@ import type { StatePersistenceMap } from './statePersistence';
 import { readVimModeFromVault } from './vimMode';
 import { isEmbedContext } from './embedDetect';
 import { mountActionRow, type WidgetActionRowCtl } from './widgetActions';
+import {
+  createCmdSlashScopeExtension,
+  type AppForCmdSlashScope,
+} from './cmdSlashScopeExtension';
 // WR-02 (Phase 21 cycle-2 review-fix) — log dispatch failures from
 // applyPeerSync at debug level so production debugging of split-pane
 // peer-sync regressions has an observable breadcrumb.
@@ -118,6 +122,19 @@ export interface WidgetMountHost {
       ): unknown;
       offref?(ref: unknown): void;
     };
+    /** Debug session cmd-slash-widget-toggle-comment — Obsidian's Scope-based
+     *  keymap manager. Used by `createCmdSlashScopeExtension` to push a Mod-/
+     *  override while the widget's contentDOM is focused. Optional in the
+     *  structural contract so test fixtures can omit it (the extension
+     *  factory returns `[]` when absent). Production LeetCodePlugin's
+     *  `this.app` satisfies this contract via the real Obsidian App. */
+    keymap?: {
+      pushScope(scope: unknown): void;
+      popScope(scope: unknown): void;
+    };
+    /** Debug session cmd-slash-widget-toggle-comment — `app.scope` is the
+     *  parent scope under which the widget's per-focus Scope is parented. */
+    scope?: unknown;
   };
   settings: {
     getIndentSizeOverride(): 'auto' | 2 | 4 | 8;
@@ -1201,6 +1218,20 @@ function buildExtensions(
   // Editable mode: full interactive extensions.
   const exts: Extension[] = [
     ...visual,
+    // Debug session cmd-slash-widget-toggle-comment — Obsidian-Scope-based
+    // Mod-/ intercept. Without this, Obsidian's app-level
+    // `editor:toggle-comments` hotkey wins over CM6's per-EditorView keymap
+    // and inserts `%% %%` into the parent note's body. Read-only mounts
+    // skip — Reading-mode widgets don't accept keystrokes. The factory
+    // returns `[]` when `app.keymap` / `app.scope` are absent (test fixtures).
+    createCmdSlashScopeExtension(
+      plugin.app.keymap && plugin.app.scope
+        ? ({
+            keymap: plugin.app.keymap,
+            scope: plugin.app.scope,
+          } as unknown as AppForCmdSlashScope)
+        : null,
+    ),
     // Debug session brat-widget-enter-flicker — bound the child editor's
     // scrollIntoView requests to its own scrollDOM. CM6's default scroll-
     // into-view walks up the DOM ancestor chain, but the child's scrollDOM
