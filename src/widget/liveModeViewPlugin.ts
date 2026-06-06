@@ -213,9 +213,15 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
         childView.state.selection.mainIndex,
       );
     } catch {
-      mappedSelection = EditorSelection.create([
-        EditorSelection.cursor(prefixLen),
-      ]);
+      // Aborting is strictly safer than slamming the cursor to
+      // prefixLen — when divergence starts at byte 0 (e.g. the very
+      // first char of the fence body changed), prefixLen=0 collapses
+      // every selection coordinate to offset 0 and the user sees the
+      // cursor jump to the top-left of the widget mid-typing. The next
+      // sync trigger will reconcile; one skipped iteration is invisible
+      // and a ChangeSet.of throw implies malformed spec geometry where
+      // dispatching anyway is also wrong.
+      continue;
     }
 
     try {
