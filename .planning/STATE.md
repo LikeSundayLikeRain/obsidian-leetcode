@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 Phase: 22 (v1-2-path-removal-polish) — EXECUTING (PR #10 merged; 1.3.0-beta.1 released; BRAT 7-day window pending)
 Plan: 3 of 3 in-tree wave complete (22-01 cutover ✓, 22-02 polish ✓, 22-03 in-tree gates ✓ — all shipped 2026-06-03)
 Status: PR #10 merged to main (1c20e68 admin merge); tag 1.3.0-beta.1 pushed; GitHub Release published as prerelease with main.js+manifest+styles.css attached. Awaiting BRAT 7-day dogfood window. On BRAT pass: bump to 1.3.0 + plugin-store re-review submission.
-Last activity: 2026-06-06 -- Completed quick task 260605-vny: BRAT widget cursor jump + 1-2 char rollback fixed via three atomic fixes (catch-fallback abort, child-is-superset push guard, typing-during-own-flush self-write detection in modify-handler) plus a recentlyFlushed timestamp in DebouncedWriter. 2857 tests passing.
+Last activity: 2026-06-06 -- Completed quick task 260605-wle: durable debug-session note for widget cursor-jump + char-rollback at `.planning/debug/widget-cursor-jump-and-char-rollback.md` capturing root causes 1-4, shipped A/B/C, and followups D/E/F/G so the deferred principled fixes can be picked up without re-running the 32-agent workflow.
 
 ## Performance Metrics
 
@@ -100,6 +100,7 @@ Recent decisions affecting current work:
 | 260514-k39 | Fix Obsidian plugin store auto-review ESLint errors and warnings | 2026-05-14 | 80a51ca | [260514-k39-fix-obsidian-plugin-store-auto-review-es](./quick/260514-k39-fix-obsidian-plugin-store-auto-review-es/) |
 | 260528-vq4 | Add useNestedEditor toggle setting | 2026-05-29 | 5480c03 | [260528-vq4-add-usenestededitor-toggle-setting](./quick/260528-vq4-add-usenestededitor-toggle-setting/) |
 | 260605-vny | Fix widget cursor jump and char rollback (BRAT regression) | 2026-06-06 | 064d0ce | [260605-vny-fix-widget-cursor-jump-and-char-rollback](./quick/260605-vny-fix-widget-cursor-jump-and-char-rollback/) |
+| 260605-wle | Document widget cursor-jump rollback debug findings (D/E/F/G followups) | 2026-06-06 | (this commit) | [260605-wle-document-widget-cursor-jump-rollback-deb](./quick/260605-wle-document-widget-cursor-jump-rollback-deb/) |
 
 ## Deferred Items
 
