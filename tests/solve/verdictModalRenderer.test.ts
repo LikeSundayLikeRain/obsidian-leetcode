@@ -489,3 +489,102 @@ describe('Phase 08 — AI Debug button on Run-mode failure paths', () => {
     expect(onOpenAIDebug).toHaveBeenCalledTimes(1);
   });
 });
+
+
+// ── BRAT #2 (2026-06-05) — multi-line Stdout regression guard ─────────────
+//
+// Previously the renderer used `splitOutput(res.code_output, arity)` which
+// treats array elements as per-case strings. LC's wire format is the
+// opposite: `code_output: string[]` is a flat per-line list of the user's
+// combined stdout (verified against
+// node_modules/@leetnotion/leetcode-api/lib/index.js:1887 — formatTestOutput
+// joins on '\n'). For a single-case Run with a 3-line print() the previous
+// code rendered only line 1 and dropped lines 2-3.
+//
+// These tests pin the fix: render asString(code_output) — the same
+// coercion submissionOrchestrator already uses for LastVerdict.actualOutput.
+
+describe('BRAT #2 — multi-line Stdout in Run modal', () => {
+  it('single-case run with array code_output renders ALL lines (regression)', () => {
+    const fixture = {
+      state: 'SUCCESS',
+      status_code: 10,
+      status_msg: 'Accepted',
+      run_success: true,
+      correct_answer: true,
+      code_answer: ['[0,1]'],
+      // Multi-line stdout split LINE-PER-ELEMENT (LC wire shape).
+      code_output: ['line one', 'line two', 'line three'],
+      expected_code_answer: ['[0,1]'],
+      total_testcases: 1,
+      compare_result: '1',
+      status_runtime: '20 ms',
+    };
+    const { contentEl } = renderFixtureRun(fixture, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9',
+    });
+    const text = contentEl.textContent ?? '';
+    // All three stdout lines must be present in the rendered DOM.
+    expect(text).toContain('line one');
+    expect(text).toContain('line two');
+    expect(text).toContain('line three');
+  });
+
+  it('multi-case run with array code_output joins line-per-element with \n', () => {
+    // 3 cases. LC returns code_output as flat lines (NOT per-case).
+    const fixture = {
+      state: 'SUCCESS',
+      status_code: 10,
+      status_msg: 'Accepted',
+      run_success: true,
+      correct_answer: true,
+      code_answer: ['[0,1]', '[1,2]', '[0,1]'],
+      code_output: ['debug1', 'debug2', 'debug3', 'debug4'],
+      expected_code_answer: ['[0,1]', '[1,2]', '[0,1]'],
+      total_testcases: 3,
+      compare_result: '111',
+      status_runtime: '4 ms',
+    };
+    const { contentEl } = renderFixtureRun(fixture, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+    });
+    const text = contentEl.textContent ?? '';
+    // All four lines of stdout must appear (they are the user's combined
+    // print() output across cases — LC does NOT split them per-case here).
+    expect(text).toContain('debug1');
+    expect(text).toContain('debug2');
+    expect(text).toContain('debug3');
+    expect(text).toContain('debug4');
+  });
+
+  it('string code_output with embedded \n preserves all lines', () => {
+    const fixture = {
+      state: 'SUCCESS',
+      status_code: 10,
+      status_msg: 'Accepted',
+      run_success: true,
+      correct_answer: true,
+      code_answer: ['[0,1]'],
+      code_output: 'first\nsecond\nthird',
+      expected_code_answer: ['[0,1]'],
+      total_testcases: 1,
+      compare_result: '1',
+      status_runtime: '5 ms',
+    };
+    const { contentEl } = renderFixtureRun(fixture, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9',
+    });
+    // Locate the Stdout <pre> by section label ordering: Stdout is rendered
+    // before Output, so we can target by textContent containment in any pre.
+    const pres = Array.from(contentEl.querySelectorAll('pre')).map(
+      (p) => p.textContent ?? '',
+    );
+    const stdoutPre = pres.find((t) => t.includes('first'));
+    expect(stdoutPre).toBeDefined();
+    expect(stdoutPre).toContain('second');
+    expect(stdoutPre).toContain('third');
+  });
+});
