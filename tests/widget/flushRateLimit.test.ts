@@ -69,6 +69,37 @@ function makeFakeApp() {
   };
 }
 
+/**
+ * Drain the asynchronous flush() chain deterministically.
+ *
+ * The flush body awaits vault.read → sha1 (native crypto.subtle.digest
+ * Promise — NOT synchronized with fake timers) → vault.process. Different
+ * Node versions / CI runners need different numbers of event-loop ticks for
+ * the native crypto Promise to resolve, so a fixed-iteration drain loop
+ * flakes under CI load. We tick fake time forward in 1ms increments until
+ * vault.process has fired the target number of times.
+ *
+ * Each 1ms tick drains pending microtasks AND fires any sub-window timers,
+ * which is sufficient regardless of how many native-Promise hops crypto
+ * needs.
+ */
+async function drainUntilCalled(
+  app: { vault: { process: ReturnType<typeof vi.fn> } },
+  target: number,
+  maxIters = 2000,
+): Promise<void> {
+  const calls = () => (app.vault.process as ReturnType<typeof vi.fn>).mock.calls.length;
+  for (let i = 0; i < maxIters; i++) {
+    if (calls() >= target) return;
+    await vi.advanceTimersByTimeAsync(1);
+  }
+  if (calls() < target) {
+    throw new Error(
+      `drainUntilCalled: vault.process called ${calls()} times after ${maxIters}ms (expected >= ${target})`,
+    );
+  }
+}
+
 describe('DebouncedWriter rate limit (SYNC-07)', () => {
   let app: ReturnType<typeof makeFakeApp>;
   let file: FakeFile;
@@ -95,7 +126,9 @@ describe('DebouncedWriter rate limit (SYNC-07)', () => {
       app as never, file as never, () => `body${docSeq++}`, () => 0, suppression, 0,
     );
 
-    // First flush — fires immediately; lastFlushAt = T0.
+    // First flush — fires immediately; lastFlushAt = T0. Await drains the
+    // entire async chain (vault.read → sha1 → vault.process) via microtasks,
+    // capturing t0 at exactly T0 with no fake-time advancement.
     await w.forceFlush();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
 
@@ -104,16 +137,14 @@ describe('DebouncedWriter rate limit (SYNC-07)', () => {
     // Second flush — under rate-limit window. forceFlush() resolves
     // synchronously (rate-limit gate returns early), but a deferred flush is
     // scheduled via setTimeout to fire 150ms later.
-    await w.forceFlush();
+    void w.forceFlush();
     expect(app.vault.process).toHaveBeenCalledTimes(1);
 
-    // Drain all pending timers (deferred rate-limit setTimeout) + microtasks.
-    // Run multiple iterations to handle the nested async chain:
-    //   timer fires → flush() reads vault → vault.process resolves.
-    for (let i = 0; i < 5; i++) {
-      await vi.runAllTimersAsync();
-      await Promise.resolve();
-    }
+    // Drain until the deferred rate-limit timer fires AND its async flush
+    // chain (vault.read → sha1 → vault.process) resolves to completion.
+    // 1ms ticks are sufficient regardless of how many native-Promise hops
+    // crypto.subtle.digest needs on the host runner (CI flake fix).
+    await drainUntilCalled(app, 2);
 
     expect(app.vault.process).toHaveBeenCalledTimes(2);
     const t0 = app.callTimestamps[0]!;
