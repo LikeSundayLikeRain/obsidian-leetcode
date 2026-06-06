@@ -234,19 +234,24 @@ describe('pushParentToChild — cursor preservation (debug session: vim-cursor-j
     expect(childView.state.selection.main.head).toBe(10);
   });
 
-  it('the symptom case: child has typing ahead of parent; reflow with shorter parent body does NOT jump caret to 0', () => {
+  it('the symptom case: child has typing ahead of parent; child-is-superset guard skips the push entirely (no rollback, no caret jump)', () => {
     // Mirrors the user-reported sequence:
     //   1. Child typed "fn() {\n  ret" — caret near end.
     //   2. childParentSync flushed → parent fence body matches: "fn() {\n  ret".
-    //   3. User types "u" — child now "fn() {\n  retu", caret at end (12).
+    //   3. User types "u" — child now "fn() {\n  retu", caret at end (13).
     //      childParentSync has NOT flushed yet (300ms debounce).
     //   4. Obsidian's auto-save reflows parent (untagged change). Parent
-    //      fence body in this test is set to a slightly older version
-    //      "fn() {\n  ret" — i.e., the trailing 'u' is the only diff, the
-    //      LCP covers "fn() {\n  ret".
-    //   5. pushParentToChild fires. Pre-fix: full-doc replace → caret → 0.
-    //      Post-fix: minimal diff at the tail; caret 12 maps to 11
-    //      (forward-bias).
+    //      fence body in this test is the slightly older version
+    //      "fn() {\n  ret" — the trailing 'u' is the only diff and the
+    //      child is a strict prefix-extension of the parent.
+    //   5. pushParentToChild fires.
+    //      Plan-21-17 era (pre-260605-vny): caret-mapping fix prevented
+    //        the cursor jump to 0 but the trailing 'u' was still deleted
+    //        from the child — the char-rollback symptom.
+    //      Post-260605-vny: the child-is-superset guard recognizes
+    //        normChild.startsWith(normParent) && delta ≤ 8 and SKIPS the
+    //        dispatch entirely. The trailing 'u' stays in the child;
+    //        the next debounced flush absorbs it into the parent.
     const oldBody = 'fn() {\n  retu';
     const newBody = 'fn() {\n  ret';
     const parentDoc = makeParentDoc(oldBody);
@@ -261,13 +266,15 @@ describe('pushParentToChild — cursor preservation (debug session: vim-cursor-j
     const plugin = makeFakePlugin([widget]);
     const parentView = makeParentView(parentDoc, plugin, filePath);
 
+    const dispatchSpy = vi.spyOn(childView, 'dispatch');
     reflowParentFenceBody(parentView, oldBody, newBody);
 
-    expect(childView.state.doc.toString()).toBe(newBody);
-    // Caret was at 13 (end of "fn() {\n  retu"); the trailing 'u' was
-    // deleted by the parent reflow. Forward-bias ChangeSet.mapPos clamps
-    // the caret to 12 (end of new doc) — NOT to 0.
-    expect(childView.state.selection.main.head).toBe(12);
+    // 260605-vny — push was SKIPPED. Child doc stays as the user typed
+    // it (trailing 'u' preserved); caret stays at the end of the child
+    // doc; no dispatch fired.
+    expect(dispatchSpy).not.toHaveBeenCalled();
+    expect(childView.state.doc.toString()).toBe(oldBody);
+    expect(childView.state.selection.main.head).toBe(13);
     expect(childView.state.selection.main.head).not.toBe(0);
   });
 

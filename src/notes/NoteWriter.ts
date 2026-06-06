@@ -292,6 +292,30 @@ export class NoteWriter {
   }
 
   /**
+   * Quick-260605-wux — pane-aware reveal helper.
+   *
+   * WHY: `app.workspace.openLinkText(path, '', false)` falls back to the
+   * most-recently-active MarkdownView when the current active leaf is not a
+   * MarkdownView. In v1.3 the user routinely clicks Start/Open Problem from
+   * a non-MarkdownView leaf (ProblemPreviewView, ProblemBrowserView), so a
+   * two-pane workspace surfaces the bug as the new note opening in the wrong
+   * pane (a stale MD leaf elsewhere) instead of the active tab group the
+   * user clicked from. `getLeaf('tab')` honors the active tab group, so
+   * routing the non-MarkdownView branch through it places the new tab
+   * adjacent to the preview the user just clicked. Mirrors the contest path
+   * shape at src/main.ts:1884.
+   */
+  private async revealNoteFile(file: TFile): Promise<void> {
+    const activeMd = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (activeMd) {
+      await this.app.workspace.openLinkText(file.path, '', false);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf('tab');
+    await leaf.openFile(file);
+  }
+
+  /**
    * Plan 21.1-01 R6 fresh-create — bounded poll until metadataCache reports
    * `lc-slug` for the freshly-written file, OR ticks budget exhausts.
    *
@@ -343,7 +367,7 @@ export class NoteWriter {
       // Reveal immediately — no await on any network (D-11).
       // Phase 18: tab idempotency — reuse existing leaf if already open.
       if (!this.revealExistingLeaf(existingFile.path)) {
-        await this.app.workspace.openLinkText(existingFile.path, '', false);
+        await this.revealNoteFile(existingFile);
       }
       // Phase 4 Plan 05 (D-02) — fire the on-open hook after reveal so the
       // submission history prefetch runs in parallel with the rest of the
@@ -418,7 +442,7 @@ export class NoteWriter {
       // Treat as re-open: reveal + retrofit + refresh frontmatter.
       // Phase 18: tab idempotency — reuse existing leaf if already open.
       if (!this.revealExistingLeaf(existingAtCanonical.path)) {
-        await this.app.workspace.openLinkText(existingAtCanonical.path, '', false);
+        await this.revealNoteFile(existingAtCanonical);
       }
       // Phase 4 Plan 05 (D-02) — fire on-open hook after recovered reveal.
       this.fireOnNoteOpen(slug);
@@ -520,7 +544,7 @@ export class NoteWriter {
     // Reveal the newly-created note.
     // Phase 18: tab idempotency — reuse existing leaf if already open.
     if (!this.revealExistingLeaf(file.path)) {
-      await this.app.workspace.openLinkText(file.path, '', false);
+      await this.revealNoteFile(file);
     }
     // Phase 4 Plan 05 (D-02) — fire on-open hook after new-note reveal.
     this.fireOnNoteOpen(slug);
