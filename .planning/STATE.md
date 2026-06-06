@@ -4,8 +4,8 @@ milestone: v1.3
 milestone_name: Inline Widget Architecture
 status: executing
 stopped_at: PR #10 merged + 1.3.0-beta.1 released; awaiting BRAT 7-day dogfood window
-last_updated: "2026-06-03T20:01:00.000Z"
-last_activity: 2026-06-03 -- PR #10 merged via --admin (1c20e68); tag 1.3.0-beta.1 pushed; release workflow shipped main.js+manifest+styles.css as prerelease
+last_updated: "2026-06-06T03:50:00.000Z"
+last_activity: 2026-06-06 -- Quick task 260605-wux: fix multi-pane preview→openProblem leaf-targeting bug. Added `revealNoteFile` helper on NoteWriter that branches on `getActiveViewOfType(MarkdownView)` — non-MarkdownView active leaf (preview view, sidebar) routes through `getLeaf('tab').openFile` so the new note tab opens in the active tab group instead of falling back to a stale most-recently-active markdown leaf in another pane. Three reveal sites in `openProblem` updated; new test file with 2 cases; full suite 2859 passing.
 progress:
   total_phases: 1
   completed_phases: 0
@@ -100,7 +100,8 @@ Recent decisions affecting current work:
 | 260514-k39 | Fix Obsidian plugin store auto-review ESLint errors and warnings | 2026-05-14 | 80a51ca | [260514-k39-fix-obsidian-plugin-store-auto-review-es](./quick/260514-k39-fix-obsidian-plugin-store-auto-review-es/) |
 | 260528-vq4 | Add useNestedEditor toggle setting | 2026-05-29 | 5480c03 | [260528-vq4-add-usenestededitor-toggle-setting](./quick/260528-vq4-add-usenestededitor-toggle-setting/) |
 | 260605-vny | Fix widget cursor jump and char rollback (BRAT regression) | 2026-06-06 | 064d0ce | [260605-vny-fix-widget-cursor-jump-and-char-rollback](./quick/260605-vny-fix-widget-cursor-jump-and-char-rollback/) |
-| 260605-wle | Document widget cursor-jump rollback debug findings (D/E/F/G followups) | 2026-06-06 | (this commit) | [260605-wle-document-widget-cursor-jump-rollback-deb](./quick/260605-wle-document-widget-cursor-jump-rollback-deb/) |
+| 260605-wle | Document widget cursor-jump rollback debug findings (D/E/F/G followups) | 2026-06-06 | b8034bd | [260605-wle-document-widget-cursor-jump-rollback-deb](./quick/260605-wle-document-widget-cursor-jump-rollback-deb/) |
+| 260605-wux | Fix multi-pane preview→openProblem leaf-targeting bug | 2026-06-06 | 237de28 | [260605-wux-fix-multi-pane-preview-leaf-targeting](./quick/260605-wux-fix-multi-pane-preview-leaf-targeting/) |
 
 ## Deferred Items
 
