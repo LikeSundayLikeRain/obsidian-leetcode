@@ -163,6 +163,32 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
     const norm = (s: string) => s.replace(/\r\n/g, '\n').replace(/\s+$/, '');
     if (norm(childDoc) === norm(newBody)) continue;
 
+    // In-flight-typing guard (BRAT debug session 260605-vny). The
+    // post-flush modify-event window opens a race where DebouncedWriter
+    // has reset pending=false in its finally block but Obsidian has
+    // not yet fired vault.on('modify'); during that window the
+    // writer.hasPending() gate above (BL-05) returns false and we fall
+    // through. The syncHandle.hasPending() gate is dead in production
+    // because mountLeetCodeWidget passes undefined for syncExtension,
+    // so candidate.syncHandle is permanently undefined and the gate
+    // at line 159 short-circuits to true (the optional-chain returns
+    // undefined which !== true). Both child→parent guards fail open.
+    //
+    // If the child is a strict superset of the parent body — i.e.,
+    // child = parent + a small trailing run of just-typed chars —
+    // that trailing run is the chars the user typed AFTER the writer's
+    // flush captured its snapshot. The next debounced flush will
+    // absorb them. Pushing the parent body now would delete them
+    // (the char-rollback primitive). Skip.
+    const normChild = norm(childDoc);
+    const normParent = norm(newBody);
+    if (
+      normChild.startsWith(normParent) &&
+      normChild.length - normParent.length <= 8
+    ) {
+      continue;
+    }
+
     // Compute a minimal ChangeSpec (longest common prefix + suffix) and map
     // the child's current selection forward through it. A full-doc replace
     // (`from: 0, to: childDoc.length`) collapses every selection coordinate
@@ -213,9 +239,15 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
         childView.state.selection.mainIndex,
       );
     } catch {
-      mappedSelection = EditorSelection.create([
-        EditorSelection.cursor(prefixLen),
-      ]);
+      // Aborting is strictly safer than slamming the cursor to
+      // prefixLen — when divergence starts at byte 0 (e.g. the very
+      // first char of the fence body changed), prefixLen=0 collapses
+      // every selection coordinate to offset 0 and the user sees the
+      // cursor jump to the top-left of the widget mid-typing. The next
+      // sync trigger will reconcile; one skipped iteration is invisible
+      // and a ChangeSet.of throw implies malformed spec geometry where
+      // dispatching anyway is also wrong.
+      continue;
     }
 
     try {

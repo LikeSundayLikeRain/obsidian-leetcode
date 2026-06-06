@@ -279,6 +279,53 @@ describe('DebouncedWriter', () => {
     });
   });
 
+  // BRAT debug session 260605-vny — recentlyFlushed() typing-during-
+  // own-flush detector. Records lastFlushCompletedAt at flush completion
+  // (BEFORE clearing `pending`) so a modify-handler observation racing
+  // the macrotask sees the stamp. Independent of `hasPending()` — that
+  // is the in-flight signal; this is the just-finished-window signal.
+  describe('recentlyFlushed()', () => {
+    it('returns false immediately after construction (lastFlushCompletedAt === 0)', () => {
+      const w = new DebouncedWriter(
+        app as never, file as never, getDoc, getFenceIndex, suppression, 400,
+      );
+      // Date.now() - 0 is always >= thresholdMs, so this returns false.
+      expect(w.recentlyFlushed(200)).toBe(false);
+    });
+
+    it('returns true within the threshold window after forceFlush() resolves', async () => {
+      const w = new DebouncedWriter(
+        app as never, file as never, getDoc, getFenceIndex, suppression, 400,
+      );
+      w.run();
+      await w.forceFlush();
+      // Same tick as flush completion — well under any positive threshold.
+      expect(w.recentlyFlushed(200)).toBe(true);
+      // Even an explicit zero threshold demands "less than zero ms ago",
+      // which is impossible — the strict less-than at the boundary is
+      // intentional (callers using thresholdMs=0 want "no window at all").
+      expect(w.recentlyFlushed(0)).toBe(false);
+    });
+
+    it('returns false once Date.now() advances past thresholdMs', async () => {
+      const w = new DebouncedWriter(
+        app as never, file as never, getDoc, getFenceIndex, suppression, 400,
+      );
+      w.run();
+      await w.forceFlush();
+      const dateSpy = vi.spyOn(Date, 'now');
+      const baseline = Date.now();
+      dateSpy.mockReturnValue(baseline + 250);
+      try {
+        expect(w.recentlyFlushed(200)).toBe(false);
+        // Larger windows still capture it.
+        expect(w.recentlyFlushed(300)).toBe(true);
+      } finally {
+        dateSpy.mockRestore();
+      }
+    });
+  });
+
   // Plan 21-17 — originator threading. DebouncedWriter accepts an optional
   // registryKey at construction; flush() passes it as the third arg to
   // selfWriteSuppression.arm(...) so peer-sync fan-out can identify the

@@ -66,6 +66,14 @@ export class DebouncedWriter {
    *  conflict-modal trigger gate (`vault.on('modify')` → if writer is mid-
    *  edit, open ConflictModal) reads this via `hasPending()`. */
   private pending = false;
+  /** BRAT debug session 260605-vny — millisecond timestamp of the most
+   *  recent flush completion. The vault.on('modify') macrotask fires
+   *  AFTER the flush body's `finally` resets `pending = false`, opening
+   *  a window where `hasPending()` returns false but the modify event
+   *  is still our own write echo. The modify-handler in main.ts uses
+   *  `recentlyFlushed(200)` to recognize that window and route the echo
+   *  as a self-write rather than falling through to reload-silent. */
+  private lastFlushCompletedAt = 0;
 
   /** Plan 21-17 — optional registryKey of the owning WidgetController.
    *  Passed as the third argument to selfWriteSuppression.arm(...) so the
@@ -131,6 +139,16 @@ export class DebouncedWriter {
    *  or error path) or after `cancel()`. */
   hasPending(): boolean {
     return this.pending;
+  }
+
+  /** BRAT debug session 260605-vny — typing-during-own-flush detector.
+   *  Returns `true` when a flush completed within the last `thresholdMs`
+   *  milliseconds. The default 200ms covers Obsidian's vault.on('modify')
+   *  macrotask latency under typical desktop load. Used by the main.ts
+   *  modify-handler to absorb the post-flush modify echo as a self-write
+   *  even after `pending` has reset to false. */
+  recentlyFlushed(thresholdMs = 200): boolean {
+    return Date.now() - this.lastFlushCompletedAt < thresholdMs;
   }
 
   /** Hot-reconfigure the debounce delay (live applied without note reload —
@@ -235,6 +253,11 @@ export class DebouncedWriter {
         console.warn(`LC widget: post-flush hash drift for ${this.file.path}`);
       }
     } finally {
+      // BRAT debug session 260605-vny — record completion timestamp
+      // BEFORE clearing `pending` so a modify-handler observation that
+      // wins the race against the macrotask sees `recentlyFlushed()`
+      // === true even if `hasPending()` has just flipped to false.
+      this.lastFlushCompletedAt = Date.now();
       // Phase 20 Plan 20-03 — reset pending sentinel on every exit path
       // (success / abort / Notice / error). The conflict-modal trigger
       // gate observes a clean post-condition once the flush completes.

@@ -1427,6 +1427,34 @@ export default class LeetCodePlugin extends Plugin {
             return;
           }
 
+          // BRAT debug session 260605-vny — typing-during-own-flush
+          // strengthened detection. The post-flush modify-event window
+          // races the writer's `pending = false` reset against
+          // Obsidian's vault.on('modify') macrotask: when modify wins,
+          // observedBody (post-flush disk content) is a strict prefix
+          // of childDoc (live + 1-2 chars typed AFTER the flush snapshot)
+          // and the writer's recentlyFlushed(200) is true. Without this
+          // gate, the modify event falls through to reloadFromDisk
+          // ('silent') which full-doc-replaces the live child with the
+          // stale disk body, dropping the just-typed chars and clamping
+          // the cursor onto a now-shorter line — the cursor-jump and
+          // char-rollback symptoms primitive.
+          //
+          // Optional-chain `recentlyFlushed?.(200)` keeps legacy mounts
+          // without the new method from crashing; `=== true` rejects
+          // both `undefined` (method missing) and `false` (idle writer).
+          if (
+            childDoc.startsWith(observedBody) &&
+            childDoc.length - observedBody.length <= 8 &&
+            firstMatch.writer?.recentlyFlushed?.(200) === true
+          ) {
+            // eslint-disable-next-line no-console -- diagnostic instrumentation
+            console.debug(
+              `[lc-debug] modify:branch=typing-during-own-flush path=${file.path} reason=child-is-superset-of-disk-within-flush-window delta=${childDoc.length - observedBody.length}`,
+            );
+            return;
+          }
+
           // (d) Disk diverges from child = external write (Sync from
           // another device, manual edit in source mode, etc.). Default
           // to silent reload — the parent→child push in the ViewPlugin
