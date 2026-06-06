@@ -42,8 +42,10 @@ describe('NoteWriter re-open offline (D-12 silent policy)', () => {
     const client = makeMockLeetCodeClient({ throwOn: 'network' });
     const writer = new NoteWriter(m.app as never, client as never, makeStaleCacheSettings() as never);
     await writer.openProblem('two-sum');
-    // Reveal happens.
-    expect(m.spies.openLinkText).toHaveBeenCalled();
+    // Reveal happens. Quick-260605-wux: with no MarkdownView active (the
+    // mock default), `revealNoteFile` routes through `getLeaf('tab').openFile`
+    // — the pane-aware branch — instead of `openLinkText`.
+    expect(m.spies.openFile).toHaveBeenCalled();
     // Give background-refresh promise a tick to settle.
     await new Promise((r) => window.setTimeout(r, 10));
     // D-12: NO Notice on offline background-refresh failure.

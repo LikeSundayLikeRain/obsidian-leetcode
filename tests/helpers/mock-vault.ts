@@ -76,6 +76,13 @@ export function makeMockVaultApp(initialFiles: Record<string, string> = {}) {
     /* no-op; tests assert on call args */
   });
   const getActiveViewOfType = vi.fn(() => null);
+  // Quick-260605-wux — `revealNoteFile` falls through to `getLeaf('tab').openFile`
+  // when `getActiveViewOfType(MarkdownView)` returns null (the default here).
+  // Provide a default spy so tests that don't care about pane targeting don't
+  // crash on the new branch. Tests that DO care can replace this with their
+  // own `(m.app.workspace as Record<string, unknown>).getLeaf = vi.fn(...)`.
+  const openFile = vi.fn(async (_file: MockVaultFile) => undefined);
+  const getLeaf = vi.fn(() => ({ openFile }));
 
   // Phase 5.3 Plan 06 — minimal metadataCache.getFileCache that returns the
   // current frontmatter snapshot from state.frontmatter. Mirrors the read
@@ -109,6 +116,7 @@ export function makeMockVaultApp(initialFiles: Record<string, string> = {}) {
       workspace: {
         openLinkText,
         getActiveViewOfType,
+        getLeaf,
       },
     },
     state,
@@ -116,6 +124,7 @@ export function makeMockVaultApp(initialFiles: Record<string, string> = {}) {
     spies: {
       getAbstractFileByPath, create, createFolder, process, read, cachedRead,
       processFrontMatter, openLinkText, getActiveViewOfType, getFileCache,
+      getLeaf, openFile,
     },
     /** Pre-populate frontmatter for a file (e.g., in regeneration tests). */
     seedFrontmatter(path: string, fm: Record<string, unknown>): void {

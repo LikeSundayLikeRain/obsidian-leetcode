@@ -29,6 +29,8 @@ describe('NoteWriter offline regeneration (NOTE-07)', () => {
     const writer = new NoteWriter(m.app as never, client as never, settings as never);
     await expect(writer.openProblem('two-sum')).resolves.toBeUndefined();
     expect(client.getProblemDetail).not.toHaveBeenCalled();
-    expect(m.spies.openLinkText).toHaveBeenCalled();
+    // Quick-260605-wux: with no MarkdownView active (mock default),
+    // `revealNoteFile` routes through `getLeaf('tab').openFile`.
+    expect(m.spies.openFile).toHaveBeenCalled();
   });
 });
