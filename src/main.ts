@@ -59,6 +59,8 @@ import { AIDisclosureModal } from './ai/disclosure';
 import { AuthService } from './auth/AuthService';
 import { ProblemListService } from './browse/ProblemListService';
 import { ProblemBrowserView, BROWSER_VIEW_TYPE } from './browse/ProblemBrowserView';
+import { QuickProblemSearchModal } from './browse/QuickProblemSearchModal';
+import { createShiftShiftDetector } from './main/shiftShiftDetector';
 // Phase 06 Plan 03 — preview view + tab-reuse router. Static imports keep
 // the module graph deterministic; cyclic-type risk is avoided because both
 // preview modules type-import from `./main` rather than runtime-importing.
@@ -674,6 +676,18 @@ export default class LeetCodePlugin extends Plugin {
       callback: () => { void this.activateBrowser(); },
     });
 
+    // Quick search — JetBrains-style "search anything" launcher. Backed by
+    // the in-memory IndexedProblem cache (SettingsStore.getProblemIndex). No
+    // default hotkey: users bind it themselves; the document-level
+    // shift-shift detector (registered later in onload) is the default
+    // trigger. Plugin-store rules: id has no plugin-id / 'command' substring;
+    // sentence-case name does not start with the plugin name.
+    this.addCommand({
+      id: 'quick-search',
+      name: 'Quick search problems',
+      callback: () => { this.openQuickSearch(); },
+    });
+
     // GAP-11 — explicit "Refresh current problem" command. editorCheckCallback
     // so the command is only enabled when the active note has an `lc-slug`
     // frontmatter entry (i.e., is a plugin-generated problem note). Community
@@ -1138,6 +1152,20 @@ export default class LeetCodePlugin extends Plugin {
     this.registerDomEvent(window, 'beforeunload', () => {
       this.widgetRegistry?.flushAllSync();
     });
+
+    // Quick search — document-level double-shift detector. Mirrors the
+    // JetBrains "Shift Shift" affordance. The detector is pure (see
+    // src/main/shiftShiftDetector.ts) — it never calls preventDefault, so
+    // the underlying Shift keypress still reaches the editor untouched.
+    // Capture phase keeps modal/editor handlers from masking the second
+    // Shift in edge cases. Auto-cleaned via Plugin.registerDomEvent.
+    const shiftShiftHandler = createShiftShiftDetector({
+      onTrigger: () => { this.openQuickSearch(); },
+    });
+    // `activeDocument` is the Obsidian-provided global that resolves to the
+    // current popout window's document when the user has popped a tab out
+    // (mirrors the obsidianmd/prefer-active-doc lint rule).
+    this.registerDomEvent(activeDocument, 'keydown', shiftShiftHandler, { capture: true });
 
     // Phase 20 Plan 20-04 (THEME-04) — live theme retheme dispatcher.
     // Single global `app.workspace.on('css-change')` listener (verified
@@ -1769,6 +1797,22 @@ export default class LeetCodePlugin extends Plugin {
     // Phase 20 Plan 20-05 — reset the Hook 1 file-path tracker so a fresh
     // onload populates from scratch.
     this.lastActiveLeafFilePath = undefined;
+  }
+
+  /** Open the JetBrains-style quick-search modal. Backed by the in-memory
+   *  problem index — instant, no network call. Empty index ⇒ Notice
+   *  prompting the user to open the browser once so the index populates.
+   *  Selecting a row delegates to routeProblemClick so the user's "Click
+   *  behavior" (preview vs open) preference is honored. */
+  openQuickSearch(): void {
+    const problems = this.settings.getProblemIndex()?.problems ?? [];
+    if (problems.length === 0) {
+      new Notice('LeetCode: open the problem browser to populate the index.');
+      return;
+    }
+    new QuickProblemSearchModal(this.app, problems, (p) => {
+      void this.routeProblemClick(p.slug, p.status, 'preview');
+    }).open();
   }
 
   /** Phase 2 entry point for row-click in ProblemBrowserView.
