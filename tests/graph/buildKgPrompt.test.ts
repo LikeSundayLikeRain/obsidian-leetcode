@@ -22,7 +22,7 @@ describe('Phase 11 Plan 01 — buildKgPrompt pure helper', () => {
       code: 'def twoSum(nums, target):\n    return []',
       language: 'python3',
     });
-    expect(SEED_PATTERNS).toHaveLength(39);
+    expect(SEED_PATTERNS).toHaveLength(40);
     for (const pattern of SEED_PATTERNS) {
       expect(out).toContain(pattern);
     }
@@ -100,5 +100,21 @@ describe('Phase 11 Plan 01 — buildKgPrompt pure helper', () => {
       language: 'python3',
     });
     expect(out).not.toContain('## Notes');
+  });
+
+  it('output lists "Monotonic Queue" as a distinct seed (regression — bug 260607-yyx)', () => {
+    const out = buildKgPrompt({
+      problemMd: 'Sliding window maximum.',
+      code: 'def maxSlidingWindow(nums, k): pass',
+      language: 'python3',
+    });
+    // Both monotonic variants must be in the seed taxonomy presented to the model.
+    expect(out).toContain('- Monotonic Queue');
+    expect(out).toContain('- Monotonic Stack');
+    // Sanity: the deque-vs-stack disambiguation rule is in the prompt so the
+    // model can tell sliding-window-min/max apart from next-greater-element.
+    expect(out).toContain('Monotonic Queue');
+    expect(out).toMatch(/deque/i);
+    expect(out).toContain('LC 239');
   });
 });
