@@ -4,8 +4,8 @@ milestone: v1.3
 milestone_name: Inline Widget Architecture
 status: executing
 stopped_at: PR #10 merged + 1.3.0-beta.1 released; awaiting BRAT 7-day dogfood window
-last_updated: "2026-06-06T03:50:00.000Z"
-last_activity: 2026-06-06 -- Quick task 260605-wux: fix multi-pane preview→openProblem leaf-targeting bug. Added `revealNoteFile` helper on NoteWriter that branches on `getActiveViewOfType(MarkdownView)` — non-MarkdownView active leaf (preview view, sidebar) routes through `getLeaf('tab').openFile` so the new note tab opens in the active tab group instead of falling back to a stale most-recently-active markdown leaf in another pane. Three reveal sites in `openProblem` updated; new test file with 2 cases; full suite 2859 passing.
+last_updated: "2026-06-08T02:15:00.000Z"
+last_activity: 2026-06-08 -- Quick task 260607-uko: add JetBrains-style quick problem search. Two surfaces feed a SuggestModal<IndexedProblem> backed by settings.getProblemIndex — palette command "Quick search problems" (user-rebindable, no default hotkey) and a document-level shift-shift keydown detector (300ms window; disarms on non-Shift key, ignores e.repeat and modifier-held shifts; capture phase, never preventDefaults). Filter ranks numeric exact-id first, then id-prefix, then case-insensitive title/slug substring. New: src/main/shiftShiftDetector.ts, src/browse/QuickProblemSearchModal.ts, +14 tests. Full suite 2873 passing. Bundle 1,723 KB (within 1.8 MB v1.2 ceiling).
 progress:
   total_phases: 1
   completed_phases: 0
@@ -102,6 +102,7 @@ Recent decisions affecting current work:
 | 260605-vny | Fix widget cursor jump and char rollback (BRAT regression) | 2026-06-06 | 064d0ce | [260605-vny-fix-widget-cursor-jump-and-char-rollback](./quick/260605-vny-fix-widget-cursor-jump-and-char-rollback/) |
 | 260605-wle | Document widget cursor-jump rollback debug findings (D/E/F/G followups) | 2026-06-06 | b8034bd | [260605-wle-document-widget-cursor-jump-rollback-deb](./quick/260605-wle-document-widget-cursor-jump-rollback-deb/) |
 | 260605-wux | Fix multi-pane preview→openProblem leaf-targeting bug | 2026-06-06 | 237de28 | [260605-wux-fix-multi-pane-preview-leaf-targeting](./quick/260605-wux-fix-multi-pane-preview-leaf-targeting/) |
+| 260607-uko | Add quick problem search via palette + double-shift | 2026-06-08 | 7131191 | [260607-uko-add-quick-search-shift-shift](./quick/260607-uko-add-quick-search-shift-shift/) |
 
 ## Deferred Items
 
