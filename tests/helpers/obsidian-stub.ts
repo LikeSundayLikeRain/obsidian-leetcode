@@ -92,6 +92,42 @@ export class WorkspaceLeaf {}
 export class App {}
 export class MarkdownView {}
 
+// SuggestModal stub — base class for QuickProblemSearchModal. Tests that
+// only exercise the pure `filterProblems` helper never instantiate the
+// modal, but module resolution still needs the export. Tests that DO
+// drive modal behavior should override via per-test vi.mock factories.
+export class SuggestModal<T = unknown> {
+  inputEl!: HTMLInputElement;
+  resultContainerEl!: HTMLElement;
+  limit = 0;
+  emptyStateText = '';
+  constructor(_app?: unknown) {
+    /* no-op stub */
+  }
+  setPlaceholder(_p: string): void {
+    /* no-op */
+  }
+  setInstructions(_i: unknown[]): void {
+    /* no-op */
+  }
+  open(): void {
+    /* no-op */
+  }
+  close(): void {
+    /* no-op */
+  }
+  // Subclass hooks — declared so TypeScript is happy with abstract overrides.
+  getSuggestions(_q: string): T[] | Promise<T[]> {
+    return [];
+  }
+  renderSuggestion(_v: T, _el: HTMLElement): void {
+    /* override */
+  }
+  onChooseSuggestion(_v: T, _evt: MouseEvent | KeyboardEvent): void {
+    /* override */
+  }
+}
+
 // Phase 06 Plan 05 (gap closure) — Scope stub for the preview's Enter-key
 // registration. The real Obsidian `Scope` exposes `register(modifiers, key,
 // callback)` that returns a handler reference; tests can introspect the
