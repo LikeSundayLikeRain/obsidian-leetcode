@@ -24,6 +24,7 @@ export const SEED_PATTERNS: readonly string[] = [
   'Sliding Window',
   'Stack',
   'Monotonic Stack',
+  'Monotonic Queue',
   'Linked List',
   'Trees',
   'Tries',
