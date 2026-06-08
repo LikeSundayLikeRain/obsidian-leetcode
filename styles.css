@@ -1311,6 +1311,67 @@ button.leetcode-language-chevron:hover {
 
 
 /* ─────────────────────────────────────────────────────────────────────────
+ * Quick-search modal — pill-style difficulty chip + two-line item layout.
+ * Scoped under `.lc-quick-search__item` so the rules don't leak into other
+ * SuggestModal surfaces. Variables only (no raw hex, no rgba literals, no
+ * !important) — same hard rule as the rest of styles.css.
+ * ───────────────────────────────────────────────────────────────────────── */
+.lc-quick-search__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+}
+.lc-quick-search__title {
+  font-size: var(--font-ui-medium);
+  font-weight: 500;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-quick-search__id {
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+.lc-quick-search__meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+.lc-quick-search__diff {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: var(--font-ui-smaller);
+  font-weight: 500;
+}
+.lc-quick-search__item .lc-diff--easy {
+  color: var(--color-green);
+  background: color-mix(in srgb, var(--color-green) 15%, transparent);
+}
+.lc-quick-search__item .lc-diff--medium {
+  color: var(--color-yellow);
+  background: color-mix(in srgb, var(--color-yellow) 15%, transparent);
+}
+.lc-quick-search__item .lc-diff--hard {
+  color: var(--color-red);
+  background: color-mix(in srgb, var(--color-red) 15%, transparent);
+}
+.lc-quick-search__sep {
+  opacity: 0.6;
+}
+.lc-quick-search__slug {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
  * Phase 06 Plan 03 — Preview view chrome (06-UI-SPEC §CSS conventions).
  *
  * Scoped under .leetcode-preview. Reuses Obsidian CSS variables only — no
