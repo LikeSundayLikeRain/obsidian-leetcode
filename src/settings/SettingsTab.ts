@@ -71,6 +71,15 @@ export class LeetCodeSettingTab extends PluginSettingTab {
   }
 
   display(): void {
+    this.renderTab();
+  }
+
+  // Internal re-render hook used by click handlers that need to refresh the
+  // tab after mutating auth/settings state. Routing through a private method
+  // (instead of `this.display()`) keeps every call site off the deprecated
+  // `PluginSettingTab.display` symbol while preserving the framework's
+  // public `display()` contract for the initial paint.
+  private renderTab(): void {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass('leetcode-settings');
@@ -104,7 +113,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             .setTooltip('Log out of LeetCode')
             .onClick(async () => {
               await this.plugin.auth.logout();
-              this.display();
+              this.renderTab();
             });
         } else {
           // Only button in this file that receives the call-to-action accent modifier.
@@ -112,7 +121,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             .setCta()
             .onClick(async () => {
               await this.plugin.auth.login();
-              this.display();
+              this.renderTab();
             });
         }
       });
@@ -142,7 +151,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
               csrftoken: csrf,
             };
             await this.plugin.auth.loginManual(cookies);
-            this.display();
+            this.renderTab();
           });
         b.buttonEl.addClass('clickable-icon');
       });
@@ -359,7 +368,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           } else {
             await this.plugin.settings.setActiveAIProvider(null);
           }
-          this.display();
+          this.renderTab();
         }),
       );
 
@@ -379,7 +388,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           .setValue(active)
           .onChange(async (v) => {
             await this.plugin.settings.setActiveAIProvider(v as AIProvider);
-            this.display();
+            this.renderTab();
           }),
         );
 
@@ -565,7 +574,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         // decision B + 08.1-PATTERNS.md "Plan 08.1-02 #src/settings/SettingsTab.ts".
         // Renders Region + Model ID + Auth method dropdown + conditional
         // secret rows in place of Base URL/Model rows. The 4-mode dropdown
-        // calls this.display() onChange so the conditional rows re-render
+        // calls this.renderTab() onChange so the conditional rows re-render
         // atomically — Pitfall 10 invariant: switching authMethod ONLY
         // changes which rows render, never which fields are stored.
         const bcfg = cfg as BedrockProviderConfig;
@@ -620,7 +629,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
               // mode appear atomically. Pitfall 10 invariant: this only
               // changes which rows RENDER — `current` (and the persisted
               // config) keeps every secret field byte-for-byte intact.
-              this.display();
+              this.renderTab();
             }),
           );
 
