@@ -1,4 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
 /**
  * Phase 17 Plan 10 round-3 (17-UAT.md Test 13 final pass) — emit
  * Obsidian/CM5-compatible semantic class names on syntax tokens so
@@ -21,7 +20,9 @@
  * cascade (var(--code-keyword) at the consumer site).
  */
 import type { Extension, Range } from '@codemirror/state';
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { RangeSetBuilder } from '@codemirror/state';
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import {
   Decoration,
   type DecorationSet,
@@ -30,7 +31,8 @@ import {
   type ViewUpdate,
 } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
-import { tags as t, type Tag } from '@lezer/highlight';
+// eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
+import { tags as t, type Tag, highlightTree, tagHighlighter } from '@lezer/highlight';
 
 /**
  * ViewPlugin that maintains a DecorationSet of semantic class marks.
@@ -65,11 +67,10 @@ const semanticClassesPlugin = ViewPlugin.fromClass(
  * any language whose Lezer parser registers tags via `styleTags`).
  */
 function buildSemanticClassDecorations(view: EditorView): DecorationSet {
-  // Local require to avoid pulling `@lezer/highlight`'s entire surface
-  // into the eager import graph at the top of this file. The package is
-  // already a transitive peer dep via @codemirror/language.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { highlightTree, tagHighlighter } = require('@lezer/highlight') as typeof import('@lezer/highlight');
+  // `highlightTree` + `tagHighlighter` are imported statically at the
+  // top of this file alongside `tags`/`Tag`; @lezer/highlight is a
+  // transitive peer dep via @codemirror/language and is external in
+  // esbuild, so no extra bundle weight.
 
   // tagHighlighter accepts a list of { tag, class } rules; for each
   // styled token in the tree, it invokes the callback with the matched

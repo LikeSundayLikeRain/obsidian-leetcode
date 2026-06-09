@@ -41,7 +41,7 @@
 //   the safety net so a freshly-split pane gets correctly-styled widgets on
 //   first paint.
 
-import type { Plugin, EventRef, MarkdownView, WorkspaceLeaf } from 'obsidian';
+import type { Plugin, EventRef, MarkdownView } from 'obsidian';
 import { MarkdownView as MarkdownViewClass } from 'obsidian';
 
 /**
@@ -227,12 +227,3 @@ export function registerMultiPaneCoordinator(
 // Re-export the leaf-ancestor helper for test code that wants to assert
 // against the same DOM walk production uses.
 export { findLeafEl as __test_findLeafEl };
-
-// Suppress unused-import warning when WorkspaceLeaf isn't referenced at
-// compile time (the type is part of the structural contract documented above
-// for future readers). The underscore-prefix convention does not silence
-// @typescript-eslint/no-unused-vars for `type` aliases in this config, so an
-// inline disable is required. Intentional: kept as a compile-time anchor so
-// imports of WorkspaceLeaf survive tree-shake/auto-import-cleanup tools.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _UnusedLeafTypeReference = WorkspaceLeaf;

@@ -543,6 +543,18 @@
 }
 
 /* ── Phase 12 — Verdict Modal width + AI review code scroll ────────────── */
+/* Phase 09 (AIREV-01) — wide layout for the verdict modal when the auto AI
+   review stream is enabled. Replaces inline style assignments in
+   src/solve/VerdictModal.ts (no-static-styles-assignment compliance). The
+   `!important` flags mirror the original inline styles and override
+   Obsidian's default modal widths. */
+.modal.leetcode-verdict-modal--wide {
+  width: min(90vw, 780px) !important;
+  max-width: min(90vw, 780px) !important;
+}
+.leetcode-verdict-modal-container--wide {
+  --dialog-width: min(90vw, 780px);
+}
 .leetcode-verdict .leetcode-ai-review-stream pre {
   overflow-x: auto;
   white-space: pre;
@@ -2439,4 +2451,24 @@ button.leetcode-migration-banner__cta:hover,
   height: 0;
   overflow: hidden;
   pointer-events: none;
+}
+
+/* Phase 11 Plan 02 AIKG-01 — OtherPatternModal input row. Replaces inline
+ * `style.width` / `style.marginBottom` writes flagged by
+ * obsidianmd/no-static-styles-assignment. Stretches the pattern-name input
+ * to fill the modal width with breathing room before the action buttons. */
+.leetcode-other-pattern .leetcode-other-pattern-input {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+/* AI Solution modal — wide layout for prose + code-fenced response.
+ * The `min(90vw, 780px)` expression is viewport-relative but constant
+ * (no per-instance value), so it lives in static CSS and is applied
+ * via the `.leetcode-ai-solution-modal` class added in main.ts.
+ * `!important` mirrors the previous inline-style behavior, overriding
+ * Obsidian's default `.modal { width: ... }` rule. */
+.leetcode-ai-solution-modal {
+  width: min(90vw, 780px) !important;
+  max-width: min(90vw, 780px) !important;
 }

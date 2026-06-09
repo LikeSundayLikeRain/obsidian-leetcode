@@ -233,15 +233,11 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     const codeEditorGroup = containerEl.createDiv('lc-settings-group');
     new Setting(codeEditorGroup)
       .setName('Indent size')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Auto" is the verbatim option key value (a UI cross-reference); Java/Python/C++/JS/TS/Go are programming language names (proper nouns).
       .setDesc('Number of spaces per indent level in the code editor. "Auto" uses the language default (4 for Java/Python/C++, 2 for JS/TS, tab for Go).')
       .addDropdown((d) => d
         .addOption('auto', 'Auto (language default)')
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "2 spaces" is sentence-case English; the rule false-positives on number-prefixed phrases (demands '2 Spaces' which is wrong English).
         .addOption('2', '2 spaces')
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- See note above.
         .addOption('4', '4 spaces')
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- See note above.
         .addOption('8', '8 spaces')
         .setValue(String(this.plugin.settings.getIndentSizeOverride()))
         .onChange(async (v) => {
@@ -297,15 +293,10 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       .setName('Save delay')
       .setDesc('Time after typing stops before saving to disk. Lower = snappier; higher = fewer file-watcher events.')
       .addDropdown((d) => d
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- millisecond labels are not sentences.
         .addOption('300', '300ms')
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- millisecond labels are not sentences.
         .addOption('400', '400ms (default)')
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- millisecond labels are not sentences.
         .addOption('500', '500ms')
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- second labels are not sentences.
         .addOption('1000', '1s')
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- second labels are not sentences.
         .addOption('2000', '2s')
         .setValue(String(this.plugin.settings.getWidgetSyncDebounceMs()))
         .onChange(async (v) => {
@@ -343,7 +334,6 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     const aiEnabled = active !== null;
 
     new Setting(containerEl).setName('AI coach').setHeading()
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "AI" is a brand/acronym.
       .setDesc('AI-powered debug, review, and pattern classification.')
       .addButton((b) => {
         b.setIcon('refresh-cw')
@@ -397,10 +387,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       const aiFeatGroup = containerEl.createDiv('lc-settings-group');
 
       new Setting(aiFeatGroup)
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accepted" is the LC verdict name (proper noun in this domain).
-        .setName('Review on Accepted')
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accepted" is the LC verdict name (proper noun in this domain).
-        .setDesc('Generate a review (approach, efficiency, style) each time you get Accepted.')
+        .setName('Review on accepted')
+        .setDesc('Generate a review (approach, efficiency, style) each time you get accepted.')
         .addToggle((toggle) => toggle
           .setValue(this.plugin.settings.getAutoAIReviewOnAC())
           .onChange(async (value) => {
@@ -409,8 +397,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         );
 
       new Setting(aiFeatGroup)
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Accepted" is the LC verdict name (proper noun in this domain).
-        .setName('Pattern classification on Accepted')
+        .setName('Pattern classification on accepted')
         .setDesc('Classify solutions into algorithmic patterns and maintain hub notes.')
         .addToggle((toggle) => toggle
           .setValue(this.plugin.settings.getAutoAIKnowledgeGraph())
@@ -559,7 +546,6 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           .setDesc('OpenAI-compatible endpoint URL. Must include /v1 suffix if the server expects it.')
           .addText((t) => {
             t.inputEl.addClass('lc-ai-input');
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- 07-UI-SPEC locks the URL placeholder verbatim; lowercase 'https' is correct.
             t.setPlaceholder('https://your-host.example.com/v1');
             t.setValue(cfg.baseUrl);
             t.onChange(async (v) => {
@@ -585,7 +571,6 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           .setDesc('AWS region for Bedrock runtime endpoint. Default: us-east-1.')
           .addText((t) => {
             t.inputEl.addClass('lc-ai-input');
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- 'us-east-1' is the verbatim AWS region identifier (lowercase per AWS convention); not a sentence.
             t.setPlaceholder('us-east-1');
             t.setValue(bcfg.region);
             t.onChange(async (v) => {
@@ -597,7 +582,6 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         // Model ID row (replaces the generic Model row for Bedrock).
         new Setting(containerEl)
           .setName('Model ID')
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- Bedrock model IDs are dotted-namespace lowercase identifiers (e.g. 'anthropic.claude-sonnet-4-6...'); the rule mistakes the model-name parts for sentence-start words.
           .setDesc('Bedrock model identifier (e.g. us.anthropic.claude-sonnet-4-6).')
           .addText((t) => {
             t.inputEl.addClass('lc-ai-input');
@@ -639,7 +623,6 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           // Helper-text-only row — no input.
           new Setting(containerEl)
             .setName('Credentials source')
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains AWS env-var literals (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_PROFILE, AWS_DEFAULT_PROFILE, AWS_SHARED_CREDENTIALS_FILE, AWS_CONFIG_FILE) and lowercase paths; rule cannot distinguish technical literals from prose.
             .setDesc('Plugin reads AWS credentials from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars first, then falls back to AWS_PROFILE (or AWS_DEFAULT_PROFILE, or [default]) in ~/.aws/credentials and ~/.aws/config. Supports credential_process helpers and honors AWS_SHARED_CREDENTIALS_FILE / AWS_CONFIG_FILE overrides. Run aws sso login (or your usual helper) before launching Obsidian if your profile uses SSO.');
         } else if (bcfg.authMethod === 'access-keys') {
           new Setting(containerEl)
@@ -668,7 +651,6 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             });
           new Setting(containerEl)
             .setName('Session token')
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- STS is an AWS acronym (Security Token Service); rule cannot distinguish technical acronyms from prose.
             .setDesc('Required only for temporary STS credentials.')
             .addText((t) => {
               t.inputEl.type = 'password';
@@ -682,7 +664,6 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         } else if (bcfg.authMethod === 'sso-profile') {
           new Setting(containerEl)
             .setName('Profile name')
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains AWS_PROFILE env var, lowercase paths ~/.aws/credentials and ~/.aws/config, and tool names (aws-vault, awsume); rule cannot distinguish technical literals from prose.
             .setDesc('Any profile name from ~/.aws/credentials or ~/.aws/config. Use this if you want a specific profile without exporting AWS_PROFILE. Supports credential_process helpers (e.g. aws-vault, awsume).')
             .addText((t) => {
               t.inputEl.addClass('lc-ai-input');

@@ -70,15 +70,20 @@ export class VerdictModal extends Modal {
     if (this.modalEl) {
       this.modalEl.addClass('leetcode-verdict-modal');
       if (args.onStartReviewStream) {
-        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
-        this.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
-        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
-        this.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
+        // Phase 09 (AIREV-01) — when the auto-review stream is enabled the
+        // modal needs the wide layout so streaming code blocks don't wrap
+        // tightly. The width is applied via a CSS class (see styles.css
+        // .leetcode-verdict-modal--wide); the class lifts both `width` and
+        // `max-width` to `min(90vw, 780px)` with the required precedence.
+        this.modalEl.addClass('leetcode-verdict-modal--wide');
       }
     }
     if (this.containerEl && args.onStartReviewStream) {
-      // eslint-disable-next-line obsidianmd/no-static-styles-assignment
-      this.containerEl.style.setProperty('--dialog-width', 'min(90vw, 780px)');
+      // Mirror the wide layout on the modal container so Obsidian's
+      // `--dialog-width` token (consumed by .modal-container) picks up the
+      // same cap. The `.leetcode-verdict-modal-container--wide` rule in
+      // styles.css sets `--dialog-width: min(90vw, 780px)` for us.
+      this.containerEl.addClass('leetcode-verdict-modal-container--wide');
     }
   }
 
@@ -257,8 +262,11 @@ export class VerdictModal extends Modal {
     const file = this.args.file;
     if (!file) return;
     const cache = this.app.metadataCache.getFileCache(file);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const raw = cache?.frontmatter?.['lc-pattern'];
+    // Frontmatter is typed as `any`-ish on Obsidian's CachedMetadata; widen
+    // explicitly to `unknown` so the downstream type narrowing (Array.isArray
+    // vs `typeof === 'string'`) is sound without a no-unsafe-assignment
+    // disable directive.
+    const raw: unknown = cache?.frontmatter?.['lc-pattern'];
     if (!raw) return;
     let patterns: string[];
     if (Array.isArray(raw)) {

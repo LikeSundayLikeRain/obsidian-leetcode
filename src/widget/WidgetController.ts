@@ -59,6 +59,7 @@ import { vim, getCM } from '@replit/codemirror-vim';
 import {
   MarkdownRenderChild,
   Notice,
+  type App,
   type MarkdownPostProcessorContext,
   type MarkdownSectionInformation,
   type TFile,
@@ -1600,10 +1601,10 @@ export function mountLeetCodeWidget(
     ctl.writer = new DebouncedWriter(
       // The plugin-host shape declares `app` as a structural App-like, but
       // DebouncedWriter's constructor types it as the full obsidian.App.
-      // Casting through `any` is the smallest bridge; both lint rules are
-      // disabled together at the call site.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-      plugin.app as any,
+      // At runtime the host always holds a real obsidian.App instance (the
+      // structural shape is only relaxed for test fixtures), so the
+      // `unknown → App` bridge is sound.
+      plugin.app as unknown as App,
       file,
       () => ctl.view.state.doc.toString(),
       () => ctl.fenceIndex,
