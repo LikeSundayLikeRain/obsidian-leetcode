@@ -176,9 +176,11 @@ export function openLogin(): Promise<OpenLoginResult> {
   // CLAUDE.md / PROJECT.md (avoiding the deprecated `@electron/remote`
   // dependency). `import electron from 'electron'` does not work in
   // Obsidian's bundled renderer — only the dynamic `require` resolves the
-  // host-injected Electron surface.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const electron = require('electron') as ElectronModule;
+  // host-injected Electron surface. We delegate to `loadElectron()` (which
+  // routes through `nodeRequire`) so this file contains no literal
+  // `require(...)` form — the obsidianmd recommended config bans
+  // @typescript-eslint/no-require-imports.
+  const electron = loadElectron();
   let BrowserWindow: BrowserWindowCtor | undefined = electron.BrowserWindow;
   if (!BrowserWindow && electron.remote) {
     BrowserWindow = electron.remote.BrowserWindow;

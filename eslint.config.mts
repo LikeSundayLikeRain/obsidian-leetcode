@@ -39,6 +39,12 @@ export default tseslint.config(
           enforceCamelCaseLower: true,
           brands: [
             'LeetCode', 'LEETCODE_SESSION', 'csrftoken',
+            // Phase 11 Plan 02 AIKG-01 — 'OTHER' is the literal frontmatter
+            // value persisted to lc-pattern when AI classification fails to
+            // match a known taxonomy entry. The OtherPatternModal copy quotes
+            // this identifier verbatim so users see the exact value being
+            // stored ("accept \"OTHER\" to leave it unclassified").
+            'OTHER',
             // Phase 07 Plan 03 AI provider brands (07-UI-SPEC).
             'Anthropic', 'OpenAI', 'OpenRouter', 'Ollama',
             'OpenAI-compatible',
@@ -46,10 +52,16 @@ export default tseslint.config(
             // tokens used in Settings copy (Region, Model ID, Auth method
             // dropdown labels, helper text). 'AWS Bedrock' is the verbatim
             // dropdown label per CONTEXT decision B; 'SSO' / 'IAM' appear
-            // in helper text for sso-profile and api-key auth modes.
-            'AWS', 'Bedrock', 'SSO', 'IAM',
+            // in helper text for sso-profile and api-key auth modes; 'STS'
+            // (Security Token Service) appears in the access-keys helper
+            // copy describing temporary credentials.
+            'AWS', 'Bedrock', 'SSO', 'IAM', 'STS',
             // Locked URL/host substrings used in verbatim copy + placeholders.
-            'localhost', 'HTTPS', 'sk-…',
+            // 'https' is intentionally lowercase: the placeholder
+            // 'https://your-host.example.com/v1' (07-UI-SPEC §"Copywriting
+            // Contract") is verbatim-locked, so the brand entry preserves
+            // the lowercase canonical instead of forcing 'HTTPS://'.
+            'localhost', 'https', 'sk-…',
             // Plan-numbered grep-replace markers (locked by 07-UI-SPEC for
             // Plan 07-04 to substitute in cleanly).
             'Plan 07-04',
@@ -61,6 +73,47 @@ export default tseslint.config(
             // verbatim quote inside Model row's desc text contains "Test
             // connection" preceded by quotes which trips the rule.
             'Test connection',
+            // Phase 07 AI-coach section — 'AI-powered' is a hyphenated
+            // brand-style compound; the rule's first-token capitalization
+            // logic mishandles hyphenated tokens at sentence start (would
+            // emit 'Ai-powered'). Registering the compound as a brand
+            // preserves the canonical casing.
+            'AI-powered',
+            // Phase 08.1 Plan 02 — verbatim Bedrock model ID example and
+            // AWS region literal (lowercase per AWS convention) used in
+            // 'Bedrock model identifier (e.g. us.anthropic.claude-sonnet-4-6).'
+            // and the Region row's placeholder/desc.
+            'us.anthropic.claude-sonnet-4-6', 'us-east-1',
+            // Phase 16 INDENT-04 D-06 — preserves the lowercase 'spaces'
+            // unit in the dropdown labels ('2 spaces', '4 spaces',
+            // '8 spaces') so the rule does not capitalize them after the
+            // numeric prefix.
+            'spaces',
+          ],
+          ignoreRegex: [
+            // Phase 19 save-delay dropdown labels are unit-suffixed numerics
+            // ('300ms', '400ms (default)', '500ms', '1s', '2s') — not
+            // English sentences. The rule's first-token capitalization
+            // logic mangles 'ms'/'s' (suggesting '300Ms', '1S'), so these
+            // option labels are skipped wholesale via regex.
+            '^\\d+\\s*(ms|s)(\\s*\\(default\\))?$',
+            // Phase 08.1 Plan 02 — AWS default-chain and sso-profile helper
+            // copy contains the dotfile path literals '~/.aws/credentials'
+            // and '~/.aws/config'. Registering the 'AWS' brand for the
+            // uppercase env-var prefixes ('AWS_PROFILE', etc.) would case-
+            // fold the lowercase 'aws' segment of those paths to 'AWS',
+            // breaking the literal. Skipping any string containing
+            // '~/.aws/' avoids that conflict.
+            '~/\\.aws/',
+            // Phase 16 INDENT-04 D-06 — the indent-size dropdown desc
+            // lists per-language defaults ('4 for Java/Python/C++, 2 for
+            // JS/TS, tab for Go') and references the '"Auto"' option key.
+            // Adding the language names as global brands forces uppercase
+            // canonicalization in unrelated Notice copy (e.g. the widget
+            // controller's lowercase fallback 'falling back to python.').
+            // Skipping this one verbatim D-06 sentence keeps the listing
+            // intact without leaking language-name brands project-wide.
+            '^Number of spaces per indent level in the code editor\\.',
           ],
         },
       ],

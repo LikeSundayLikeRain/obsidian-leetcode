@@ -20,6 +20,7 @@
 // CLAUDE.md: NO innerHTML — use createEl with text option.
 
 import {
+  MarkdownView,
   TFile,
   type MarkdownPostProcessorContext,
   type Plugin,
@@ -395,8 +396,6 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
       // active-leaf mode signal.
       let activeModeReading = false;
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { MarkdownView } = require('obsidian') as { MarkdownView: unknown };
         const av = (plugin.app as unknown as {
           workspace?: {
             getActiveViewOfType?(t: unknown): { getMode?(): string } | null;

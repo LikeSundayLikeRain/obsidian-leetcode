@@ -1291,8 +1291,7 @@ export default class LeetCodePlugin extends Plugin {
             try {
               originatorPeek = this.selfWriteSuppression.peekOriginator(file.path);
             } catch { /* swallow */ }
-            // eslint-disable-next-line no-console -- diagnostic instrumentation
-            console.debug(
+            logger.debug(
               `[lc-debug] modify:enter path=${file.path} ts=${Date.now()} writerPending=${writerPending} originator=${originatorPeek ?? 'null'}`,
             );
           }
@@ -1371,8 +1370,7 @@ export default class LeetCodePlugin extends Plugin {
           // BRAT issue #2 diagnostic instrumentation — log right after
           // tryConsume so we can correlate the modify event with the
           // suppression outcome at the call site.
-          // eslint-disable-next-line no-console -- diagnostic instrumentation
-          console.debug(
+          logger.debug(
             `[lc-debug] modify:after-consume path=${file.path} observedHash=${observedHash} outcome=${consumeResult} ts=${Date.now()}`,
           );
 
@@ -1396,8 +1394,7 @@ export default class LeetCodePlugin extends Plugin {
 
           if (decision.kind === 'single-pane-consumed') {
             // BRAT issue #2 diagnostic instrumentation — log branch taken.
-            // eslint-disable-next-line no-console -- diagnostic instrumentation
-            console.debug(
+            logger.debug(
               `[lc-debug] modify:branch=single-pane-consumed path=${file.path} reason=self-write-echo-no-peers`,
             );
             // Self-write echo with no peer to fan out to. Silent return —
@@ -1406,8 +1403,7 @@ export default class LeetCodePlugin extends Plugin {
           }
 
           if (decision.kind === 'peer-fan-out') {
-            // eslint-disable-next-line no-console -- diagnostic instrumentation
-            console.debug(
+            logger.debug(
               `[lc-debug] modify:branch=peer-fan-out path=${file.path} reason=self-write-echo-with-peers peerCount=${decision.perController.length}`,
             );
             // Plan 21-17 — fan out applyPeerSync(observedBody) to every
@@ -1448,8 +1444,7 @@ export default class LeetCodePlugin extends Plugin {
             // BRAT issue #2 diagnostic instrumentation — log this fall-through
             // branch (suppression missed but child doc already matches disk;
             // backup self-write detection per RESEARCH §1 fail-safe).
-            // eslint-disable-next-line no-console -- diagnostic instrumentation
-            console.debug(
+            logger.debug(
               `[lc-debug] modify:branch=child-doc-matches-disk path=${file.path} reason=backup-self-write-detection`,
             );
             return;
@@ -1476,8 +1471,7 @@ export default class LeetCodePlugin extends Plugin {
             childDoc.length - observedBody.length <= 8 &&
             firstMatch.writer?.recentlyFlushed?.(200) === true
           ) {
-            // eslint-disable-next-line no-console -- diagnostic instrumentation
-            console.debug(
+            logger.debug(
               `[lc-debug] modify:branch=typing-during-own-flush path=${file.path} reason=child-is-superset-of-disk-within-flush-window delta=${childDoc.length - observedBody.length}`,
             );
             return;
@@ -1502,8 +1496,7 @@ export default class LeetCodePlugin extends Plugin {
             // (idle external edit fell through suppression). This is the
             // most likely culprit for the BRAT #2 rollback if suppression
             // is missing self-writes.
-            // eslint-disable-next-line no-console -- diagnostic instrumentation
-            console.debug(
+            logger.debug(
               `[lc-debug] modify:branch=reload-silent path=${file.path} reason=external-edit-no-pending-writer`,
             );
             // Idle widget — silent reload with line/col cursor clamp.
@@ -1515,8 +1508,7 @@ export default class LeetCodePlugin extends Plugin {
           // D-conflict-04: a second modify while modal open updates
           // the External pane in place; NEVER stack a second modal.
           if (this.activeConflictModal && this.activeConflictModal.isOpen) {
-            // eslint-disable-next-line no-console -- diagnostic instrumentation
-            console.debug(
+            logger.debug(
               `[lc-debug] modify:branch=conflict-modal-update path=${file.path} reason=second-external-edit-while-modal-open`,
             );
             this.activeConflictModal.updateExternalContent(observedBody);
@@ -1530,12 +1522,10 @@ export default class LeetCodePlugin extends Plugin {
           {
             const mineDoc = firstMatch.view.state.doc.toString();
             const mineHash = await sha1(mineDoc);
-            // eslint-disable-next-line no-console -- diagnostic instrumentation
-            console.debug(
+            logger.debug(
               `[lc-debug] conflict:open path=${file.path} writerPending=${hasPending} mineHash=${mineHash} extHash=${observedHash} ts=${Date.now()} reason=external-edit-with-pending-writer`,
             );
-            // eslint-disable-next-line no-console -- diagnostic instrumentation
-            console.debug(
+            logger.debug(
               `[lc-debug] modify:branch=conflict-modal-open path=${file.path} reason=external-edit-with-pending-writer`,
             );
           }
@@ -3070,8 +3060,10 @@ export default class LeetCodePlugin extends Plugin {
       }
       const { copyToCode } = await import('./graph/copyToCode');
       await copyToCode(this.app, file, detail.code, detail.lang.name);
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "## Code" is a verbatim section heading.
-      new Notice('Last submission copied to ## Code.', 3000);
+      // `## Code` is wrapped in backticks so the sentence-case rule treats
+      // the literal section heading as code-fenced (matches the existing
+      // 'No `## Code` block found.' Notices elsewhere in this file).
+      new Notice('Last submission copied to `## Code`.', 3000);
     } catch (err) {
       new Notice('Failed to retrieve submission.', 4000);
       console.error('[leetcode] retrieveLastSubmission:', err);
@@ -3356,10 +3348,11 @@ export default class LeetCodePlugin extends Plugin {
       disclosureCopy: withDebugBullet(DISCLOSURE_BASE_COPY),
     });
     if (modal.modalEl) {
-      // eslint-disable-next-line obsidianmd/no-static-styles-assignment -- dynamic viewport-relative width; cannot use a static CSS class
-      modal.modalEl.style.setProperty('width', 'min(90vw, 780px)', 'important');
-      // eslint-disable-next-line obsidianmd/no-static-styles-assignment -- dynamic viewport-relative max-width; cannot use a static CSS class
-      modal.modalEl.style.setProperty('max-width', 'min(90vw, 780px)', 'important');
+      // Apply the wide-modal class — width / max-width are owned by the
+      // `.leetcode-ai-solution-modal` rule in styles.css and consume the
+      // viewport-relative `min(90vw, 780px)` value via static CSS (the
+      // expression is constant; nothing here is dynamic per-instance).
+      modal.modalEl.addClass('leetcode-ai-solution-modal');
     }
     modal.open();
   }

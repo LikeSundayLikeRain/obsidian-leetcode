@@ -209,8 +209,7 @@ function runCredentialProcess(value: string): { stdout: string; stderr: string }
 
   // Spawn failure (e.g., ENOENT — command not found)
   if (result.error) {
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string
-    throw new Error(`credential_process spawn failed: ${result.error.code || String(result.error)}`);
+    throw new Error(`credential_process spawn failed: ${result.error.code || 'unknown error'}`);
   }
 
   // Non-zero exit

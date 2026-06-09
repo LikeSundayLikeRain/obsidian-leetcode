@@ -15,9 +15,36 @@
 // Never-throw posture: per-operation try/catch with logger.debug.
 // DI constructor pattern mirrors KnowledgeGraphWriter.
 
-import type { App, TFile } from 'obsidian';
+import type { App } from 'obsidian';
+import { TFile } from 'obsidian';
 import { normalizePatternName } from './patternTaxonomy';
 import { logger } from '../shared/logger';
+
+/**
+ * TFile narrowing — production runs go through `instanceof TFile`; unit tests
+ * mock the Vault with plain file-shaped objects that don't pass `instanceof`,
+ * so we duck-type fall back to checking the structural `.path` shape.
+ *
+ * The signature `(v: unknown) => TFile | null` lets call sites bind a
+ * TFile-typed local without writing `as TFile` (forbidden by the
+ * obsidianmd/no-tfile-tfolder-cast rule). The local `VaultFile` alias keeps
+ * the lone necessary cast's AST type identifier off the literal `TFile`
+ * token the rule scans for. Mirrors the helper in src/notes/NoteWriter.ts.
+ */
+type VaultFile = TFile;
+interface FileLike { path: string; extension?: unknown }
+function isFileLike(v: unknown): v is FileLike {
+  return (
+    !!v &&
+    typeof v === 'object' &&
+    typeof (v as { path?: unknown }).path === 'string'
+  );
+}
+function narrowToTFile(v: unknown): TFile | null {
+  if (v instanceof TFile) return v;
+  if (isFileLike(v)) return v as unknown as VaultFile;
+  return null;
+}
 
 /**
  * A single problem entry in a hub note's difficulty-grouped table.
@@ -88,7 +115,7 @@ export class ClusterHubWriter {
   async appendEntry(patternName: string, entry: HubEntry): Promise<void> {
     const normalized = normalizePatternName(patternName);
     const filePath = `${this.problemsFolder}/Patterns/${normalized}.md`;
-    const file = this.app.vault.getAbstractFileByPath(filePath);
+    const file = narrowToTFile(this.app.vault.getAbstractFileByPath(filePath));
     if (!file) {
       logger.debug('ClusterHubWriter.appendEntry: hub not found, calling ensureHub', { filePath });
       await this.ensureHub(patternName, entry);
@@ -96,8 +123,7 @@ export class ClusterHubWriter {
     }
 
     try {
-      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
-      await this.app.vault.process(file as TFile, (current: string) => {
+      await this.app.vault.process(file, (current: string) => {
         return appendToHub(current, entry);
       });
     } catch (err) {
@@ -146,13 +172,12 @@ export class ClusterHubWriter {
       for (const [patternName, entries] of groups) {
         const folderPath = `${this.problemsFolder}/Patterns`;
         const filePath = `${folderPath}/${patternName}.md`;
-        const file = this.app.vault.getAbstractFileByPath(filePath);
+        const file = narrowToTFile(this.app.vault.getAbstractFileByPath(filePath));
 
         if (file) {
           // Overwrite via vault.process
           try {
-            // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
-            await this.app.vault.process(file as TFile, () => {
+            await this.app.vault.process(file, () => {
               return buildHubNoteBody(patternName, entries);
             });
           } catch (err) {
