@@ -58,7 +58,7 @@ function makePluginStub(opts: {
   };
   const plugin = {
     app: fakeApp,
-    settings: {
+    lcSettings: {
       getProblemDetail,
       setProblemDetail,
       getProblemsFolder: () => 'LeetCode',

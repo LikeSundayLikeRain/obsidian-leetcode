@@ -128,7 +128,7 @@ async function getProcessor(
   (plugin.app as unknown as { vault?: unknown }).vault = {
     getAbstractFileByPath: (p: string) => new TFile(p),
   };
-  (plugin as unknown as { settings: FakeSettings }).settings = settings;
+  (plugin as unknown as { lcSettings: FakeSettings }).lcSettings = settings;
   return {
     processor: mod.leetCodeBlockProcessor(plugin),
     clearAttempted: mod.clearCodeBlockProcessorAttempted,

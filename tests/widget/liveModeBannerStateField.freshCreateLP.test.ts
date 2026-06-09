@@ -123,7 +123,7 @@ function makePlugin(metadataCache: ReturnType<typeof createFakeMetadataCache>) {
   const fakePlugin = createFakePlugin({ metadataCache });
   return {
     app: fakePlugin.app as never,
-    settings: {
+    lcSettings: {
       getUseInlineWidget: () => true,
       getAutoMigrateOnOpen: () => true,
       getDefaultLanguage: () => 'java',
@@ -233,7 +233,7 @@ describe('R6 LP regression — main.ts metadataCache.on(changed) handler', () =>
 
   function makeHandlerPlugin(useInlineWidget: boolean) {
     return {
-      settings: {
+      lcSettings: {
         getUseInlineWidget: () => useInlineWidget,
       },
       app: {},

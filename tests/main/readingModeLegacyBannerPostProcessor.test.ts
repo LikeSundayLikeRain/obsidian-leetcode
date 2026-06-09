@@ -206,7 +206,7 @@ interface FakeSettings {
 function makePlugin(app: Awaited<ReturnType<typeof makeApp>>, settings: FakeSettings) {
   return {
     app,
-    settings: {
+    lcSettings: {
       getUseInlineWidget: () => settings.useInlineWidget,
       getAutoMigrateOnOpen: () => settings.autoMigrateOnOpen,
       getDefaultLanguage: () => settings.defaultLanguage,

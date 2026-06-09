@@ -124,7 +124,7 @@ function makeMockPlugin(session: ContestSession | null = makeSession()) {
   return {
     plugin: {
       contestSessionManager,
-      settings,
+      lcSettings: settings,
       auth,
       app: { workspace: {} },
     },

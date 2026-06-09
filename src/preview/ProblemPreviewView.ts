@@ -212,7 +212,7 @@ export class ProblemPreviewView extends ItemView {
 
   getDisplayText(): string {
     if (this.slug == null) return 'Preview';
-    const cached = this.plugin.settings.getProblemDetail(this.slug);
+    const cached = this.plugin.lcSettings.getProblemDetail(this.slug);
     if (cached) {
       return `Preview: ${String(cached.id)}. ${cached.title}`;
     }
@@ -335,7 +335,7 @@ export class ProblemPreviewView extends ItemView {
     this.renderToken += 1;
     const myToken = this.renderToken;
 
-    const cached = this.plugin.settings.getProblemDetail(slug);
+    const cached = this.plugin.lcSettings.getProblemDetail(slug);
     if (cached) {
       this.renderRendered(root, slug, cached);
       return;
@@ -365,7 +365,7 @@ export class ProblemPreviewView extends ItemView {
     // fresh entry.
     try {
       const entry = toDetailCacheEntry(fetched);
-      await this.plugin.settings.setProblemDetail(slug, entry);
+      await this.plugin.lcSettings.setProblemDetail(slug, entry);
     } catch (err) {
       // Persistence failure shouldn't block render — log and fall through
       // to render with the in-flight detail. The next preview of the same
@@ -373,7 +373,7 @@ export class ProblemPreviewView extends ItemView {
       logger.debug('preview.renderForSlug: setProblemDetail rejected', err);
     }
     if (myToken !== this.renderToken) return;
-    const persisted = this.plugin.settings.getProblemDetail(slug)
+    const persisted = this.plugin.lcSettings.getProblemDetail(slug)
       ?? toDetailCacheEntry(fetched);
     this.renderRendered(root, slug, persisted);
   }
@@ -387,7 +387,7 @@ export class ProblemPreviewView extends ItemView {
     root.empty();
     // No action button rendered → Enter is a no-op while loading.
     this.activeAction = null;
-    const cached = this.plugin.settings.getProblemDetail(slug);
+    const cached = this.plugin.lcSettings.getProblemDetail(slug);
     const display = cached
       ? `${String(cached.id)}. ${cached.title}`
       : slug;
@@ -409,7 +409,7 @@ export class ProblemPreviewView extends ItemView {
     // no-op (the [Retry] button is the only button on screen and is wired
     // via its own click handler, not via Enter-on-view).
     this.activeAction = null;
-    const cached = this.plugin.settings.getProblemDetail(slug);
+    const cached = this.plugin.lcSettings.getProblemDetail(slug);
     const display = cached
       ? `${String(cached.id)}. ${cached.title}`
       : slug;
@@ -452,7 +452,7 @@ export class ProblemPreviewView extends ItemView {
     // Existing-note state drives the action button: Start (accent) vs Open
     // (neutral). detectExistingNote is the pure helper from
     // src/preview/previewExistingNote.ts.
-    const noteState = detectExistingNote(this.app, this.plugin.settings, slug);
+    const noteState = detectExistingNote(this.app, this.plugin.lcSettings, slug);
     const noteExists = noteState.fileExists;
 
     // Header — render via the exported helper so tests can drive it

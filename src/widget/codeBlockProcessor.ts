@@ -105,7 +105,7 @@ type ProcessorHost = Plugin & WidgetMountHost & {
   };
   // Phase 21 — settings access for auto-migrate gate + user's defaultLanguage
   // (threaded into the migrator for D-edge-03 fill).
-  settings: WidgetMountHost['settings'] & {
+  lcSettings: WidgetMountHost['lcSettings'] & {
     getAutoMigrateOnOpen?(): boolean;
     getDefaultLanguage?(): string;
   };
@@ -196,7 +196,7 @@ export function leetCodeBlockProcessor(plugin: ProcessorHost) {
     // settings may be undefined in test fixtures that exercise mount-only
     // paths; when absent, skip both Phase 21 gates and let the existing
     // path apply (matches L9 — useInlineWidget=OFF behavior).
-    const settings = plugin.settings;
+    const settings = plugin.lcSettings;
     if (
       hasLcSlug &&
       settings?.getAutoMigrateOnOpen?.() === true

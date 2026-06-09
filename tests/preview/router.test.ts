@@ -73,7 +73,7 @@ async function makeRouterPlugin(opts: {
 
   // Build a minimal plugin instance by hand; we never call onload().
   const plugin = Object.create(PluginCtor.prototype) as RouterCapablePlugin;
-  (plugin as unknown as { settings: { getPreviewClickBehavior(): 'preview' | 'open' } }).settings = {
+  (plugin as unknown as { lcSettings: { getPreviewClickBehavior(): 'preview' | 'open' } }).lcSettings = {
     getPreviewClickBehavior: () => opts.setting,
   };
   // Override openProblem on the instance to capture calls. The router

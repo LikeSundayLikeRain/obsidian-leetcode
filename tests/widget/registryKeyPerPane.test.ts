@@ -145,7 +145,7 @@ interface FakePlugin {
     vault: { getConfig: ReturnType<typeof vi.fn> };
     metadataCache: { getFileCache: ReturnType<typeof vi.fn> };
   };
-  settings: {
+  lcSettings: {
     getIndentSizeOverride: () => 'auto';
     getShowRelativeLineNumbers: () => boolean;
   };
@@ -160,7 +160,7 @@ function makePlugin(): FakePlugin {
         getFileCache: vi.fn(() => ({ frontmatter: { 'lc-language': 'python3' } })),
       },
     },
-    settings: {
+    lcSettings: {
       getIndentSizeOverride: () => 'auto',
       getShowRelativeLineNumbers: () => false,
     },

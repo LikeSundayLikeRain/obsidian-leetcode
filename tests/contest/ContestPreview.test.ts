@@ -102,7 +102,7 @@ describe('startContest flow (ProblemBrowserView.startContest)', () => {
     instance.plugin = {
       client: mockClient,
       contestSessionManager: mockSessionManager,
-      settings: {
+      lcSettings: {
         getContestSession: () => null,
         setProblemDetail: vi.fn(),
         getDefaultLanguage: () => 'python3',

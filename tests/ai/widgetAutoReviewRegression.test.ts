@@ -96,7 +96,7 @@ describe('Debug session ai-review-empty-after-accept-1-3 — startAutoReview wid
     // MUST NOT appear on the widget branch — there is no fence to read
     // from.
     expect(body).toMatch(/typeof ctx\.lcLanguage === 'string'/);
-    expect(body).toMatch(/this\.settings\.getDefaultLanguage\(\)\s*\?\?\s*'plaintext'/);
+    expect(body).toMatch(/this\.lcSettings\.getDefaultLanguage\(\)\s*\?\?\s*'plaintext'/);
   });
 });
 

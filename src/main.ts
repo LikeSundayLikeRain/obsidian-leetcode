@@ -253,7 +253,7 @@ interface ProblemContext {
 }
 
 export default class LeetCodePlugin extends Plugin {
-  settings!: SettingsStore;
+  lcSettings!: SettingsStore;
   client!: LeetCodeClient;
   auth!: AuthService;
   list!: ProblemListService;
@@ -289,7 +289,7 @@ export default class LeetCodePlugin extends Plugin {
   get aiClient(): AIClient {
     if (!this._aiClient) {
       this._aiClient = new AIClient(
-        this.settings,
+        this.lcSettings,
         (provider, cfg) => this.requireAIDisclosure(provider, cfg),
       );
     }
@@ -406,7 +406,7 @@ export default class LeetCodePlugin extends Plugin {
       .catch(() => { /* non-critical */ });
 
     // Step 1 — load persisted settings (cookies, folder, language, index)
-    this.settings = await SettingsStore.load(this);
+    this.lcSettings = await SettingsStore.load(this);
 
     // Phase 21 Plan 21-04 Task 1 (MIGRATE-05; D-backup-03; T-21-load) —
     // schedule a fire-and-forget microtask to sweep `migration-backup-*`
@@ -424,7 +424,7 @@ export default class LeetCodePlugin extends Plugin {
 
     // Step 3 — construct LC client. Must come BEFORE AuthService because AuthService's
     // two-arg constructor takes the client (BLOCKER 2).
-    this.client = new LeetCodeClient(this.settings);
+    this.client = new LeetCodeClient(this.lcSettings);
     // WR-01: if cookies were persisted from a prior run, reauthenticate NOW
     // so the client's Credential is fully initialised before any feature
     // code issues an API call. Failures here surface as a plain logged-out
@@ -434,15 +434,15 @@ export default class LeetCodePlugin extends Plugin {
     await this.client.reauthenticate().catch(() => undefined);
 
     // Step 4 — auth service orchestrates login/logout. TWO-ARG constructor.
-    this.auth = new AuthService(this.settings, this.client);
+    this.auth = new AuthService(this.lcSettings, this.client);
 
     // Step 5 — list service (depends on client + settings).
-    this.list = new ProblemListService(this.client, this.settings);
+    this.list = new ProblemListService(this.client, this.lcSettings);
 
     // Step 5.5 — note writer (depends on app + client + settings). Phase 2.
     // Row-click in ProblemBrowserView delegates to plugin.openProblem(slug)
     // which in turn delegates to this.notes.openProblem(slug).
-    this.notes = new NoteWriter(this.app, this.client, this.settings);
+    this.notes = new NoteWriter(this.app, this.client, this.lcSettings);
     // Phase 5 D-21 — wire the sticky session-expired Notice's Log in action.
     this.notes.setLogin(() => { void this.auth.login(); });
 
@@ -458,7 +458,7 @@ export default class LeetCodePlugin extends Plugin {
     // this plugin session.
     this.submissionHistory = new SubmissionHistoryStore({
       fetchHistory: async (slug: string) => {
-        const cookies = this.settings.getAuthCookies();
+        const cookies = this.lcSettings.getAuthCookies();
         if (!cookies) throw new SessionExpiredError();
         return listSubmissionsForSlug(slug, cookies);
       },
@@ -470,9 +470,9 @@ export default class LeetCodePlugin extends Plugin {
     this.knowledgeGraph = new KnowledgeGraphWriter({
       app: this.app,
       settings: {
-        getProblemDetail: (slug: string) => this.settings.getProblemDetail(slug),
-        getAutoBacklinksEnabled: () => this.settings.getAutoBacklinksEnabled(),
-        getTechniquesFolder: () => this.settings.getTechniquesFolder(),
+        getProblemDetail: (slug: string) => this.lcSettings.getProblemDetail(slug),
+        getAutoBacklinksEnabled: () => this.lcSettings.getAutoBacklinksEnabled(),
+        getTechniquesFolder: () => this.lcSettings.getTechniquesFolder(),
       },
     });
 
@@ -576,12 +576,12 @@ export default class LeetCodePlugin extends Plugin {
     // deferred until the engine's first classify call (not at onload time).
     this.hubWriter = new ClusterHubWriter({
       app: this.app,
-      problemsFolder: this.settings.getProblemsFolder(),
+      problemsFolder: this.lcSettings.getProblemsFolder(),
     });
     const patternClusterEngine = new PatternClusterEngine({
       app: this.app,
       aiClient: () => this.aiClient,
-      settings: this.settings,
+      settings: this.lcSettings,
       hubWriter: this.hubWriter,
     });
     this.knowledgeGraph.setPatternClusterEngine(patternClusterEngine);
@@ -605,8 +605,8 @@ export default class LeetCodePlugin extends Plugin {
     // refresh/search/surpriseMe for the start-random-contest palette command.
     // ProblemBrowserView constructs its own instance (Plan 03 pattern) so this
     // plugin-level instance is only for the palette command surface.
-    this.contestListService = new ContestListService(this.client, this.settings);
-    this.contestScratch = new ContestScratchManager(this.app, this.settings.getProblemsFolder());
+    this.contestListService = new ContestListService(this.client, this.lcSettings);
+    this.contestScratch = new ContestScratchManager(this.app, this.lcSettings.getProblemsFolder());
 
     // Step 5.11 — Phase 10 Plan 03 + Plan 07 — ContestSessionManager. State
     // machine for contest lifecycle (start/pause/resume/abort/finish). Plan 07
@@ -614,7 +614,7 @@ export default class LeetCodePlugin extends Plugin {
     // onVerdictChange are display-layer concerns handled by ProblemBrowserView's
     // internal polling of getSession().
     this.contestSessionManager = new ContestSessionManager(
-      this.settings,
+      this.lcSettings,
       {
         onTick: () => { /* ProblemBrowserView polls getSession() for display */ },
         onExpired: () => { void this.handleContestEnd(false); },
@@ -819,7 +819,7 @@ export default class LeetCodePlugin extends Plugin {
             force: true,
             autoMigrateOnOpen: true,
             defaultLanguage:
-              this.settings.getDefaultLanguage?.() ?? 'python3',
+              this.lcSettings.getDefaultLanguage?.() ?? 'python3',
           }).catch(() => {
             // Defensive — silent on failure; user retries via the command
             // palette or via the manual-prompt banner click handler.
@@ -840,7 +840,7 @@ export default class LeetCodePlugin extends Plugin {
     // EphemeralTabStore; the modal's Run button drives
     // `runInterpretedInput` with the active tab's input (D-07).
     registerRunCommand(this, {
-      settings: this.settings,
+      settings: this.lcSettings,
       openRun: () => { void this.runFromActive(); },
     });
 
@@ -1595,9 +1595,9 @@ export default class LeetCodePlugin extends Plugin {
         const slug = basename.slice(dashIdx + 1);
         if (!slug) return;
         // Gate (c): verify slug exists in cached problem index OR detail cache
-        const index = this.settings.getProblemIndex();
+        const index = this.lcSettings.getProblemIndex();
         const inIndex = index?.problems.some((p) => p.slug === slug) ?? false;
-        const inDetail = this.settings.getProblemDetail(slug) !== null;
+        const inDetail = this.lcSettings.getProblemDetail(slug) !== null;
         if (!inIndex && !inDetail) return;
         // All gates pass — delete the blank file and open preview
         void (async () => {
@@ -1662,9 +1662,9 @@ export default class LeetCodePlugin extends Plugin {
           app: this.app,
           settings: {
             getAutoMigrateOnOpen: () =>
-              this.settings.getAutoMigrateOnOpen(),
+              this.lcSettings.getAutoMigrateOnOpen(),
             getDefaultLanguage: () =>
-              this.settings.getDefaultLanguage?.() ?? 'python3',
+              this.lcSettings.getDefaultLanguage?.() ?? 'python3',
           },
           migrateInFlight: this.migrateInFlight,
           migrate: migrateLegacyFenceIfNeeded,
@@ -1714,7 +1714,7 @@ export default class LeetCodePlugin extends Plugin {
    */
   private async checkLegacyLeetcodeBase(): Promise<void> {
     await runLegacyBaseCheck({
-      settings: this.settings,
+      settings: this.lcSettings,
       readBaseFile: async (path) => {
         const file = this.app.vault.getAbstractFileByPath(path);
         if (!(file instanceof TFile)) return null;
@@ -1795,7 +1795,7 @@ export default class LeetCodePlugin extends Plugin {
    *  Selecting a row delegates to routeProblemClick so the user's "Click
    *  behavior" (preview vs open) preference is honored. */
   openQuickSearch(): void {
-    const problems = this.settings.getProblemIndex()?.problems ?? [];
+    const problems = this.lcSettings.getProblemIndex()?.problems ?? [];
     if (problems.length === 0) {
       new Notice('LeetCode: open the problem browser to populate the index.');
       return;
@@ -1855,7 +1855,7 @@ export default class LeetCodePlugin extends Plugin {
       return this.openProblem(slug, status);
     }
     // intent === 'preview' from here on.
-    if (!opts?.force && this.settings.getPreviewClickBehavior() === 'open') {
+    if (!opts?.force && this.lcSettings.getPreviewClickBehavior() === 'open') {
       return this.openProblem(slug, status);
     }
     // Phase 06 Plan 03 — preview path. Reuses an existing leetcode-preview
@@ -1889,7 +1889,7 @@ export default class LeetCodePlugin extends Plugin {
     if (!problem) return;
 
     // Get problem HTML content from cache for the scratch file
-    const detail = this.settings.getProblemDetail(problem.slug);
+    const detail = this.lcSettings.getProblemDetail(problem.slug);
     const contentHtml = detail?.contentHtml;
 
     // Only create scratch file if it doesn't exist yet — preserve user edits
@@ -1935,7 +1935,7 @@ export default class LeetCodePlugin extends Plugin {
         const code = await this.contestScratch.readCode(problem.slug);
         if (code !== null) problem.code = code;
       }
-      await this.settings.setContestSession(activeSession);
+      await this.lcSettings.setContestSession(activeSession);
     }
 
     const session = aborted
@@ -1949,7 +1949,7 @@ export default class LeetCodePlugin extends Plugin {
         session,
         aborted,
         app: this.app,
-        settings: this.settings,
+        settings: this.lcSettings,
       });
     } catch (err) {
       logger.debug('contest.finalize: failed', err);
@@ -1965,10 +1965,10 @@ export default class LeetCodePlugin extends Plugin {
     }
 
     // Run knowledge graph on AC'd problems (pattern classification + variants)
-    const folder = this.settings.getProblemsFolder().replace(/[\\/]+$/, '');
+    const folder = this.lcSettings.getProblemsFolder().replace(/[\\/]+$/, '');
     for (const problem of session.problems) {
       if (problem.verdict !== 'accepted') continue;
-      const detail = this.settings.getProblemDetail(problem.slug);
+      const detail = this.lcSettings.getProblemDetail(problem.slug);
       if (!detail) continue;
       const notePath = `${folder}/${detail.id}-${problem.slug}.md`;
       const noteAbstract = this.app.vault.getAbstractFileByPath(notePath);
@@ -2003,7 +2003,7 @@ export default class LeetCodePlugin extends Plugin {
     await this.contestScratch.cleanupAll();
 
     // Auto AI contest analysis (D-20): gated on toggle + active provider.
-    if (this.settings.getAutoAIContestAnalysis() && this.settings.getActiveAIProvider()) {
+    if (this.lcSettings.getAutoAIContestAnalysis() && this.lcSettings.getActiveAIProvider()) {
       void this.runContestAnalysis(summaryPath, session);
     }
   }
@@ -2021,12 +2021,12 @@ export default class LeetCodePlugin extends Plugin {
     }
 
     // Gate on active provider.
-    const provider = this.settings.getActiveAIProvider();
+    const provider = this.lcSettings.getActiveAIProvider();
     if (provider === null) {
       new Notice('No AI provider configured. Open settings → AI.', 4000);
       return;
     }
-    const providerCfg = this.settings.getProviderConfig(provider);
+    const providerCfg = this.lcSettings.getProviderConfig(provider);
 
     // Build prompt from session data.
     const DIFFICULTY_MAP: Record<number, string> = { 1: 'Easy', 2: 'Medium', 3: 'Hard' };
@@ -2098,17 +2098,17 @@ export default class LeetCodePlugin extends Plugin {
       for (const r of results) {
         if (r.status === 'fulfilled' && r.value) {
           const entry = toDetailCacheEntry(r.value);
-          await this.settings.setProblemDetail(r.value.titleSlug, entry);
+          await this.lcSettings.setProblemDetail(r.value.titleSlug, entry);
         }
       }
-      const defaultLang = this.settings.getDefaultLanguage() || 'python3';
+      const defaultLang = this.lcSettings.getDefaultLanguage() || 'python3';
       this.contestSessionManager.start({
         contestSlug: contest.slug,
         contestTitle: contest.title,
         contestType: contest.type,
         duration: contest.duration,
         problems: questions.map((q) => {
-          const detail = this.settings.getProblemDetail(q.title_slug);
+          const detail = this.lcSettings.getProblemDetail(q.title_slug);
           const snippet = detail?.codeSnippets?.find((s: { langSlug: string }) => s.langSlug === defaultLang);
           return {
             slug: q.title_slug,
@@ -2151,12 +2151,12 @@ export default class LeetCodePlugin extends Plugin {
     }));
 
     // Gate on active provider.
-    const provider = this.settings.getActiveAIProvider();
+    const provider = this.lcSettings.getActiveAIProvider();
     if (provider === null) {
       new Notice('No AI provider configured. Open settings → AI.', 4000);
       return;
     }
-    const providerCfg = this.settings.getProviderConfig(provider);
+    const providerCfg = this.lcSettings.getProviderConfig(provider);
 
     const prompt = buildContestAnalysisPrompt({
       contestTitle,
@@ -2294,13 +2294,13 @@ export default class LeetCodePlugin extends Plugin {
    * pre-invoke connectivity checks.
    */
   async testActiveAIConnection(): Promise<void> {
-    const provider = this.settings.getActiveAIProvider();
+    const provider = this.lcSettings.getActiveAIProvider();
     if (!provider) {
 
       new Notice('Pick an AI provider first.', 3000);
       return;
     }
-    const cfg = this.settings.getProviderConfig(provider);
+    const cfg = this.lcSettings.getProviderConfig(provider);
     if (
       (provider === 'anthropic' || provider === 'openai' || provider === 'openrouter') &&
       cfg.apiKey === ''
@@ -2439,9 +2439,9 @@ export default class LeetCodePlugin extends Plugin {
   async resetAIDisclosures(): Promise<void> {
     const providers: AIProvider[] = ['anthropic', 'openai', 'openrouter', 'ollama', 'custom'];
     for (const p of providers) {
-      const cfg = this.settings.getProviderConfig(p);
+      const cfg = this.lcSettings.getProviderConfig(p);
       if (cfg.disclosureAcknowledged) {
-        await this.settings.setProviderConfig(p, {
+        await this.lcSettings.setProviderConfig(p, {
           ...cfg,
           disclosureAcknowledged: false,
         });
@@ -2472,14 +2472,14 @@ export default class LeetCodePlugin extends Plugin {
    * the prior disclosure acknowledgement.
    */
   async clearActiveAIKey(): Promise<void> {
-    const provider = this.settings.getActiveAIProvider();
+    const provider = this.lcSettings.getActiveAIProvider();
     if (!provider) {
 
       new Notice('No active AI provider — nothing to clear.', 3000);
       return;
     }
-    const cfg = this.settings.getProviderConfig(provider);
-    await this.settings.setProviderConfig(provider, { ...cfg, apiKey: '' });
+    const cfg = this.lcSettings.getProviderConfig(provider);
+    await this.lcSettings.setProviderConfig(provider, { ...cfg, apiKey: '' });
 
     new Notice(`Cleared AI key for ${prettyName(provider)}`, 3000);
   }
@@ -2552,7 +2552,7 @@ export default class LeetCodePlugin extends Plugin {
       new Notice('No `## Code` block found. Add a fenced block with your solution.', 6000);
       return;
     }
-    const language = extracted.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+    const language = extracted.lang ?? this.lcSettings.getDefaultLanguage() ?? 'plaintext';
 
     // Step 3 — resolve problem markdown. DetailCache first (same path Preview
     // uses); on miss, fetch via the LeetCodeClient. Failures bail with a
@@ -2563,7 +2563,7 @@ export default class LeetCodePlugin extends Plugin {
     // we read whichever is present so the prompt always gets the problem
     // markdown, regardless of which path populated `detail`.
     let problemHtml = '';
-    const cached = this.settings.getProblemDetail(slug);
+    const cached = this.lcSettings.getProblemDetail(slug);
     if (cached?.contentHtml) {
       problemHtml = cached.contentHtml;
     } else {
@@ -2597,7 +2597,7 @@ export default class LeetCodePlugin extends Plugin {
     // throw 'No AI provider configured' but surfacing it here gives the
     // user actionable copy ("Open Settings → AI.") instead of a generic
     // error.
-    const provider = this.settings.getActiveAIProvider();
+    const provider = this.lcSettings.getActiveAIProvider();
     if (provider === null) {
       // Sentence case per Obsidian community-plugin guidelines
       // (eslint-plugin-obsidianmd ui/sentence-case rule). The "settings"
@@ -2605,7 +2605,7 @@ export default class LeetCodePlugin extends Plugin {
       new Notice('No AI provider configured. Open settings → AI.', 4000);
       return;
     }
-    const providerCfg = this.settings.getProviderConfig(provider);
+    const providerCfg = this.lcSettings.getProviderConfig(provider);
 
     // Step 7 — open the modal. disclosureCopy is the composition-factory
     // output (locked: NEW object, NEVER mutates the frozen base). The
@@ -2679,7 +2679,7 @@ export default class LeetCodePlugin extends Plugin {
     const promise = (async () => {
       // Step 1 — resolve problem markdown for prompt assembly.
       let problemHtml = '';
-      const cached = this.settings.getProblemDetail(ctx.slug);
+      const cached = this.lcSettings.getProblemDetail(ctx.slug);
       if (cached?.contentHtml) {
         problemHtml = cached.contentHtml;
       } else {
@@ -2716,7 +2716,7 @@ export default class LeetCodePlugin extends Plugin {
           typeof ctx.lcLanguage === 'string' && ctx.lcLanguage.length > 0
             ? ctx.lcLanguage
             : null;
-        language = fmLang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+        language = fmLang ?? this.lcSettings.getDefaultLanguage() ?? 'plaintext';
       } else {
         // Phase 21 Plan 21-03 Task 2 (D-extract-01) — thread frontmatter so v1.3
         // leetcode-solve fences resolve language from lc-language SSoT.
@@ -2726,15 +2726,15 @@ export default class LeetCodePlugin extends Plugin {
           | undefined;
         const extracted = extractFirstFencedBlock(body, fm);
         code = extracted?.code ?? '';
-        language = extracted?.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+        language = extracted?.lang ?? this.lcSettings.getDefaultLanguage() ?? 'plaintext';
       }
 
       // Step 3 — assemble the prompt.
       const prompt = buildReviewPrompt({ problemMd, code, language });
 
       // Step 4 — resolve provider (already gated at modal construction).
-      const provider = this.settings.getActiveAIProvider()!;
-      const providerCfg = this.settings.getProviderConfig(provider);
+      const provider = this.lcSettings.getActiveAIProvider()!;
+      const providerCfg = this.lcSettings.getProviderConfig(provider);
 
       // Step 5 — invoke the AI stream. Disclosure gate fires automatically
       // inside AIClient.invokeStream via requireAIDisclosure (Phase 07).
@@ -2853,12 +2853,12 @@ export default class LeetCodePlugin extends Plugin {
    */
   async runAIReview(slug: string, file: TFile): Promise<void> {
     // Step 1 — gate on active provider (same pattern as openAIDebug Step 6).
-    const provider = this.settings.getActiveAIProvider();
+    const provider = this.lcSettings.getActiveAIProvider();
     if (provider === null) {
       new Notice('No AI provider configured. Open settings → AI.', 4000);
       return;
     }
-    const providerCfg = this.settings.getProviderConfig(provider);
+    const providerCfg = this.lcSettings.getProviderConfig(provider);
 
     // Step 2 — resolve the active MarkdownView for reading the editor body.
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -2879,11 +2879,11 @@ export default class LeetCodePlugin extends Plugin {
       new Notice('No `## Code` block found. Add a fenced block with your solution.', 6000);
       return;
     }
-    const language = extracted.lang ?? this.settings.getDefaultLanguage() ?? 'plaintext';
+    const language = extracted.lang ?? this.lcSettings.getDefaultLanguage() ?? 'plaintext';
 
     // Step 4 — resolve problem markdown (DetailCache hit or fetch).
     let problemHtml = '';
-    const cached = this.settings.getProblemDetail(slug);
+    const cached = this.lcSettings.getProblemDetail(slug);
     if (cached?.contentHtml) {
       problemHtml = cached.contentHtml;
     } else {
@@ -3047,7 +3047,7 @@ export default class LeetCodePlugin extends Plugin {
         return;
       }
       const latest = rows[0]!;
-      const cookies = this.settings.getAuthCookies();
+      const cookies = this.lcSettings.getAuthCookies();
       if (!cookies) {
         new Notice('Not logged in.', 4000);
         return;
@@ -3309,7 +3309,7 @@ export default class LeetCodePlugin extends Plugin {
       | undefined;
 
     let problemHtml = '';
-    const cached = this.settings.getProblemDetail(slug);
+    const cached = this.lcSettings.getProblemDetail(slug);
     if (cached?.contentHtml) {
       problemHtml = cached.contentHtml;
     } else {
@@ -3326,18 +3326,18 @@ export default class LeetCodePlugin extends Plugin {
       }
     }
     const problemMd = htmlToMarkdown(problemHtml);
-    const language = (fm?.['lc-language'] as string) ?? this.settings.getDefaultLanguage() ?? 'python3';
+    const language = (fm?.['lc-language'] as string) ?? this.lcSettings.getDefaultLanguage() ?? 'python3';
     const starterCode = cached?.codeSnippets?.find(s => s.langSlug === language)?.code ?? '';
     const starterSection = starterCode ? `\n\n## Starter Code\n\n\`\`\`${language}\n${starterCode}\n\`\`\`\n\nYour solution MUST use the exact same class/method signature as the starter code above.` : '';
 
     const prompt = `You are a LeetCode expert. Given the problem below, provide:\n\n1. **Approach** — Explain the optimal algorithm and data structures to use. Include time and space complexity.\n2. **Solution** — Write a clean, well-commented solution in ${language}.${starterSection}\n\n## Problem\n\n${problemMd}\n\nRespond with the approach explanation first, then the complete solution code in a fenced code block.`;
 
-    const provider = this.settings.getActiveAIProvider();
+    const provider = this.lcSettings.getActiveAIProvider();
     if (provider === null) {
       new Notice('No AI provider configured. Open settings → AI.', 4000);
       return;
     }
-    const providerCfg = this.settings.getProviderConfig(provider);
+    const providerCfg = this.lcSettings.getProviderConfig(provider);
 
     const modal = new AIStreamModal(this.app, {
       provider,
@@ -3440,12 +3440,12 @@ export default class LeetCodePlugin extends Plugin {
       // because the contest opens scratch files as native MarkdownViews whose
       // fence-row Submit button flows through this path.
       onStartReviewStream: this.contestSessionManager.getSession() ? undefined
-        : this.settings.getAutoAIReviewOnAC() && this.settings.getActiveAIProvider()
+        : this.lcSettings.getAutoAIReviewOnAC() && this.lcSettings.getActiveAIProvider()
           ? (reviewAreaEl, component) => this.startAutoReview(reviewCtx, reviewAreaEl, component)
           : undefined,
       // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC (suppress during contest).
       file: this.contestSessionManager.getSession() ? null : file,
-      getPatternHubPath: (p) => `${this.settings.getProblemsFolder()}/Patterns/${normalizePatternName(p)}.md`,
+      getPatternHubPath: (p) => `${this.lcSettings.getProblemsFolder()}/Patterns/${normalizePatternName(p)}.md`,
     });
     modal.open();
 
@@ -3478,9 +3478,9 @@ export default class LeetCodePlugin extends Plugin {
     const orch = new SubmissionOrchestrator({
       fetcher: sniffingFetcher,
       settings: {
-        getAuthCookies: () => this.settings.getAuthCookies(),
-        getDefaultLanguage: () => this.settings.getDefaultLanguage(),
-        getProblemDetail: (s) => this.settings.getProblemDetail(s),
+        getAuthCookies: () => this.lcSettings.getAuthCookies(),
+        getDefaultLanguage: () => this.lcSettings.getDefaultLanguage(),
+        getProblemDetail: (s) => this.lcSettings.getProblemDetail(s),
       },
       slug,
       lcLanguage,
@@ -3635,7 +3635,7 @@ export default class LeetCodePlugin extends Plugin {
     _getCurrentBody: () => string,
     resolveCtxOnRun: () => ProblemContext | null,
   ): Promise<void> {
-    const detail = this.settings.getProblemDetail(slug);
+    const detail = this.lcSettings.getProblemDetail(slug);
     const exampleTestcases = detail?.exampleTestcases ?? '';
     // Phase 5.4 UAT fix — derive lines-per-case so RunModal can split LC's
     // single-newline-formatted exampleTestcases (observed live for two-sum)
@@ -3704,7 +3704,7 @@ export default class LeetCodePlugin extends Plugin {
       new Notice('Open a LeetCode problem note first.', 4000);
       return;
     }
-    const detail = this.settings.getProblemDetail(ctx.slug);
+    const detail = this.lcSettings.getProblemDetail(ctx.slug);
     const exampleTestcases = detail?.exampleTestcases ?? '';
     // Phase 5.4 UAT fix — same arity derivation as runFromActive.
     const linesPerCase = deriveArity(detail?.metaData, detail?.sampleTestCase);
@@ -3781,15 +3781,15 @@ export default class LeetCodePlugin extends Plugin {
       extractedLang = extracted.lang;
     }
     // Gate: auth cookies.
-    const cookies = this.settings.getAuthCookies();
+    const cookies = this.lcSettings.getAuthCookies();
     if (!cookies) {
       // D-21: sticky Notice + Log in button (CF-04 LOCKED copy is in the helper).
       showSessionExpiredNotice(() => { void this.auth.login(); });
       return;
     }
 
-    const lang = ctx.lcLanguage ?? resolveLangSlug(extractedLang, this.settings.getDefaultLanguage());
-    const detail = this.settings.getProblemDetail(ctx.slug);
+    const lang = ctx.lcLanguage ?? resolveLangSlug(extractedLang, this.lcSettings.getDefaultLanguage());
+    const detail = this.lcSettings.getProblemDetail(ctx.slug);
     const questionId = detail?.internalQuestionId ?? (detail ? String(detail.id) : '');
 
     const modal = new VerdictModal(this.app, {
@@ -3925,7 +3925,7 @@ export default class LeetCodePlugin extends Plugin {
     row: SubmissionRow,
     onSuccess?: () => void,
   ): Promise<void> {
-    const cookies = this.settings.getAuthCookies();
+    const cookies = this.lcSettings.getAuthCookies();
     if (!cookies) {
       // D-21: sticky Notice + Log in button.
       showSessionExpiredNotice(() => { void this.auth.login(); });
@@ -3992,7 +3992,7 @@ export default class LeetCodePlugin extends Plugin {
       app: this.app,
       file,
       slug,
-      settings: this.settings,
+      settings: this.lcSettings,
       confirm: () =>
         new Promise<boolean>((resolve) => {
           void import('./graph/ConfirmOverwriteModal').then(

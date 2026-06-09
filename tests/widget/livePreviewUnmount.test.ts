@@ -213,7 +213,7 @@ function makeHost(
         getFileCache: () => null,
       },
     },
-    settings: {
+    lcSettings: {
       getIndentSizeOverride: () => 4,
       getShowRelativeLineNumbers: () => false,
       getWidgetSyncDebounceMs: () => 400,

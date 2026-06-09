@@ -49,7 +49,7 @@ interface FakePlugin {
     };
     metadataCache: { getFileCache: ReturnType<typeof vi.fn> };
   };
-  settings: { getIndentSizeOverride: () => 'auto' | 2 | 4 | 8 };
+  lcSettings: { getIndentSizeOverride: () => 'auto' | 2 | 4 | 8 };
 }
 
 function makeFakePlugin(diskContent: string = ''): FakePlugin {
@@ -60,7 +60,7 @@ function makeFakePlugin(diskContent: string = ''): FakePlugin {
       },
       metadataCache: { getFileCache: vi.fn(() => null) },
     },
-    settings: { getIndentSizeOverride: () => 4 },
+    lcSettings: { getIndentSizeOverride: () => 4 },
   };
 }
 

@@ -362,7 +362,7 @@ function makeFakePlugin(opts: { activeProvider?: AIProvider | null; configs?: Pa
       logout: vi.fn(),
       loginManual: vi.fn(),
     },
-    settings,
+    lcSettings: settings,
     testActiveAIConnection,
   };
 }
@@ -476,7 +476,7 @@ describe('SettingsTab — AI section (Phase 07 Plan 03)', () => {
     expect(apiKeyInputs[0]?.value).toBe('sk-ant-123');
 
     // Simulate switching to OpenAI.
-    await plugin.settings.setActiveAIProvider('openai');
+    await plugin.lcSettings.setActiveAIProvider('openai');
     tab.display();
     // Anthropic key NOT visible while OpenAI is active.
     apiKeyInputs = Array.from(
@@ -485,7 +485,7 @@ describe('SettingsTab — AI section (Phase 07 Plan 03)', () => {
     expect(apiKeyInputs[0]?.value).toBe(''); // OpenAI key is empty in fake
 
     // Switch back to Anthropic — original key must persist.
-    await plugin.settings.setActiveAIProvider('anthropic');
+    await plugin.lcSettings.setActiveAIProvider('anthropic');
     tab.display();
     apiKeyInputs = Array.from(
       tab.containerEl.querySelectorAll('input.lc-ai-input'),

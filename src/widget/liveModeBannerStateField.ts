@@ -77,7 +77,7 @@ import { mountLegacyFenceBanner } from './legacyFenceBanner';
  * pre-Plan-21-11 host shape used by leetCodeFenceViewPlugin.
  */
 export type StateFieldPluginHost = Plugin & WidgetMountHost & {
-  settings: WidgetMountHost['settings'] & {
+  lcSettings: WidgetMountHost['lcSettings'] & {
     getAutoMigrateOnOpen?(): boolean;
     getDefaultLanguage?(): string;
   };
@@ -272,7 +272,7 @@ class ManualPromptBannerWidget extends WidgetType {
 }
 
 function isAutoMigrateEnabled(plugin: StateFieldPluginHost): boolean {
-  return plugin.settings?.getAutoMigrateOnOpen?.() === true;
+  return plugin.lcSettings?.getAutoMigrateOnOpen?.() === true;
 }
 
 /**
@@ -343,7 +343,7 @@ function buildLegacyBannerDecorations(state: EditorState): DecorationSet {
         file,
         {
           autoMigrateOnOpen: true,
-          defaultLanguage: plugin.settings.getDefaultLanguage?.() ?? 'python3',
+          defaultLanguage: plugin.lcSettings.getDefaultLanguage?.() ?? 'python3',
         },
       )
         .catch(() => {
@@ -423,7 +423,7 @@ function buildLeetCodeWidgetDecorations(state: EditorState): DecorationSet {
         {
           autoMigrateOnOpen: true,
           defaultLanguage:
-            plugin.settings.getDefaultLanguage?.() ?? 'python3',
+            plugin.lcSettings.getDefaultLanguage?.() ?? 'python3',
         },
       )
         .then((repaired) => {

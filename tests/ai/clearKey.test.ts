@@ -53,7 +53,7 @@ function makeCfg(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
 }
 
 interface FakePluginShape {
-  settings: {
+  lcSettings: {
     getActiveAIProvider: () => AIProvider | null;
     getProviderConfig: (p: AIProvider) => ProviderConfig;
     setProviderConfig: (p: AIProvider, cfg: ProviderConfig) => Promise<void>;
@@ -83,7 +83,7 @@ function makeFake(opts: {
     cfgs[p] = { ...cfg };
   });
   return {
-    settings: {
+    lcSettings: {
       getActiveAIProvider: () => opts.active,
       getProviderConfig: (p: AIProvider) => cfgs[p],
       setProviderConfig: setSpy as unknown as (

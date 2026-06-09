@@ -90,7 +90,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName('Authentication').setHeading();
 
     const loggedIn = this.plugin.auth.isLoggedIn();
-    const username = this.plugin.settings.getUsername();
+    const username = this.plugin.lcSettings.getUsername();
     const statusText = loggedIn
       ? `Logged in as ${username ?? '…'}`
       : 'Not logged in';
@@ -185,10 +185,10 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       .addText((t) => t
 
         .setPlaceholder('LeetCode/')
-        .setValue(this.plugin.settings.getProblemsFolder())
+        .setValue(this.plugin.lcSettings.getProblemsFolder())
         .onChange(async (v) => {
           // D-10: strip trailing slash on persist (stored without trailing slash).
-          await this.plugin.settings.setProblemsFolder(v.replace(/\/+$/, ''));
+          await this.plugin.lcSettings.setProblemsFolder(v.replace(/\/+$/, ''));
         }),
       );
 
@@ -197,9 +197,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       .setDesc('Starter code language for new problems.')
       .addDropdown((d) => d
         .addOptions(LANGUAGE_OPTIONS)
-        .setValue(this.plugin.settings.getDefaultLanguage())
+        .setValue(this.plugin.lcSettings.getDefaultLanguage())
         .onChange(async (v) => {
-          await this.plugin.settings.setDefaultLanguage(v);
+          await this.plugin.lcSettings.setDefaultLanguage(v);
         }),
       );
 
@@ -209,9 +209,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       .addDropdown((d) => d
         .addOption('preview', 'Preview first')
         .addOption('open', 'Open note directly')
-        .setValue(this.plugin.settings.getPreviewClickBehavior())
+        .setValue(this.plugin.lcSettings.getPreviewClickBehavior())
         .onChange(async (v) => {
-          await this.plugin.settings.setPreviewClickBehavior(v as 'preview' | 'open');
+          await this.plugin.lcSettings.setPreviewClickBehavior(v as 'preview' | 'open');
         }),
       );
 
@@ -239,14 +239,14 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         .addOption('2', '2 spaces')
         .addOption('4', '4 spaces')
         .addOption('8', '8 spaces')
-        .setValue(String(this.plugin.settings.getIndentSizeOverride()))
+        .setValue(String(this.plugin.lcSettings.getIndentSizeOverride()))
         .onChange(async (v) => {
           const val: 'auto' | 2 | 4 | 8 =
             v === '2' ? 2 :
             v === '4' ? 4 :
             v === '8' ? 8 :
             'auto';
-          await this.plugin.settings.setIndentSizeOverride(val);
+          await this.plugin.lcSettings.setIndentSizeOverride(val);
         }),
       );
 
@@ -254,9 +254,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       .setName('Show relative line numbers in code editor')
       .setDesc('When enabled, the code editor gutter shows distance from cursor line. Toggle takes effect on next note open.')
       .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.getShowRelativeLineNumbers())
+        .setValue(this.plugin.lcSettings.getShowRelativeLineNumbers())
         .onChange(async (v) => {
-          await this.plugin.settings.setShowRelativeLineNumbers(v);
+          await this.plugin.lcSettings.setShowRelativeLineNumbers(v);
         }),
       );
 
@@ -282,9 +282,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       .setName('Auto-migrate v1.2 notes when opened')
       .setDesc('When opening a LeetCode note from v1.2 or earlier, silently rewrite the fence to the v1.3 format. When off, a banner offers a manual [Migrate now] button.')
       .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.getAutoMigrateOnOpen())
+        .setValue(this.plugin.lcSettings.getAutoMigrateOnOpen())
         .onChange(async (v) => {
-          await this.plugin.settings.setAutoMigrateOnOpen(v);
+          await this.plugin.lcSettings.setAutoMigrateOnOpen(v);
           // No reload needed — live-applies on next file open.
         }),
       );
@@ -298,7 +298,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         .addOption('500', '500ms')
         .addOption('1000', '1s')
         .addOption('2000', '2s')
-        .setValue(String(this.plugin.settings.getWidgetSyncDebounceMs()))
+        .setValue(String(this.plugin.lcSettings.getWidgetSyncDebounceMs()))
         .onChange(async (v) => {
           const val: 300 | 400 | 500 | 1000 | 2000 =
             v === '300' ? 300 :
@@ -306,7 +306,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             v === '1000' ? 1000 :
             v === '2000' ? 2000 :
             400;
-          await this.plugin.settings.setWidgetSyncDebounceMs(val);
+          await this.plugin.lcSettings.setWidgetSyncDebounceMs(val);
           // Phase 19 Plan 02 — live-apply across all live widgets without
           // note reload (D-08). No-op when no widgets registered.
           this.plugin.widgetRegistry?.applyDelay(val);
@@ -330,7 +330,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
     // ZERO setCta() calls — the Test connection button stays neutral. The
     // disclosure modal's Continue button (Plan 07-05) will be the only new
     // setCta() invocation in v1.1, in src/ai/disclosure.ts.
-    const active = this.plugin.settings.getActiveAIProvider();
+    const active = this.plugin.lcSettings.getActiveAIProvider();
     const aiEnabled = active !== null;
 
     new Setting(containerEl).setName('AI coach').setHeading()
@@ -354,9 +354,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         .setValue(aiEnabled)
         .onChange(async (value) => {
           if (value) {
-            await this.plugin.settings.setActiveAIProvider('anthropic');
+            await this.plugin.lcSettings.setActiveAIProvider('anthropic');
           } else {
-            await this.plugin.settings.setActiveAIProvider(null);
+            await this.plugin.lcSettings.setActiveAIProvider(null);
           }
           this.renderTab();
         }),
@@ -377,7 +377,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           .addOption('bedrock',    'AWS Bedrock')
           .setValue(active)
           .onChange(async (v) => {
-            await this.plugin.settings.setActiveAIProvider(v as AIProvider);
+            await this.plugin.lcSettings.setActiveAIProvider(v as AIProvider);
             this.renderTab();
           }),
         );
@@ -390,9 +390,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         .setName('Review on accepted')
         .setDesc('Generate a review (approach, efficiency, style) each time you get accepted.')
         .addToggle((toggle) => toggle
-          .setValue(this.plugin.settings.getAutoAIReviewOnAC())
+          .setValue(this.plugin.lcSettings.getAutoAIReviewOnAC())
           .onChange(async (value) => {
-            await this.plugin.settings.setAutoAIReviewOnAC(value);
+            await this.plugin.lcSettings.setAutoAIReviewOnAC(value);
           }),
         );
 
@@ -400,9 +400,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         .setName('Pattern classification on accepted')
         .setDesc('Classify solutions into algorithmic patterns and maintain hub notes.')
         .addToggle((toggle) => toggle
-          .setValue(this.plugin.settings.getAutoAIKnowledgeGraph())
+          .setValue(this.plugin.lcSettings.getAutoAIKnowledgeGraph())
           .onChange(async (value) => {
-            await this.plugin.settings.setAutoAIKnowledgeGraph(value);
+            await this.plugin.lcSettings.setAutoAIKnowledgeGraph(value);
           }),
         );
 
@@ -410,9 +410,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         .setName('Look-ahead edges')
         .setDesc('Suggest unsolved problems related to the pattern in hub notes.')
         .addToggle((toggle) => toggle
-          .setValue(this.plugin.settings.getFeatureFlags().lookAheadEdges)
+          .setValue(this.plugin.lcSettings.getFeatureFlags().lookAheadEdges)
           .onChange(async (value) => {
-            await this.plugin.settings.setFeatureFlag('lookAheadEdges', value);
+            await this.plugin.lcSettings.setFeatureFlag('lookAheadEdges', value);
           }),
         );
 
@@ -420,9 +420,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
         .setName('Contest analysis')
         .setDesc('Generate a performance summary when a virtual contest ends.')
         .addToggle((toggle) => toggle
-          .setValue(this.plugin.settings.getAutoAIContestAnalysis())
+          .setValue(this.plugin.lcSettings.getAutoAIContestAnalysis())
           .onChange(async (value) => {
-            await this.plugin.settings.setAutoAIContestAnalysis(value);
+            await this.plugin.lcSettings.setAutoAIContestAnalysis(value);
           }),
         );
     }
@@ -445,11 +445,11 @@ export class LeetCodeSettingTab extends PluginSettingTab {
       .setName('Technique folder override')
       .setDesc('Vault folder for technique stub notes. Leave empty to use {Problems folder}/Techniques.')
       .addText((t) => t
-        .setPlaceholder(`${this.plugin.settings.getProblemsFolder()}/Techniques`)
-        .setValue(this.plugin.settings.getTechniquesFolderOverride())
+        .setPlaceholder(`${this.plugin.lcSettings.getProblemsFolder()}/Techniques`)
+        .setValue(this.plugin.lcSettings.getTechniquesFolderOverride())
         .onChange(async (v) => {
           // Phase 4 convention — UI layer owns trailing-slash sanitization.
-          await this.plugin.settings.setTechniquesFolderOverride(
+          await this.plugin.lcSettings.setTechniquesFolderOverride(
             v.trim().replace(/[\\/]+$/, ''),
           );
         }),
@@ -462,9 +462,9 @@ export class LeetCodeSettingTab extends PluginSettingTab {
 
       .setDesc('When enabled, an Accepted submission writes a ## Techniques section and creates stub notes for each LC topic tag. When disabled, only frontmatter tags (lc/{slug}) are written; no ## Techniques heading, no stubs.')
       .addToggle((t) => t
-        .setValue(this.plugin.settings.getAutoBacklinksEnabled())
+        .setValue(this.plugin.lcSettings.getAutoBacklinksEnabled())
         .onChange(async (v) => {
-          await this.plugin.settings.setAutoBacklinksEnabled(v);
+          await this.plugin.lcSettings.setAutoBacklinksEnabled(v);
         }),
       );
   }
@@ -486,7 +486,7 @@ export class LeetCodeSettingTab extends PluginSettingTab {
    * flight per 07-UI-SPEC §"Test connection — debouncing".
    */
   private renderAIProviderForm(containerEl: HTMLElement, active: AIProvider): void {
-    const cfg = this.plugin.settings.getProviderConfig(active);
+    const cfg = this.plugin.lcSettings.getProviderConfig(active);
     const providerName = prettyName(active);
 
     // ─── API key row (omitted for Ollama and Bedrock) ────────────────────
@@ -507,8 +507,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             // Re-read the latest cfg so concurrent edits to other fields in
             // the same render frame don't get clobbered (defensive — the
             // re-render on dropdown change drops the closure anyway).
-            const current = this.plugin.settings.getProviderConfig(active);
-            await this.plugin.settings.setProviderConfig(active, { ...current, apiKey: v });
+            const current = this.plugin.lcSettings.getProviderConfig(active);
+            await this.plugin.lcSettings.setProviderConfig(active, { ...current, apiKey: v });
           });
         });
     }
@@ -534,8 +534,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             t.inputEl.addClass('lc-ai-input');
             t.setValue(cfg.baseUrl);
             t.onChange(async (v) => {
-              const current = this.plugin.settings.getProviderConfig(active);
-              await this.plugin.settings.setProviderConfig(active, { ...current, baseUrl: v });
+              const current = this.plugin.lcSettings.getProviderConfig(active);
+              await this.plugin.lcSettings.setProviderConfig(active, { ...current, baseUrl: v });
             });
           });
         break;
@@ -549,8 +549,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             t.setPlaceholder('https://your-host.example.com/v1');
             t.setValue(cfg.baseUrl);
             t.onChange(async (v) => {
-              const current = this.plugin.settings.getProviderConfig(active);
-              await this.plugin.settings.setProviderConfig(active, { ...current, baseUrl: v });
+              const current = this.plugin.lcSettings.getProviderConfig(active);
+              await this.plugin.lcSettings.setProviderConfig(active, { ...current, baseUrl: v });
             });
           });
         break;
@@ -574,8 +574,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             t.setPlaceholder('us-east-1');
             t.setValue(bcfg.region);
             t.onChange(async (v) => {
-              const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
-              await this.plugin.settings.setProviderConfig(active, { ...current, region: v });
+              const current = this.plugin.lcSettings.getProviderConfig(active) as BedrockProviderConfig;
+              await this.plugin.lcSettings.setProviderConfig(active, { ...current, region: v });
             });
           });
 
@@ -587,8 +587,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             t.inputEl.addClass('lc-ai-input');
             t.setValue(bcfg.modelId);
             t.onChange(async (v) => {
-              const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
-              await this.plugin.settings.setProviderConfig(active, { ...current, modelId: v });
+              const current = this.plugin.lcSettings.getProviderConfig(active) as BedrockProviderConfig;
+              await this.plugin.lcSettings.setProviderConfig(active, { ...current, modelId: v });
             });
           });
 
@@ -604,8 +604,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             .addOption('api-key',       'Bedrock API key')
             .setValue(bcfg.authMethod)
             .onChange(async (v) => {
-              const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
-              await this.plugin.settings.setProviderConfig(active, {
+              const current = this.plugin.lcSettings.getProviderConfig(active) as BedrockProviderConfig;
+              await this.plugin.lcSettings.setProviderConfig(active, {
                 ...current,
                 authMethod: v as BedrockProviderConfig['authMethod'],
               });
@@ -633,8 +633,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
               t.inputEl.addClass('lc-ai-input');
               t.setValue(bcfg.accessKeyId ?? '');
               t.onChange(async (v) => {
-                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
-                await this.plugin.settings.setProviderConfig(active, { ...current, accessKeyId: v });
+                const current = this.plugin.lcSettings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.lcSettings.setProviderConfig(active, { ...current, accessKeyId: v });
               });
             });
           new Setting(containerEl)
@@ -645,8 +645,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
               t.inputEl.addClass('lc-ai-input');
               t.setValue(bcfg.secretAccessKey ?? '');
               t.onChange(async (v) => {
-                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
-                await this.plugin.settings.setProviderConfig(active, { ...current, secretAccessKey: v });
+                const current = this.plugin.lcSettings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.lcSettings.setProviderConfig(active, { ...current, secretAccessKey: v });
               });
             });
           new Setting(containerEl)
@@ -657,8 +657,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
               t.inputEl.addClass('lc-ai-input');
               t.setValue(bcfg.sessionToken ?? '');
               t.onChange(async (v) => {
-                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
-                await this.plugin.settings.setProviderConfig(active, { ...current, sessionToken: v });
+                const current = this.plugin.lcSettings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.lcSettings.setProviderConfig(active, { ...current, sessionToken: v });
               });
             });
         } else if (bcfg.authMethod === 'sso-profile') {
@@ -669,8 +669,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
               t.inputEl.addClass('lc-ai-input');
               t.setValue(bcfg.ssoProfile ?? '');
               t.onChange(async (v) => {
-                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
-                await this.plugin.settings.setProviderConfig(active, { ...current, ssoProfile: v });
+                const current = this.plugin.lcSettings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.lcSettings.setProviderConfig(active, { ...current, ssoProfile: v });
               });
             });
         } else if (bcfg.authMethod === 'api-key') {
@@ -682,8 +682,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
               t.inputEl.addClass('lc-ai-input');
               t.setValue(bcfg.bedrockApiKey ?? '');
               t.onChange(async (v) => {
-                const current = this.plugin.settings.getProviderConfig(active) as BedrockProviderConfig;
-                await this.plugin.settings.setProviderConfig(active, { ...current, bedrockApiKey: v });
+                const current = this.plugin.lcSettings.getProviderConfig(active) as BedrockProviderConfig;
+                await this.plugin.lcSettings.setProviderConfig(active, { ...current, bedrockApiKey: v });
               });
             });
         }
@@ -706,8 +706,8 @@ export class LeetCodeSettingTab extends PluginSettingTab {
           t.setPlaceholder(modelPlaceholder(active));
           t.setValue(cfg.model);
           t.onChange(async (v) => {
-            const current = this.plugin.settings.getProviderConfig(active);
-            await this.plugin.settings.setProviderConfig(active, { ...current, model: v });
+            const current = this.plugin.lcSettings.getProviderConfig(active);
+            await this.plugin.lcSettings.setProviderConfig(active, { ...current, model: v });
           });
         });
     }

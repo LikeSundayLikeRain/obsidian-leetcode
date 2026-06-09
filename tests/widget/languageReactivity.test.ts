@@ -166,7 +166,7 @@ function makeFakePlugin(opts: { language?: string } = {}) {
       keymap: { pushScope: vi.fn(), popScope: vi.fn() },
       scope: undefined,
     },
-    settings: {
+    lcSettings: {
       getUseInlineWidget: vi.fn<() => boolean>(() => true),
       getWidgetSyncDebounceMs: vi.fn<() => number>(() => 400),
       getIndentSizeOverride: vi.fn<() => number | 'auto'>(() => 4),
@@ -285,7 +285,7 @@ describe('Per-widget metadataCache.on(changed) reactivity (ACTION-03)', () => {
 
     // Before dispatch, change the indent override so the listener picks up
     // the new value (live-applied per Phase 16 Plan 02 D-06).
-    plugin.settings.getIndentSizeOverride = vi.fn(() => 2);
+    plugin.lcSettings.getIndentSizeOverride = vi.fn(() => 2);
     plugin.app.metadataCache.getFileCache = vi.fn(() => ({
       frontmatter: { 'lc-slug': 'two-sum', 'lc-language': 'cpp' },
     }));

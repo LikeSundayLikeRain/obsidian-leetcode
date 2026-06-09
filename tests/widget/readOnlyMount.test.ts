@@ -113,7 +113,7 @@ function makeFakePlugin(vimMode: boolean) {
       keymap: { pushScope: vi.fn(), popScope: vi.fn() },
       scope: undefined,
     },
-    settings: {
+    lcSettings: {
       getUseInlineWidget: vi.fn(() => true),
       getWidgetSyncDebounceMs: vi.fn(() => 400),
       getIndentSizeOverride: vi.fn(() => 'auto' as const),
