@@ -75,7 +75,7 @@ interface BannerHost {
       cachedRead(file: TFile): Promise<string>;
     };
   };
-  settings: {
+  lcSettings: {
     getAutoMigrateOnOpen(): boolean;
     getDefaultLanguage(): string;
   };
@@ -128,7 +128,7 @@ async function processBlock(
 
   // Step 3 — mode gate. autoMigrateOnOpen=ON → auto-path owns the migration;
   // banner does NOT shadow it.
-  if (plugin.settings.getAutoMigrateOnOpen() === true) return;
+  if (plugin.lcSettings.getAutoMigrateOnOpen() === true) return;
 
   // Step 5 — read full note text. cachedRead is the safe Reading-mode-context
   // primitive (does NOT trigger metadata refresh; mirrors codeBlockProcessor.ts

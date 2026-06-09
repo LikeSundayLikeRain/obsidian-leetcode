@@ -71,7 +71,7 @@ interface FakePlugin {
     vault: { read: ReturnType<typeof vi.fn> };
     metadataCache: { getFileCache: ReturnType<typeof vi.fn> };
   };
-  settings: {
+  lcSettings: {
     getUseInlineWidget: () => boolean;
     getAutoMigrateOnOpen: () => boolean;
     getDefaultLanguage: () => string;
@@ -100,7 +100,7 @@ function makeFakePlugin(widgets: FakeWidget[]): FakePlugin {
       vault: { read: vi.fn() },
       metadataCache: { getFileCache: vi.fn(() => null) },
     },
-    settings: {
+    lcSettings: {
       getUseInlineWidget: () => true,
       getAutoMigrateOnOpen: () => false,
       getDefaultLanguage: () => 'typescript',

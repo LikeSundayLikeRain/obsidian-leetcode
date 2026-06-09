@@ -57,7 +57,7 @@ describe('Preview post-Start detach (Phase 06 Plan 03 CONTEXT.md decision B)', (
     };
     const plugin = {
       app: fakeApp,
-      settings: {
+      lcSettings: {
         getProblemDetail: () => detail,
         setProblemDetail: vi.fn(async () => undefined),
         getProblemsFolder: () => 'LeetCode',
@@ -111,7 +111,7 @@ describe('Preview post-Start detach (Phase 06 Plan 03 CONTEXT.md decision B)', (
     };
     const plugin = {
       app: fakeApp,
-      settings: {
+      lcSettings: {
         getProblemDetail: () => detail,
         setProblemDetail: vi.fn(async () => undefined),
         getProblemsFolder: () => 'LeetCode',

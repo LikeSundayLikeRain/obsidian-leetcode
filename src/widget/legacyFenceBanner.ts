@@ -32,7 +32,7 @@ type CreateElFn = (
 
 interface BannerPlugin {
   app: App;
-  settings: { getDefaultLanguage?(): string };
+  lcSettings: { getDefaultLanguage?(): string };
 }
 
 export type LegacyBannerMode =
@@ -107,7 +107,7 @@ async function runMigrate(plugin: BannerPlugin, file: TFile): Promise<void> {
     await migrateLegacyFenceIfNeeded(plugin.app, file, {
       force: true,
       autoMigrateOnOpen: true,
-      defaultLanguage: plugin.settings.getDefaultLanguage?.() ?? 'python3',
+      defaultLanguage: plugin.lcSettings.getDefaultLanguage?.() ?? 'python3',
     });
   } catch (err) {
     logger.debug('migration.legacyFenceBanner: click handler non-fatal failure', err);

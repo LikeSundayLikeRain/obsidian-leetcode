@@ -118,7 +118,7 @@ export class ProblemBrowserView extends ItemView {
   constructor(leaf: WorkspaceLeaf, private readonly plugin: LeetCodePlugin) {
     super(leaf);
     this.navigation = false;   // D-06: static dock view
-    this.contestListService = new ContestListService(this.plugin.client, this.plugin.settings);
+    this.contestListService = new ContestListService(this.plugin.client, this.plugin.lcSettings);
   }
 
   getViewType(): string { return BROWSER_VIEW_TYPE; }
@@ -134,8 +134,8 @@ export class ProblemBrowserView extends ItemView {
     // Load persisted compound filter. If this is the user's first open and
     // they're not a Premium subscriber, apply a sensible default ("hide
     // Premium content") so the list isn't cluttered with locked problems.
-    this.filter = this.plugin.settings.getFilter();
-    if (this.filter === null && this.plugin.settings.getIsPremium() === false) {
+    this.filter = this.plugin.lcSettings.getFilter();
+    if (this.filter === null && this.plugin.lcSettings.getIsPremium() === false) {
       // Phase 5.2 D-03 + D-04 — multi-value premium shape (values: ['non-premium'])
       // plus the `__autoDefault: true` marker so updateFilterBadge excludes
       // this rule from the user-visible count on fresh install. The marker is
@@ -153,11 +153,11 @@ export class ProblemBrowserView extends ItemView {
           __autoDefault: true,
         } as FilterRule & { __autoDefault?: boolean }],
       };
-      await this.plugin.settings.setFilter(this.filter);
+      await this.plugin.lcSettings.setFilter(this.filter);
     }
 
     // Phase 10 D-01: Auto-switch to contests mode when an active session exists (Pitfall 7).
-    const activeSession = this.plugin.settings.getContestSession();
+    const activeSession = this.plugin.lcSettings.getContestSession();
     if (activeSession !== null) {
       this.mode = 'contests';
     }
@@ -526,7 +526,7 @@ export class ProblemBrowserView extends ItemView {
 
   private async applyFilter(f: CompoundFilter | null): Promise<void> {
     this.filter = f;
-    await this.plugin.settings.setFilter(f);
+    await this.plugin.lcSettings.setFilter(f);
     this.updateFilterBadge();
     this.renderRows();
   }
@@ -954,12 +954,12 @@ export class ProblemBrowserView extends ItemView {
     for (const r of results) {
       if (r.status === 'fulfilled' && r.value) {
         const entry = toDetailCacheEntry(r.value);
-        await this.plugin.settings.setProblemDetail(r.value.titleSlug, entry);
+        await this.plugin.lcSettings.setProblemDetail(r.value.titleSlug, entry);
       }
     }
 
     // Resolve default language + starter code per problem from cached details
-    const defaultLang = this.plugin.settings.getDefaultLanguage() || 'python3';
+    const defaultLang = this.plugin.lcSettings.getDefaultLanguage() || 'python3';
 
     // Create contest session via ContestSessionManager
     this.plugin.contestSessionManager.start({
@@ -968,7 +968,7 @@ export class ProblemBrowserView extends ItemView {
       contestType: contest.type,
       duration: contest.duration,
       problems: questions.map((q) => {
-        const detail = this.plugin.settings.getProblemDetail(q.title_slug);
+        const detail = this.plugin.lcSettings.getProblemDetail(q.title_slug);
         const snippet = detail?.codeSnippets?.find(s => s.langSlug === defaultLang);
         return {
           slug: q.title_slug,

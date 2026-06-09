@@ -143,7 +143,7 @@ export class ContestSolveView extends ItemView {
       return;
     }
 
-    const detail = this.plugin.settings.getProblemDetail(problem.slug);
+    const detail = this.plugin.lcSettings.getProblemDetail(problem.slug);
 
     // ── Sticky header ──
     const header = root.createDiv({ cls: 'leetcode-contest-solve__header' });
@@ -300,13 +300,13 @@ export class ContestSolveView extends ItemView {
     if (!session) return;
     const problem = session.problems[this.problemIdx];
     if (!problem) return;
-    const detail = this.plugin.settings.getProblemDetail(problem.slug);
+    const detail = this.plugin.lcSettings.getProblemDetail(problem.slug);
     if (!detail) {
       new Notice('Problem detail not cached. Cannot run.', 4000);
       return;
     }
 
-    const cookies = this.plugin.settings.getAuthCookies();
+    const cookies = this.plugin.lcSettings.getAuthCookies();
     if (!cookies) {
       showSessionExpiredNotice(() => { void this.plugin.auth.login(); });
       return;
@@ -377,13 +377,13 @@ export class ContestSolveView extends ItemView {
     if (!session) return;
     const problem = session.problems[this.problemIdx];
     if (!problem) return;
-    const detail = this.plugin.settings.getProblemDetail(problem.slug);
+    const detail = this.plugin.lcSettings.getProblemDetail(problem.slug);
     if (!detail) {
       new Notice('Problem detail not cached. Cannot submit.', 4000);
       return;
     }
 
-    const cookies = this.plugin.settings.getAuthCookies();
+    const cookies = this.plugin.lcSettings.getAuthCookies();
     if (!cookies) {
       showSessionExpiredNotice(() => { void this.plugin.auth.login(); });
       return;

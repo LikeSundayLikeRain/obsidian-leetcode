@@ -133,7 +133,7 @@ interface FakePlugin {
     keymap?: unknown;
     scope?: unknown;
   };
-  settings: {
+  lcSettings: {
     getUseInlineWidget?: () => boolean;
     getWidgetSyncDebounceMs?: () => number;
     getIndentSizeOverride: () => 'auto' | 2 | 4 | 8;
@@ -156,7 +156,7 @@ function makeFakePlugin(opts: { lcLanguage?: string | null }): FakePlugin {
       keymap: { pushScope: vi.fn(), popScope: vi.fn() },
       scope: undefined,
     },
-    settings: {
+    lcSettings: {
       getUseInlineWidget: vi.fn(() => true),
       getWidgetSyncDebounceMs: vi.fn(() => 400),
       getIndentSizeOverride: vi.fn(() => 'auto' as const),

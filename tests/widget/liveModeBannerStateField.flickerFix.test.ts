@@ -119,7 +119,7 @@ const NOTE_V12_LEGACY = [
 
 interface PluginShape {
   app: { metadataCache: ReturnType<typeof createFakeMetadataCache> };
-  settings: {
+  lcSettings: {
     getUseInlineWidget: () => boolean;
     getAutoMigrateOnOpen: () => boolean;
     getDefaultLanguage: () => string;
@@ -148,7 +148,7 @@ function makePlugin(opts: {
   const fakePlugin = createFakePlugin({ metadataCache });
   const plugin: PluginShape = {
     app: fakePlugin.app as never,
-    settings: {
+    lcSettings: {
       getUseInlineWidget: () => opts.useInlineWidget ?? true,
       getAutoMigrateOnOpen: () => opts.autoMigrateOnOpen ?? true,
       getDefaultLanguage: () => 'python3',

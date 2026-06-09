@@ -137,7 +137,7 @@ export interface WidgetMountHost {
      *  parent scope under which the widget's per-focus Scope is parented. */
     scope?: unknown;
   };
-  settings: {
+  lcSettings: {
     getIndentSizeOverride(): 'auto' | 2 | 4 | 8;
     getShowRelativeLineNumbers?(): boolean;
     /** Plan 19-02 — debounced writer delay. Optional so test fixtures may
@@ -1183,7 +1183,7 @@ function buildExtensions(
    *  can show only the cursor layer matching the current vim mode. */
   modeClassContainer?: HTMLElement,
 ): Extension[] {
-  const indent = plugin.settings.getIndentSizeOverride();
+  const indent = plugin.lcSettings.getIndentSizeOverride();
 
   // Shared visual extensions (both editable and read-only).
   const visual: Extension[] = [
@@ -1596,7 +1596,7 @@ export function mountLeetCodeWidget(
     typeof plugin.app.vault.read === 'function' &&
     typeof plugin.app.vault.process === 'function'
   ) {
-    const delay = plugin.settings.getWidgetSyncDebounceMs?.() ?? 500;
+    const delay = plugin.lcSettings.getWidgetSyncDebounceMs?.() ?? 500;
 
     ctl.writer = new DebouncedWriter(
       // The plugin-host shape declares `app` as a structural App-like, but
@@ -1657,7 +1657,7 @@ export function mountLeetCodeWidget(
             (fmFresh['lc-language']).length > 0
               ? (fmFresh['lc-language'])
               : 'python3';
-          const indent = plugin.settings.getIndentSizeOverride();
+          const indent = plugin.lcSettings.getIndentSizeOverride();
           try {
             ctl.view.dispatch({
               effects: languageCompartment.reconfigure(

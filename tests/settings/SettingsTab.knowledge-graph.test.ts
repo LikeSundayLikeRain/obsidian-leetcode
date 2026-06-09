@@ -190,7 +190,7 @@ function makeFakePluginForSettingsTab(settings: KnowledgeGraphCapableStore) {
       logout: vi.fn(),
       loginManual: vi.fn(),
     },
-    settings: wrappedSettings,
+    lcSettings: wrappedSettings,
   };
 }
 

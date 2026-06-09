@@ -56,7 +56,7 @@ import {
 } from './liveModeBannerStateField';
 
 type PluginHost = Plugin & WidgetMountHost & {
-  settings: WidgetMountHost['settings'] & {
+  lcSettings: WidgetMountHost['lcSettings'] & {
     getAutoMigrateOnOpen?(): boolean;
     getDefaultLanguage?(): string;
   };

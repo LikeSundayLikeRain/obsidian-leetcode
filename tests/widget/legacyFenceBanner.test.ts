@@ -33,7 +33,7 @@ import { logger } from '../../src/shared/logger';
 
 interface MockPlugin {
   app: { vault: unknown; metadataCache: unknown };
-  settings: {
+  lcSettings: {
     getDefaultLanguage?(): string;
   };
 }
@@ -41,7 +41,7 @@ interface MockPlugin {
 function makePlugin(): MockPlugin {
   return {
     app: { vault: {}, metadataCache: {} },
-    settings: {
+    lcSettings: {
       getDefaultLanguage: () => 'python3',
     },
   };
@@ -201,7 +201,7 @@ describe('mountLegacyFenceBanner', () => {
     const file = makeFile();
     const plugin: MockPlugin = {
       app: { vault: {}, metadataCache: {} },
-      settings: {}, // no getDefaultLanguage
+      lcSettings: {}, // no getDefaultLanguage
     };
     mountLegacyFenceBanner(host, 'pass', file as never, plugin as never, 'manual-prompt');
     const button = host.querySelector('.leetcode-migration-banner button') as HTMLButtonElement | null;

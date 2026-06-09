@@ -60,7 +60,7 @@ function makeProviderConfig(overrides: Partial<ProviderConfig> = {}): ProviderCo
 }
 
 interface FakePluginShape {
-  settings: {
+  lcSettings: {
     getActiveAIProvider: () => AIProvider | null;
     getProviderConfig: (p: AIProvider) => ProviderConfig;
   };
@@ -76,7 +76,7 @@ function makeFake(opts: {
   probe?: (p: AIProvider) => Promise<ProbeResult>;
 }): FakePluginShape {
   return {
-    settings: {
+    lcSettings: {
       getActiveAIProvider: () => opts.active,
       getProviderConfig: (_p: AIProvider) => opts.cfg ?? makeProviderConfig(),
     },
