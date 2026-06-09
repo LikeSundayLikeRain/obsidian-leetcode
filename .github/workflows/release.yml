@@ -51,7 +51,7 @@ jobs:
           fi
 
           gh release create "${{ steps.meta.outputs.tag }}" \
-            --title "v${{ steps.meta.outputs.tag }}" \
+            --title "${{ steps.meta.outputs.tag }}" \
             --generate-notes \
             $PRERELEASE_FLAG \
             "${ASSETS[@]}"
