@@ -62,8 +62,42 @@ export function extractAuthCookies(cookies: ElectronCookieShape[]): AuthCookies 
 // the `require('electron')` call strongly typed and avoids `unsafe` lint
 // findings without pulling in the full Electron type package.
 // -----------------------------------------------------------------------------
-interface ElectronCookiesApi {
-  get(filter: { domain?: string }): Promise<ElectronCookieShape[]>;
+export interface ElectronCookiesApi {
+  // Filter shape widened to accept either { url } (production callsite — issue #16)
+  // or { domain } (kept declarable for future refactors). Both optional.
+  get(filter: { url?: string; domain?: string }): Promise<ElectronCookieShape[]>;
+}
+
+/**
+ * Captures LeetCode auth cookies from an Electron session cookies API and
+ * extracts the LEETCODE_SESSION + csrftoken pair.
+ *
+ * Uses `{ url: 'https://leetcode.com/' }` as the filter (NOT `{ domain: ... }`)
+ * because Electron interprets the URL filter as "all cookies that would be sent
+ * on a request to that URL" — which is exactly what the API client needs by
+ * construction, and crucially INCLUDES host-only cookies (no Domain attribute,
+ * stored under `leetcode.com` without a leading dot). LC sometimes sets
+ * csrftoken as a host-only cookie; the previous `{ domain: '.leetcode.com' }`
+ * filter omitted those, which silently broke embedded login (issue #16).
+ *
+ * Returns null when either required cookie is missing or when the underlying
+ * cookies.get rejects. AUTH-06 invariant: catch is bare — never logs the
+ * cookie list, error message, or filter contents.
+ *
+ * Exported for unit testing — the production path in `openLogin` delegates to
+ * this helper so the test that mocks `cookies.get` covers the production filter
+ * shape.
+ */
+export async function tryCaptureCookies(
+  cookies: ElectronCookiesApi,
+): Promise<AuthCookies | null> {
+  try {
+    const list = await cookies.get({ url: 'https://leetcode.com/' });
+    return extractAuthCookies(list);
+  } catch {
+    // AUTH-06: never log cookie data on failure; next event will retry.
+    return null;
+  }
 }
 interface ElectronSession {
   cookies: ElectronCookiesApi;
@@ -106,19 +140,32 @@ interface ElectronModule {
   remote?: ElectronRemote;
 }
 
+/** Tagged-union result from `openLogin` — exhaustively handled in AuthService.login. */
+export type OpenLoginResult =
+  | { kind: 'success'; cookies: AuthCookies }
+  | { kind: 'cancelled' }
+  | { kind: 'timeout' };
+
+/** Maximum time to wait for cookie capture before surfacing a timeout Notice (issue #16). */
+const LOGIN_CAPTURE_TIMEOUT_MS = 30_000;
+
 /**
  * Opens an Electron BrowserWindow at LC's login page on a named session partition.
  * Polls session cookies on did-navigate and did-navigate-in-page events until both
- * LEETCODE_SESSION and csrftoken are present, then resolves with them.
- * Resolves `null` if the user closes the window without logging in (D-04 silent-cancel).
+ * LEETCODE_SESSION and csrftoken are present, then resolves with `{ kind: 'success', cookies }`.
+ *
+ * Resolves `{ kind: 'cancelled' }` if the user closes the window without logging in
+ * (D-04 silent-cancel) or if loadURL fails. Resolves `{ kind: 'timeout' }` if cookie
+ * capture has not succeeded within LOGIN_CAPTURE_TIMEOUT_MS — surfaces the
+ * "looks-like-cancel-but-isn't" failure mode (issue #16).
  *
  * CONTRACT:
  * - D-03: Cookie polling via did-navigate + did-navigate-in-page (dual listener per Pitfall 2).
- * - D-04: Window closed without cookies → resolve(null); caller emits Notice.
+ * - D-04: Window closed without cookies → resolve({kind:'cancelled'}); caller emits Notice.
  * - Pitfall 3: webPreferences.partition uses a named persisted session to isolate
  *   cookies from other plugins.
  */
-export function openLogin(): Promise<AuthCookies | null> {
+export function openLogin(): Promise<OpenLoginResult> {
   // Obsidian runs plugins in the renderer process. `require('electron')` from
   // renderer context exposes a different surface than main process — the
   // `BrowserWindow` constructor lives under `.remote` (shimmed by Obsidian's
@@ -161,6 +208,20 @@ export function openLogin(): Promise<AuthCookies | null> {
       },
     });
     let resolved = false;
+    // window.setTimeout returns `number` in browser/renderer context (Obsidian
+    // convention — see src/widget/childParentSync.ts, debouncedWriter.ts).
+    let timeoutHandle: number | null = null;
+
+    /** Centralized resolution: clears the watchdog timer, marks resolved, resolves the promise. */
+    const settle = (result: OpenLoginResult): void => {
+      if (resolved) return;
+      resolved = true;
+      if (timeoutHandle) {
+        window.clearTimeout(timeoutHandle);
+        timeoutHandle = null;
+      }
+      resolve(result);
+    };
 
     const safeClose = (): void => {
       // The window may already have been destroyed by the OS, a prior close(),
@@ -169,30 +230,32 @@ export function openLogin(): Promise<AuthCookies | null> {
       try { win.close(); } catch { /* already destroyed — closed event handles state */ }
     };
 
+    // Issue #16: 30s capture-timeout watchdog. Without this, a host-only
+    // csrftoken (or any other future cookie-jar quirk) makes the window appear
+    // to succeed (URL becomes the logged-in page) but extractAuthCookies stays
+    // null forever — the user closes the window and gets the silent-cancel
+    // Notice with no indication anything went wrong. The watchdog converts that
+    // into a distinct, actionable Notice via the 'timeout' tag.
+    timeoutHandle = window.setTimeout(() => {
+      settle({ kind: 'timeout' });
+      safeClose();
+    }, LOGIN_CAPTURE_TIMEOUT_MS);
+
     // Register the 'closed' handler BEFORE loadURL. If loadURL synchronously
     // tears the window down before returning (rare but possible on invalid
     // URLs in some Electron builds), the silent-cancel path still fires.
     win.on('closed', () => {
-      if (!resolved) {
-        resolved = true;
-        resolve(null); // D-04 silent-cancel
-      }
+      settle({ kind: 'cancelled' }); // D-04 silent-cancel
     });
 
     const tryCapture = async (): Promise<void> => {
-      try {
-        const cookies = await win.webContents.session.cookies.get({
-          domain: '.leetcode.com',
-        });
-        const extracted = extractAuthCookies(cookies);
-        if (extracted && !resolved) {
-          resolved = true;
-          resolve(extracted);
-          safeClose();
-        }
-      } catch {
-        // Ignore transient cookie-get errors; next event will retry.
-        // NEVER log the cookie list here — AUTH-06 (cookies never logged).
+      if (resolved) return;
+      // Delegate to the exported helper so the unit test that mocks
+      // `cookies.get` covers the production filter shape (issue #16).
+      const extracted = await tryCaptureCookies(win.webContents.session.cookies);
+      if (extracted && !resolved) {
+        settle({ kind: 'success', cookies: extracted });
+        safeClose();
       }
     };
 
@@ -205,13 +268,11 @@ export function openLogin(): Promise<AuthCookies | null> {
 
     // If loadURL rejects (network down, DNS failure, ERR_CERT_*, etc.) and
     // the window never emits 'closed' on its own, the caller's await would
-    // hang forever. Catch, resolve null, and force-close so the auth flow
-    // always settles (CR-05).
+    // hang forever. Catch, resolve cancelled, and force-close so the auth
+    // flow always settles (CR-05). Semantically still a cancel — user did
+    // not log in.
     win.loadURL('https://leetcode.com/accounts/login/').catch(() => {
-      if (!resolved) {
-        resolved = true;
-        resolve(null);
-      }
+      settle({ kind: 'cancelled' });
       safeClose();
     });
   });

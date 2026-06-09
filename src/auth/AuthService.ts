@@ -24,14 +24,32 @@ export class AuthService {
    * AUTH-01, AUTH-02.
    */
   async login(): Promise<boolean> {
-    const cookies = await openLogin();
-    if (!cookies) {
-      // D-04 silent cancel: exactly ONE Notice, no modal stacking, no auto-pivot to paste.
-      // UI-SPEC.md Notice table — LOCKED copy; "LeetCode" is a proper-noun brand name.
-       
-      new Notice('LeetCode login cancelled.', 4000);
-      return false;
+    const result = await openLogin();
+    switch (result.kind) {
+      case 'cancelled': {
+        // D-04 silent cancel: exactly ONE Notice, no modal stacking, no auto-pivot to paste.
+        // UI-SPEC.md Notice table — LOCKED copy; "LeetCode" is a proper-noun brand name.
+
+        new Notice('LeetCode login cancelled.', 4000);
+        return false;
+      }
+      case 'timeout': {
+        // Issue #16: distinct from 'cancelled' so the user sees an actionable
+        // hint instead of a misleading "cancelled" message when cookie capture
+        // never succeeds within 30s (e.g., future cookie-jar quirks).
+        // NEW copy — pending UI-SPEC.md ratification.
+
+        new Notice(
+          'Login appeared to succeed but cookies could not be captured — try the manual paste fallback in settings.',
+          7000,
+        );
+        return false;
+      }
+      case 'success':
+        // Fall through to the existing persist / reauthenticate / whoami flow below.
+        break;
     }
+    const cookies = result.cookies;
     await this.settings.setAuthCookies(cookies);
     await this.client.reauthenticate();
     // Fetch and persist username for settings tab display (previously left null,
