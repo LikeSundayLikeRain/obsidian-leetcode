@@ -86,6 +86,10 @@ import { registerRunCommand } from './solve/runCommandRegistration';
 import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
+// Failure B (Phase 22 follow-up) — chevron language-switch pure helper.
+// `runLanguageSwitch` owns the 16-step algorithm; `switchLanguageFromWidget`
+// below is a thin shim that wires plugin state into LanguageSwitchDeps.
+import { runLanguageSwitch } from './main/runLanguageSwitch';
 // Phase 20 Plan 20-10 (gap-closure T9/T10) — countLeetCodeSolveFenceOpeners is
 // the canonical "is there a leetcode-solve fence in this text?" predicate.
 // Used by resolveFenceKind in resetCode (T10 fix) and copyToCode (T9 fix).
@@ -3286,47 +3290,67 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /**
-   * Phase 22 (v1.3) — Language switch path for the inline widget.
+   * Failure B (Phase 22 follow-up) — Language switch path for the inline
+   * widget. Restores v1.2's body-swap-on-language-change UX (the new
+   * language's starter snippet replaces the fence body) within v1.3's
+   * widget-owned-editor architecture.
    *
-   * v1.3 architecture: the fence opener is fixed at `leetcode-solve`
-   * (Phase 19 C-01) and language is owned by `lc-language` frontmatter.
-   * The chevron click only needs to:
-   *   (a) flush widget edits BEFORE the frontmatter write so any pending
-   *       characters land under the OLD slug (Pattern F flush-before-fm).
-   *   (b) write `lc-language: <newSlug>` via processFrontMatter.
+   * UX contract: chevron switch is ALWAYS-OVERWRITE. We do not preserve
+   * user-typed code; switching language loads the new language's starter,
+   * full stop. Per-language buffer preservation (switch-back-restores-typing)
+   * is a future enhancement deferred until we have a clear storage model.
    *
-   * No CM6 dispatch is needed — neither parent (fence opener is fixed)
-   * nor child (v1.3 has no nested-editor child registry; the widget owns
-   * its own EditorView and reacts to the metadataCache 'changed' event
-   * through its own subscription at WidgetController to swap the parser
-   * Compartment + refresh the action-row chevron without remount).
+   * Algorithm (full helper: src/main/runLanguageSwitch.ts):
    *
-   * Reference: tests/widget/languageSwitch.test.ts pins this contract.
+   *   1.  Defensive guard — read-only mount or detached view → fm-only.
+   *   2.  Same-slug short-circuit (fm['lc-language'] === newSlug).
+   *   3.  flushNow drains any in-flight typing under the OLD slug.
+   *   4.  IME composition gate — defer entire switch until compositionend.
+   *   5.  Read lc-slug from frontmatter; silent return on miss.
+   *   6.  Resolve newStarter via resolveStarterCode (cache-first, live-
+   *       fetch on stale or missing).
+   *   7.  newStarter unavailable → differentiated Notice (offline vs LC
+   *       has no starter for this language); fm-only write.
+   *   8.  newStarter available → applyAuthoritativeBodyAndFrontmatter:
+   *       widget-direct CM6 dispatch (body + Compartment.reconfigure in
+   *       ONE transaction) on originator AND every peer widget on the
+   *       same file, then processFrontMatter, then acknowledge.
+   *
+   * Atomicity: the body+parser swap is one CM6 transaction (one undo step).
+   * The frontmatter rewrite is necessarily a separate undo step at the file
+   * level (Pitfall 1 / Pitfall 31).
    */
   async switchLanguageFromWidget(
     widget: WidgetController,
     file: TFile,
     newSlug: string,
   ): Promise<void> {
-    // Step (a) — flush widget edits before the frontmatter write so any
-    // pending characters land under the OLD slug (Pattern F).
-    await widget.flushNow();
-
-    // Step (b) — atomic frontmatter rewrite. The per-widget metadataCache
-    // 'changed' subscription drives Compartment.reconfigure (parser swap)
-    // + actionRowRefresh (chevron label + .is-current marker) without
-    // remount.
-    try {
-      await this.app.fileManager.processFrontMatter(
-        file,
-        (fmObj: Record<string, unknown>) => {
-          fmObj['lc-language'] = newSlug;
+    // Thin delegator — the algorithm lives in the pure `runLanguageSwitch`
+    // helper so it can be unit-tested without instantiating a real
+    // LeetCodePlugin. All Obsidian/plugin state is wired here into the
+    // LanguageSwitchDeps shape.
+    const widgetRegistry = this.widgetRegistry;
+    return runLanguageSwitch(
+      {
+        app: this.app,
+        settings: this.lcSettings,
+        client: this.client,
+        suppression: this.selfWriteSuppression,
+        iterateWidgets: function* () {
+          if (!widgetRegistry) return;
+          for (const ctl of widgetRegistry.values()) {
+            yield ctl as unknown as WidgetController;
+          }
         },
-      );
-    } catch (err) {
-      new Notice("Failed to switch language. The note's frontmatter may be malformed.", 5000);
-      logger.debug('switchLanguageFromWidget: processFrontMatter failed', err);
-    }
+        notify: (msg, ms) => {
+          new Notice(msg, ms);
+        },
+        logDebug: (msg, ...args) => logger.debug(msg, ...args),
+      },
+      widget,
+      file,
+      newSlug,
+    );
   }
 
   private async openAISolution(slug: string): Promise<void> {

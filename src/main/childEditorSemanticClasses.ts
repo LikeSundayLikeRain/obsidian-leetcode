@@ -30,15 +30,28 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from '@codemirror/view';
-import { syntaxTree } from '@codemirror/language';
+import { language, syntaxTree } from '@codemirror/language';
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive peer of obsidian; external in esbuild
 import { tags as t, type Tag, highlightTree, tagHighlighter } from '@lezer/highlight';
 
 /**
  * ViewPlugin that maintains a DecorationSet of semantic class marks.
- * Recomputed on every viewport scroll or doc change. Cost is bounded
- * by the visible-ranges syntax-tree walk — same complexity as CM6's
- * own syntaxHighlighting() ViewPlugin.
+ * Recomputed on every viewport scroll, doc change, or language-facet
+ * change. The language-facet check (added 2026-06-10) closes a regression
+ * surfaced via .planning/debug/language-switch-body-not-swapped.md:
+ *
+ *   When `view.dispatch({ effects: languageCompartment.reconfigure(...) })`
+ *   swaps the parser for a chevron-driven language switch, the dispatch
+ *   carries no doc / viewport / geometry change. Without the language-
+ *   facet check, this ViewPlugin's cached decorations retain the OLD
+ *   language's `cm-keyword`/`cm-type`/etc. assignments until the user's
+ *   next edit, so the theme's color rules cascade to the wrong tokens.
+ *   Comparing `update.startState.facet(language) !== update.state.facet(language)`
+ *   detects exactly the reconfigure case and forces a re-walk of the
+ *   freshly-parsed syntax tree.
+ *
+ * Cost is bounded by the visible-ranges syntax-tree walk — same
+ * complexity as CM6's own syntaxHighlighting() ViewPlugin.
  */
 const semanticClassesPlugin = ViewPlugin.fromClass(
   class {
@@ -49,7 +62,20 @@ const semanticClassesPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate): void {
-      if (update.docChanged || update.viewportChanged || update.geometryChanged) {
+      // 2026-06-10 — language-facet change detection. A
+      // `Compartment.reconfigure` dispatch that swaps the parser is an
+      // effects-only transaction (no docChanged / viewportChanged /
+      // geometryChanged), so the prior predicate missed it. The
+      // `language` facet from @codemirror/language is the canonical
+      // signal that the active parser changed.
+      const langChanged =
+        update.startState.facet(language) !== update.state.facet(language);
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.geometryChanged ||
+        langChanged
+      ) {
         this.decorations = buildSemanticClassDecorations(update.view);
       }
     }
