@@ -56,6 +56,13 @@ export interface WidgetControllerLike {
    *  every other widget for the same file path. Optional in the structural
    *  contract so test fixtures can omit it. */
   setPaneState?: (state: 'active' | 'peer') => void;
+  /** Live reconfigure of the per-language indent unit when the user
+   *  changes `indentSizeOverride` in Settings. Production WidgetController
+   *  exposes this; the SettingsTab onChange handler walks the registry
+   *  and calls it on every controller. Pure-effects dispatch (no doc
+   *  change), so no SelfWriteSuppression arming is needed. Optional in
+   *  the structural contract so test fixtures can omit it. */
+  reconfigureIndent?: (override: 'auto' | 2 | 4 | 8) => void;
 }
 
 export class WidgetRegistry {
@@ -181,6 +188,18 @@ export class WidgetRegistry {
   applyDelay(ms: number): void {
     for (const ctl of this.map.values()) {
       ctl.writer?.setDelay?.(ms);
+    }
+  }
+
+  /** Live-apply the indent override across every mounted widget. Called
+   *  from SettingsTab 'Indent size' onChange so the user sees the new
+   *  indent unit take effect on every open note without needing to
+   *  reload. Each controller re-reads its own slug from frontmatter
+   *  (Go always uses `\t` regardless of override per D-06). Pure-effects
+   *  dispatch — no body change, no SelfWriteSuppression involvement. */
+  applyIndentReconfigure(override: 'auto' | 2 | 4 | 8): void {
+    for (const ctl of this.map.values()) {
+      ctl.reconfigureIndent?.(override);
     }
   }
 
