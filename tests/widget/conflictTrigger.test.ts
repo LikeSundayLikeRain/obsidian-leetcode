@@ -36,6 +36,7 @@ interface FakeWidgetCtl {
   currentDocHash: string;
   reloadFromDisk: (reason: 'silent' | 'keep-external') => Promise<void>;
   writer?: { hasPending: () => boolean };
+  childDirty?: boolean;
 }
 
 interface ModifyHandlerHost {
@@ -94,8 +95,8 @@ async function dispatchModifyEvent(
   const result = host.selfWriteSuppression.tryConsume(file.path, observedHash);
   if (result === 'consumed') return;
 
-  // (d) Stale or miss → branch on hasPending().
-  const hasPending = matchingWidget.writer?.hasPending() === true;
+  // (d) Stale or miss → branch on childDirty (Phase 22 Wave 2 C5).
+  const hasPending = matchingWidget.childDirty === true;
   if (!hasPending) {
     await matchingWidget.reloadFromDisk('silent');
     return;
@@ -129,6 +130,7 @@ function makeFakeWidget(opts: {
     writer: {
       hasPending: vi.fn<() => boolean>(() => opts.hasPending ?? false),
     },
+    childDirty: opts.hasPending ?? false,
   };
 }
 

@@ -1463,13 +1463,14 @@ export default class LeetCodePlugin extends Plugin {
           // the cursor onto a now-shorter line — the cursor-jump and
           // char-rollback symptoms primitive.
           //
-          // Optional-chain `recentlyFlushed?.(200)` keeps legacy mounts
-          // without the new method from crashing; `=== true` rejects
-          // both `undefined` (method missing) and `false` (idle writer).
+          // childDirty unions hasPending() and recentlyFlushed(200) behind
+          // a single named gate (Phase 22 Wave 2 C5). The superset/≤8-char
+          // heuristic stays here — it needs callsite-specific parent/child
+          // bodies that the accessor doesn't have.
           if (
             childDoc.startsWith(observedBody) &&
             childDoc.length - observedBody.length <= 8 &&
-            firstMatch.writer?.recentlyFlushed?.(200) === true
+            firstMatch.childDirty
           ) {
             logger.debug(
               `[lc-debug] modify:branch=typing-during-own-flush path=${file.path} reason=child-is-superset-of-disk-within-flush-window delta=${childDoc.length - observedBody.length}`,
@@ -1490,7 +1491,7 @@ export default class LeetCodePlugin extends Plugin {
           // open on every divergence. The legacy hasPending() gate
           // is collapsed into "always show modal" because the user
           // typing IS the parent doc state.
-          const hasPending = firstMatch.writer?.hasPending() === true;
+          const hasPending = firstMatch.childDirty;
           if (!hasPending) {
             // BRAT issue #2 diagnostic instrumentation — log silent reload
             // (idle external edit fell through suppression). This is the

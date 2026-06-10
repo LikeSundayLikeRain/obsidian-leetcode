@@ -306,6 +306,21 @@ export class WidgetController {
    *  construction and updated on every successful local write. */
   public currentDocHash: string = '';
 
+  /** Phase 22 Wave 2 C5 — derived read; union of writer.hasPending() and
+   *  writer.recentlyFlushed(200). No new state — pure proxy.
+   *  Returns true when the writer is mid-flight (flush scheduled or in-flight,
+   *  SYNC-05) OR within the 200ms post-flush macrotask echo window (BRAT
+   *  260605-vny). Optional-chaining on recentlyFlushed keeps legacy test
+   *  fixtures that mock only hasPending() from crashing. Read-only: callers
+   *  MUST NOT cache the result across awaits.
+   *  Derived gate: writer is mid-flight OR within post-flush modify-echo window
+   *  (200ms). Replaces three duplicated gate predicates. */
+  get childDirty(): boolean {
+    if (this.writer?.hasPending() === true) return true;
+    if (this.writer?.recentlyFlushed?.(200) === true) return true;
+    return false;
+  }
+
   /** Phase 20 Plan 20-02 (ACTION-02 reactivity) — per-widget metadataCache
    *  subscription EventRef. Stored so destroy() can offref it cleanly. The
    *  subscription dispatches `languageCompartment.reconfigure(...)` on every

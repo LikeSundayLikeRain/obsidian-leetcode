@@ -88,6 +88,7 @@ interface FakeWidget {
   file: { path: string };
   view: EditorView;
   writer: { hasPending: () => boolean };
+  childDirty?: boolean;
   syncHandle?: {
     hasPending: () => boolean;
     flushSync: () => void;

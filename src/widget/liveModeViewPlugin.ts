@@ -136,14 +136,16 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
       file?: { path?: string };
       view?: EditorView;
       writer?: { hasPending?: () => boolean };
+      childDirty?: boolean;
     };
     if (candidate.file?.path !== file.path) continue;
     const childView = candidate.view;
     if (!childView) continue;
 
     // BL-05 (review-fix) — active-typing gate. Skip the parent→child
-    // push when the widget's debounced disk writer has a pending flush.
-    if (candidate.writer?.hasPending?.() === true) continue;
+    // push when the widget is dirty (debounced flush pending OR recently
+    // flushed within 200ms — Phase 22 Wave 2 C5 childDirty accessor).
+    if (candidate.childDirty === true) continue;
 
     // No-op when child already matches parent.
     const childDoc = childView.state.doc.toString();
