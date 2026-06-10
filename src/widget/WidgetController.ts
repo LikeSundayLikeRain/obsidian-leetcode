@@ -306,19 +306,46 @@ export class WidgetController {
    *  construction and updated on every successful local write. */
   public currentDocHash: string = '';
 
-  /** Phase 22 Wave 2 C5 — derived read; union of writer.hasPending() and
-   *  writer.recentlyFlushed(200). No new state — pure proxy.
-   *  Returns true when the writer is mid-flight (flush scheduled or in-flight,
-   *  SYNC-05) OR within the 200ms post-flush macrotask echo window (BRAT
-   *  260605-vny). Optional-chaining on recentlyFlushed keeps legacy test
-   *  fixtures that mock only hasPending() from crashing. Read-only: callers
-   *  MUST NOT cache the result across awaits.
-   *  Derived gate: writer is mid-flight OR within post-flush modify-echo window
-   *  (200ms). Replaces three duplicated gate predicates. */
+  /** Phase 22 Wave 3 C6a — stored flag set TRUE by the CM6 updateListener
+   *  wired in buildExtensions (editable branch only) on every user-driven
+   *  docChange (transaction NOT carrying a 'leetcode.*' userEvent — i.e.,
+   *  excludes peer-sync/reload/parent-sync echoes). Cleared by
+   *  markChildClean() called from the main.ts modify-handler when
+   *  selfWriteSuppression.tryConsume returns 'consumed' (the canonical
+   *  echo handshake — confirms the writer's flush has fully round-tripped
+   *  through Obsidian's modify event). Initialized to false on construction;
+   *  read-only widgets never get the listener wired in so the field stays
+   *  false for their lifetime, matching pre-Wave-3 behavior.
+   *
+   *  Wave 2 derived semantics retained: the accessor ORs the stored field
+   *  with hasPending()+recentlyFlushed(200) so legacy callsites keep their
+   *  defense-in-depth gate (writer-in-flight OR user-typed-since-last-clean).
+   */
+  private _childDirty: boolean = false;
   get childDirty(): boolean {
+    if (this._childDirty) return true;
     if (this.writer?.hasPending() === true) return true;
     if (this.writer?.recentlyFlushed?.(200) === true) return true;
     return false;
+  }
+
+  /** Phase 22 Wave 3 C6a — clear the stored childDirty flag. Called from
+   *  main.ts modify-handler ONLY on consumeResult === 'consumed' (the
+   *  canonical self-write echo). MUST NOT be called on 'stale'/'miss' —
+   *  those branches indicate the modify event is NOT our echo, so the
+   *  user's typing has not yet been confirmed-flushed.
+   *
+   *  Idempotent — safe to call multiple times; second+ call is a no-op. */
+  markChildClean(): void {
+    this._childDirty = false;
+  }
+
+  /** Phase 22 Wave 3 C6a — internal setter used by the buildExtensions
+   *  updateListener to flip childDirty on user-typed docChange. NOT for
+   *  external callers — use markChildClean() to clear and let the listener
+   *  set it. Underscore prefix signals internal-only by convention. */
+  _setChildDirty(value: boolean): void {
+    this._childDirty = value;
   }
 
   /** Phase 20 Plan 20-02 (ACTION-02 reactivity) — per-widget metadataCache
@@ -1190,6 +1217,11 @@ function buildExtensions(
    *  mode-class ViewPlugin toggles `.lc-vim-insert` on this element so CSS
    *  can show only the cursor layer matching the current vim mode. */
   modeClassContainer?: HTMLElement,
+  /** Phase 22 Wave 3 C6a — childDirty arming listener. Pre-built by
+   *  mountLeetCodeWidget and passed in (mirrors syncExtension pattern).
+   *  Read-only mounts pass undefined — _childDirty stays false for their
+   *  lifetime, matching pre-Wave-3 behavior. */
+  childDirtyExtension?: Extension,
 ): Extension[] {
   const indent = plugin.lcSettings.getIndentSizeOverride();
 
@@ -1370,6 +1402,14 @@ function buildExtensions(
   if (!readOnly && syncExtension) {
     exts.push(syncExtension);
   }
+  // 12b. Phase 22 Wave 3 C6a — childDirty arming listener. Pre-built by
+  //      mountLeetCodeWidget (mirrors syncExtension pattern). Closes over
+  //      `ctl` so the listener resolves the live controller at fire-time.
+  //      Read-only mounts pass undefined — _childDirty stays false for
+  //      their lifetime, matching pre-Wave-3 behavior.
+  if (!readOnly && childDirtyExtension) {
+    exts.push(childDirtyExtension);
+  }
   return exts;
 }
 
@@ -1484,6 +1524,27 @@ export function mountLeetCodeWidget(
   const vimCompartment = new Compartment();
   const vimEnabled = !readOnly && readVimModeFromVault(plugin as unknown as Parameters<typeof readVimModeFromVault>[0]);
 
+  // Phase 22 Wave 3 C6a — childDirty arming listener. Mirrors the
+  // syncExtension pattern (built outside buildExtensions, passed in as
+  // an Extension). Closes over `ctl` so the listener resolves the live
+  // controller at fire-time — same pattern as onDocChanged (line above).
+  // Read-only mounts skip — childDirty stays false (matches pre-Wave-3
+  // behavior). Plugin-dispatched echoes are filtered by inspecting
+  // Transaction.userEvent for the 'leetcode.' prefix (peer-sync,
+  // reload, parent-sync all carry that prefix — same convention as
+  // liveModeViewPlugin.ts:97-98).
+  const childDirtyExtension: Extension | undefined = readOnly
+    ? undefined
+    : EditorView.updateListener.of((update: ViewUpdate) => {
+        if (!update.docChanged) return;
+        const isPluginEcho = update.transactions.some((tr) => {
+          const ev = tr.annotation(Transaction.userEvent);
+          return typeof ev === 'string' && ev.startsWith('leetcode.');
+        });
+        if (isPluginEcho) return;
+        if (ctl) ctl._setChildDirty(true);
+      });
+
   const state = EditorState.create({
     doc: source,
     extensions: buildExtensions(
@@ -1495,6 +1556,7 @@ export function mountLeetCodeWidget(
       onDocChanged,
       undefined,
       container,
+      childDirtyExtension,
     ),
   });
 

@@ -1374,6 +1374,24 @@ export default class LeetCodePlugin extends Plugin {
             `[lc-debug] modify:after-consume path=${file.path} observedHash=${observedHash} outcome=${consumeResult} ts=${Date.now()}`,
           );
 
+          // Phase 22 Wave 3 C6a — clear childDirty on confirmed self-write echo.
+          // The 'consumed' outcome means selfWriteSuppression matched our writer's
+          // flush hash, so the writer's flushed bytes have fully round-tripped
+          // through Obsidian's modify event — the user's last typing burst is
+          // safely on disk. Clear childDirty on EVERY editable widget for the
+          // file (multi-pane: peer panes share the same flush, so all are clean).
+          // 'stale'/'miss' do NOT clear — those indicate the modify is NOT our
+          // echo (external edit or stale suppression entry), so the user's typing
+          // is still un-flushed and childDirty must remain TRUE to gate the
+          // conflict modal at branch (d).
+          if (consumeResult === 'consumed') {
+            for (const c of allMatching) {
+              if (!c.readOnly && !c.isEmbed) {
+                c.markChildClean();
+              }
+            }
+          }
+
           // Plan 21-17 — peer-sync fan-out routing. The pure helper
           // returns the per-controller decision; we invoke the
           // corresponding method below. External edits (consumeResult !==
