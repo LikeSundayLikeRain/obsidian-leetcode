@@ -306,6 +306,24 @@ export class WidgetController {
    *  construction and updated on every successful local write. */
   public currentDocHash: string = '';
 
+  /** Phase 22 Wave 3 C6c — IME composition guard. Set TRUE on the
+   *  contentDOM `compositionstart` DOM event; cleared on `compositionend`.
+   *  Composes into `childDirty` so the writer-mid-flight gate stays held
+   *  for the entire IME candidate-menu window (Pinyin / Kanji typing
+   *  produces NO docChanged updates between compositionstart and
+   *  compositionend, so the C6a updateListener-set `_childDirty` bit and
+   *  the C6d safety timer would both fail to keep the widget gated
+   *  during a 3–5 s composition. The composing flag closes that gap).
+   *
+   *  Browsers (Chromium, Electron) ALWAYS fire compositionend even on
+   *  blur-mid-compose / Escape-cancel-compose / focus-loss — empirically
+   *  verified in W3C UI Events spec §5.3.4 and the Chromium source
+   *  (third_party/blink/renderer/core/events/composition_event.cc). We
+   *  therefore do NOT defensively reset the flag on blur; the
+   *  compositionend listener is the single source of truth for
+   *  `false` transitions. */
+  private _childComposing = false;
+
   /** Phase 22 Wave 3 C6a — stored flag set TRUE by the CM6 updateListener
    *  wired in buildExtensions (editable branch only) on every user-driven
    *  docChange (transaction NOT carrying a 'leetcode.*' userEvent — i.e.,
@@ -323,6 +341,8 @@ export class WidgetController {
    */
   private _childDirty: boolean = false;
   get childDirty(): boolean {
+    // Phase 22 Wave 3 C6c — IME composition guard FIRST (cheapest read).
+    if (this._childComposing) return true;
     if (this._childDirty) return true;
     if (this.writer?.hasPending() === true) return true;
     if (this.writer?.recentlyFlushed?.(200) === true) return true;
@@ -382,6 +402,14 @@ export class WidgetController {
    *  set it. Underscore prefix signals internal-only by convention. */
   _setChildDirty(value: boolean): void {
     this._childDirty = value;
+  }
+
+  /** Phase 22 Wave 3 C6c — internal setter used by the contentDOM
+   *  compositionstart / compositionend listeners registered in
+   *  mountLeetCodeWidget. Underscore prefix signals internal-only by
+   *  convention (mirrors _setChildDirty). */
+  _setChildComposing(value: boolean): void {
+    this._childComposing = value;
   }
 
   /** Phase 20 Plan 20-02 (ACTION-02 reactivity) — per-widget metadataCache
@@ -1664,6 +1692,47 @@ export function mountLeetCodeWidget(
       try {
         view.dom.removeEventListener('mousedown', stopProp);
         view.dom.removeEventListener('mousedown', focus);
+      } catch {
+        /* swallow — view already torn down */
+      }
+    });
+  }
+
+  // Phase 22 Wave 3 C6c — IME composition listeners on contentDOM.
+  //
+  // Why contentDOM, not view.dom: the IME pipeline targets the actual
+  // contenteditable element, which CM6 anchors at view.contentDOM
+  // (.cm-content). view.dom is the wrapper (.cm-editor). Listeners on
+  // view.dom would NOT see compositionstart fired by the IME — only ones
+  // bubbled from contentDOM, which is fine in current Chromium but
+  // brittle (the bubble path could be cancelled by a focus change
+  // during compose). Anchor directly on contentDOM.
+  //
+  // Read-only mounts skip — no editable cursor means no composition. The
+  // mount factory currently runs this block unconditionally (mirroring
+  // the mousedown block), then the read-only short-circuit in the
+  // child-write path keeps it from gating anything that matters. We
+  // still gate here so the listener doesn't dangle on mounts that can't
+  // legitimately compose.
+  if (!readOnly && view.contentDOM) {
+    const onCompStart = (): void => {
+      ctl._setChildComposing(true);
+    };
+    const onCompEnd = (): void => {
+      ctl._setChildComposing(false);
+      // The compose-end produces a normal docChange on the next tick
+      // (the user's accepted candidate inserted bytes the writer hasn't
+      // seen yet). C6a's updateListener-bound docChanged hook will catch
+      // that transaction and set _childDirty=true; the existing writer
+      // debounce will fire and persist. C6c's job ends here — we just
+      // hand off cleanly.
+    };
+    view.contentDOM.addEventListener('compositionstart', onCompStart);
+    view.contentDOM.addEventListener('compositionend', onCompEnd);
+    ctl.destroyHooks.push(() => {
+      try {
+        view.contentDOM.removeEventListener('compositionstart', onCompStart);
+        view.contentDOM.removeEventListener('compositionend', onCompEnd);
       } catch {
         /* swallow — view already torn down */
       }
