@@ -306,27 +306,33 @@ describe('applyAuthoritativeBodyAndFrontmatter', () => {
     expect(peer.acknowledgeAuthoritativeBody).not.toHaveBeenCalled();
   });
 
-  it('(7) re-arms suppression before processFrontMatter so the fm-write modify is consumed (Pitfall 37)', async () => {
-    // Regression: the body-flush in step (3) consumes the first arm. The
-    // fm-write in step (4) fires a SECOND modify event with the SAME fence-
-    // body hash (frontmatter changed, body unchanged). Without a second arm,
-    // the modify-handler treats the fm-write as external and trips the
-    // ConflictModal. This test pins the re-arm contract.
-    const widget = makeFakeWidget();
+  it('(7) pre-updates currentDocHash on originator + peers so both modify events hit Pitfall P2 absorption (Pitfall 37)', async () => {
+    // Regression: the helper fires TWO modify events (body-flush + fm-
+    // rewrite). The suppression map only holds one entry per path — whichever
+    // modify lands second falls through to branch (d) → ConflictModal.
+    // The fix sets currentDocHash on every widget BEFORE the writes start so
+    // BOTH modify events hit the modify-handler's Pitfall P2 early-return
+    // (currentDocHash === observedHash → absorb as self-write). The fence
+    // body is unchanged across both writes (only frontmatter mutates), so
+    // both events observe the same hash and both early-return.
+    const widget = makeFakeWidget() as FakeWidget & { currentDocHash: string };
+    widget.currentDocHash = 'STALE_HASH';
+    const peer = makeFakeWidget({ registryKey: 'LeetCode/two-sum.md::0::leaf-B' }) as
+      FakeWidget & { currentDocHash: string };
+    peer.currentDocHash = 'STALE_HASH';
+
     const app = makeFakeApp();
     const suppression = new SelfWriteSuppression();
 
     const callOrder: string[] = [];
-    const armSpy = vi.fn((path: string, hash: string, key?: string) => {
-      callOrder.push(`arm:${path}:${hash.slice(0, 8)}:${key ?? '-'}`);
-    });
-    suppression.arm = armSpy as unknown as typeof suppression.arm;
-
+    widget.dispatchAuthoritativeBodySwap = vi.fn(() => {
+      callOrder.push(`dispatch:hash=${widget.currentDocHash}`);
+    }) as unknown as AnyMockFn;
     widget.flushNow = vi.fn(async () => {
-      callOrder.push('flushNow');
+      callOrder.push(`flushNow:hash=${widget.currentDocHash}`);
     }) as unknown as AnyMockFn;
     app.fileManager.processFrontMatter = vi.fn(async (_f, fn) => {
-      callOrder.push('processFrontMatter');
+      callOrder.push(`processFrontMatter:hash=${widget.currentDocHash}`);
       fn({});
     }) as unknown as AnyMockFn;
 
@@ -336,7 +342,7 @@ describe('applyAuthoritativeBodyAndFrontmatter', () => {
         file: FILE as unknown as Parameters<typeof applyAuthoritativeBodyAndFrontmatter>[0]['file'],
         suppression,
         widget: widget as unknown as WidgetController,
-        peers: [],
+        peers: [peer as unknown as WidgetController],
       },
       'NEW',
       'java',
@@ -345,29 +351,17 @@ describe('applyAuthoritativeBodyAndFrontmatter', () => {
       },
     );
 
-    // Two arms total: one before dispatch, one before processFrontMatter.
-    expect(armSpy).toHaveBeenCalledTimes(2);
-
-    // Both arms carry the SAME hash (the fence body is unchanged across the
-    // fm-only second write — only the frontmatter mutates).
     const expectedHash = await sha1('NEW');
-    expect(armSpy.mock.calls[0]![1]).toBe(expectedHash);
-    expect(armSpy.mock.calls[1]![1]).toBe(expectedHash);
 
-    // Both arms carry the originator's registryKey.
-    expect(armSpy.mock.calls[0]![2]).toBe(widget.registryKey);
-    expect(armSpy.mock.calls[1]![2]).toBe(widget.registryKey);
+    // currentDocHash is updated to expectedHash on BOTH originator and peer
+    // before any write runs.
+    expect(widget.currentDocHash).toBe(expectedHash);
+    expect(peer.currentDocHash).toBe(expectedHash);
 
-    // Strict ordering: the second arm fires AFTER flushNow but BEFORE
-    // processFrontMatter so the fm-write's modify echo lands inside the
-    // suppression TTL window.
-    const flushIdx = callOrder.indexOf('flushNow');
-    const fmIdx = callOrder.indexOf('processFrontMatter');
-    const arms = callOrder
-      .map((s, i) => (s.startsWith('arm:') ? i : -1))
-      .filter((i) => i !== -1);
-    expect(arms.length).toBe(2);
-    expect(arms[1]).toBeGreaterThan(flushIdx);
-    expect(arms[1]).toBeLessThan(fmIdx);
+    // Every step that runs after the pre-update sees the new hash — proving
+    // the update lands BEFORE dispatch + flushNow + processFrontMatter.
+    expect(callOrder[0]).toBe(`dispatch:hash=${expectedHash}`);
+    expect(callOrder[1]).toBe(`flushNow:hash=${expectedHash}`);
+    expect(callOrder[2]).toBe(`processFrontMatter:hash=${expectedHash}`);
   });
 });
