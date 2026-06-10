@@ -45,9 +45,16 @@ interface SuppressionEntry {
   originatingRegistryKey?: string;
 }
 
+/**
+ * Self-write echo suppression TTL in milliseconds. The companion safety timer
+ * in WidgetController (WIDGET_DIRTY_SAFETY_TTL_MS) MUST equal this — see
+ * WidgetController._rearmSafetyTimer for the invariant rationale.
+ */
+export const SELF_WRITE_SUPPRESSION_TTL_MS = 2000;
+
 export class SelfWriteSuppression {
   private readonly map = new Map<string, SuppressionEntry>();
-  private readonly TTL_MS = 2000;
+  private readonly TTL_MS = SELF_WRITE_SUPPRESSION_TTL_MS;
 
   /** Arm a per-path entry. Subsequent tryConsume calls with the matching
    *  hash will return 'consumed' (self-write); calls past the 2s TTL return

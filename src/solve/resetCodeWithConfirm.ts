@@ -18,6 +18,9 @@
 import type { App, TFile } from 'obsidian';
 import type { DetailCacheEntry } from '../settings/SettingsStore';
 import { forceInjectCodeSection } from './starterCodeInjector';
+// Audit C2 — applyAuthoritativeBody arms SelfWriteSuppression before vault.process.
+import { applyAuthoritativeBody } from '../widget/applyAuthoritativeBody';
+import type { SelfWriteSuppression } from '../widget/selfWriteSuppression';
 
 /**
  * Phase 17 D-03 helper — slice the fence body out of a full-note string.
@@ -142,6 +145,23 @@ export interface ResetCodeWithConfirmDeps {
   resolveActiveLangSlug?: (file: TFile) => string | undefined;
 
   /**
+   * Audit C2 — optional SelfWriteSuppression instance. When supplied, the
+   * vault.process fallback path (no child dispatch handle) arms suppression
+   * BEFORE vault.process so the resulting modify event is recognized as a
+   * self-write. The widget does NOT run reloadFromDisk('silent'), eliminating
+   * the TOCTOU window between modal close and vault.process completion.
+   *
+   * Omitting this field preserves the legacy vault.process-only path verbatim —
+   * all existing unit tests that pass `app as never` without suppression continue
+   * to work unchanged.
+   *
+   * Note: the child-dispatch branch (when `getDispatchHandle` returns a handle)
+   * dispatches directly to the child CM6 view and does NOT go through
+   * vault.process — no arming needed on that path.
+   */
+  suppression?: SelfWriteSuppression;
+
+  /**
    * Phase 20 Plan 20-10 (gap-closure T10 — DATA CORRUPTION) — fence-kind seam.
    * Returns the existing fence's kind by scanning the note's text on disk
    * (NOT by consulting the active view, which is the silent-bail anti-pattern
@@ -220,8 +240,13 @@ export async function resetCodeWithConfirm(
     // Phase 17 D-04 — vault.process fallback for the no-child path (note not
     // open in a MarkdownView). The reopen path will rebuild the child from
     // disk content.
-    await deps.app.vault.process(deps.file, (body) =>
-      forceInjectCodeSection(body, injectOpts),
+    //
+    // Audit C2 — use applyAuthoritativeBody so suppression is armed BEFORE
+    // vault.process when a v1.3 fence is present. The child-dispatch branch
+    // above does NOT go through vault.process, so no arming is needed there.
+    await applyAuthoritativeBody(
+      { app: deps.app, file: deps.file, suppression: deps.suppression },
+      (body) => forceInjectCodeSection(body, injectOpts),
     );
   }
 

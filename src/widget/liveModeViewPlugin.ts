@@ -136,27 +136,16 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
       file?: { path?: string };
       view?: EditorView;
       writer?: { hasPending?: () => boolean };
-      syncHandle?: { hasPending?: () => boolean; flushSync?: () => void };
+      childDirty?: boolean;
     };
     if (candidate.file?.path !== file.path) continue;
     const childView = candidate.view;
     if (!childView) continue;
 
     // BL-05 (review-fix) — active-typing gate. Skip the parent→child
-    // push when the widget's debounced disk writer has a pending flush.
-    if (candidate.writer?.hasPending?.() === true) continue;
-
-    // Rollback-prevention gate (debug session
-    // vim-cursor-jumps-to-widget-start follow-up). When the child→parent
-    // sync has a pending flush, the child holds typing the parent has
-    // not yet absorbed. Pushing the current parent body into the child
-    // would discard those un-synced characters. Skip the push — the
-    // child is the source of truth during the 300ms debounce window;
-    // the next child→parent flush will bring them back into sync. We
-    // cannot run flushSync() synchronously here because pushParentToChild
-    // executes inside the parent's ViewPlugin.update() and CM6 throws on
-    // re-entrant view.dispatch() during an update.
-    if (candidate.syncHandle?.hasPending?.() === true) continue;
+    // push when the widget is dirty (debounced flush pending OR recently
+    // flushed within 200ms — Phase 22 Wave 2 C5 childDirty accessor).
+    if (candidate.childDirty === true) continue;
 
     // No-op when child already matches parent.
     const childDoc = childView.state.doc.toString();
@@ -168,11 +157,7 @@ function pushParentToChild(view: EditorView, plugin: PluginHost): void {
     // has reset pending=false in its finally block but Obsidian has
     // not yet fired vault.on('modify'); during that window the
     // writer.hasPending() gate above (BL-05) returns false and we fall
-    // through. The syncHandle.hasPending() gate is dead in production
-    // because mountLeetCodeWidget passes undefined for syncExtension,
-    // so candidate.syncHandle is permanently undefined and the gate
-    // at line 159 short-circuits to true (the optional-chain returns
-    // undefined which !== true). Both child→parent guards fail open.
+    // through.
     //
     // If the child is a strict superset of the parent body — i.e.,
     // child = parent + a small trailing run of just-typed chars —

@@ -11,6 +11,8 @@ import { describe, it, expect } from 'vitest';
 import { makeMockVaultApp } from '../helpers/mock-vault';
 // Target — does not exist until Wave 2 ships it.
 import { copyToCode } from '../../src/graph/copyToCode';
+import { SelfWriteSuppression } from '../../src/widget/selfWriteSuppression';
+import { sha1 } from '../../src/widget/debouncedWriter';
 
 describe('copyToCode (GRAPH-01 revised)', () => {
   it('overwrites ## Code fenced block via vault.process', async () => {
@@ -97,5 +99,64 @@ describe('copyToCode (GRAPH-01 revised)', () => {
     // G-COPY-TO-CODE-LANG-DRIFT: lc-language updated to java.
     expect(m.spies.processFrontMatter).toHaveBeenCalledTimes(1);
     expect(m.getFrontmatter('LeetCode/1-two-sum.md')?.['lc-language']).toBe('java');
+  });
+});
+
+// =============================================================================
+// Audit C2 — SelfWriteSuppression arming in copyToCode.
+//
+// copyToCode previously wrote the fence body via vault.process without arming
+// SelfWriteSuppression. The modify echo was treated as external and the widget
+// ran reloadFromDisk('silent'), opening a TOCTOU window. The 5th optional param
+// `suppression` closes the window: the armed hash matches the post-write fence
+// body so tryConsume returns 'consumed'.
+// =============================================================================
+describe('copyToCode — Audit C2 SelfWriteSuppression arming', () => {
+  it('arms SelfWriteSuppression for v1.3 fence writes; tryConsume returns consumed', async () => {
+    const initial =
+      '---\nlc-id: 1\nlc-slug: two-sum\nlc-language: python3\n---\n\n## Code\n```leetcode-solve\nOLD\n```\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    const suppression = new SelfWriteSuppression();
+
+    await copyToCode(m.app as never, file as never, 'class Solution {}', 'java', suppression);
+
+    // Suppression armed (size === 1 before TTL drains).
+    expect(suppression.size).toBe(1);
+
+    // The armed hash matches the post-write fence body.
+    const postWriteBody = m.getContent('LeetCode/1-two-sum.md')!;
+    const fenceBodyMatch = postWriteBody.match(/```leetcode-solve\n([\s\S]*?)\n```/);
+    const fenceBody = fenceBodyMatch?.[1] ?? '';
+    const expectedHash = await sha1(fenceBody);
+    expect(suppression.tryConsume('LeetCode/1-two-sum.md', expectedHash)).toBe('consumed');
+  });
+
+  it('does NOT arm suppression for legacy (non-leetcode-solve) fence', async () => {
+    const initial =
+      '---\nlc-id: 1\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD\n```\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    const suppression = new SelfWriteSuppression();
+
+    await copyToCode(m.app as never, file as never, 'class Solution {}', 'java', suppression);
+
+    // vault.process ran (write still happens).
+    expect(m.spies.process).toHaveBeenCalledTimes(1);
+    // No arming for legacy fence.
+    expect(suppression.size).toBe(0);
+  });
+
+  it('omitting suppression (5th arg absent) still writes correctly — back-compat', async () => {
+    const initial =
+      '---\nlc-id: 1\nlc-slug: two-sum\n---\n\n## Code\n```leetcode-solve\nOLD\n```\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+
+    // 4-arg call — existing tests / callers that don't supply suppression.
+    await copyToCode(m.app as never, file as never, 'class Solution {}', 'java');
+
+    expect(m.spies.process).toHaveBeenCalledTimes(1);
+    expect(m.getContent('LeetCode/1-two-sum.md')).toContain('class Solution {}');
   });
 });

@@ -73,7 +73,7 @@ import { obsidianSemanticClasses } from '../main/childEditorSemanticClasses';
 import { computeFenceIndex } from './fenceLocator';
 import { DebouncedWriter, sha1 } from './debouncedWriter';
 import { extractFenceBody } from './fenceSerialization';
-import type { SelfWriteSuppression } from './selfWriteSuppression';
+import { SELF_WRITE_SUPPRESSION_TTL_MS, type SelfWriteSuppression } from './selfWriteSuppression';
 import type { StatePersistenceMap } from './statePersistence';
 import { readVimModeFromVault } from './vimMode';
 import { isEmbedContext } from './embedDetect';
@@ -199,6 +199,15 @@ function generateLeafId(): string {
 }
 
 /**
+ * @invariant MUST equal SelfWriteSuppression.TTL_MS — the safety timer is the
+ * fallback for the case where the echo handshake never drains _childDirty
+ * (PITFALLS Pitfall 27 — byte-identical writes); if the safety TTL is shorter
+ * than the suppression TTL, a slow modify event arriving inside the suppression
+ * window would find _childDirty already false and incorrectly route as external.
+ */
+export const WIDGET_DIRTY_SAFETY_TTL_MS = SELF_WRITE_SUPPRESSION_TTL_MS;
+
+/**
  * Lightweight controller wrapping the embedded EditorView. Plan 19-02
  * binds an optional `writer` (DebouncedWriter) — when present, flushNow
  * proxies to writer.forceFlush; otherwise it's a no-op (test fixtures /
@@ -245,11 +254,6 @@ export class WidgetController {
    *  layout-change events that don't actually flip vim mode don't dispatch
    *  redundant Compartment.reconfigure to every widget). */
   public mountedVimMode: boolean;
-
-  /** Phase 20 Plan 20-09 (amended) — debounced child→parent sync handle.
-   *  Exposes `flushSync()` for imperative callers (flush-on-unload,
-   *  flush-on-leaf-change, Cmd-Q) and `cancel()` for teardown. */
-  public syncHandle?: import('./childParentSync').ChildParentSyncHandle;
 
   /** Phase 20 Plan 20-02 (ACTION-01) — action row mounted inside the widget
    *  container as a sibling of `.cm-editor`. Set by `mountLeetCodeWidget`
@@ -311,6 +315,155 @@ export class WidgetController {
    *  construction and updated on every successful local write. */
   public currentDocHash: string = '';
 
+  /** Phase 22 Wave 3 C6c — IME composition guard. Set TRUE on the
+   *  contentDOM `compositionstart` DOM event; cleared on `compositionend`.
+   *  Composes into `childDirty` so the writer-mid-flight gate stays held
+   *  for the entire IME candidate-menu window (Pinyin / Kanji typing
+   *  produces NO docChanged updates between compositionstart and
+   *  compositionend, so the C6a updateListener-set `_childDirty` bit and
+   *  the C6d safety timer would both fail to keep the widget gated
+   *  during a 3–5 s composition. The composing flag closes that gap).
+   *
+   *  Browsers (Chromium, Electron) ALWAYS fire compositionend even on
+   *  blur-mid-compose / Escape-cancel-compose / focus-loss — empirically
+   *  verified in W3C UI Events spec §5.3.4 and the Chromium source
+   *  (third_party/blink/renderer/core/events/composition_event.cc). We
+   *  therefore do NOT defensively reset the flag on blur; the
+   *  compositionend listener is the single source of truth for
+   *  `false` transitions. */
+  private _childComposing = false;
+
+  /** Phase 22 Wave 3 C6a — stored flag set TRUE by the CM6 updateListener
+   *  wired in buildExtensions (editable branch only) on every user-driven
+   *  docChange (transaction NOT carrying a 'leetcode.*' userEvent — i.e.,
+   *  excludes peer-sync/reload/parent-sync echoes). Cleared by
+   *  markChildClean() called from the main.ts modify-handler when
+   *  selfWriteSuppression.tryConsume returns 'consumed' (the canonical
+   *  echo handshake — confirms the writer's flush has fully round-tripped
+   *  through Obsidian's modify event). Initialized to false on construction;
+   *  read-only widgets never get the listener wired in so the field stays
+   *  false for their lifetime, matching pre-Wave-3 behavior.
+   *
+   *  The accessor ORs the stored field with hasPending() so callsites get
+   *  defense-in-depth (writer-in-flight OR user-typed-since-last-clean).
+   *  recentlyFlushed(200) was removed (C8) — _childDirty covers that window
+   *  because markChildDirty fires on every keystroke and stays true until
+   *  markChildClean confirms the echo round-trip.
+   */
+  private _childDirty: boolean = false;
+
+  /** Phase 22 Wave 3 C6d — handle for the sliding-window safety timer that
+   *  force-clears `_childDirty` after WIDGET_DIRTY_SAFETY_TTL_MS of typing
+   *  idle. Re-armed on every keystroke (markChildDirty) so continuous typing
+   *  past 2s does NOT clear the bit. Nulled by markChildClean (echo arrived)
+   *  and destroy (teardown). */
+  private _safetyTimer: number | null = null;
+
+  get childDirty(): boolean {
+    // Phase 22 Wave 3 C6c — IME composition guard FIRST (cheapest read).
+    if (this._childComposing) return true;
+    if (this._childDirty) return true;
+    if (this.writer?.hasPending() === true) return true;
+    return false;
+  }
+
+  /** Phase 22 Wave 3 C6b — clear the stored childDirty flag IFF the LIVE
+   *  child fence body still matches the snapshot the writer flushed.
+   *
+   *  Race window guarded:
+   *    1. DebouncedWriter.flush() captures getDoc() at t0.
+   *    2. await vault.process(...) — may take 50-300ms under desktop load.
+   *    3. User types one or more characters during the await.
+   *    4. vault.on('modify') fires; main.ts handler computes observedHash =
+   *       sha1(extractFenceBody(disk, fenceIndex)) — this is t0's body, NOT
+   *       the live child doc.
+   *    5. tryConsume returns 'consumed' (snapshot hash match). Without this
+   *       live-hash-compare, naive markChildClean() would clear the dirty
+   *       bit; the very next external modify (or reload-silent path that
+   *       observes !childDirty) would full-doc-replace the live child,
+   *       erasing the chars typed in step 3.
+   *
+   *  Returns true when the dirty override was cleared (live === snapshot,
+   *  no intervening typing), false when kept dirty (live drifted past
+   *  snapshot; the next flush echo will get a fresh chance to clear).
+   *
+   *  Async because sha1 uses SubtleCrypto. Callers in main.ts are already
+   *  inside an async modify handler so awaiting is non-disruptive.
+   *
+   *  Called from main.ts modify-handler ONLY on consumeResult === 'consumed'
+   *  (the canonical self-write echo). MUST NOT be called on 'stale'/'miss' —
+   *  those branches indicate the modify is NOT our echo. */
+  async markChildClean(observedHash: string): Promise<boolean> {
+    let liveHash: string;
+    try {
+      liveHash = await sha1(this.view.state.doc.toString());
+    } catch {
+      // Defensive — view may be in teardown. Treat as drift (do not clear)
+      // so the next echo gets a chance to clear cleanly.
+      return false;
+    }
+    if (liveHash !== observedHash) {
+      // Live child has typed past the snapshot. Keep the dirty bit set; the
+      // next flush (which will pick up the new chars) will produce a fresh
+      // echo whose observedHash matches the new live state, and THAT echo's
+      // markChildClean call will succeed.
+      return false;
+    }
+    // Match — safe to clear.
+    this._childDirty = false;
+    // Phase 22 Wave 3 C6d — cancel the pending safety timer. The echo arrived
+    // cleanly; there is no need for the timer to fire. Cancelling here prevents
+    // a late-fire that would clear _childDirty after a subsequent fresh
+    // markChildDirty() call (i.e., user types again after the echo).
+    if (this._safetyTimer !== null) {
+      window.clearTimeout(this._safetyTimer);
+      this._safetyTimer = null;
+    }
+    return true;
+  }
+
+  /** Phase 22 Wave 3 C6a — internal setter used by the buildExtensions
+   *  updateListener to flip childDirty on user-typed docChange. NOT for
+   *  external callers — use markChildClean() to clear and let the listener
+   *  set it. Underscore prefix signals internal-only by convention. */
+  _setChildDirty(value: boolean): void {
+    this._childDirty = value;
+  }
+
+  /** Phase 22 Wave 3 C6d — re-arm the sliding-window safety timer. Cancels
+   *  any existing pending handle and schedules a fresh setTimeout. Called by
+   *  markChildDirty on every user keystroke so continuous typing never
+   *  prematurely clears the dirty bit; only a full WIDGET_DIRTY_SAFETY_TTL_MS
+   *  of idle after the last keystroke triggers the auto-clear. */
+  private _rearmSafetyTimer(): void {
+    if (this._safetyTimer !== null) {
+      window.clearTimeout(this._safetyTimer);
+    }
+    this._safetyTimer = window.setTimeout(() => {
+      this._childDirty = false;
+      this._safetyTimer = null;
+    }, WIDGET_DIRTY_SAFETY_TTL_MS);
+  }
+
+  /** Phase 22 Wave 3 C6d — set `_childDirty = true` and re-arm the sliding-
+   *  window safety timer. Called by the childDirtyExtension updateListener on
+   *  every user-driven docChange (non-plugin-echo). The safety timer ensures
+   *  `_childDirty` always converges to false within ≤TTL of the last
+   *  keystroke, even when the echo handshake never fires (byte-identical
+   *  write — PITFALLS Pitfall 27). */
+  markChildDirty(): void {
+    this._childDirty = true;
+    this._rearmSafetyTimer();
+  }
+
+  /** Phase 22 Wave 3 C6c — internal setter used by the contentDOM
+   *  compositionstart / compositionend listeners registered in
+   *  mountLeetCodeWidget. Underscore prefix signals internal-only by
+   *  convention (mirrors _setChildDirty). */
+  _setChildComposing(value: boolean): void {
+    this._childComposing = value;
+  }
+
   /** Phase 20 Plan 20-02 (ACTION-02 reactivity) — per-widget metadataCache
    *  subscription EventRef. Stored so destroy() can offref it cleanly. The
    *  subscription dispatches `languageCompartment.reconfigure(...)` on every
@@ -367,7 +520,6 @@ export class WidgetController {
    *  forceFlush Promise when a writer is attached; otherwise resolves
    *  immediately. Called from WidgetRegistry.flushAll, onunload, etc. */
   flushNow(): Promise<void> {
-    this.syncHandle?.flushSync();
     if (this.writer) return this.writer.forceFlush();
     return Promise.resolve();
   }
@@ -389,8 +541,15 @@ export class WidgetController {
         // Defensive — capture is best-effort.
       }
     }
+    // Phase 22 Wave 3 C6d — clear safety timer BEFORE writer.cancel and
+    // view.destroy so a teardown-time docChanged from CM6's own internal flush
+    // cannot re-arm a timer on a half-destroyed controller.
+    if (this._safetyTimer !== null) {
+      window.clearTimeout(this._safetyTimer);
+      this._safetyTimer = null;
+    }
+    this._childDirty = false;
     this.writer?.cancel();
-    this.syncHandle?.cancel();
     // Phase 20 Plan 20-02 — drop per-widget metadataCache subscription.
     // The `app.metadataCache.offref` API mirrors the workspace.offref shape;
     // the structural type for `plugin.app.metadataCache` doesn't declare it,
@@ -697,7 +856,7 @@ export class WidgetController {
       this.view.dispatch({
         changes: { from: 0, to: this.view.state.doc.length, insert: newBody },
         selection: EditorSelection.cursor(restoredHead),
-        annotations: [Transaction.addToHistory.of(false)],
+        annotations: [Transaction.userEvent.of('leetcode.reload'), Transaction.addToHistory.of(false)],
       });
     } catch {
       // Defensive — view may be in teardown.
@@ -1182,6 +1341,11 @@ function buildExtensions(
    *  mode-class ViewPlugin toggles `.lc-vim-insert` on this element so CSS
    *  can show only the cursor layer matching the current vim mode. */
   modeClassContainer?: HTMLElement,
+  /** Phase 22 Wave 3 C6a — childDirty arming listener. Pre-built by
+   *  mountLeetCodeWidget and passed in (mirrors syncExtension pattern).
+   *  Read-only mounts pass undefined — _childDirty stays false for their
+   *  lifetime, matching pre-Wave-3 behavior. */
+  childDirtyExtension?: Extension,
 ): Extension[] {
   const indent = plugin.lcSettings.getIndentSizeOverride();
 
@@ -1362,6 +1526,14 @@ function buildExtensions(
   if (!readOnly && syncExtension) {
     exts.push(syncExtension);
   }
+  // 12b. Phase 22 Wave 3 C6a — childDirty arming listener. Pre-built by
+  //      mountLeetCodeWidget (mirrors syncExtension pattern). Closes over
+  //      `ctl` so the listener resolves the live controller at fire-time.
+  //      Read-only mounts pass undefined — _childDirty stays false for
+  //      their lifetime, matching pre-Wave-3 behavior.
+  if (!readOnly && childDirtyExtension) {
+    exts.push(childDirtyExtension);
+  }
   return exts;
 }
 
@@ -1476,6 +1648,27 @@ export function mountLeetCodeWidget(
   const vimCompartment = new Compartment();
   const vimEnabled = !readOnly && readVimModeFromVault(plugin as unknown as Parameters<typeof readVimModeFromVault>[0]);
 
+  // Phase 22 Wave 3 C6a — childDirty arming listener. Mirrors the
+  // syncExtension pattern (built outside buildExtensions, passed in as
+  // an Extension). Closes over `ctl` so the listener resolves the live
+  // controller at fire-time — same pattern as onDocChanged (line above).
+  // Read-only mounts skip — childDirty stays false (matches pre-Wave-3
+  // behavior). Plugin-dispatched echoes are filtered by inspecting
+  // Transaction.userEvent for the 'leetcode.' prefix (peer-sync,
+  // reload, parent-sync all carry that prefix — same convention as
+  // liveModeViewPlugin.ts:97-98).
+  const childDirtyExtension: Extension | undefined = readOnly
+    ? undefined
+    : EditorView.updateListener.of((update: ViewUpdate) => {
+        if (!update.docChanged) return;
+        const isPluginEcho = update.transactions.some((tr) => {
+          const ev = tr.annotation(Transaction.userEvent);
+          return typeof ev === 'string' && ev.startsWith('leetcode.');
+        });
+        if (isPluginEcho) return;
+        if (ctl) ctl.markChildDirty();
+      });
+
   const state = EditorState.create({
     doc: source,
     extensions: buildExtensions(
@@ -1487,6 +1680,7 @@ export function mountLeetCodeWidget(
       onDocChanged,
       undefined,
       container,
+      childDirtyExtension,
     ),
   });
 
@@ -1558,6 +1752,47 @@ export function mountLeetCodeWidget(
       try {
         view.dom.removeEventListener('mousedown', stopProp);
         view.dom.removeEventListener('mousedown', focus);
+      } catch {
+        /* swallow — view already torn down */
+      }
+    });
+  }
+
+  // Phase 22 Wave 3 C6c — IME composition listeners on contentDOM.
+  //
+  // Why contentDOM, not view.dom: the IME pipeline targets the actual
+  // contenteditable element, which CM6 anchors at view.contentDOM
+  // (.cm-content). view.dom is the wrapper (.cm-editor). Listeners on
+  // view.dom would NOT see compositionstart fired by the IME — only ones
+  // bubbled from contentDOM, which is fine in current Chromium but
+  // brittle (the bubble path could be cancelled by a focus change
+  // during compose). Anchor directly on contentDOM.
+  //
+  // Read-only mounts skip — no editable cursor means no composition. The
+  // mount factory currently runs this block unconditionally (mirroring
+  // the mousedown block), then the read-only short-circuit in the
+  // child-write path keeps it from gating anything that matters. We
+  // still gate here so the listener doesn't dangle on mounts that can't
+  // legitimately compose.
+  if (!readOnly && view.contentDOM) {
+    const onCompStart = (): void => {
+      ctl._setChildComposing(true);
+    };
+    const onCompEnd = (): void => {
+      ctl._setChildComposing(false);
+      // The compose-end produces a normal docChange on the next tick
+      // (the user's accepted candidate inserted bytes the writer hasn't
+      // seen yet). C6a's updateListener-bound docChanged hook will catch
+      // that transaction and set _childDirty=true; the existing writer
+      // debounce will fire and persist. C6c's job ends here — we just
+      // hand off cleanly.
+    };
+    view.contentDOM.addEventListener('compositionstart', onCompStart);
+    view.contentDOM.addEventListener('compositionend', onCompEnd);
+    ctl.destroyHooks.push(() => {
+      try {
+        view.contentDOM.removeEventListener('compositionstart', onCompStart);
+        view.contentDOM.removeEventListener('compositionend', onCompEnd);
       } catch {
         /* swallow — view already torn down */
       }

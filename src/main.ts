@@ -1374,6 +1374,16 @@ export default class LeetCodePlugin extends Plugin {
             `[lc-debug] modify:after-consume path=${file.path} observedHash=${observedHash} outcome=${consumeResult} ts=${Date.now()}`,
           );
 
+          // Phase 22 Wave 3 C6a — clear childDirty on confirmed self-write echo.
+          // The 'consumed' outcome means selfWriteSuppression matched our writer's
+          // flush hash, so the writer's flushed bytes have fully round-tripped
+          // through Obsidian's modify event — the user's last typing burst is
+          // safely on disk. Clear childDirty on EVERY editable widget for the
+          // file (multi-pane: peer panes share the same flush, so all are clean).
+          // 'stale'/'miss' do NOT clear — those indicate the modify is NOT our
+          // echo (external edit or stale suppression entry), so the user's typing
+          // is still un-flushed and childDirty must remain TRUE to gate the
+          // conflict modal at branch (d).
           // Plan 21-17 — peer-sync fan-out routing. The pure helper
           // returns the per-controller decision; we invoke the
           // corresponding method below. External edits (consumeResult !==
@@ -1397,8 +1407,15 @@ export default class LeetCodePlugin extends Plugin {
             logger.debug(
               `[lc-debug] modify:branch=single-pane-consumed path=${file.path} reason=self-write-echo-no-peers`,
             );
-            // Self-write echo with no peer to fan out to. Silent return —
-            // existing single-pane behavior is byte-identical.
+            // C6b — clear the originator's dirty flag, but only if the live
+            // child doc still matches the snapshot we just consumed. If the
+            // user typed past the snapshot during vault.process, leave the
+            // dirty bit set — the next flush will pick up the new chars and
+            // produce a fresh echo that clears it cleanly.
+            const cleared = await firstMatch.markChildClean(observedHash);
+            logger.debug(
+              `[lc-debug] modify:markChildClean path=${file.path} branch=single-pane-consumed cleared=${cleared}`,
+            );
             return;
           }
 
@@ -1421,6 +1438,19 @@ export default class LeetCodePlugin extends Plugin {
                 peer.applyPeerSync(observedBody);
               } catch {
                 // Defensive — peer view may be in teardown.
+              }
+            }
+            // C6b — clear the originator's dirty flag (live-hash gated).
+            // originatingRegistryKey is captured BEFORE tryConsume drops
+            // the suppression entry. Peers don't get cleared — they didn't
+            // write; their dirty bits reflect their own typing state.
+            if (originatingRegistryKey) {
+              const originator = byKey.get(originatingRegistryKey);
+              if (originator) {
+                const cleared = await originator.markChildClean(observedHash);
+                logger.debug(
+                  `[lc-debug] modify:markChildClean path=${file.path} branch=peer-fan-out originatorRegistryKey=${originatingRegistryKey} cleared=${cleared}`,
+                );
               }
             }
             return;
@@ -1455,21 +1485,22 @@ export default class LeetCodePlugin extends Plugin {
           // races the writer's `pending = false` reset against
           // Obsidian's vault.on('modify') macrotask: when modify wins,
           // observedBody (post-flush disk content) is a strict prefix
-          // of childDoc (live + 1-2 chars typed AFTER the flush snapshot)
-          // and the writer's recentlyFlushed(200) is true. Without this
-          // gate, the modify event falls through to reloadFromDisk
-          // ('silent') which full-doc-replaces the live child with the
-          // stale disk body, dropping the just-typed chars and clamping
-          // the cursor onto a now-shorter line — the cursor-jump and
-          // char-rollback symptoms primitive.
+          // of childDoc (live + 1-2 chars typed AFTER the flush snapshot).
+          // Without this gate, the modify event falls through to
+          // reloadFromDisk('silent') which full-doc-replaces the live
+          // child with the stale disk body, dropping the just-typed chars
+          // and clamping the cursor onto a now-shorter line.
           //
-          // Optional-chain `recentlyFlushed?.(200)` keeps legacy mounts
-          // without the new method from crashing; `=== true` rejects
-          // both `undefined` (method missing) and `false` (idle writer).
+          // childDirty covers the flush-window via the stored _childDirty
+          // boolean (set on every user keystroke; cleared only when
+          // markChildClean confirms echo round-trip) PLUS hasPending()
+          // (C8: recentlyFlushed(200) removed — _childDirty absorbs it).
+          // The superset/≤8-char heuristic stays here — it needs
+          // callsite-specific parent/child bodies the accessor lacks.
           if (
             childDoc.startsWith(observedBody) &&
             childDoc.length - observedBody.length <= 8 &&
-            firstMatch.writer?.recentlyFlushed?.(200) === true
+            firstMatch.childDirty
           ) {
             logger.debug(
               `[lc-debug] modify:branch=typing-during-own-flush path=${file.path} reason=child-is-superset-of-disk-within-flush-window delta=${childDoc.length - observedBody.length}`,
@@ -1490,7 +1521,7 @@ export default class LeetCodePlugin extends Plugin {
           // open on every divergence. The legacy hasPending() gate
           // is collapsed into "always show modal" because the user
           // typing IS the parent doc state.
-          const hasPending = firstMatch.writer?.hasPending() === true;
+          const hasPending = firstMatch.childDirty;
           if (!hasPending) {
             // BRAT issue #2 diagnostic instrumentation — log silent reload
             // (idle external edit fell through suppression). This is the
@@ -3059,7 +3090,7 @@ export default class LeetCodePlugin extends Plugin {
         return;
       }
       const { copyToCode } = await import('./graph/copyToCode');
-      await copyToCode(this.app, file, detail.code, detail.lang.name);
+      await copyToCode(this.app, file, detail.code, detail.lang.name, this.selfWriteSuppression);
       // `## Code` is wrapped in backticks so the sentence-case rule treats
       // the literal section heading as code-fenced (matches the existing
       // 'No `## Code` block found.' Notices elsewhere in this file).
@@ -3993,6 +4024,7 @@ export default class LeetCodePlugin extends Plugin {
       file,
       slug,
       settings: this.lcSettings,
+      suppression: this.selfWriteSuppression,
       confirm: () =>
         new Promise<boolean>((resolve) => {
           void import('./graph/ConfirmOverwriteModal').then(

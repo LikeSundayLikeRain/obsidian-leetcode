@@ -23,6 +23,8 @@ import { resetCodeWithConfirm } from '../../src/solve/resetCodeWithConfirm';
 import type { DetailCacheEntry } from '../../src/settings/SettingsStore';
 import fs from 'node:fs';
 import path from 'node:path';
+import { SelfWriteSuppression } from '../../src/widget/selfWriteSuppression';
+import { sha1 } from '../../src/widget/debouncedWriter';
 
 const REPO_ROOT = process.cwd();
 
@@ -308,6 +310,116 @@ describe('resetCodeWithConfirm — fenceKind seam (Plan 20-10 T10)', () => {
     const body = m.getContent('LeetCode/1-two-sum.md')!;
     // Body unchanged — no starter graft on a malformed fence.
     expect(body).toBe(initial);
+  });
+});
+
+// =============================================================================
+// Audit C2 — SelfWriteSuppression arming in resetCodeWithConfirm.
+//
+// The vault.process fallback (no child dispatch handle) previously wrote without
+// arming suppression. The new `suppression` dep field wires applyAuthoritativeBody
+// so the modify echo is consumed as a self-write.
+// =============================================================================
+describe('resetCodeWithConfirm — Audit C2 SelfWriteSuppression arming', () => {
+  it('arms SelfWriteSuppression when suppression dep is supplied and note has v1.3 fence', async () => {
+    const initial =
+      '---\nlc-slug: two-sum\nlc-language: python3\n---\n\n## Code\n```leetcode-solve\nOLD_CODE\n```\n\n## Notes\nfoo\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    const suppression = new SelfWriteSuppression();
+    const settings = makeSettings(
+      { codeSnippets: [{ lang: 'Python3', langSlug: 'python3', code: 'class S: pass' }] },
+      'python3',
+    );
+
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm: vi.fn(async () => true),
+      notify: vi.fn(),
+      suppression,
+      resolveActiveLangSlug: () => 'python3',
+      resolveFenceKind: async (f: never) => {
+        const text = await m.app.vault.read(f as never);
+        return text.includes('```leetcode-solve') ? 'leetcode-solve' : 'legacy';
+      },
+    } as never);
+
+    // Suppression was armed.
+    expect(suppression.size).toBe(1);
+
+    // The armed hash matches the post-write fence body.
+    const postWriteBody = m.getContent('LeetCode/1-two-sum.md')!;
+    const fenceBodyMatch = postWriteBody.match(/```leetcode-solve\n([\s\S]*?)\n```/);
+    const fenceBody = fenceBodyMatch?.[1] ?? '';
+    const expectedHash = await sha1(fenceBody);
+    expect(suppression.tryConsume('LeetCode/1-two-sum.md', expectedHash)).toBe('consumed');
+  });
+
+  it('does NOT arm when getDispatchHandle (child-dispatch) is supplied — child path skips vault.process', async () => {
+    const initial =
+      '---\nlc-slug: two-sum\nlc-language: python3\n---\n\n## Code\n```leetcode-solve\nOLD_CODE\n```\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    const suppression = new SelfWriteSuppression();
+    const settings = makeSettings(
+      { codeSnippets: [{ lang: 'Python3', langSlug: 'python3', code: 'class S: pass' }] },
+      'python3',
+    );
+
+    // Child dispatch handle provided → child path, not vault.process.
+    const replaceFullBody = vi.fn();
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm: vi.fn(async () => true),
+      notify: vi.fn(),
+      suppression,
+      resolveActiveLangSlug: () => 'python3',
+      resolveFenceKind: async (f: never) => {
+        const text = await m.app.vault.read(f as never);
+        return text.includes('```leetcode-solve') ? 'leetcode-solve' : 'legacy';
+      },
+      getDispatchHandle: () => ({ replaceFullBody }),
+    } as never);
+
+    // Child dispatch ran.
+    expect(replaceFullBody).toHaveBeenCalledTimes(1);
+    // vault.process was NOT called (child path bypasses it).
+    expect(m.spies.process).not.toHaveBeenCalled();
+    // Suppression NOT armed on the child-dispatch path.
+    expect(suppression.size).toBe(0);
+  });
+
+  it('does NOT arm suppression for legacy fence (no leetcode-solve opener)', async () => {
+    const initial =
+      '---\nlc-slug: two-sum\n---\n\n## Code\n```python3\nOLD_CODE\n```\n';
+    const m = makeMockVaultApp({ 'LeetCode/1-two-sum.md': initial });
+    const file = m.app.vault.getAbstractFileByPath('LeetCode/1-two-sum.md')!;
+    const suppression = new SelfWriteSuppression();
+    const settings = makeSettings(
+      { codeSnippets: [{ lang: 'Python3', langSlug: 'python3', code: 'class S: pass' }] },
+      'python3',
+    );
+
+    await resetCodeWithConfirm({
+      app: m.app as never,
+      file: file as never,
+      slug: 'two-sum',
+      settings,
+      confirm: vi.fn(async () => true),
+      notify: vi.fn(),
+      suppression,
+    } as never);
+
+    // vault.process ran (write still happened).
+    expect(m.spies.process).toHaveBeenCalledTimes(1);
+    // No arming for legacy fence.
+    expect(suppression.size).toBe(0);
   });
 });
 
