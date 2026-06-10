@@ -246,11 +246,6 @@ export class WidgetController {
    *  redundant Compartment.reconfigure to every widget). */
   public mountedVimMode: boolean;
 
-  /** Phase 20 Plan 20-09 (amended) — debounced child→parent sync handle.
-   *  Exposes `flushSync()` for imperative callers (flush-on-unload,
-   *  flush-on-leaf-change, Cmd-Q) and `cancel()` for teardown. */
-  public syncHandle?: import('./childParentSync').ChildParentSyncHandle;
-
   /** Phase 20 Plan 20-02 (ACTION-01) — action row mounted inside the widget
    *  container as a sibling of `.cm-editor`. Set by `mountLeetCodeWidget`
    *  AFTER controller construction when `!isEmbedContext(...)`. Used by
@@ -367,7 +362,6 @@ export class WidgetController {
    *  forceFlush Promise when a writer is attached; otherwise resolves
    *  immediately. Called from WidgetRegistry.flushAll, onunload, etc. */
   flushNow(): Promise<void> {
-    this.syncHandle?.flushSync();
     if (this.writer) return this.writer.forceFlush();
     return Promise.resolve();
   }
@@ -390,7 +384,6 @@ export class WidgetController {
       }
     }
     this.writer?.cancel();
-    this.syncHandle?.cancel();
     // Phase 20 Plan 20-02 — drop per-widget metadataCache subscription.
     // The `app.metadataCache.offref` API mirrors the workspace.offref shape;
     // the structural type for `plugin.app.metadataCache` doesn't declare it,
