@@ -1485,18 +1485,18 @@ export default class LeetCodePlugin extends Plugin {
           // races the writer's `pending = false` reset against
           // Obsidian's vault.on('modify') macrotask: when modify wins,
           // observedBody (post-flush disk content) is a strict prefix
-          // of childDoc (live + 1-2 chars typed AFTER the flush snapshot)
-          // and the writer's recentlyFlushed(200) is true. Without this
-          // gate, the modify event falls through to reloadFromDisk
-          // ('silent') which full-doc-replaces the live child with the
-          // stale disk body, dropping the just-typed chars and clamping
-          // the cursor onto a now-shorter line — the cursor-jump and
-          // char-rollback symptoms primitive.
+          // of childDoc (live + 1-2 chars typed AFTER the flush snapshot).
+          // Without this gate, the modify event falls through to
+          // reloadFromDisk('silent') which full-doc-replaces the live
+          // child with the stale disk body, dropping the just-typed chars
+          // and clamping the cursor onto a now-shorter line.
           //
-          // childDirty unions hasPending() and recentlyFlushed(200) behind
-          // a single named gate (Phase 22 Wave 2 C5). The superset/≤8-char
-          // heuristic stays here — it needs callsite-specific parent/child
-          // bodies that the accessor doesn't have.
+          // childDirty covers the flush-window via the stored _childDirty
+          // boolean (set on every user keystroke; cleared only when
+          // markChildClean confirms echo round-trip) PLUS hasPending()
+          // (C8: recentlyFlushed(200) removed — _childDirty absorbs it).
+          // The superset/≤8-char heuristic stays here — it needs
+          // callsite-specific parent/child bodies the accessor lacks.
           if (
             childDoc.startsWith(observedBody) &&
             childDoc.length - observedBody.length <= 8 &&

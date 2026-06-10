@@ -344,9 +344,11 @@ export class WidgetController {
    *  read-only widgets never get the listener wired in so the field stays
    *  false for their lifetime, matching pre-Wave-3 behavior.
    *
-   *  Wave 2 derived semantics retained: the accessor ORs the stored field
-   *  with hasPending()+recentlyFlushed(200) so legacy callsites keep their
-   *  defense-in-depth gate (writer-in-flight OR user-typed-since-last-clean).
+   *  The accessor ORs the stored field with hasPending() so callsites get
+   *  defense-in-depth (writer-in-flight OR user-typed-since-last-clean).
+   *  recentlyFlushed(200) was removed (C8) — _childDirty covers that window
+   *  because markChildDirty fires on every keystroke and stays true until
+   *  markChildClean confirms the echo round-trip.
    */
   private _childDirty: boolean = false;
 
@@ -362,7 +364,6 @@ export class WidgetController {
     if (this._childComposing) return true;
     if (this._childDirty) return true;
     if (this.writer?.hasPending() === true) return true;
-    if (this.writer?.recentlyFlushed?.(200) === true) return true;
     return false;
   }
 
