@@ -838,6 +838,119 @@ If redesign is required: the fix is straightforward — after `vault.process` re
 
 ---
 
+### Pitfall 28: Snapshot-vs-Live Hash — childDirty Cleared by Stale Content (Wave 3 Lens 1)
+
+**What goes wrong:**
+The original `markChildClean` implementation computed the suppression hash at arm time (from the string passed to `vault.process`) and stored it. When the modify event arrived, it compared the hash against the cached snapshot. If the file changed between the time the arm was set and the time the modify event fired (e.g., a sync write, a frontmatter update, or a concurrent flush from another pane), the hashes diverged — `tryConsume` returned `'mismatch'` instead of `'consumed'` — and `childDirty` was never cleared. The widget remained in "child is mid-typing" state indefinitely, causing the safety timer to re-arm and potentially blocking the next debounce flush for the full TTL window.
+
+**The deeper problem:**
+The arm hash is a snapshot of what was written. The live hash must be computed from the actual file content at the moment the modify event arrives. Any write between arm and modify event — even a benign frontmatter touch — produces a snapshot/live mismatch. The bug was latent in high-sync-activity vaults and on multi-pane edits.
+
+**The fix (`markChildClean` live-hash compare):**
+`markChildClean` now re-reads the file at the time the modify event arrives and computes the hash from the current on-disk content, NOT from the arm-time snapshot. If the current content matches what was written (byte-for-byte), `childDirty` is cleared. If it doesn't match (because a concurrent write landed), the entry remains pending until either the correct modify event arrives or the 2-second TTL expires. This makes suppression robust to any interleaving of writes.
+
+```typescript
+// Before (snapshot-based — fragile):
+arm(path: string, writtenContent: string) {
+  this.pending.set(path, { hash: sha256(writtenContent), expiresAt: Date.now() + TTL_MS });
+}
+tryConsume(path: string, fileContent: string): 'consumed' | 'mismatch' | 'expired' | 'unknown' {
+  const entry = this.pending.get(path);
+  if (!entry) return 'unknown';
+  if (Date.now() > entry.expiresAt) { this.pending.delete(path); return 'expired'; }
+  if (sha256(fileContent) === entry.hash) { this.pending.delete(path); return 'consumed'; }
+  return 'mismatch';
+}
+
+// After (live-hash-compare — robust):
+// arm() is unchanged.
+// tryConsume() receives the LIVE file content (from vault.read) at modify-event time.
+// Comparison is live content vs arm-time written content — both must agree.
+```
+
+**Regression test:**
+`tests/widget/selfWriteSuppression.test.ts` — "concurrent frontmatter write does not permanently block childDirty drain" — verifies that a second modify event with matching content eventually clears `childDirty` even when the first modify event arrived with non-matching content due to a concurrent write.
+
+**Warning signs:**
+- `markChildClean` reads the hash from anything other than the live file content at event time
+- No test for "arm, then unrelated write, then correct write — verify consumed on second event"
+- `childDirty` stuck on after a sync push that touched frontmatter
+
+**Phase to address:** Wave 3 (childDirty + live-hash design).
+
+---
+
+### Pitfall 29: IME Composition Window — Candidate Menu Open While Debounce Fires
+
+**What goes wrong:**
+CJK (Chinese, Japanese, Korean) users type via an Input Method Editor (IME). When the user opens the candidate-selection menu, `compositionstart` fires on the widget's CM6 `EditorView`. The debounce timer is still running. If the debounce fires during the 3–5 second window when the candidate menu is open, `vault.process` rewrites the fence body with the pre-composition text — the partial preedit string or an empty buffer. When the user selects a candidate, CM6 commits the composition as a new transaction on top of the already-flushed (pre-composition) content. The result is duplicated or garbled text: the committed character appears twice (once in the flushed version, once in the new transaction), or the preedit placeholder is baked in as literal characters.
+
+**Why it happens:**
+The debounce fires on a wall-clock schedule, indifferent to IME state. There is no built-in CM6 guard that pauses the debounce during composition. The parent CM6 document change events still arrive during composition (each keystroke in the preedit phase produces a transaction), so the debounce timer keeps resetting — but eventually it fires if the user pauses on the candidate selection screen for longer than the debounce interval (300–500 ms is shorter than a typical candidate-selection pause of 1–3 s on second thoughts).
+
+**The fix (compositionstart hold):**
+The widget listens for `compositionstart` on the child CM6's DOM element and sets an `isComposing` flag. The debounce flush function checks this flag before writing: if `isComposing` is true, it reschedules itself (adds another debounce interval) instead of flushing. When `compositionend` fires, `isComposing` is cleared and the next debounce tick proceeds to flush — capturing the fully-committed composition.
+
+```typescript
+childView.dom.addEventListener('compositionstart', () => { this.isComposing = true; });
+childView.dom.addEventListener('compositionend',   () => { this.isComposing = false; this.scheduleDebouncedFlush(); });
+
+// In scheduleDebouncedFlush():
+if (this.isComposing) {
+  // Hold: reschedule instead of flushing
+  this.debounceTimer = window.setTimeout(() => this.scheduleDebouncedFlush(), DEBOUNCE_MS);
+  return;
+}
+// ... proceed with vault.process
+```
+
+**The 3–5 second candidate-menu window:**
+The hold extends the effective debounce window by as long as the candidate menu is open. For a user who types a Pinyin syllable (compositionstart), browses candidates for 4 seconds, and selects — the flush is held for 4+ seconds before proceeding. This is intentional and correct. The user's edits are in the widget's CM6 state (persistent, not lost); the flush merely waits for commitment.
+
+**Warning signs:**
+- No `isComposing` flag or `compositionstart`/`compositionend` listeners on the child CM6 DOM
+- Debounce timer uses a simple `setTimeout` with no IME guard
+- No test with a simulated composition sequence (compositionstart → input → compositionend → verify single flush after end)
+- CJK-language user reports doubled characters after candidate selection
+
+**Phase to address:** Wave 3 / Phase 01 (Foundation: debounce layer). IME support must be in the same commit as the debounce implementation — it cannot be retrofitted without risk of data corruption for CJK users.
+
+---
+
+### Pitfall 30: Sliding-Window TTL — Safety Timer Re-Arms on Every docChange
+
+**What goes wrong:**
+The safety timer is intended as a "flush even if the debounce never fires" backstop for `childDirty`. A naive implementation sets the safety timer once when `childDirty` is first set, then cancels it when the dirty flag clears. This has two failure modes:
+
+1. **Timer fires too early:** user types continuously for 2 seconds; the safety timer fires at 2 seconds from first dirty-set; the flush lands mid-typing while the debounce hasn't fired yet. For CJK users with an open candidate menu, this breaks the IME hold (vault.process fires even though `isComposing` is true — if the safety timer bypasses the IME guard).
+
+2. **Timer fires too late (leaked entry):** if `childDirty` is cleared by the echo-drain path but the safety timer reference is not cancelled, the timer fires later and calls the drain callback on an already-cleared entry. Depending on implementation, this is a no-op or produces a spurious log entry; in the worst case it triggers a second flush for content that has already been synced, generating an unnecessary modify event which in turn re-triggers the suppression machinery.
+
+**The fix (re-arm on every docChange):**
+The safety timer is not a one-shot after first dirty. Instead it re-arms on every CM6 `docChange` transaction in the child editor: each time the document content changes, the timer is reset to `SelfWriteSuppression.TTL_MS` (2 seconds) from that change. This creates a sliding window: the timer always fires at most 2 seconds after the LAST edit, never mid-burst. If the user stops typing for 2 seconds, the safety timer fires — guaranteeing a flush even if the debounce was somehow suppressed (e.g., focus left the widget before debounce resolved, or the IME hold extended past the debounce window).
+
+```typescript
+// In the CM6 ViewPlugin update() method:
+if (update.docChanged) {
+  this.controller.markChildDirty();         // sets childDirty = true
+  this.controller.armSafetyTimer();         // clears existing timer, sets new one for TTL_MS
+  this.controller.scheduleDebouncedFlush(); // normal debounce path (shorter window)
+}
+```
+
+**Hard-link to SelfWriteSuppression.TTL_MS:**
+The safety timer interval MUST equal `SelfWriteSuppression.TTL_MS` (currently 2000 ms). Using a different constant would break the invariant that the safety timer fires within the suppression entry's lifetime — if the safety timer fires after the suppression entry expires, the resulting vault.process write will be misclassified as an external edit and trigger a widget reload. The constant is imported from `SelfWriteSuppression` directly; do not copy-paste the number.
+
+**Warning signs:**
+- Safety timer is set once at `childDirty = true` and never re-armed
+- Safety timer interval is a magic number (e.g., `2000`) instead of `SelfWriteSuppression.TTL_MS`
+- No test for "type for 3 seconds, debounce suppressed, verify safety timer flushes after last keystroke + TTL_MS"
+- Safety timer re-arms even when there is no docChange (e.g., cursor movement) — causes unnecessary flushes
+
+**Phase to address:** Wave 3 (childDirty + safety timer design).
+
+---
+
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
@@ -962,6 +1075,7 @@ If redesign is required: the fix is straightforward — after `vault.process` re
 - [ ] **Plugin review:** Bundle size CI gate (no regression vs. v1.2)
 - [ ] **Plugin review:** Migration documented in README with backup location
 - [ ] **Byte-identical-write probe:** `vault.on('modify')` fires for `vault.process` writes whose new bytes equal pre-write bytes — verified manually in a real dev-vault before Wave 3 ships (run `OBSIDIAN_DEV_VAULT_PROBE=1 vitest tests/widget/byteIdenticalModifyProbe.probe.test.ts` in a live Obsidian dev-vault session; record result in PITFALLS.md Pitfall 27)
+- [ ] **childDirty gate:** `childDirty` is the canonical typing-in-flight gate; if you find yourself adding a new heuristic to detect "is the child mid-typing", check whether `childDirty` already covers your case before introducing a second flag
 
 ---
 
