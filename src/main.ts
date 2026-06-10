@@ -1384,14 +1384,6 @@ export default class LeetCodePlugin extends Plugin {
           // echo (external edit or stale suppression entry), so the user's typing
           // is still un-flushed and childDirty must remain TRUE to gate the
           // conflict modal at branch (d).
-          if (consumeResult === 'consumed') {
-            for (const c of allMatching) {
-              if (!c.readOnly && !c.isEmbed) {
-                c.markChildClean();
-              }
-            }
-          }
-
           // Plan 21-17 — peer-sync fan-out routing. The pure helper
           // returns the per-controller decision; we invoke the
           // corresponding method below. External edits (consumeResult !==
@@ -1415,8 +1407,15 @@ export default class LeetCodePlugin extends Plugin {
             logger.debug(
               `[lc-debug] modify:branch=single-pane-consumed path=${file.path} reason=self-write-echo-no-peers`,
             );
-            // Self-write echo with no peer to fan out to. Silent return —
-            // existing single-pane behavior is byte-identical.
+            // C6b — clear the originator's dirty flag, but only if the live
+            // child doc still matches the snapshot we just consumed. If the
+            // user typed past the snapshot during vault.process, leave the
+            // dirty bit set — the next flush will pick up the new chars and
+            // produce a fresh echo that clears it cleanly.
+            const cleared = await firstMatch.markChildClean(observedHash);
+            logger.debug(
+              `[lc-debug] modify:markChildClean path=${file.path} branch=single-pane-consumed cleared=${cleared}`,
+            );
             return;
           }
 
@@ -1439,6 +1438,19 @@ export default class LeetCodePlugin extends Plugin {
                 peer.applyPeerSync(observedBody);
               } catch {
                 // Defensive — peer view may be in teardown.
+              }
+            }
+            // C6b — clear the originator's dirty flag (live-hash gated).
+            // originatingRegistryKey is captured BEFORE tryConsume drops
+            // the suppression entry. Peers don't get cleared — they didn't
+            // write; their dirty bits reflect their own typing state.
+            if (originatingRegistryKey) {
+              const originator = byKey.get(originatingRegistryKey);
+              if (originator) {
+                const cleared = await originator.markChildClean(observedHash);
+                logger.debug(
+                  `[lc-debug] modify:markChildClean path=${file.path} branch=peer-fan-out originatorRegistryKey=${originatingRegistryKey} cleared=${cleared}`,
+                );
               }
             }
             return;

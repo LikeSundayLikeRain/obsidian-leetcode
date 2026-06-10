@@ -329,15 +329,51 @@ export class WidgetController {
     return false;
   }
 
-  /** Phase 22 Wave 3 C6a — clear the stored childDirty flag. Called from
-   *  main.ts modify-handler ONLY on consumeResult === 'consumed' (the
-   *  canonical self-write echo). MUST NOT be called on 'stale'/'miss' —
-   *  those branches indicate the modify event is NOT our echo, so the
-   *  user's typing has not yet been confirmed-flushed.
+  /** Phase 22 Wave 3 C6b — clear the stored childDirty flag IFF the LIVE
+   *  child fence body still matches the snapshot the writer flushed.
    *
-   *  Idempotent — safe to call multiple times; second+ call is a no-op. */
-  markChildClean(): void {
+   *  Race window guarded:
+   *    1. DebouncedWriter.flush() captures getDoc() at t0.
+   *    2. await vault.process(...) — may take 50-300ms under desktop load.
+   *    3. User types one or more characters during the await.
+   *    4. vault.on('modify') fires; main.ts handler computes observedHash =
+   *       sha1(extractFenceBody(disk, fenceIndex)) — this is t0's body, NOT
+   *       the live child doc.
+   *    5. tryConsume returns 'consumed' (snapshot hash match). Without this
+   *       live-hash-compare, naive markChildClean() would clear the dirty
+   *       bit; the very next external modify (or reload-silent path that
+   *       observes !childDirty) would full-doc-replace the live child,
+   *       erasing the chars typed in step 3.
+   *
+   *  Returns true when the dirty override was cleared (live === snapshot,
+   *  no intervening typing), false when kept dirty (live drifted past
+   *  snapshot; the next flush echo will get a fresh chance to clear).
+   *
+   *  Async because sha1 uses SubtleCrypto. Callers in main.ts are already
+   *  inside an async modify handler so awaiting is non-disruptive.
+   *
+   *  Called from main.ts modify-handler ONLY on consumeResult === 'consumed'
+   *  (the canonical self-write echo). MUST NOT be called on 'stale'/'miss' —
+   *  those branches indicate the modify is NOT our echo. */
+  async markChildClean(observedHash: string): Promise<boolean> {
+    let liveHash: string;
+    try {
+      liveHash = await sha1(this.view.state.doc.toString());
+    } catch {
+      // Defensive — view may be in teardown. Treat as drift (do not clear)
+      // so the next echo gets a chance to clear cleanly.
+      return false;
+    }
+    if (liveHash !== observedHash) {
+      // Live child has typed past the snapshot. Keep the dirty bit set; the
+      // next flush (which will pick up the new chars) will produce a fresh
+      // echo whose observedHash matches the new live state, and THAT echo's
+      // markChildClean call will succeed.
+      return false;
+    }
+    // Match — safe to clear.
     this._childDirty = false;
+    return true;
   }
 
   /** Phase 22 Wave 3 C6a — internal setter used by the buildExtensions
