@@ -247,6 +247,10 @@ export class LeetCodeSettingTab extends PluginSettingTab {
             v === '8' ? 8 :
             'auto';
           await this.plugin.lcSettings.setIndentSizeOverride(val);
+          // Live-apply: fan out to every mounted widget so the new
+          // indent unit takes effect without needing to reopen notes.
+          // Mirrors the `applyDelay` pattern used by 'Save delay' below.
+          this.plugin.widgetRegistry?.applyIndentReconfigure(val);
         }),
       );
 

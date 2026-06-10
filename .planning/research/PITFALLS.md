@@ -1111,6 +1111,34 @@ This catches the "user typed, deleted everything, body now matches starter again
 
 ---
 
+### Pitfall 37: Top-Level `indentUnit.of(...)` Shadows the Language-Compartment Facet
+
+**What goes wrong:**
+The widget's child editor wraps language-specific extensions inside a `languageCompartment.of(buildLanguageExtensions(slug, override))`. That payload supplies the per-language `indentUnit.of(...)` (4 spaces for Python/Java/C++/Rust, 2 for JS/TS, `\t` for Go, with the user's `indentSizeOverride` setting threading through `effectiveIndent`). If the extensions array also contains a top-level `indentUnit.of('    ')` somewhere AFTER the compartment, that bare facet wins because CM6 facets resolve in extension order — the compartment's per-language facet gets overridden by a hardcoded constant. Symptoms: auto-indent on Enter always emits 4 spaces regardless of language or setting; the indent-size dropdown appears wired but produces no observable change.
+
+A second related trap is `@codemirror/commands`' `insertTab`: it dispatches a literal `"\t"` regardless of the indentUnit facet. Combining a hardcoded `indentUnit.of('    ')` (auto-indent emits spaces) with `insertTab` (Tab key emits `"\t"`) produces "mixed tabs and spaces in the same buffer" — the textbook symptom that surfaced this pitfall in the wild.
+
+**Why it happens:**
+The hardcoded `indentUnit.of('    ')` looks defensive — "ensure SOME indent unit is always set" — but the compartment ALREADY sets one. CM6 has no warning when two `indentUnit.of(...)` facets are present in the same state; the second one silently wins. Code authors who only test one language (typically Python, where 4 spaces happens to match the hardcoded value) never see the bug.
+
+**The fix:**
+- Delete the top-level `indentUnit.of('    ')`. Trust the compartment payload; `buildLanguageExtensions(slug, override)` is the single source of truth for the indent unit.
+- Replace `insertTab(target)` in the empty-selection Tab handler with a manual `view.dispatch(view.state.update(view.state.replaceSelection(view.state.facet(indentUnit)), { scrollIntoView: true, userEvent: 'input' }))`. Same dispatch shape as canonical `insertTab` but with the facet-resolved unit instead of a hardcoded `"\t"`. Tab and Enter (auto-indent) now consult the same facet, so they cannot diverge.
+- Live-apply changes via a `WidgetRegistry.applyXxxReconfigure(value)` fan-out modeled on `applyDelay` / `reconfigureVim` — pure-effects `Compartment.reconfigure` with no `changes` field, so SelfWriteSuppression is not involved.
+
+**Reference:** `src/widget/WidgetController.ts` (Tab keymap handler + extension assembly), `src/main/childEditorLanguage.ts:effectiveIndent` and `buildLanguageExtensions`, `src/widget/widgetRegistry.ts:applyIndentReconfigure`.
+
+**Warning signs:**
+- More than one `indentUnit.of(...)` in the editor's extension tree (grep `indentUnit.of` across `src/widget/` and `src/main/childEditor*`)
+- The Tab-key handler comment claims "inserts N spaces" but uses `insertTab` from `@codemirror/commands`
+- Per-language indent settings appear configured but produce no behavior change in JS/TS (the canary — they default to 2 spaces in `auto`, while the hardcoded shadow is 4)
+- Mixed tabs and spaces in the same fence body that the user did not paste
+- Test coverage for indent unit lives only at the `effectiveIndent` pure-function level, not at the EditorView/keymap level (so a shadowing facet wouldn't surface)
+
+**Phase to address:** Phase 22 follow-up (post-store-submit polish). The hardcoded `indentUnit.of('    ')` survived Phase 16 (where the compartment was introduced) because Python's per-language default coincidentally matches; it surfaced via dogfood when JS/TS users hit `auto` and saw 4-space indents.
+
+---
+
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |

@@ -51,7 +51,6 @@ import {
   historyKeymap,
   indentMore,
   indentLess,
-  insertTab,
 } from '@codemirror/commands';
 import { closeBracketsKeymap } from '@codemirror/autocomplete';
 
@@ -1055,6 +1054,42 @@ export class WidgetController {
   }
 
   /**
+   * Live reconfigure of the indent unit when the user changes
+   * `indentSizeOverride` in Settings. Mirrors `reconfigureVim` /
+   * `cssRetheme` — pure-effects dispatch (no `changes`), so no
+   * SelfWriteSuppression arming is needed and the modify-handler will not
+   * see a vault echo. The widget's EditorView has no section-protection
+   * extension, so no `userEvent` annotation is required.
+   *
+   * Re-reads the widget's current slug from frontmatter (D-06: Go is always
+   * `\t` regardless of override) and fans the new (slug, override) pair
+   * through `buildLanguageExtensions` so the languageCompartment payload's
+   * `indentUnit.of(...)` element is replaced. CM6 preserves cursor + scroll
+   * + undo through Compartment.reconfigure.
+   *
+   * Called from the plugin-side fan-out in `WidgetRegistry.applyIndentReconfigure`.
+   * Idempotent — calling with the current setting re-issues the same
+   * effects with no observable change.
+   */
+  reconfigureIndent(override: 'auto' | 2 | 4 | 8): void {
+    if (!this.view) return;
+    try {
+      this.view.dispatch({
+        effects: languageCompartment.reconfigure(
+          buildLanguageExtensions(this.currentSlug, override),
+        ),
+      });
+    } catch (err) {
+      // Defensive — view may be in teardown when settings change.
+      logger.debug('WidgetController.reconfigureIndent: dispatch failed', {
+        file: this.file.path,
+        registryKey: this.registryKey,
+        err,
+      });
+    }
+  }
+
+  /**
    * Phase 20 Plan 20-04 (multi-pane "Take over" affordance) — flip the widget
    * between `'active'` (editable, no overlay) and `'peer'` (greyed-out
    * overlay + "Click to take over" CTA per UI-SPEC §3).
@@ -1558,16 +1593,23 @@ function buildExtensions(
     ...(modeClassContainer
       ? [createVimModeClassExtension(modeClassContainer)]
       : []),
-    // Plan 20-10 hotfix part 7 — Tab/Shift-Tab handler. Behavior:
+    // Tab/Shift-Tab handler. Behavior:
     //   - When vim is active and NOT in Insert mode (Normal/Visual/etc.),
-    //     return false so the keystroke falls through to vim's own
-    //     bindings — preserves native vim Tab semantics.
+    //     return false so the keystroke falls through to vim's own bindings.
     //   - When there is a non-empty selection, indent (Tab) or outdent
-    //     (Shift-Tab) every line touched by the selection.
-    //   - When the selection is empty, insert a Tab (4 spaces, since
-    //     `indentUnit.of('    ')` is configured below) at the cursor —
-    //     does NOT shift the rest of the line, so Tab in the middle of a
-    //     line behaves like a normal text editor.
+    //     (Shift-Tab) every line touched by the selection via indentMore /
+    //     indentLess — both read the live `indentUnit` facet, which the
+    //     languageCompartment payload supplies via `buildLanguageExtensions`
+    //     (so per-language defaults and the user's `indentSizeOverride`
+    //     setting flow through automatically).
+    //   - When the selection is empty, insert ONE indent unit at the cursor.
+    //     We dispatch a manual replaceSelection rather than calling
+    //     @codemirror/commands' `insertTab` because `insertTab` always
+    //     inserts a literal "\t" (see commands/dist/index.js) — that would
+    //     conflict with auto-indent (which uses the indentUnit facet) and
+    //     produce mixed tabs+spaces in the same buffer. Reading
+    //     `state.facet(indentUnit)` keeps Tab consistent with Enter, with
+    //     selection-Tab, and with the user's setting.
     // Registered FIRST so it wins over Obsidian's default Tab traversal.
     keymap.of([
       {
@@ -1580,9 +1622,16 @@ function buildExtensions(
           // ships its own pinned @codemirror/state in node_modules, so its
           // EditorView and ours have separate declarations of a private
           // SelectionRange.flags field. Runtime types are identical.
-          const target = view as unknown as Parameters<typeof insertTab>[0];
+          const target = view as unknown as Parameters<typeof indentMore>[0];
           if (!sel.empty) return indentMore(target);
-          return insertTab(target);
+          const unit = view.state.facet(indentUnit);
+          view.dispatch(
+            view.state.update(view.state.replaceSelection(unit), {
+              scrollIntoView: true,
+              userEvent: 'input',
+            }),
+          );
+          return true;
         },
       },
       {
@@ -1601,7 +1650,6 @@ function buildExtensions(
     drawSelection(),
     highlightActiveLine(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
-    indentUnit.of('    '),
   ];
   // 11. Plan 19-02 / 20-09 — currentDocHash refresh listener. Editable
   //     widgets call onDocChanged on every doc change to keep the
