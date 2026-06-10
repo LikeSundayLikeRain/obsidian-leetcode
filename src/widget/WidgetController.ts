@@ -73,7 +73,7 @@ import { obsidianSemanticClasses } from '../main/childEditorSemanticClasses';
 import { computeFenceIndex } from './fenceLocator';
 import { DebouncedWriter, sha1 } from './debouncedWriter';
 import { extractFenceBody } from './fenceSerialization';
-import type { SelfWriteSuppression } from './selfWriteSuppression';
+import { SELF_WRITE_SUPPRESSION_TTL_MS, type SelfWriteSuppression } from './selfWriteSuppression';
 import type { StatePersistenceMap } from './statePersistence';
 import { readVimModeFromVault } from './vimMode';
 import { isEmbedContext } from './embedDetect';
@@ -197,6 +197,15 @@ function generateLeafId(): string {
   // happy-dom fallback — sufficient uniqueness for test envs.
   return `lc-leaf-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
 }
+
+/**
+ * @invariant MUST equal SelfWriteSuppression.TTL_MS — the safety timer is the
+ * fallback for the case where the echo handshake never drains _childDirty
+ * (PITFALLS Pitfall 27 — byte-identical writes); if the safety TTL is shorter
+ * than the suppression TTL, a slow modify event arriving inside the suppression
+ * window would find _childDirty already false and incorrectly route as external.
+ */
+export const WIDGET_DIRTY_SAFETY_TTL_MS = SELF_WRITE_SUPPRESSION_TTL_MS;
 
 /**
  * Lightweight controller wrapping the embedded EditorView. Plan 19-02
@@ -340,6 +349,14 @@ export class WidgetController {
    *  defense-in-depth gate (writer-in-flight OR user-typed-since-last-clean).
    */
   private _childDirty: boolean = false;
+
+  /** Phase 22 Wave 3 C6d — handle for the sliding-window safety timer that
+   *  force-clears `_childDirty` after WIDGET_DIRTY_SAFETY_TTL_MS of typing
+   *  idle. Re-armed on every keystroke (markChildDirty) so continuous typing
+   *  past 2s does NOT clear the bit. Nulled by markChildClean (echo arrived)
+   *  and destroy (teardown). */
+  private _safetyTimer: number | null = null;
+
   get childDirty(): boolean {
     // Phase 22 Wave 3 C6c — IME composition guard FIRST (cheapest read).
     if (this._childComposing) return true;
@@ -393,6 +410,14 @@ export class WidgetController {
     }
     // Match — safe to clear.
     this._childDirty = false;
+    // Phase 22 Wave 3 C6d — cancel the pending safety timer. The echo arrived
+    // cleanly; there is no need for the timer to fire. Cancelling here prevents
+    // a late-fire that would clear _childDirty after a subsequent fresh
+    // markChildDirty() call (i.e., user types again after the echo).
+    if (this._safetyTimer !== null) {
+      window.clearTimeout(this._safetyTimer);
+      this._safetyTimer = null;
+    }
     return true;
   }
 
@@ -402,6 +427,32 @@ export class WidgetController {
    *  set it. Underscore prefix signals internal-only by convention. */
   _setChildDirty(value: boolean): void {
     this._childDirty = value;
+  }
+
+  /** Phase 22 Wave 3 C6d — re-arm the sliding-window safety timer. Cancels
+   *  any existing pending handle and schedules a fresh setTimeout. Called by
+   *  markChildDirty on every user keystroke so continuous typing never
+   *  prematurely clears the dirty bit; only a full WIDGET_DIRTY_SAFETY_TTL_MS
+   *  of idle after the last keystroke triggers the auto-clear. */
+  private _rearmSafetyTimer(): void {
+    if (this._safetyTimer !== null) {
+      window.clearTimeout(this._safetyTimer);
+    }
+    this._safetyTimer = window.setTimeout(() => {
+      this._childDirty = false;
+      this._safetyTimer = null;
+    }, WIDGET_DIRTY_SAFETY_TTL_MS);
+  }
+
+  /** Phase 22 Wave 3 C6d — set `_childDirty = true` and re-arm the sliding-
+   *  window safety timer. Called by the childDirtyExtension updateListener on
+   *  every user-driven docChange (non-plugin-echo). The safety timer ensures
+   *  `_childDirty` always converges to false within ≤TTL of the last
+   *  keystroke, even when the echo handshake never fires (byte-identical
+   *  write — PITFALLS Pitfall 27). */
+  markChildDirty(): void {
+    this._childDirty = true;
+    this._rearmSafetyTimer();
   }
 
   /** Phase 22 Wave 3 C6c — internal setter used by the contentDOM
@@ -489,6 +540,14 @@ export class WidgetController {
         // Defensive — capture is best-effort.
       }
     }
+    // Phase 22 Wave 3 C6d — clear safety timer BEFORE writer.cancel and
+    // view.destroy so a teardown-time docChanged from CM6's own internal flush
+    // cannot re-arm a timer on a half-destroyed controller.
+    if (this._safetyTimer !== null) {
+      window.clearTimeout(this._safetyTimer);
+      this._safetyTimer = null;
+    }
+    this._childDirty = false;
     this.writer?.cancel();
     // Phase 20 Plan 20-02 — drop per-widget metadataCache subscription.
     // The `app.metadataCache.offref` API mirrors the workspace.offref shape;
@@ -1606,7 +1665,7 @@ export function mountLeetCodeWidget(
           return typeof ev === 'string' && ev.startsWith('leetcode.');
         });
         if (isPluginEcho) return;
-        if (ctl) ctl._setChildDirty(true);
+        if (ctl) ctl.markChildDirty();
       });
 
   const state = EditorState.create({
