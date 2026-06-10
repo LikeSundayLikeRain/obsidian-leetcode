@@ -40,7 +40,6 @@ import { extractFenceBody, rewriteFenceBody } from './fenceSerialization';
 import { countLeetCodeSolveFenceOpeners } from './fenceLocator';
 import { sha1 } from './debouncedWriter';
 import type { WidgetController } from './WidgetController';
-import { logger } from '../shared/logger';
 
 export interface ApplyAuthoritativeBodyDeps {
   app: App;
@@ -218,56 +217,30 @@ export async function applyAuthoritativeBodyAndFrontmatter(
   const futureFenceBody = extractFenceBody(futureFullText, fenceIndex) ?? newBody;
   const expectedHash = await sha1(futureFenceBody);
 
-  logger.debug(
-    `[lc-debug] lang-switch:start path=${file.path} ts=${Date.now()} newSlug=${newSlug} newBodyLength=${newBody.length} futureFenceBodyLength=${futureFenceBody.length} expectedHash=${expectedHash} peerCount=${peers.length} originatorRegistryKey=${widget.registryKey}`,
-  );
-
   // Arm suppression with the hash of the EXTRACTED future fence body so the
   // modify-handler's tryConsume(observedHash) matches.
   suppression.arm(file.path, expectedHash, widget.registryKey);
 
-  logger.debug(
-    `[lc-debug] lang-switch:armed path=${file.path} ts=${Date.now()} expectedHash=${expectedHash} originatorRegistryKey=${widget.registryKey}`,
-  );
-
   // Pre-update currentDocHash on every widget so the modify-handler's
   // Pitfall P2 early-return (currentDocHash === observedHash) absorbs every
   // modify event this primitive fires as a self-write echo.
-  const originatorHashBefore = widget.currentDocHash;
-  const peerHashesBefore = peers.map((p) => ({ key: p.registryKey, before: p.currentDocHash }));
-
   widget.currentDocHash = expectedHash;
   for (const peer of peers) {
     peer.currentDocHash = expectedHash;
   }
 
-  logger.debug(
-    `[lc-debug] lang-switch:pre-update-currentDocHash path=${file.path} ts=${Date.now()} originator={key=${widget.registryKey}, before=${originatorHashBefore || '<empty>'}, after=${widget.currentDocHash}} peers=${JSON.stringify(
-      peerHashesBefore.map((p, i) => ({
-        key: p.key,
-        before: p.before || '<empty>',
-        after: peers[i]!.currentDocHash,
-      })),
-    )}`,
-  );
-
   try {
     // (1) Single-transaction body+parser swap on the originating widget so
     // the user sees the new code instantly. The CM6 dispatch carries
     // userEvent: 'leetcode.lang-switch' which the childDirtyExtension
-    // filters — so this dispatch does NOT mark the widget dirty. We do
-    // NOT rely on flushNow to write the new body to disk (it has nothing
-    // to flush). The vault.process call below is the load-bearing write.
+    // filters — so this dispatch does NOT mark the widget dirty. The
+    // vault.process call below is the load-bearing disk write.
     widget.dispatchAuthoritativeBodySwap(newBody, newSlug);
 
     // (2) Multi-pane fan-out — peers receive the same dispatch directly.
     for (const peer of peers) {
       peer.dispatchAuthoritativeBodySwap(newBody, newSlug);
     }
-
-    logger.debug(
-      `[lc-debug] lang-switch:dispatched path=${file.path} ts=${Date.now()} originatorRegistryKey=${widget.registryKey} peerCount=${peers.length}`,
-    );
 
     // (3) Authoritative body write — vault.process applies rewriteFenceBody
     // atomically. The modify event echo lands inside the suppression TTL
@@ -277,31 +250,19 @@ export async function applyAuthoritativeBodyAndFrontmatter(
       rewriteFenceBody(current, fenceIndex, newBody),
     );
 
-    logger.debug(
-      `[lc-debug] lang-switch:body-write-resolved path=${file.path} ts=${Date.now()} originatorRegistryKey=${widget.registryKey}`,
-    );
-
     // (4) Frontmatter rewrite — separate undo step at the file level. The
     // fence body hash is unchanged across this write (only YAML mutates),
     // so the modify echo also hits Pitfall P2 absorption.
     await app.fileManager.processFrontMatter(file, mutateFm);
 
-    logger.debug(
-      `[lc-debug] lang-switch:processFrontMatter-resolved path=${file.path} ts=${Date.now()} originatorRegistryKey=${widget.registryKey}`,
-    );
-
-    // (5) Acknowledge the authoritative write on every widget on this
-    // file. Updates currentDocHash, clears _childDirty, clears safety
-    // timer, resets hasEverBeenDirtySinceMount. Idempotent; ordered after
-    // both writes so each widget's post-condition is fully reached.
+    // (5) Acknowledge the authoritative write on every widget on this file.
+    // Updates currentDocHash, clears _childDirty, clears safety timer.
+    // Idempotent; ordered after both writes so each widget's post-condition
+    // is fully reached.
     widget.acknowledgeAuthoritativeBody(expectedHash);
     for (const peer of peers) {
       peer.acknowledgeAuthoritativeBody(expectedHash);
     }
-
-    logger.debug(
-      `[lc-debug] lang-switch:acknowledged path=${file.path} ts=${Date.now()} expectedHash=${expectedHash} originatorRegistryKey=${widget.registryKey} peerCount=${peers.length}`,
-    );
   } catch (err) {
     // If anything throws, drop the suppression entry so a stale arm does
     // not falsely consume a future external modify event.

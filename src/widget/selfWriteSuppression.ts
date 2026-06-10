@@ -143,21 +143,4 @@ export class SelfWriteSuppression {
   get size(): number {
     return this.map.size;
   }
-
-  /** BRAT diagnostic — read-only snapshot of (path, expectedHash) pairs for
-   *  every live entry. Does NOT mutate the map. Intended only for debug
-   *  logging from the modify-handler so users can see what's armed at the
-   *  moment a modify event lands. */
-  peekMapDebug(): Array<{ path: string; expectedHash: string; expiresAt: number; originator: string | undefined }> {
-    const out: Array<{ path: string; expectedHash: string; expiresAt: number; originator: string | undefined }> = [];
-    for (const [path, entry] of this.map.entries()) {
-      out.push({
-        path,
-        expectedHash: entry.expectedHash,
-        expiresAt: entry.expiresAt,
-        originator: entry.originatingRegistryKey,
-      });
-    }
-    return out;
-  }
 }
