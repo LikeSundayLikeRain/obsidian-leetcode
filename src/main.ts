@@ -83,7 +83,7 @@ import { RunModal } from './solve/RunModal';
 import { EphemeralTabStore } from './solve/ephemeralTabStore';
 import { deriveArity } from './solve/runArity';
 import { registerRunCommand } from './solve/runCommandRegistration';
-import { resetCodeWithConfirm, extractFenceBodyFromFullNote } from './solve/resetCodeWithConfirm';
+import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
 // Failure B (Phase 22 follow-up) — chevron language-switch pure helper.
@@ -3292,52 +3292,43 @@ export default class LeetCodePlugin extends Plugin {
   /**
    * Failure B (Phase 22 follow-up) — Language switch path for the inline
    * widget. Restores v1.2's body-swap-on-language-change UX (the new
-   * language's starter snippet appears in the fence) within v1.3's
+   * language's starter snippet replaces the fence body) within v1.3's
    * widget-owned-editor architecture.
    *
-   * The 16-step algorithm is fully documented in
-   * .planning/debug/language-switch-body-not-swapped.md. Summary:
+   * UX contract: chevron switch is ALWAYS-OVERWRITE. We do not preserve
+   * user-typed code; switching language loads the new language's starter,
+   * full stop. Per-language buffer preservation (switch-back-restores-typing)
+   * is a future enhancement deferred until we have a clear storage model.
+   *
+   * Algorithm (full helper: src/main/runLanguageSwitch.ts):
    *
    *   1.  Defensive guard — read-only mount or detached view → fm-only.
    *   2.  Same-slug short-circuit (fm['lc-language'] === newSlug).
    *   3.  flushNow drains any in-flight typing under the OLD slug.
    *   4.  IME composition gate — defer entire switch until compositionend.
    *   5.  Read lc-slug from frontmatter; silent return on miss.
-   *   6.  Resolve OLD + NEW starters concurrently via resolveStarterCode
-   *       (live-fetch on stale cache for both).
-   *   7-8.Cleanness gate — instrumentation-first (childDirty +
-   *       hasEverBeenDirtySinceMount) with a body-vs-old-starter fallback;
-   *       re-check childDirty AFTER the network await so typing during the
-   *       round-trip flips us to the dirty branch.
-   *   9.  DIRTY branch → preserve user code; fm-only write; Notice with
-   *       Cmd-Shift-P breadcrumb pointing at the Reset code command.
-   *   10. CLEAN + no-newStarter → differentiated Notice (offline vs LC has
-   *       no starter); fm-only write.
-   *   11. fm-only helper for the DIRTY / unavailable branches.
-   *   12-15. CLEAN + newStarter → applyAuthoritativeBodyAndFrontmatter
-   *       performs widget-direct CM6 dispatch (body + Compartment.reconfigure
-   *       in ONE transaction) on originator AND every peer widget on the
-   *       same file, then processFrontMatter, then acknowledgeAuthoritative-
-   *       Body on each widget.
-   *   16. metadataCache 'changed' from step 14 fires the per-widget
-   *       listener; because the languageCompartment is already on newSlug
-   *       (we did it in step 12), the listener is a no-op for the parser
-   *       swap and only refreshes the chevron label / .is-current marker.
+   *   6.  Resolve newStarter via resolveStarterCode (cache-first, live-
+   *       fetch on stale or missing).
+   *   7.  newStarter unavailable → differentiated Notice (offline vs LC
+   *       has no starter for this language); fm-only write.
+   *   8.  newStarter available → applyAuthoritativeBodyAndFrontmatter:
+   *       widget-direct CM6 dispatch (body + Compartment.reconfigure in
+   *       ONE transaction) on originator AND every peer widget on the
+   *       same file, then processFrontMatter, then acknowledge.
    *
    * Atomicity: the body+parser swap is one CM6 transaction (one undo step).
    * The frontmatter rewrite is necessarily a separate undo step at the file
-   * level (Pitfall 1 / Pitfall 31). Failure modes are documented in the
-   * design note's edge_cases section.
+   * level (Pitfall 1 / Pitfall 31).
    */
   async switchLanguageFromWidget(
     widget: WidgetController,
     file: TFile,
     newSlug: string,
   ): Promise<void> {
-    // Thin delegator — the 16-step algorithm lives in the pure
-    // `runLanguageSwitch` helper so it can be unit-tested without
-    // instantiating a real LeetCodePlugin. All Obsidian/plugin state is
-    // wired here into the LanguageSwitchDeps shape.
+    // Thin delegator — the algorithm lives in the pure `runLanguageSwitch`
+    // helper so it can be unit-tested without instantiating a real
+    // LeetCodePlugin. All Obsidian/plugin state is wired here into the
+    // LanguageSwitchDeps shape.
     const widgetRegistry = this.widgetRegistry;
     return runLanguageSwitch(
       {
@@ -3351,7 +3342,6 @@ export default class LeetCodePlugin extends Plugin {
             yield ctl as unknown as WidgetController;
           }
         },
-        extractFenceBodyFromFullNote,
         notify: (msg, ms) => {
           new Notice(msg, ms);
         },

@@ -15,18 +15,19 @@
 // suppression after dispatch instead of before, forgot peer fan-out, wrong
 // order of operations) WILL break these tests.
 //
+// UX contract: chevron switch is ALWAYS-OVERWRITE (v1.2 parity). We do not
+// preserve user-typed code; switching language loads the new starter, full
+// stop. Per-language buffer preservation is a future enhancement.
+//
 // Categories:
 //   1. Pattern F (flush-before-fm) — preserved from v1.3's prior contract.
 //   2. Same-slug short-circuit — no writes when fm['lc-language'] === newSlug.
 //   3. Read-only / teardown defensive guard — fm-only path on read-only mounts.
-//   4. Clean fence body+parser swap — combined atomic write fires.
-//   5. Dirty branch — preserve user code; differentiated Notice copy.
-//   6. Manual-paste-of-old-starter (hasEverBeenDirtySinceMount latch).
-//   7. Race-window — typing during cache-miss network awaits flips to dirty.
-//   8. IME composition deferral — switch deferred until compositionend; the
+//   4. Body+parser swap — combined atomic write fires regardless of dirty.
+//   5. IME composition deferral — switch deferred until compositionend; the
 //      registered handler actually re-fires the body+fm write on compositionend.
-//   9. Snippet unavailable / network failure — differentiated Notice copy.
-//  10. Multi-pane fan-out — peers receive direct dispatch + acknowledge.
+//   6. Snippet unavailable / network failure — differentiated Notice copy.
+//   7. Multi-pane fan-out — peers receive direct dispatch + acknowledge.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -141,10 +142,6 @@ function makeDeps(opts: {
   settings: LanguageSwitchDeps['settings'];
   client: LanguageSwitchDeps['client'];
   peers?: FakeWidget[];
-  /** Bytes the helper sees when it calls `extractFenceBodyFromFullNote` on
-   *  whatever vault.read returns. Tests pin this directly so they don't have
-   *  to construct a fence-shaped diskBody for every case. */
-  fenceBody?: string;
 }): DepsBundle {
   const suppression = new SelfWriteSuppression();
   const notifyCalls: Array<{ msg: string; timeout: number }> = [];
@@ -156,7 +153,6 @@ function makeDeps(opts: {
     client: opts.client,
     suppression,
     iterateWidgets: () => peers as unknown as Iterable<WidgetController>,
-    extractFenceBodyFromFullNote: () => opts.fenceBody ?? '',
     notify: (msg, timeout) => {
       notifyCalls.push({ msg, timeout });
     },
@@ -206,7 +202,6 @@ describe('runLanguageSwitch — Pattern F flush-before-fm', () => {
       app,
       settings: settings as unknown as LanguageSwitchDeps['settings'],
       client: client as unknown as LanguageSwitchDeps['client'],
-      fenceBody: 'OLD_BODY',
     });
 
     await runLanguageSwitch(
@@ -300,7 +295,6 @@ describe('runLanguageSwitch — clean fence body+parser swap', () => {
       app,
       settings: settings as unknown as LanguageSwitchDeps['settings'],
       client: client as unknown as LanguageSwitchDeps['client'],
-      fenceBody: '',
     });
     // Spy on suppression.arm without replacing the suppression instance the
     // helper passes through to applyAuthoritativeBodyAndFrontmatter.
@@ -330,159 +324,6 @@ describe('runLanguageSwitch — clean fence body+parser swap', () => {
     expect(widget.acknowledgeAuthoritativeBody).toHaveBeenCalledTimes(1);
     expect(app.fileManager.processFrontMatter).toHaveBeenCalledTimes(1);
     expect(notifyCalls).toHaveLength(0);
-  });
-});
-
-describe('runLanguageSwitch — dirty branch preserves user code', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('childDirty=true preserves buffer, fires Notice with reset breadcrumb', async () => {
-    const widget = makeFakeWidget({ childDirty: true });
-    const app = makeFakeApp({
-      fmAtEntry: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
-      diskBody: '## Code\n```leetcode-solve\nuser typed\n```\n',
-    });
-    const settings = {
-      getProblemDetail: vi.fn(() => STARTER_CACHE_FRESH([
-        { langSlug: 'python3', code: 'OLD' },
-        { langSlug: 'java', code: 'NEW' },
-      ])) as unknown as AnyMockFn,
-      setProblemDetail: vi.fn() as unknown as AnyMockFn,
-    };
-    const armSpy = vi.fn();
-    const { deps, suppression, notifyCalls } = makeDeps({
-      app,
-      settings: settings as unknown as LanguageSwitchDeps['settings'],
-      client: { getProblemDetail: vi.fn() } as unknown as LanguageSwitchDeps['client'],
-      fenceBody: 'user typed',
-    });
-    suppression.arm = ((..._args: unknown[]) => {
-      armSpy(..._args);
-    }) as typeof suppression.arm;
-
-    await runLanguageSwitch(
-      deps,
-      widget as unknown as WidgetController,
-      widget.file as never,
-      'java',
-    );
-
-    expect(widget.dispatchAuthoritativeBodySwap).not.toHaveBeenCalled();
-    expect(armSpy).not.toHaveBeenCalled();
-    expect(app.fileManager.processFrontMatter).toHaveBeenCalledTimes(1);
-    expect(notifyCalls.length).toBeGreaterThan(0);
-    expect(notifyCalls[0]!.msg).toContain('Cmd-Shift-P');
-    expect(notifyCalls[0]!.msg).toContain('Reset code');
-  });
-});
-
-describe('runLanguageSwitch — manual-paste-of-old-starter', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('hasEverBeenDirtySinceMount=true + body bytes-equal oldStarter does NOT trigger silent swap', async () => {
-    const widget = makeFakeWidget({
-      childDirty: false,
-      hasEverBeenDirtySinceMount: true,
-    });
-    const app = makeFakeApp({
-      fmAtEntry: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
-      diskBody: '## Code\n```leetcode-solve\nOLD\n```\n',
-    });
-    const settings = {
-      getProblemDetail: vi.fn(() => STARTER_CACHE_FRESH([
-        { langSlug: 'python3', code: 'OLD' },
-        { langSlug: 'java', code: 'NEW' },
-      ])) as unknown as AnyMockFn,
-      setProblemDetail: vi.fn() as unknown as AnyMockFn,
-    };
-    const armSpy = vi.fn();
-    const { deps, suppression, notifyCalls } = makeDeps({
-      app,
-      settings: settings as unknown as LanguageSwitchDeps['settings'],
-      client: { getProblemDetail: vi.fn() } as unknown as LanguageSwitchDeps['client'],
-      fenceBody: 'OLD',
-    });
-    suppression.arm = ((..._args: unknown[]) => {
-      armSpy(..._args);
-    }) as typeof suppression.arm;
-
-    await runLanguageSwitch(
-      deps,
-      widget as unknown as WidgetController,
-      widget.file as never,
-      'java',
-    );
-
-    expect(widget.dispatchAuthoritativeBodySwap).not.toHaveBeenCalled();
-    expect(armSpy).not.toHaveBeenCalled();
-    expect(app.fileManager.processFrontMatter).toHaveBeenCalledTimes(1);
-    expect(notifyCalls.length).toBeGreaterThan(0);
-  });
-});
-
-describe('runLanguageSwitch — race-window: typing during cache-miss network awaits', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('childDirty becoming true during network await flips to dirty branch', async () => {
-    const widget = makeFakeWidget({ childDirty: false, hasEverBeenDirtySinceMount: false });
-    const app = makeFakeApp({
-      fmAtEntry: { 'lc-slug': 'two-sum', 'lc-language': 'python3' },
-      diskBody: '## Code\n```leetcode-solve\n\n```\n',
-    });
-    let networkResolve: (() => void) | null = null;
-    const networkGate = new Promise<void>((r) => {
-      networkResolve = r;
-    });
-    const client = {
-      getProblemDetail: vi.fn(async () => {
-        await networkGate;
-        return {
-          questionFrontendId: '1',
-          titleSlug: 'two-sum',
-          title: 'Two Sum',
-          content: '<p/>',
-          difficulty: 'Easy' as const,
-          isPaidOnly: false,
-          codeSnippets: [
-            { lang: 'Python3', langSlug: 'python3', code: 'OLD' },
-            { lang: 'Java', langSlug: 'java', code: 'NEW' },
-          ],
-        };
-      }) as unknown as AnyMockFn,
-    };
-    const settings = {
-      getProblemDetail: vi.fn(() => null) as unknown as AnyMockFn,
-      setProblemDetail: vi.fn() as unknown as AnyMockFn,
-    };
-    const armSpy = vi.fn();
-    const { deps, suppression, notifyCalls } = makeDeps({
-      app,
-      settings: settings as unknown as LanguageSwitchDeps['settings'],
-      client: client as unknown as LanguageSwitchDeps['client'],
-      fenceBody: '',
-    });
-    suppression.arm = ((..._args: unknown[]) => {
-      armSpy(..._args);
-    }) as typeof suppression.arm;
-
-    const switchPromise = runLanguageSwitch(
-      deps,
-      widget as unknown as WidgetController,
-      widget.file as never,
-      'java',
-    );
-
-    // While the network is in-flight, simulate a docChange flipping the latch.
-    widget.childDirty = true;
-    widget.hasEverBeenDirtySinceMount = true;
-
-    networkResolve!();
-    await switchPromise;
-
-    expect(widget.dispatchAuthoritativeBodySwap).not.toHaveBeenCalled();
-    expect(armSpy).not.toHaveBeenCalled();
-    expect(app.fileManager.processFrontMatter).toHaveBeenCalledTimes(1);
-    expect(notifyCalls.length).toBeGreaterThan(0);
   });
 });
 
@@ -542,7 +383,6 @@ describe('runLanguageSwitch — IME composition deferral', () => {
       app,
       settings: settings as unknown as LanguageSwitchDeps['settings'],
       client: { getProblemDetail: vi.fn() } as unknown as LanguageSwitchDeps['client'],
-      fenceBody: '',
     });
 
     // First call — composition active; handler is registered, switch defers.
@@ -607,7 +447,6 @@ describe('runLanguageSwitch — snippet unavailable / network failure differenti
       app,
       settings: settings as unknown as LanguageSwitchDeps['settings'],
       client: { getProblemDetail: vi.fn() } as unknown as LanguageSwitchDeps['client'],
-      fenceBody: '',
     });
 
     await runLanguageSwitch(
@@ -643,7 +482,6 @@ describe('runLanguageSwitch — snippet unavailable / network failure differenti
       app,
       settings: settings as unknown as LanguageSwitchDeps['settings'],
       client: client as unknown as LanguageSwitchDeps['client'],
-      fenceBody: '',
     });
 
     await runLanguageSwitch(
@@ -690,7 +528,6 @@ describe('runLanguageSwitch — multi-pane fan-out', () => {
       settings: settings as unknown as LanguageSwitchDeps['settings'],
       client: { getProblemDetail: vi.fn() } as unknown as LanguageSwitchDeps['client'],
       peers: [originator, peer],
-      fenceBody: '',
     });
     const origArm = suppression.arm.bind(suppression);
     suppression.arm = ((path: string, hash: string, key?: string) => {

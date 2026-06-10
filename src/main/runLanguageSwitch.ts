@@ -1,8 +1,14 @@
 // src/main/runLanguageSwitch.ts
 //
-// Failure B (Phase 22 follow-up) — pure helper that implements the 16-step
-// chevron language-switch algorithm. The full algorithm contract is documented
-// at the call site in src/main.ts (`LeetCodePlugin.switchLanguageFromWidget`).
+// Failure B (Phase 22 follow-up) — pure helper that implements the chevron
+// language-switch algorithm. The full algorithm contract is documented at the
+// call site in src/main.ts (`LeetCodePlugin.switchLanguageFromWidget`).
+//
+// UX contract: chevron switch is always-overwrite (v1.2 parity). On switch we
+// load the new language's starter snippet into the fence body, swap the parser
+// in the same CM6 transaction, fan out to peer widgets, and rewrite
+// `lc-language` frontmatter. We do NOT preserve user-typed code; users who
+// want to switch back without losing work need the per-language buffer (TODO).
 //
 // This module exists so the algorithm can be unit-tested without instantiating
 // a real `LeetCodePlugin`. Every Obsidian and plugin-internal dependency is
@@ -41,10 +47,6 @@ export interface LanguageSwitchDeps {
   /** Iterates registered widget controllers across panes. The helper filters
    *  to peers (same path, distinct registryKey, editable, non-embed). */
   iterateWidgets(): Iterable<WidgetController>;
-  /** Pure helper — extracts the leetcode-solve fence body from a full note
-   *  string. Production wires `extractFenceBodyFromFullNote` from
-   *  src/solve/resetCodeWithConfirm.ts. */
-  extractFenceBodyFromFullNote(fullNote: string): string;
   /** Surfaces a Notice. Production: `(msg, ms) => new Notice(msg, ms)`. */
   notify(message: string, timeoutMs: number): void;
   /** Debug-level log sink. Production: `logger.debug`. */
@@ -106,69 +108,35 @@ export async function runLanguageSwitch(
   if (typeof lcSlugRaw !== 'string' || lcSlugRaw.length === 0) return;
   const lcSlug = lcSlugRaw;
 
-  // Step 6 — resolve BOTH starters concurrently.
+  // Step 6 — resolve the new language's starter snippet. v1.2 always-overwrite
+  // UX: the chevron click is a destructive action, equivalent to Reset for the
+  // new language. We do not need the OLD starter (no comparison gate) and we do
+  // not check childDirty / hasEverBeenDirtySinceMount — typing is overwritten.
+  // Per-language buffer preservation (switch-back-restores-typing) is a future
+  // enhancement; today the contract is "switch language = load starter".
   const starterDeps = { settings: deps.settings, client: deps.client };
-  const [oldRes, newRes]: [ResolveStarterResult, ResolveStarterResult] = await Promise.all([
-    currentSlug
-      ? resolveStarterCode(starterDeps, lcSlug, currentSlug)
-      : Promise.resolve({ code: null as string | null, reason: 'unavailable' as const }),
-    resolveStarterCode(starterDeps, lcSlug, newSlug),
-  ]);
-  const oldStarter = oldRes.code;
+  const newRes: ResolveStarterResult = await resolveStarterCode(
+    starterDeps,
+    lcSlug,
+    newSlug,
+  );
   const newStarter = newRes.code;
-
-  // Steps 7-8 — instrumentation-first cleanness gate. The widget's
-  // childDirty + hasEverBeenDirtySinceMount latches are load-bearing; the
-  // body-vs-oldStarter byte comparison is a fallback for the freshly-mounted-
-  // with-injected-starter case. Re-check childDirty AFTER the network
-  // round-trip so typing during the await flips us to the dirty branch.
   const prettyLabel = LC_LANG_DISPLAY_LABELS[newSlug] ?? newSlug;
-  let isClean = false;
-  if (!widget.childDirty) {
-    let currentBodyTrimmed = '';
-    try {
-      const noteBody = await deps.app.vault.read(file);
-      currentBodyTrimmed = deps.extractFenceBodyFromFullNote(noteBody).trim();
-    } catch {
-      // I/O failure — treat as dirty (preserve user buffer).
-    }
-    // Re-check childDirty AFTER the await — typing during the network gap
-    // MUST flip the gate (D5 race-window fix).
-    if (!widget.childDirty) {
-      const oldStarterTrimmed = (oldStarter ?? '').trim();
-      const trulyClean =
-        !widget.hasEverBeenDirtySinceMount && currentBodyTrimmed.length === 0;
-      const startersMatch =
-        currentBodyTrimmed === oldStarterTrimmed &&
-        oldStarterTrimmed.length > 0 &&
-        !widget.hasEverBeenDirtySinceMount;
-      isClean = trulyClean || startersMatch;
-    }
-  }
 
-  // Step 9 — DIRTY branch. Preserve the user's code; fm-only write; Notice
-  // with Cmd-Shift-P breadcrumb pointing at the Reset code command.
-  if (!isClean) {
-    deps.notify(
-      `Switched to ${prettyLabel}. Your existing solution was preserved — ` +
-        `Cmd-Shift-P > LeetCode: Reset code to load the ${prettyLabel} starter.`,
-      5000,
-    );
-    return fmOnlyLanguageWrite(deps, file, newSlug);
-  }
-
-  // Step 10 — CLEAN but newStarter unavailable. Differentiated Notice copy
-  // so the user can disambiguate "offline; try again" from "LC has no starter
-  // for this language on this problem". fm-only write proceeds in both cases.
+  // Step 7 — newStarter unavailable. Differentiated Notice copy so the user
+  // can disambiguate "offline; try again" from "LC has no starter for this
+  // language on this problem". fm-only write proceeds in both cases (the
+  // chevron + lc-language frontmatter still updates so syntax highlighting
+  // follows the new language).
   if (newStarter === null) {
     if (newRes.reason === 'network') {
       deps.notify(
-        `Couldn't fetch starter for ${prettyLabel} (offline?). Buffer kept; try again when online.`,
+        `Couldn't fetch starter for ${prettyLabel} (offline?). Code unchanged; try again when online.`,
         5000,
       );
     } else {
       deps.notify(
-        `LeetCode has no ${prettyLabel} starter for this problem. Buffer kept.`,
+        `LeetCode has no ${prettyLabel} starter for this problem. Code unchanged.`,
         5000,
       );
     }
