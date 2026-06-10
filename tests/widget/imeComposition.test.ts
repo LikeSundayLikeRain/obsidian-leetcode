@@ -4,7 +4,7 @@
 // drain a mid-compose dirty entry and an external sync cannot clobber an
 // in-flight composition.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // --- Mocks (verbatim from tests/widget/WidgetController.test.ts) -----------
 
@@ -108,6 +108,7 @@ vi.mock('obsidian', async () => {
 });
 
 import { mountLeetCodeWidget } from '../../src/widget/WidgetController';
+import { SELF_WRITE_SUPPRESSION_TTL_MS } from '../../src/widget/selfWriteSuppression';
 
 // ---------------------------------------------------------------------------
 
@@ -312,6 +313,75 @@ describe('C6c — IME composition gate', () => {
     expect(ctl.childDirty).toBe(true);
 
     ctl.view.contentDOM.dispatchEvent(new Event('compositionend', { bubbles: true }));
+    expect(ctl.childDirty).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lens 2 IME regression — compositionstart holds childDirty TRUE past the
+// C6d safety-timer TTL.
+//
+// The naive design (C6a only, no C6c): the C6d safety timer would fire after
+// WIDGET_DIRTY_SAFETY_TTL_MS of idle and clear _childDirty, even during an
+// active IME composition window (Pinyin, Kanji, etc. produce NO docChanged
+// events between compositionstart and compositionend). A reload-silent during
+// that window would clobber the in-progress candidate text.
+//
+// The revised design (C6c): _childComposing=true causes the childDirty getter
+// to return true regardless of _childDirty or the safety timer. The safety
+// timer's auto-clear only affects _childDirty, not _childComposing; the getter
+// ORs both. The composition guard is only cleared by compositionend.
+// ---------------------------------------------------------------------------
+
+describe('C6c — IME composition holds childDirty past safety-timer TTL (Lens 2 regression)', () => {
+  let host: HTMLElement;
+  let file: { path: string };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    host = document.createElement('div');
+    file = { path: 'LeetCode/0001-two-sum.md' };
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('compositionstart keeps childDirty TRUE past the 2s safety TTL', () => {
+    const ctl = mountLeetCodeWidget(
+      host, 'pass', file as never, makeFakePlugin() as never, /*readOnly=*/false,
+    );
+
+    // Start IME composition.
+    dispatchCompositionEvent(ctl.view.contentDOM, 'compositionstart');
+    expect(ctl.childDirty).toBe(true);
+    expect((ctl as unknown as { _childComposing: boolean })._childComposing).toBe(true);
+
+    // Advance clock well past the safety TTL (C6d would have cleared _childDirty).
+    vi.advanceTimersByTime(SELF_WRITE_SUPPRESSION_TTL_MS + 2000); // e.g. 4000ms
+
+    // childDirty MUST remain true — _childComposing keeps the getter returning true
+    // even though the safety timer may have cleared _childDirty in the background.
+    expect(ctl.childDirty).toBe(true);
+
+    // The internal _childComposing flag is the reason.
+    expect((ctl as unknown as { _childComposing: boolean })._childComposing).toBe(true);
+  });
+
+  it('compositionend clears _childComposing; childDirty resolves to FALSE when no other dirty source', () => {
+    const ctl = mountLeetCodeWidget(
+      host, 'pass', file as never, makeFakePlugin() as never, /*readOnly=*/false,
+    );
+
+    dispatchCompositionEvent(ctl.view.contentDOM, 'compositionstart');
+    vi.advanceTimersByTime(SELF_WRITE_SUPPRESSION_TTL_MS + 2000);
+    expect(ctl.childDirty).toBe(true);
+
+    // End composition.
+    dispatchCompositionEvent(ctl.view.contentDOM, 'compositionend');
+
+    expect((ctl as unknown as { _childComposing: boolean })._childComposing).toBe(false);
+    // With no writer and no _childDirty (safety timer cleared it), childDirty is false.
     expect(ctl.childDirty).toBe(false);
   });
 });

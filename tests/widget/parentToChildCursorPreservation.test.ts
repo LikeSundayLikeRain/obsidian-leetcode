@@ -20,7 +20,7 @@
 // This file drives pushParentToChild via the parent CM6 ViewPlugin so the
 // production code path is exercised end-to-end.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('obsidian', async () => {
   const actual = await import('../helpers/obsidian-stub');
@@ -29,13 +29,15 @@ vi.mock('obsidian', async () => {
 
 import {
   ChangeSet,
+  Compartment,
   EditorSelection,
   EditorState,
   Transaction,
 } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view';
 import { editorInfoField } from 'obsidian';
 import { leetCodeFenceViewPlugin } from '../../src/widget/liveModeViewPlugin';
+import { WidgetController } from '../../src/widget/WidgetController';
 
 // Minimal parent CM6 doc with a v1.3 leetcode-solve fence containing a body.
 function makeParentDoc(body: string): string {
@@ -508,5 +510,117 @@ describe('pushParentToChild — cursor preservation (debug session: vim-cursor-j
       expect(c.toA).toBe(5);
       expect(c.inserted).toBe('X');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 1 + Wave 2 regression — childDirty updateListener provenance check.
+//
+// The childDirtyExtension (C6a) must:
+//   - SET childDirty when a docChange carries NO 'leetcode.*' userEvent
+//     (user-driven typing → the widget has unsaved chars).
+//   - SKIP childDirty when a docChange carries a 'leetcode.*' userEvent
+//     (plugin-driven echo — peer-sync, parent-sync, reload — must not
+//     accidentally arm the dirty guard and block an already-echoed flush).
+//
+// These tests exercise the production updateListener logic directly by
+// wiring a real EditorView with the childDirtyExtension (the same
+// updateListener that mountLeetCodeWidget builds and passes to buildExtensions).
+// ---------------------------------------------------------------------------
+
+describe('Wave 1+2 regression — childDirty updateListener provenance (C6a)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function makeControllerWithDirtyExtension(): {
+    ctl: WidgetController;
+    view: EditorView;
+  } {
+    // We build the extension inline (same logic as mountLeetCodeWidget's
+    // childDirtyExtension closure) referencing a lazily-captured `ctl`.
+    let ctl: WidgetController;
+
+    const childDirtyExtension = EditorView.updateListener.of((update: ViewUpdate) => {
+      if (!update.docChanged) return;
+      const isPluginEcho = update.transactions.some((tr) => {
+        const ev = tr.annotation(Transaction.userEvent);
+        return typeof ev === 'string' && ev.startsWith('leetcode.');
+      });
+      if (isPluginEcho) return;
+      if (ctl) ctl.markChildDirty();
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const state = EditorState.create({
+      doc: 'initial',
+      extensions: [childDirtyExtension],
+    });
+    const view = new EditorView({ state, parent: container });
+
+    const fakeFile = { path: 'test/two-sum.md' } as never;
+    const fakePlugin = {
+      app: {
+        vault: {},
+        metadataCache: { getFileCache: () => null },
+      },
+      lcSettings: { getIndentSizeOverride: () => 4 as const },
+    } as never;
+    const vimComp = new Compartment();
+    ctl = new WidgetController(view, container, fakeFile, 0, fakePlugin, vimComp, false);
+    return { ctl, view };
+  }
+
+  it('user-input docChange (no leetcode.* userEvent) → childDirty SET to true', () => {
+    const { ctl, view } = makeControllerWithDirtyExtension();
+
+    expect(ctl.childDirty).toBe(false); // pre-condition
+
+    // Dispatch a docChange with NO leetcode.* userEvent — simulates user typing.
+    view.dispatch({
+      changes: { from: 0, to: 0, insert: 'x' },
+      // No annotations → no userEvent → updateListener must call markChildDirty().
+    });
+
+    expect(ctl.childDirty).toBe(true);
+  });
+
+  it('plugin-driven docChange with "leetcode.parent-sync" userEvent → childDirty NOT set', () => {
+    const { ctl, view } = makeControllerWithDirtyExtension();
+
+    expect(ctl.childDirty).toBe(false); // pre-condition
+
+    // Dispatch a docChange carrying a 'leetcode.*' userEvent — simulates
+    // the parent-sync push that liveModeViewPlugin.ts dispatches.
+    view.dispatch({
+      changes: { from: 0, to: 0, insert: 'y' },
+      annotations: [Transaction.userEvent.of('leetcode.parent-sync')],
+    });
+
+    // childDirty must remain false — plugin echoes must not arm the dirty guard.
+    expect(ctl.childDirty).toBe(false);
+  });
+
+  it('plugin-driven docChange with "leetcode.reload" userEvent → childDirty NOT set', () => {
+    const { ctl, view } = makeControllerWithDirtyExtension();
+
+    view.dispatch({
+      changes: { from: 0, to: 0, insert: 'z' },
+      annotations: [Transaction.userEvent.of('leetcode.reload')],
+    });
+
+    expect(ctl.childDirty).toBe(false);
+  });
+
+  it('plugin-driven docChange with "leetcode.peer-sync" userEvent → childDirty NOT set', () => {
+    const { ctl, view } = makeControllerWithDirtyExtension();
+
+    view.dispatch({
+      changes: { from: 0, to: 0, insert: 'w' },
+      annotations: [Transaction.userEvent.of('leetcode.peer-sync')],
+    });
+
+    expect(ctl.childDirty).toBe(false);
   });
 });

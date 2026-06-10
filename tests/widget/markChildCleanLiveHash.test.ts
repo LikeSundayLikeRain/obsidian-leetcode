@@ -179,4 +179,45 @@ describe('WidgetController.markChildClean — live-hash guard (C6b)', () => {
     expect(cleared).toBe(true);
     expect(ctl.childDirty).toBe(false);
   });
+
+  // ---------------------------------------------------------------------------
+  // Lens 1 regression — Wave 3 C6b race window: snapshot ≠ live child
+  // ---------------------------------------------------------------------------
+  // Scenario (mirrors the race described in WidgetController.markChildClean JSDoc):
+  //   t0: writer captures getDoc() = 'abc', arms suppression, calls vault.process.
+  //   t1: vault.process is in-flight (50–300ms). User types 'd' → live child = 'abcd'.
+  //   t2: vault.on('modify') fires for the disk write that carried 'abc'.
+  //       main.ts computes observedHash = sha1('abc') (the on-disk body).
+  //       tryConsume returns 'consumed' (armed hash matches disk).
+  //       markChildClean(sha1('abc')) is called.
+  //   t3: markChildClean hashes the LIVE child = 'abcd' ≠ observedHash('abc').
+  //       → MUST return false and leave _childDirty=true.
+  //
+  // Without the live-hash compare (naive design), markChildClean would have
+  // cleared _childDirty on 'consumed', and the very next reload-silent could
+  // replace the live child with the stale on-disk 'abc', erasing the 'd'.
+  it('REGRESSION Lens 1 — user typed "d" during vault.process await; markChildClean does NOT clear dirty', async () => {
+    // State at the moment markChildClean is called:
+    //   - vault.process wrote 'abc' to disk.
+    //   - live child is already 'abcd' (user typed 'd' during await).
+    const liveChild = 'abcd';
+    const ctl = makeController(liveChild);
+
+    // Arm dirty as the C6a updateListener would have (user keystroke fired).
+    ctl._setChildDirty(true);
+    expect(ctl.childDirty).toBe(true);
+
+    // observedHash is the hash of the snapshotted body that went to disk.
+    // This is what main.ts passes to markChildClean after tryConsume='consumed'.
+    const snapshotBody = 'abc';
+    const observedHash = await sha1(snapshotBody);
+
+    const cleared = await ctl.markChildClean(observedHash);
+
+    // Must NOT clear — live child has drifted past the snapshot.
+    expect(cleared).toBe(false);
+    // _childDirty must remain true; a subsequent reload-silent that sees
+    // !childDirty would overwrite the live 'abcd' with on-disk 'abc'.
+    expect(ctl.childDirty).toBe(true);
+  });
 });
