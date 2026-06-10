@@ -119,10 +119,12 @@ describe('applyAuthoritativeBodyAndFrontmatter', () => {
     expect(origIdx).toBeGreaterThan(armIdx);
     expect(peerIdx).toBeGreaterThan(armIdx);
 
-    // arm called once with originator's registryKey + sha1(newBody).
+    // First arm carries originator's registryKey + sha1(newBody). The
+    // helper arms a SECOND time before processFrontMatter (Pitfall 37);
+    // test (7) pins that re-arm contract.
     const expectedHash = await sha1(newBody);
-    expect(armSpy).toHaveBeenCalledTimes(1);
     expect(armSpy).toHaveBeenCalledWith(FILE.path, expectedHash, widget.registryKey);
+    expect(armSpy.mock.calls[0]).toEqual([FILE.path, expectedHash, widget.registryKey]);
   });
 
   it('(3) every peer receives the same body + slug as the originator', async () => {
@@ -302,5 +304,70 @@ describe('applyAuthoritativeBodyAndFrontmatter', () => {
     // Acknowledge was NOT reached.
     expect(widget.acknowledgeAuthoritativeBody).not.toHaveBeenCalled();
     expect(peer.acknowledgeAuthoritativeBody).not.toHaveBeenCalled();
+  });
+
+  it('(7) re-arms suppression before processFrontMatter so the fm-write modify is consumed (Pitfall 37)', async () => {
+    // Regression: the body-flush in step (3) consumes the first arm. The
+    // fm-write in step (4) fires a SECOND modify event with the SAME fence-
+    // body hash (frontmatter changed, body unchanged). Without a second arm,
+    // the modify-handler treats the fm-write as external and trips the
+    // ConflictModal. This test pins the re-arm contract.
+    const widget = makeFakeWidget();
+    const app = makeFakeApp();
+    const suppression = new SelfWriteSuppression();
+
+    const callOrder: string[] = [];
+    const armSpy = vi.fn((path: string, hash: string, key?: string) => {
+      callOrder.push(`arm:${path}:${hash.slice(0, 8)}:${key ?? '-'}`);
+    });
+    suppression.arm = armSpy as unknown as typeof suppression.arm;
+
+    widget.flushNow = vi.fn(async () => {
+      callOrder.push('flushNow');
+    }) as unknown as AnyMockFn;
+    app.fileManager.processFrontMatter = vi.fn(async (_f, fn) => {
+      callOrder.push('processFrontMatter');
+      fn({});
+    }) as unknown as AnyMockFn;
+
+    await applyAuthoritativeBodyAndFrontmatter(
+      {
+        app: app as unknown as Parameters<typeof applyAuthoritativeBodyAndFrontmatter>[0]['app'],
+        file: FILE as unknown as Parameters<typeof applyAuthoritativeBodyAndFrontmatter>[0]['file'],
+        suppression,
+        widget: widget as unknown as WidgetController,
+        peers: [],
+      },
+      'NEW',
+      'java',
+      (fm) => {
+        fm['lc-language'] = 'java';
+      },
+    );
+
+    // Two arms total: one before dispatch, one before processFrontMatter.
+    expect(armSpy).toHaveBeenCalledTimes(2);
+
+    // Both arms carry the SAME hash (the fence body is unchanged across the
+    // fm-only second write — only the frontmatter mutates).
+    const expectedHash = await sha1('NEW');
+    expect(armSpy.mock.calls[0]![1]).toBe(expectedHash);
+    expect(armSpy.mock.calls[1]![1]).toBe(expectedHash);
+
+    // Both arms carry the originator's registryKey.
+    expect(armSpy.mock.calls[0]![2]).toBe(widget.registryKey);
+    expect(armSpy.mock.calls[1]![2]).toBe(widget.registryKey);
+
+    // Strict ordering: the second arm fires AFTER flushNow but BEFORE
+    // processFrontMatter so the fm-write's modify echo lands inside the
+    // suppression TTL window.
+    const flushIdx = callOrder.indexOf('flushNow');
+    const fmIdx = callOrder.indexOf('processFrontMatter');
+    const arms = callOrder
+      .map((s, i) => (s.startsWith('arm:') ? i : -1))
+      .filter((i) => i !== -1);
+    expect(arms.length).toBe(2);
+    expect(arms[1]).toBeGreaterThan(flushIdx);
+    expect(arms[1]).toBeLessThan(fmIdx);
   });
 });

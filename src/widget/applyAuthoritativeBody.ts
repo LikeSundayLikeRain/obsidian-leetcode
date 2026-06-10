@@ -229,6 +229,14 @@ export async function applyAuthoritativeBodyAndFrontmatter(
     // (Pitfall 1 / Pitfall 31). Inner same-slug guard avoids spurious
     // metadataCache 'changed' events when an external sync flipped fm
     // mid-flight (D10).
+    //
+    // Re-arm BEFORE processFrontMatter: the body-flush in step (3) consumed
+    // the first arm, but processFrontMatter triggers a SECOND modify event.
+    // The fence body hash is unchanged (only frontmatter mutates), so we
+    // arm with the same hash. Without this re-arm, the fm-write modify lands
+    // in the modify-handler with no matching suppression entry and trips the
+    // conflict modal at branch (d) — Pitfall 37.
+    suppression.arm(file.path, expectedHash, widget.registryKey);
     await app.fileManager.processFrontMatter(file, mutateFm);
 
     // (5) Acknowledge the authoritative write on every widget on this

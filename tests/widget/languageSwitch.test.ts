@@ -311,7 +311,10 @@ describe('runLanguageSwitch — clean fence body+parser swap', () => {
       'java',
     );
 
-    expect(armSpy).toHaveBeenCalledTimes(1);
+    // Two arms: one before dispatch (body-write echo), one before
+    // processFrontMatter (fm-write echo, same hash since fence body
+    // unchanged). See applyAuthoritativeBodyAndFrontmatter test (7).
+    expect(armSpy).toHaveBeenCalledTimes(2);
     expect(armSpy).toHaveBeenCalledWith(
       widget.file.path,
       expect.any(String),
@@ -546,7 +549,10 @@ describe('runLanguageSwitch — multi-pane fan-out', () => {
     expect(peer.dispatchAuthoritativeBodySwap).toHaveBeenCalledWith('NEW', 'java');
     expect(originator.acknowledgeAuthoritativeBody).toHaveBeenCalledTimes(1);
     expect(peer.acknowledgeAuthoritativeBody).toHaveBeenCalledTimes(1);
-    expect(armSpy).toHaveBeenCalledTimes(1);
+    // Two arms: one before dispatch, one before processFrontMatter
+    // (Pitfall 37 — fm-write fires its own modify event with the same
+    // fence-body hash and needs its own suppression entry).
+    expect(armSpy).toHaveBeenCalledTimes(2);
     expect(armSpy).toHaveBeenCalledWith(
       originator.file.path,
       expect.any(String),
