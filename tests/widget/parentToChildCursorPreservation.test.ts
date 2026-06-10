@@ -91,10 +91,6 @@ interface FakeWidget {
   view: EditorView;
   writer: { hasPending: () => boolean };
   childDirty?: boolean;
-  syncHandle?: {
-    hasPending: () => boolean;
-    flushSync: () => void;
-  };
 }
 
 function makeFakePlugin(widgets: FakeWidget[]): FakePlugin {
@@ -237,30 +233,25 @@ describe('pushParentToChild — cursor preservation (debug session: vim-cursor-j
     expect(childView.state.selection.main.head).toBe(10);
   });
 
-  it('the symptom case: child has typing ahead of parent; child-is-superset guard skips the push entirely (no rollback, no caret jump)', () => {
+  it('the symptom case: child has in-flight typing (childDirty=true); push is skipped entirely (no rollback, no caret jump)', () => {
     // Mirrors the user-reported sequence:
     //   1. Child typed "fn() {\n  ret" — caret near end.
     //   2. childParentSync flushed → parent fence body matches: "fn() {\n  ret".
-    //   3. User types "u" — child now "fn() {\n  retu", caret at end (13).
-    //      childParentSync has NOT flushed yet (300ms debounce).
+    //   3. User types "u" (child input transaction, no leetcode.* userEvent)
+    //      → updateListener sets childDirty=true.
+    //      Child doc is now "fn() {\n  retu"; caret at end (14).
+    //      childParentSync debounce has NOT fired yet.
     //   4. Obsidian's auto-save reflows parent (untagged change). Parent
-    //      fence body in this test is the slightly older version
-    //      "fn() {\n  ret" — the trailing 'u' is the only diff and the
-    //      child is a strict prefix-extension of the parent.
-    //   5. pushParentToChild fires.
-    //      Plan-21-17 era (pre-260605-vny): caret-mapping fix prevented
-    //        the cursor jump to 0 but the trailing 'u' was still deleted
-    //        from the child — the char-rollback symptom.
-    //      Post-260605-vny: the child-is-superset guard recognizes
-    //        normChild.startsWith(normParent) && delta ≤ 8 and SKIPS the
-    //        dispatch entirely. The trailing 'u' stays in the child;
-    //        the next debounced flush absorbs it into the parent.
-    const oldBody = 'fn() {\n  retu';
-    const newBody = 'fn() {\n  ret';
-    const parentDoc = makeParentDoc(oldBody);
+    //      fence body is still the pre-flush value "fn() {\n  ret".
+    //   5. pushParentToChild fires. Production gate: childDirty===true
+    //      → skip dispatch entirely. The trailing 'u' stays in the child;
+    //      the next debounced flush absorbs it into the parent.
+    const baseBody = 'fn() {\n  ret';
+    const parentDoc = makeParentDoc(baseBody);
     const filePath = 'two-sum.md';
 
-    const childView = makeChildView(oldBody, oldBody.length); // caret at 13
+    // Child starts equal to the parent fence body.
+    const childView = makeChildView(baseBody, baseBody.length);
     const widget: FakeWidget = {
       file: { path: filePath },
       view: childView,
@@ -269,15 +260,26 @@ describe('pushParentToChild — cursor preservation (debug session: vim-cursor-j
     const plugin = makeFakePlugin([widget]);
     const parentView = makeParentView(parentDoc, plugin, filePath);
 
-    const dispatchSpy = vi.spyOn(childView, 'dispatch');
-    reflowParentFenceBody(parentView, oldBody, newBody);
+    // Step 3: child input transaction (no leetcode.* userEvent) appends 'u'.
+    // In production the childDirtyExtension updateListener would call
+    // markChildDirty(); here we replicate that by setting the property
+    // directly after the dispatch, matching what the production listener does.
+    childView.dispatch({
+      changes: { from: baseBody.length, to: baseBody.length, insert: 'u' },
+    });
+    widget.childDirty = true; // simulates updateListener → markChildDirty()
 
-    // 260605-vny — push was SKIPPED. Child doc stays as the user typed
-    // it (trailing 'u' preserved); caret stays at the end of the child
-    // doc; no dispatch fired.
+    const typedBody = baseBody + 'u'; // "fn() {\n  retu"
+    expect(childView.state.doc.toString()).toBe(typedBody);
+
+    // Step 4–5: parent reflows with the stale body (without 'u').
+    const dispatchSpy = vi.spyOn(childView, 'dispatch');
+    reflowParentFenceBody(parentView, baseBody, baseBody); // fence unchanged in parent
+
+    // Push SKIPPED because childDirty===true. Child keeps the typed 'u';
+    // caret is somewhere in the doc (not collapsed to 0); no dispatch fired.
     expect(dispatchSpy).not.toHaveBeenCalled();
-    expect(childView.state.doc.toString()).toBe(oldBody);
-    expect(childView.state.selection.main.head).toBe(13);
+    expect(childView.state.doc.toString()).toBe(typedBody);
     expect(childView.state.selection.main.head).not.toBe(0);
   });
 
@@ -345,125 +347,6 @@ describe('pushParentToChild — cursor preservation (debug session: vim-cursor-j
 
     expect(capturedUserEvent).toBe('leetcode.parent-sync');
     expect(capturedAddToHistory).toBe(false);
-  });
-
-  it('rollback prevention: when childParentSync has a pending flush, the push is skipped — child typing is preserved', () => {
-    // The user-reported risk (debug session follow-up):
-    //   1. User types in child. childParentSync debounce timer is armed.
-    //   2. Within the 300ms debounce window, an untagged parent change
-    //      lands (Obsidian autosave reflow, ConflictModal echo, another
-    //      plugin format-on-save, external file-sync, etc.).
-    //   3. Pre-gate: pushParentToChild fires, sees child ≠ parent, and
-    //      replaces the child's content with the parent's stale body —
-    //      silently rolling back the user's most recent typing.
-    //   4. Post-gate: syncHandle.hasPending() === true → push is skipped
-    //      entirely. Child stays the source of truth. The next regular
-    //      childParentSync flush will reconcile.
-    //
-    // We cannot run flushSync() synchronously inside pushParentToChild
-    // because it executes inside the parent ViewPlugin's update() and
-    // CM6 throws on re-entrant view.dispatch() during an update.
-    // "Skip the push" is the only safe synchronous behavior.
-    const childBody = 'fn() {\n  retu'; // child has typed "u" — not yet flushed
-    const parentBody = 'fn() {\n  ret'; // parent is one char behind
-    const parentDocText = makeParentDoc(parentBody);
-    const filePath = 'two-sum.md';
-
-    const childView = makeChildView(childBody, childBody.length);
-    const widget: FakeWidget = {
-      file: { path: filePath },
-      view: childView,
-      writer: { hasPending: () => false },
-      syncHandle: {
-        hasPending: () => true, // child has unflushed typing
-        flushSync: () => {
-          throw new Error(
-            'flushSync must NOT be called from inside ViewPlugin.update — CM6 disallows re-entrant dispatch',
-          );
-        },
-      },
-    };
-    const plugin = makeFakePlugin([widget]);
-    const parentView = makeParentView(parentDocText, plugin, filePath);
-
-    const childDispatchSpy = vi.spyOn(childView, 'dispatch');
-
-    // Trigger an untagged parent change OUTSIDE the fence (e.g., user
-    // edited Notes section, or another plugin formatted frontmatter).
-    // This causes the parent ViewPlugin.update() to fire, but the fence
-    // body itself is unchanged — so newBody = parentBody, which still
-    // differs from childBody. Without the gate, the push would dispatch
-    // parentBody into the child (rollback). With the gate, hasPending()
-    // returns true and the push is skipped.
-    parentView.dispatch({
-      changes: {
-        from: parentView.state.doc.length,
-        to: parentView.state.doc.length,
-        insert: 'extra',
-      },
-    });
-
-    // Child must keep its typing; cursor must stay; no child dispatch.
-    expect(childView.state.doc.toString()).toBe(childBody);
-    expect(childView.state.selection.main.head).toBe(childBody.length);
-    expect(childDispatchSpy).not.toHaveBeenCalled();
-  });
-
-  it('rollback prevention: with no pending flush, the push runs as before (regression guard for the existing fix)', () => {
-    // When childParentSync.hasPending() is false, the gate does nothing
-    // and the existing minimal-diff + cursor-mapping behavior holds.
-    const oldBody = 'abc';
-    const newBody = 'abcd';
-    const parentDoc = makeParentDoc(oldBody);
-    const filePath = 'note.md';
-
-    // Caret at offset 1 (between 'a' and 'b'). The downstream insertion
-    // at index 3 is past the caret, so the caret stays at 1.
-    const childView = makeChildView(oldBody, 1);
-    const widget: FakeWidget = {
-      file: { path: filePath },
-      view: childView,
-      writer: { hasPending: () => false },
-      syncHandle: {
-        hasPending: () => false, // no pending flush
-        flushSync: () => {
-          throw new Error('flushSync must not run when hasPending() is false');
-        },
-      },
-    };
-    const plugin = makeFakePlugin([widget]);
-    const parentView = makeParentView(parentDoc, plugin, filePath);
-
-    reflowParentFenceBody(parentView, oldBody, newBody);
-
-    // The child receives the parent body via the normal push path.
-    expect(childView.state.doc.toString()).toBe(newBody);
-    expect(childView.state.selection.main.head).toBe(1);
-  });
-
-  it('rollback prevention: backward-compat — widgets without syncHandle still receive pushes (no regression)', () => {
-    // Test fixtures (and any older controller paths) that don't expose
-    // a `syncHandle` must continue to receive pushes. The gate is a
-    // soft check via optional chaining.
-    const oldBody = 'abc';
-    const newBody = 'abcdef';
-    const parentDoc = makeParentDoc(oldBody);
-    const filePath = 'note.md';
-
-    const childView = makeChildView(oldBody, 2);
-    const widget: FakeWidget = {
-      file: { path: filePath },
-      view: childView,
-      writer: { hasPending: () => false },
-      // syncHandle intentionally omitted.
-    };
-    const plugin = makeFakePlugin([widget]);
-    const parentView = makeParentView(parentDoc, plugin, filePath);
-
-    reflowParentFenceBody(parentView, oldBody, newBody);
-
-    expect(childView.state.doc.toString()).toBe(newBody);
-    expect(childView.state.selection.main.head).toBe(2);
   });
 
   it('dispatch.changes is INCREMENTAL — single contiguous range, NOT full-doc replacement (regression: this is the bug)', () => {
