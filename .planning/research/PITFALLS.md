@@ -787,6 +787,57 @@ User writes a non-LC note, includes a code block with the language tag `\`\`\`le
 
 ---
 
+### Pitfall 27: Byte-Identical Write Suppression — Modify Event May Not Fire (Wave 3 childDirty Assumption)
+
+#### (a) The Question
+
+Does `vault.on('modify')` fire when `vault.process` writes bytes that match what is already on disk (a "byte-identical" write)?
+
+#### (b) Why Wave 3 childDirty Design Depends on the Answer
+
+The Wave 3 childDirty refactor uses a safety timer whose drain path flows through the modify-event echo of each flush. The sequence is:
+
+1. Widget detects local change → sets `childDirty = true`
+2. `DebouncedWriter.flush()` → `arm(path, hash)` → `vault.process(…)` writes new bytes
+3. `vault.on('modify')` fires → `tryConsume(path, hash)` returns `'consumed'` → `childDirty = false`
+
+The safety timer assumes a modify event ALWAYS arrives after `vault.process`, so dirty entries can be drained on the echo. If Obsidian short-circuits byte-identical writes (suppresses the modify event when `newBytes === priorBytes`), step 3 never executes for no-op flushes. The suppression entry in `SelfWriteSuppression` will sit until its 2-second TTL expires; `childDirty` entries correlated with that flush are never drained via the echo handshake. For pure dirty-flag semantics this is a 2-second delay. For any logic that depends on the echo being timely (e.g., gating the next flush until the echo lands), this suppression is a **WAVE 3 BLOCKER**.
+
+#### (c) Obsidian Source-Code Reality
+
+Obsidian 1.12 source: `vault.process` internally calls `Vault.modify`, which writes via `adapter.write` and unconditionally fires the modify event regardless of byte equality (**HIGH confidence** based on Obsidian 1.12 source review). However, the team has **not directly verified** this in the v1.3 plugin context. The adapter layer (electron's `fs.writeFile`, iCloud shim, Obsidian Sync intercept) could theoretically skip the modify event for a write that produces no observable file change. The env-gated probe is the definitive check.
+
+#### (d) Probe Protocol
+
+See `tests/widget/byteIdenticalModifyProbe.probe.test.ts` for full instructions.
+
+**CI (fake vault — runs automatically, always passes):**
+```
+npm run test -- tests/widget/byteIdenticalModifyProbe.probe.test.ts
+```
+The CONTRACT TEST describe block asserts the assumption against `FakeVaultAlwaysEmits` (conforming Obsidian behavior). The ANTI-CONTRACT test documents the failure mode using `FakeVaultSuppressesIdentical`. Both are always enabled and will not answer the real-Obsidian question — they document the contract and failure mode only.
+
+**Real-Obsidian dev-vault (required before Wave 3 ships):**
+```
+OBSIDIAN_DEV_VAULT_PROBE=1 vitest tests/widget/byteIdenticalModifyProbe.probe.test.ts
+```
+This path requires a live Obsidian dev-vault session. The env-gated test in the probe file is a stub with inline harness instructions. See the probe file header for Option A (CLI harness) and Option B (manual verification) protocols.
+
+#### (e) Pass/Fail Interpretation
+
+| Real-Obsidian Result | Interpretation | Action |
+|---|---|---|
+| `modify` fired for byte-identical write | Assumption **HOLDS** | Ship Wave 3 childDirty design as planned |
+| `modify` suppressed for byte-identical write | **CRITICAL — WAVE 3 BLOCKER** | Redesign childDirty: replace echo-based drain with a deterministic post-flush callback (call the drain function directly in `DebouncedWriter.flush()` after `vault.process` resolves, rather than waiting for the modify event) |
+
+#### (f) Prevention
+
+**Never deploy Wave 3 to user vaults without first running the env-gated probe in a real Obsidian dev-vault.** The fake-vault CONTRACT TEST is INCONCLUSIVE — its behavior is whatever the test author programmed. Only a real-Obsidian dev-vault session answers the question definitively.
+
+If redesign is required: the fix is straightforward — after `vault.process` resolves in `DebouncedWriter.flush()`, call the childDirty drain callback directly (do not wait for the modify echo). The modify echo, when it does arrive, becomes a no-op for drain purposes (the entry is already consumed). This design is safe regardless of whether Obsidian fires modify for byte-identical writes.
+
+---
+
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
@@ -910,6 +961,7 @@ User writes a non-LC note, includes a code block with the language tag `\`\`\`le
 - [ ] **Plugin review:** `eslint-plugin-obsidianmd` clean (no innerHTML, no workspace.activeLeaf, etc.)
 - [ ] **Plugin review:** Bundle size CI gate (no regression vs. v1.2)
 - [ ] **Plugin review:** Migration documented in README with backup location
+- [ ] **Byte-identical-write probe:** `vault.on('modify')` fires for `vault.process` writes whose new bytes equal pre-write bytes — verified manually in a real dev-vault before Wave 3 ships (run `OBSIDIAN_DEV_VAULT_PROBE=1 vitest tests/widget/byteIdenticalModifyProbe.probe.test.ts` in a live Obsidian dev-vault session; record result in PITFALLS.md Pitfall 27)
 
 ---
 
@@ -962,6 +1014,7 @@ User writes a non-LC note, includes a code block with the language tag `\`\`\`le
 | Pitfall 24: Window resize | Phase 02 (Polish) | Test: resize window mid-edit; cursor / wrap correct |
 | Pitfall 25: Plugin update with widget open | N/A (documentation only) | README note |
 | Pitfall 26: Mobile compat | N/A (out of scope) | `isDesktopOnly: true` enforced |
+| Pitfall 27: Byte-identical write suppression (Wave 3 childDirty assumption) | Wave 3 (childDirty design) | Run `OBSIDIAN_DEV_VAULT_PROBE=1 vitest tests/widget/byteIdenticalModifyProbe.probe.test.ts` in a real dev-vault session before Wave 3 ships |
 
 ---
 
