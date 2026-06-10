@@ -690,7 +690,7 @@ export class WidgetController {
       this.view.dispatch({
         changes: { from: 0, to: this.view.state.doc.length, insert: newBody },
         selection: EditorSelection.cursor(restoredHead),
-        annotations: [Transaction.addToHistory.of(false)],
+        annotations: [Transaction.userEvent.of('leetcode.reload'), Transaction.addToHistory.of(false)],
       });
     } catch {
       // Defensive — view may be in teardown.
