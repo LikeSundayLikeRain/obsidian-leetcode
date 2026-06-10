@@ -430,7 +430,7 @@ describe('runLanguageSwitch — IME composition deferral', () => {
         .mock.calls.length === 0 &&
       Date.now() < deadline
     ) {
-      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => window.setTimeout(r, 0));
     }
 
     // The deferred path must drive the body+fm write.

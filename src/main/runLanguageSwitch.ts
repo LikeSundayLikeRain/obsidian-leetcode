@@ -81,7 +81,7 @@ export async function runLanguageSwitch(
     | undefined;
   const currentSlug =
     typeof fmAtEntry?.['lc-language'] === 'string'
-      ? (fmAtEntry['lc-language'] as string)
+      ? fmAtEntry['lc-language']
       : null;
   if (currentSlug === newSlug) return;
 
