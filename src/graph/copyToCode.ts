@@ -29,6 +29,10 @@ import { LC_LANG_SLUGS } from '../solve/languages';
 // fence-locator predicate; do NOT inline a private detector. SSoT keeps the
 // regex semantics in one place across reset, retrieve, and copyToCode paths.
 import { countLeetCodeSolveFenceOpeners } from '../widget/fenceLocator';
+// Audit C2 — arming SelfWriteSuppression before vault.process so the modify
+// echo is recognized as a self-write instead of an external edit.
+import { applyAuthoritativeBody } from '../widget/applyAuthoritativeBody';
+import type { SelfWriteSuppression } from '../widget/selfWriteSuppression';
 
 /**
  * Rewrite the ## Code fenced block in `file` with the submitted code + lang.
@@ -36,13 +40,19 @@ import { countLeetCodeSolveFenceOpeners } from '../widget/fenceLocator';
  * @param app       The Obsidian App (or test-mode mock) exposing vault.process.
  * @param file      The target problem note.
  * @param code      The submitted code body (from a past LC submission).
- * @param langSlug  LC's langSlug for the submission (python3, java, cpp, …).
- *                  Used as the fenced block's language tag per D-04 — the
- *                  submitted language wins, not the existing fence tag.
+ * @param langSlug    LC's langSlug for the submission (python3, java, cpp, …).
+ *                    Used as the fenced block's language tag per D-04 — the
+ *                    submitted language wins, not the existing fence tag.
+ * @param suppression Optional SelfWriteSuppression instance. When supplied,
+ *                    the fence-body write arms suppression BEFORE vault.process
+ *                    so the resulting modify event is recognized as a self-write
+ *                    and the widget does NOT run reloadFromDisk('silent') — closing
+ *                    the Audit C2 TOCTOU window. Omitting the param is backward-
+ *                    compatible: all existing tests pass `app as never` without it.
  *
- * Always runs through `app.vault.process(file, fn)` so the transform is
- * retry-safe under Obsidian's vault conflict model. Sibling regions stay
- * intact because `forceInjectCodeSection` only rewrites the ## Code block.
+ * Always runs through `app.vault.process(file, fn)` (via applyAuthoritativeBody)
+ * so the transform is retry-safe under Obsidian's vault conflict model. Sibling
+ * regions stay intact because `forceInjectCodeSection` only rewrites the ## Code block.
  *
  * G-COPY-TO-CODE-LANG-DRIFT (gap-closure 05.3-06): after the fence body
  * rewrite resolves, the note's `lc-language` frontmatter is also synced to
@@ -72,6 +82,7 @@ export async function copyToCode(
   file: TFile,
   code: string,
   langSlug: string,
+  suppression?: SelfWriteSuppression,
 ): Promise<void> {
   // Step 1 — fence body rewrite (existing contract; CF-06 vault.process).
   //
@@ -82,7 +93,12 @@ export async function copyToCode(
   // ```python fence grafted). When no v1.3 fence is present, the omitted
   // fenceKind keeps the existing v1.2 path running byte-for-byte.
   // SSoT: REUSES countLeetCodeSolveFenceOpeners (src/widget/fenceLocator.ts).
-  await app.vault.process(file, (current) => {
+  //
+  // Audit C2 — use applyAuthoritativeBody so suppression is armed BEFORE
+  // vault.process when a v1.3 fence is present. The modify echo is then
+  // consumed as a self-write; the widget does NOT clobber in-progress typing
+  // via reloadFromDisk('silent').
+  await applyAuthoritativeBody({ app, file, suppression }, (current) => {
     const fenceKind: 'leetcode-solve' | undefined =
       countLeetCodeSolveFenceOpeners(current, Number.MAX_SAFE_INTEGER) > 0
         ? 'leetcode-solve'

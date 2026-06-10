@@ -3059,7 +3059,7 @@ export default class LeetCodePlugin extends Plugin {
         return;
       }
       const { copyToCode } = await import('./graph/copyToCode');
-      await copyToCode(this.app, file, detail.code, detail.lang.name);
+      await copyToCode(this.app, file, detail.code, detail.lang.name, this.selfWriteSuppression);
       // `## Code` is wrapped in backticks so the sentence-case rule treats
       // the literal section heading as code-fenced (matches the existing
       // 'No `## Code` block found.' Notices elsewhere in this file).
@@ -3993,6 +3993,7 @@ export default class LeetCodePlugin extends Plugin {
       file,
       slug,
       settings: this.lcSettings,
+      suppression: this.selfWriteSuppression,
       confirm: () =>
         new Promise<boolean>((resolve) => {
           void import('./graph/ConfirmOverwriteModal').then(
