@@ -359,6 +359,16 @@ export class WidgetController {
    *  and destroy (teardown). */
   private _safetyTimer: number | null = null;
 
+  /** Failure B (Phase 22 follow-up) — sticky latch set on first markChildDirty
+   *  since the last "fresh state" (mount, reloadFromDisk, or
+   *  acknowledgeAuthoritativeBody). The chevron language-switch UX rule
+   *  consults this latch when the body bytes-equal the OLD-language starter:
+   *  a user who manually pasted that exact starter still has typing history,
+   *  so the swap should be classified as "preserve" rather than "silent
+   *  swap". A truly-fresh widget (latch === false) gets the silent body+
+   *  parser swap that v1.2 used to provide. See PITFALLS Pitfall 36. */
+  public hasEverBeenDirtySinceMount = false;
+
   get childDirty(): boolean {
     // Phase 22 Wave 3 C6c — IME composition guard FIRST (cheapest read).
     if (this._childComposing) return true;
@@ -450,10 +460,27 @@ export class WidgetController {
    *  every user-driven docChange (non-plugin-echo). The safety timer ensures
    *  `_childDirty` always converges to false within ≤TTL of the last
    *  keystroke, even when the echo handshake never fires (byte-identical
-   *  write — PITFALLS Pitfall 27). */
+   *  write — PITFALLS Pitfall 27).
+   *
+   *  Failure B (Phase 22 follow-up) — also flips the
+   *  `hasEverBeenDirtySinceMount` latch so the chevron language-switch UX
+   *  rule can distinguish "freshly-mounted, body matches starter via the
+   *  starter injector" from "user typed (or pasted) past the starter at
+   *  least once". Cleared by reloadFromDisk and acknowledgeAuthoritativeBody. */
   markChildDirty(): void {
     this._childDirty = true;
+    this.hasEverBeenDirtySinceMount = true;
     this._rearmSafetyTimer();
+  }
+
+  /** Failure B (Phase 22 follow-up) — read-only accessor for the IME
+   *  composition guard. The chevron language-switch path consults this BEFORE
+   *  performing the body+parser swap; if true, the entire switch is deferred
+   *  until compositionend so a CM6 reconfigure cannot fire mid-IME (3-5s CJK
+   *  candidate-menu window) and so pre-composition content is not baked into
+   *  the vault. PITFALLS Pitfall 35. */
+  get isComposing(): boolean {
+    return this._childComposing;
   }
 
   /** Phase 22 Wave 3 C6c — internal setter used by the contentDOM
@@ -876,6 +903,74 @@ export class WidgetController {
     void sha1(newBody).then((hash) => {
       this.currentDocHash = hash;
     });
+
+    // Failure B (Phase 22 follow-up) — reset the dirty-history latch. Disk
+    // is now authoritative; whatever the user typed before the external
+    // write is no longer "their work" from a UX-rule standpoint. The next
+    // markChildDirty call (real keystroke after the reload) will re-arm.
+    this.hasEverBeenDirtySinceMount = false;
+  }
+
+  /**
+   * Failure B (Phase 22 follow-up) — single-transaction body+parser swap for
+   * the chevron language-switch path. Replaces the entire widget doc with
+   * `newBody` AND reconfigures the languageCompartment to `newSlug`'s
+   * extension set in ONE CM6 transaction. This restores v1.2's atomic
+   * single-undo-step contract within v1.3's widget-owned-editor architecture
+   * (the body change and parser swap land together — one Cmd-Z reverts both).
+   *
+   * The transaction carries `userEvent: 'leetcode.lang-switch'` so any future
+   * filter (currently the section-protection extension does NOT install on
+   * the widget's own EditorView — see Phase 22 architecture note in
+   * CLAUDE.md — but the convention is preserved for forward compatibility).
+   *
+   * Caller (applyAuthoritativeBodyAndFrontmatter) is expected to have armed
+   * SelfWriteSuppression with sha1(newBody) BEFORE invoking this method, so
+   * the disk-flush echo from the subsequent flushNow() is consumed as a
+   * self-write rather than mistaken for an external edit.
+   */
+  dispatchAuthoritativeBodySwap(newBody: string, newSlug: string): void {
+    if (!this.view) return;
+    const indent = this.plugin.lcSettings.getIndentSizeOverride();
+    try {
+      this.view.dispatch({
+        changes: { from: 0, to: this.view.state.doc.length, insert: newBody },
+        effects: languageCompartment.reconfigure(
+          buildLanguageExtensions(newSlug, indent),
+        ),
+        annotations: [Transaction.userEvent.of('leetcode.lang-switch')],
+      });
+    } catch (err) {
+      // Defensive — view may be in teardown mid-switch (extreme race).
+      logger.debug('WidgetController.dispatchAuthoritativeBodySwap: dispatch failed', {
+        file: this.file.path,
+        registryKey: this.registryKey,
+        err,
+      });
+    }
+  }
+
+  /**
+   * Failure B (Phase 22 follow-up) — explicit acknowledgement that a
+   * plugin-authored body write has fully landed (vault flush completed,
+   * frontmatter follow-up resolved). Refreshes `currentDocHash` so the
+   * modify-handler Pitfall P2 absorption gate continues to short-circuit
+   * frontmatter-only writes; clears the in-flight typing flag and the
+   * sliding-window safety timer; and resets `hasEverBeenDirtySinceMount`
+   * since this widget's buffer is now (by definition) at a plugin-authored
+   * known-clean state, not a user-edited state.
+   *
+   * @param newBodyHash sha1(newBody) — pre-computed by the caller so this
+   *                    method stays synchronous and side-effect-only.
+   */
+  acknowledgeAuthoritativeBody(newBodyHash: string): void {
+    this.currentDocHash = newBodyHash;
+    this._childDirty = false;
+    if (this._safetyTimer !== null) {
+      window.clearTimeout(this._safetyTimer);
+      this._safetyTimer = null;
+    }
+    this.hasEverBeenDirtySinceMount = false;
   }
 
   /**

@@ -83,9 +83,13 @@ import { RunModal } from './solve/RunModal';
 import { EphemeralTabStore } from './solve/ephemeralTabStore';
 import { deriveArity } from './solve/runArity';
 import { registerRunCommand } from './solve/runCommandRegistration';
-import { resetCodeWithConfirm } from './solve/resetCodeWithConfirm';
+import { resetCodeWithConfirm, extractFenceBodyFromFullNote } from './solve/resetCodeWithConfirm';
 import { extractFirstFencedBlock } from './solve/codeExtractor';
 import { resolveLangSlug } from './solve/languages';
+// Failure B (Phase 22 follow-up) — chevron language-switch pure helper.
+// `runLanguageSwitch` owns the 16-step algorithm; `switchLanguageFromWidget`
+// below is a thin shim that wires plugin state into LanguageSwitchDeps.
+import { runLanguageSwitch } from './main/runLanguageSwitch';
 // Phase 20 Plan 20-10 (gap-closure T9/T10) — countLeetCodeSolveFenceOpeners is
 // the canonical "is there a leetcode-solve fence in this text?" predicate.
 // Used by resolveFenceKind in resetCode (T10 fix) and copyToCode (T9 fix).
@@ -3286,47 +3290,77 @@ export default class LeetCodePlugin extends Plugin {
   }
 
   /**
-   * Phase 22 (v1.3) — Language switch path for the inline widget.
+   * Failure B (Phase 22 follow-up) — Language switch path for the inline
+   * widget. Restores v1.2's body-swap-on-language-change UX (the new
+   * language's starter snippet appears in the fence) within v1.3's
+   * widget-owned-editor architecture.
    *
-   * v1.3 architecture: the fence opener is fixed at `leetcode-solve`
-   * (Phase 19 C-01) and language is owned by `lc-language` frontmatter.
-   * The chevron click only needs to:
-   *   (a) flush widget edits BEFORE the frontmatter write so any pending
-   *       characters land under the OLD slug (Pattern F flush-before-fm).
-   *   (b) write `lc-language: <newSlug>` via processFrontMatter.
+   * The 16-step algorithm is fully documented in
+   * .planning/debug/language-switch-body-not-swapped.md. Summary:
    *
-   * No CM6 dispatch is needed — neither parent (fence opener is fixed)
-   * nor child (v1.3 has no nested-editor child registry; the widget owns
-   * its own EditorView and reacts to the metadataCache 'changed' event
-   * through its own subscription at WidgetController to swap the parser
-   * Compartment + refresh the action-row chevron without remount).
+   *   1.  Defensive guard — read-only mount or detached view → fm-only.
+   *   2.  Same-slug short-circuit (fm['lc-language'] === newSlug).
+   *   3.  flushNow drains any in-flight typing under the OLD slug.
+   *   4.  IME composition gate — defer entire switch until compositionend.
+   *   5.  Read lc-slug from frontmatter; silent return on miss.
+   *   6.  Resolve OLD + NEW starters concurrently via resolveStarterCode
+   *       (live-fetch on stale cache for both).
+   *   7-8.Cleanness gate — instrumentation-first (childDirty +
+   *       hasEverBeenDirtySinceMount) with a body-vs-old-starter fallback;
+   *       re-check childDirty AFTER the network await so typing during the
+   *       round-trip flips us to the dirty branch.
+   *   9.  DIRTY branch → preserve user code; fm-only write; Notice with
+   *       Cmd-Shift-P breadcrumb pointing at the Reset code command.
+   *   10. CLEAN + no-newStarter → differentiated Notice (offline vs LC has
+   *       no starter); fm-only write.
+   *   11. fm-only helper for the DIRTY / unavailable branches.
+   *   12-15. CLEAN + newStarter → applyAuthoritativeBodyAndFrontmatter
+   *       performs widget-direct CM6 dispatch (body + Compartment.reconfigure
+   *       in ONE transaction) on originator AND every peer widget on the
+   *       same file, then processFrontMatter, then acknowledgeAuthoritative-
+   *       Body on each widget.
+   *   16. metadataCache 'changed' from step 14 fires the per-widget
+   *       listener; because the languageCompartment is already on newSlug
+   *       (we did it in step 12), the listener is a no-op for the parser
+   *       swap and only refreshes the chevron label / .is-current marker.
    *
-   * Reference: tests/widget/languageSwitch.test.ts pins this contract.
+   * Atomicity: the body+parser swap is one CM6 transaction (one undo step).
+   * The frontmatter rewrite is necessarily a separate undo step at the file
+   * level (Pitfall 1 / Pitfall 31). Failure modes are documented in the
+   * design note's edge_cases section.
    */
   async switchLanguageFromWidget(
     widget: WidgetController,
     file: TFile,
     newSlug: string,
   ): Promise<void> {
-    // Step (a) — flush widget edits before the frontmatter write so any
-    // pending characters land under the OLD slug (Pattern F).
-    await widget.flushNow();
-
-    // Step (b) — atomic frontmatter rewrite. The per-widget metadataCache
-    // 'changed' subscription drives Compartment.reconfigure (parser swap)
-    // + actionRowRefresh (chevron label + .is-current marker) without
-    // remount.
-    try {
-      await this.app.fileManager.processFrontMatter(
-        file,
-        (fmObj: Record<string, unknown>) => {
-          fmObj['lc-language'] = newSlug;
+    // Thin delegator — the 16-step algorithm lives in the pure
+    // `runLanguageSwitch` helper so it can be unit-tested without
+    // instantiating a real LeetCodePlugin. All Obsidian/plugin state is
+    // wired here into the LanguageSwitchDeps shape.
+    const widgetRegistry = this.widgetRegistry;
+    return runLanguageSwitch(
+      {
+        app: this.app,
+        settings: this.lcSettings,
+        client: this.client,
+        suppression: this.selfWriteSuppression,
+        iterateWidgets: function* () {
+          if (!widgetRegistry) return;
+          for (const ctl of widgetRegistry.values()) {
+            yield ctl as unknown as WidgetController;
+          }
         },
-      );
-    } catch (err) {
-      new Notice("Failed to switch language. The note's frontmatter may be malformed.", 5000);
-      logger.debug('switchLanguageFromWidget: processFrontMatter failed', err);
-    }
+        extractFenceBodyFromFullNote,
+        notify: (msg, ms) => {
+          new Notice(msg, ms);
+        },
+        logDebug: (msg, ...args) => logger.debug(msg, ...args),
+      },
+      widget,
+      file,
+      newSlug,
+    );
   }
 
   private async openAISolution(slug: string): Promise<void> {

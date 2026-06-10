@@ -39,6 +39,7 @@ import type { SelfWriteSuppression } from './selfWriteSuppression';
 import { extractFenceBody } from './fenceSerialization';
 import { countLeetCodeSolveFenceOpeners } from './fenceLocator';
 import { sha1 } from './debouncedWriter';
+import type { WidgetController } from './WidgetController';
 
 export interface ApplyAuthoritativeBodyDeps {
   app: App;
@@ -140,4 +141,109 @@ export async function applyAuthoritativeBody(
   // Fallback (no suppression, or non-v1.3 fence, or R2 multi-fence guard):
   // plain vault.process with no arming — identical to the pre-C2 behavior.
   await app.vault.process(file, transform);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// applyAuthoritativeBodyAndFrontmatter — Failure B (Phase 22 follow-up)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Language-switch primitive that combines:
+//   (1) widget-direct CM6 dispatch (body replace + Compartment.reconfigure
+//       in ONE transaction → one undo step in the child editor — restores
+//       v1.2's atomic single-undo-step contract).
+//   (2) Multi-pane fan-out — peers receive the SAME dispatch directly so no
+//       peer reload-from-disk fires (D4 fix).
+//   (3) flushNow on the originating widget so the new body lands on disk
+//       and the modify-echo handshake completes within the same await.
+//   (4) processFrontMatter to flip lc-language: <newSlug>.
+//   (5) acknowledgeAuthoritativeBody on originator + every peer so each
+//       widget's currentDocHash, _childDirty, hasEverBeenDirtySinceMount
+//       and safety timer reach the post-write known-clean state.
+//
+// Atomicity caveat (accepted, documented PITFALLS Pitfall 31): the body+
+// parser swap is one CM6 transaction (one undo step in the widget editor),
+// but the frontmatter rewrite is a separate processFrontMatter call. The
+// frontmatter write is, by Obsidian API contract, its own undo step at the
+// file level. This is the irreducible cost of frontmatter mutation requiring
+// processFrontMatter; same constraint v1.2 accepted.
+//
+// Suppression arming: armed BEFORE the dispatch with the post-write fence-
+// body hash. The DebouncedWriter's flushNow then writes that body to disk;
+// the modify-echo lands inside the TTL window and is consumed as a self-
+// write. The arm carries the originator's registryKey so the modify-handler's
+// peer-sync routing can identify which pane wrote (peers received the change
+// via direct dispatch and don't need to be reloaded).
+
+export interface ApplyAuthoritativeBodyAndFrontmatterDeps {
+  app: App;
+  file: TFile;
+  suppression: SelfWriteSuppression;
+  widget: WidgetController;
+  /** Peer widgets on the same file.path with a different registryKey. The
+   *  helper iterates these and dispatches the same change+effect into each
+   *  view, then calls acknowledgeAuthoritativeBody on each. The originator's
+   *  modify echo is consumed via SelfWriteSuppression; peers receive the
+   *  change via dispatch (no peer reload-from-disk needed). */
+  peers: WidgetController[];
+}
+
+/**
+ * Combined body-swap + frontmatter mutation for the chevron language-switch
+ * path. See module-level commentary above for the contract.
+ *
+ * Throws on processFrontMatter failure — the caller surfaces a Notice and
+ * accepts the half-applied state (body + parser are on newSlug, fm still on
+ * old). User can re-click the chevron; the same-slug short-circuit at entry
+ * detects the divergence and the retry succeeds.
+ */
+export async function applyAuthoritativeBodyAndFrontmatter(
+  deps: ApplyAuthoritativeBodyAndFrontmatterDeps,
+  newBody: string,
+  newSlug: string,
+  mutateFm: (fm: Record<string, unknown>) => void,
+): Promise<void> {
+  const { app, file, suppression, widget, peers } = deps;
+
+  // Arm suppression BEFORE any dispatch / vault write so the disk-flush
+  // echo from widget.flushNow lands inside the TTL window and is consumed
+  // as a self-write. The originator's registryKey scopes the consumed echo
+  // to this widget so peer-sync routing skips peers correctly.
+  const expectedHash = await sha1(newBody);
+  suppression.arm(file.path, expectedHash, widget.registryKey);
+
+  try {
+    // (1) Single-transaction body+parser swap on the originating widget.
+    widget.dispatchAuthoritativeBodySwap(newBody, newSlug);
+
+    // (2) Multi-pane fan-out — peers receive the same dispatch directly.
+    for (const peer of peers) {
+      peer.dispatchAuthoritativeBodySwap(newBody, newSlug);
+    }
+
+    // (3) Force the disk write so the new body is on disk by the time
+    // processFrontMatter (which re-reads file content via metadataCache
+    // re-extract) fires.
+    await widget.flushNow();
+
+    // (4) Frontmatter rewrite — separate undo step at the file level
+    // (Pitfall 1 / Pitfall 31). Inner same-slug guard avoids spurious
+    // metadataCache 'changed' events when an external sync flipped fm
+    // mid-flight (D10).
+    await app.fileManager.processFrontMatter(file, mutateFm);
+
+    // (5) Acknowledge the authoritative write on every widget on this
+    // file. Updates currentDocHash, clears _childDirty, clears safety
+    // timer, resets hasEverBeenDirtySinceMount. Idempotent; ordered after
+    // flushNow + fm so each widget's post-condition is fully reached.
+    widget.acknowledgeAuthoritativeBody(expectedHash);
+    for (const peer of peers) {
+      peer.acknowledgeAuthoritativeBody(expectedHash);
+    }
+  } catch (err) {
+    // If the dispatch chain throws (vault.process race, processFrontMatter
+    // YAML failure), drop the suppression entry so a stale arm does not
+    // falsely consume a future external modify event.
+    suppression.clearForPath(file.path);
+    throw err;
+  }
 }

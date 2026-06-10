@@ -951,6 +951,166 @@ The safety timer interval MUST equal `SelfWriteSuppression.TTL_MS` (currently 20
 
 ---
 
+### Pitfall 31: Body Swap + Parser Reconfigure Must Be ONE CM6 Transaction
+
+**What goes wrong:**
+The chevron language-switch path needs to do two things to the widget editor: replace the entire fence body with the new language's starter snippet, AND reconfigure the `languageCompartment` so the new body is parsed under the new language's syntax. A naive two-step sequence — `view.dispatch({ changes })` first, then `view.dispatch({ effects: Compartment.reconfigure(...) })` second — produces a visible smear: for one animation frame the new doc text is rendered under the OLD parser, painting the new content with the wrong syntax-highlight tokens before the second dispatch repaints. CM6's measure pass also re-flows twice, so the gutter widths and selection coordinates jitter. In vim mode the smear is worse because the cursor reposition mid-frame triggers a vim mode flicker.
+
+**Why it happens:**
+CM6 ships every `dispatch()` call as a separate transaction; each transaction triggers a fresh measure-and-paint pass. The two-step pattern is the natural translation of "first change the doc, then change the parser" but ignores that CM6 already supports atomic multi-effect transactions.
+
+**The fix:**
+Dispatch `changes` and `effects: [Compartment.reconfigure(...)]` in a single `view.dispatch({...})` call carrying `userEvent: 'leetcode.lang-switch'`. CM6 applies both atomically: the doc body and the parser are replaced together in a single measure pass. As a side benefit this becomes a single Cmd-Z step in the widget's history (restoring v1.2's atomic single-undo-step contract).
+
+**Reference:** `WidgetController.dispatchAuthoritativeBodySwap` (`src/widget/WidgetController.ts`).
+
+**Warning signs:**
+- Body change and parser reconfigure are issued as separate `view.dispatch` calls
+- Test for "language switch produces one undo step in widget history" is missing
+- User reports visible flicker / wrong-color tokens on language switch
+- Cmd-Z after a language switch reverts only the body (or only the parser) instead of both
+
+**Phase to address:** Phase 22 follow-up (Failure B — chevron body-swap-on-language-change UX restoration).
+
+---
+
+### Pitfall 32: Preserve-on-Dirty Needs an Instrumentation-First Gate, Not Bytes-Only
+
+**What goes wrong:**
+The chevron language-switch path needs to decide "is this widget freshly mounted with the starter still untouched, or has the user typed?" — call this the cleanness gate. A bytes-only implementation compares the current fence body to the OLD-language starter and treats `currentBody === oldStarter` as "clean". This misclassifies the case where the user typed something, deleted everything back to the starter, then pasted the OLD starter back: the bytes match, but the user's intent is "this is my buffer; do not silently overwrite it". The starter UX-rule says we should preserve the buffer in this case (the latch acknowledges that the user demonstrated intent at least once).
+
+**Why it happens:**
+Bytes are a poor proxy for intent. A user who pastes the starter back is making a different statement than a user who never typed. The dirty bit (`childDirty`) only captures "is the user mid-typing right now" — not "has the user typed at any point since mount".
+
+**The fix:**
+Combine three signals in the cleanness gate:
+1. `widget.childDirty` — the canonical "child is mid-typing" signal (set on every user keystroke; cleared by the echo handshake).
+2. `widget.hasEverBeenDirtySinceMount` — sticky latch set on first markChildDirty since mount, cleared only on `reloadFromDisk` or `acknowledgeAuthoritativeBody`. See Pitfall 36 for the latch semantics.
+3. Body-vs-old-starter byte match — fallback for cleanly-mounted widgets (the latch is false because no user keystroke ever fired, but the disk fence body matches the starter as injected by the post-create hook).
+
+The widget is "clean" iff `!childDirty && !hasEverBeenDirtySinceMount && (currentBody === '' || currentBody === oldStarter)`. Anything else routes to the preserve branch (fm-only write + Cmd-Shift-P > Reset code breadcrumb Notice).
+
+**Warning signs:**
+- Cleanness gate uses only `currentBody === oldStarter` without consulting `childDirty` or `hasEverBeenDirtySinceMount`
+- Test for "user typed, deleted, pasted starter back, switched language" silently overwrites their buffer
+- A regression that broke the dirty-history latch causes "I switched language and lost everything" reports
+
+**Phase to address:** Phase 22 follow-up (Failure B).
+
+---
+
+### Pitfall 33: `resolveStarterCode` Returns `{ code, reason }` Because Empty-String and Missing-Language Are Different UX States
+
+**What goes wrong:**
+A `resolveStarterCode` helper that returns `string | null` collapses three meaningfully-different outcomes into one signal:
+1. Cache hit with a usable starter → return the string.
+2. LeetCode genuinely has no starter for this language on this problem (e.g., Kotlin on a problem with no Kotlin entry; LC sometimes ships zero-length code) → there is no starter to insert.
+3. Cache empty AND fetch failed (offline) → we don't know if a starter exists; user should retry when online.
+
+The Notice copy for cases 2 and 3 needs to differ: case 2 says "LeetCode has no Java starter for this problem", case 3 says "Couldn't fetch starter for Java (offline?). Buffer kept; try again when online." A `null` return type forces the caller to either show one of the two messages by guessing (wrong half the time) or to issue a second probe call (round-trip + race).
+
+**Why it happens:**
+The natural Promise-based signature for "fetch a starter snippet" is `Promise<string | null>` — null meaning "not available". The error path collapses into the null case because the function caught the network exception. The caller has no way to distinguish "we asked LC and they said no" from "we couldn't ask LC".
+
+**The fix:**
+Return `{ code: string | null, reason: 'ok' | 'unavailable' | 'network' }` so the caller can disambiguate:
+- `'ok'` — code is a non-empty string (cache hit, fresh fetch, or graceful-degradation hit on stale cache after network failure).
+- `'unavailable'` — fetch succeeded (or cache is fresh) but no codeSnippets entry for langSlug exists. LC genuinely has no starter for this language.
+- `'network'` — cache empty AND fetch failed. We don't know.
+
+Empty-string snippets returned from LC (observed for some langs/problems) are normalized to `{ null, 'unavailable' }` — a literal empty buffer is not useful as a "starter" and the user should see the unavailable copy.
+
+**Reference:** `src/solve/resolveStarterCode.ts`.
+
+**Warning signs:**
+- Helper returns `Promise<string | null>` instead of `Promise<{ code, reason }>`
+- Caller branches on `code === null` and shows a single generic "no starter available" Notice
+- User reports "the offline message says 'LC has no Kotlin starter' but I have wifi" or vice versa
+- Empty-string code from LC is treated as `'ok'` and pasted into the fence (visible as an empty fence body; user thinks the language switch broke their note)
+
+**Phase to address:** Phase 22 follow-up (Failure B).
+
+---
+
+### Pitfall 34: Multi-Pane Fan-Out Must Use Direct CM6 Dispatch on Each Peer, Not Modify-Event Routing
+
+**What goes wrong:**
+When the same LC note is open in two split panes during a language-switch click, the originating pane writes the new body to disk and the modify event fires. A "modify-event routing" implementation lets the modify-handler reach the peer pane and run its standard "external edit landed; reload from disk" path. The peer's reload is a full-doc replacement with cursor-clamp — and it lands one frame after the originator's atomic body+parser swap. The user sees the originator pane snap to the new language smoothly, then the peer pane flickers (briefly empty / wrong color) as it replays the reload. Worse, if the peer's child editor was holding focus, the reload's selection clamp moves the caret and the user loses their place in pane B.
+
+**Why it happens:**
+The modify-event path is designed for EXTERNAL edits — files arriving from sync, manual writes from outside the plugin, etc. — where there is no "originator pane". Routing self-originated language-switch writes through that same path treats the peer pane like a stranger: it gets the bytes but loses the atomicity guarantee the originator gained from the single CM6 transaction.
+
+**The fix:**
+The originator dispatches first (single CM6 transaction with body + parser reconfigure). Peers are iterated from `widgetRegistry` keyed by `file.path` and receive the SAME `dispatch({changes, effects})` synchronously, in the same animation frame as the originator. SelfWriteSuppression's `originatingRegistryKey` field consumes only the originator's modify echo so the peers' modify-handler entries are short-circuited — no peer reload-from-disk, no flicker, no caret jump.
+
+`applyAuthoritativeBodyAndFrontmatter` (`src/widget/applyAuthoritativeBody.ts`) is the single entry point for this fan-out: it arms suppression with the originator's registryKey, dispatches to the originator, dispatches to every peer, awaits flushNow on the originator, then runs `processFrontMatter`, then calls `acknowledgeAuthoritativeBody` on every widget.
+
+**Warning signs:**
+- Language-switch writes to disk and relies on `vault.on('modify')` to re-render peer panes
+- No peer-fan-out loop in the language-switch path
+- Tests for "two panes, same file, click chevron in pane A" miss assertions on pane B's dispatch + acknowledge
+- Visible flicker reported on the non-clicked pane during a language switch
+
+**Phase to address:** Phase 22 follow-up (Failure B). See also Pitfall 2 (multi-pane coherence) for the v1.3 baseline split.
+
+---
+
+### Pitfall 35: IME Composition Gate Defers the Entire Switch, Not Just the Dispatch
+
+**What goes wrong:**
+A CJK user (Pinyin / Kanji / Hangul) opens the IME candidate menu while a chevron click fires. The compositionstart→compositionend lifecycle on the widget's contentDOM produces NO docChanged transactions during the 3–5 second candidate-selection window — only the final commit transaction lands. If the language-switch path fires ANY transaction into the widget (body change, parser reconfigure, anything dispatched via `view.dispatch`) during composition, the browser's IME machinery confuses the partial preedit string with editor state and either drops characters or commits stale candidates.
+
+A naive partial fix gates only the body-swap dispatch on isComposing, lets the frontmatter write proceed, and assumes "we'll body-swap later when composition ends". That leaves the editor in a half-applied state: frontmatter says java, parser is still python, body is still python starter. Subsequent typing under the wrong parser runs through the wrong language pack.
+
+**Why it happens:**
+IME composition lifecycles are an OS-level concern that operates at a different layer than CM6 transactions. CM6 doesn't know about preedit text; the browser delivers compositionstart/compositionend events on the contentDOM but doesn't surface them in the transaction stream.
+
+**The fix:**
+Defer the entire switch — body change, parser reconfigure, fm rewrite, all of it — until compositionend. Concretely: when `widget.isComposing === true`, register a one-shot `compositionend` listener on `widget.view.contentDOM` that re-invokes `switchLanguageFromWidget(widget, file, newSlug)` with the same arguments and return early from the current call. Do NOT show a Notice during composition (the deferral is silent; the user sees the switch land cleanly when their candidate commits).
+
+**Reference:** `LeetCodePlugin.switchLanguageFromWidget` step 4 (`src/main.ts`); `runLanguageSwitch` step 4 (`src/main/runLanguageSwitch.ts`).
+
+**Warning signs:**
+- Language-switch path checks isComposing only around the body dispatch, not the entire switch
+- compositionend handler is registered but never re-invokes the switch
+- CJK users report dropped characters or wrong-parser highlighting after a language-switch click during typing
+- Test fixture for "isComposing=true defers switch, compositionend re-fires the switch end-to-end" is missing
+
+**Phase to address:** Phase 22 follow-up (Failure B). Closely related to Pitfall 29 (IME composition window during debounce) — both rely on the same compositionstart/compositionend lifecycle on the same contentDOM.
+
+---
+
+### Pitfall 36: `hasEverBeenDirtySinceMount` Is a Sticky Latch, Not a Derived Flag
+
+**What goes wrong:**
+The chevron language-switch UX rule needs to distinguish "user has demonstrated typing intent at any point" from "user is mid-typing right now". The instinct is to derive the former from the latter: "if `_childDirty` is true OR has ever been true within this session, we treat the buffer as user-owned." A naive implementation clears the derived flag every time `flushNow` resolves (since `_childDirty` clears on the echo handshake). That defeats the entire point — the latch resets to false the moment typing stops, making the language-switch path's preserve gate flaky in the worst possible way (a user who paused for 2 seconds before clicking the chevron loses their work).
+
+**Why it happens:**
+"Has the user ever typed since mount" is NOT a derived signal; it's a sticky bit. Conflating it with `_childDirty` (which tracks the live in-flight state) discards the history.
+
+**The fix:**
+`hasEverBeenDirtySinceMount` is set true on the first `markChildDirty` call since the last "fresh state" reset. It is cleared only on:
+1. `reloadFromDisk('silent' | 'keep-external')` — disk content is now authoritative; the user's prior buffer is no longer relevant from a UX-rule standpoint.
+2. `acknowledgeAuthoritativeBody(hash)` — a plugin-authored body write fully landed (chevron switch, copy-to-code, reset). The widget buffer is at a known-clean plugin-authored state, not a user-edited state.
+
+It is NOT cleared on:
+- The next `flushNow` / echo handshake — that only confirms the user's typing reached disk; the user demonstrated intent and the latch reflects it.
+- `markChildClean(hash)` — same reason; the dirty drain doesn't reset history.
+
+This catches the "user typed, deleted everything, body now matches starter again" case: `_childDirty` clears (no live typing) but the latch stays true so the language-switch path correctly preserves the (now-empty) buffer rather than overwriting with the new-language starter.
+
+**Reference:** `WidgetController.markChildDirty` / `WidgetController.reloadFromDisk` / `WidgetController.acknowledgeAuthoritativeBody` (`src/widget/WidgetController.ts`).
+
+**Warning signs:**
+- `hasEverBeenDirtySinceMount` is computed from `_childDirty` in a getter rather than stored as a stuck-true field
+- The latch clears on `flushNow` / `markChildClean` instead of only on `reloadFromDisk` / `acknowledgeAuthoritativeBody`
+- Test for "type, wait 3s, click chevron — buffer preserved" fails after a refactor
+- Users report intermittent buffer-loss on language switch ("only happens when I pause before clicking")
+
+**Phase to address:** Phase 22 follow-up (Failure B).
+
+---
+
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
