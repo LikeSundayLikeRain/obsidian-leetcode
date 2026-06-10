@@ -31,35 +31,49 @@ type AnyMockFn = ReturnType<typeof vi.fn> & ((...args: unknown[]) => unknown);
 interface FakeWidget {
   registryKey: string;
   file: { path: string };
+  fenceIndex: number;
+  currentDocHash: string;
   dispatchAuthoritativeBodySwap: AnyMockFn;
   acknowledgeAuthoritativeBody: AnyMockFn;
-  flushNow: AnyMockFn;
 }
 
 function makeFakeWidget(overrides: Partial<FakeWidget> = {}): FakeWidget {
   const base: FakeWidget = {
     registryKey: 'LeetCode/two-sum.md::0::leaf-A',
     file: { path: 'LeetCode/two-sum.md' },
+    fenceIndex: 0,
+    currentDocHash: '',
     dispatchAuthoritativeBodySwap: vi.fn() as unknown as AnyMockFn,
     acknowledgeAuthoritativeBody: vi.fn() as unknown as AnyMockFn,
-    flushNow: vi.fn(() => Promise.resolve()) as unknown as AnyMockFn,
   };
   return { ...base, ...overrides };
 }
 
+// Disk content with a v1.3 leetcode-solve fence at index 0. The helper reads
+// this via app.vault.read and rewrites the body via rewriteFenceBody, so the
+// fence opener / closer must be present.
+const DEFAULT_DISK = '---\nlc-slug: two-sum\nlc-language: python3\n---\n\n```leetcode-solve\nORIGINAL_BODY\n```\n';
+
 interface FakeApp {
   fileManager: { processFrontMatter: AnyMockFn };
+  vault: { read: AnyMockFn; process: AnyMockFn };
 }
 
 function makeFakeApp(opts: {
   processFrontMatterImpl?: (file: unknown, fn: (fm: Record<string, unknown>) => void) => Promise<void>;
+  diskContent?: string;
 } = {}): FakeApp {
+  const disk = opts.diskContent ?? DEFAULT_DISK;
   return {
     fileManager: {
       processFrontMatter:
         (vi.fn(opts.processFrontMatterImpl ?? (async (_f, fn) => {
           fn({});
         })) as unknown) as AnyMockFn,
+    },
+    vault: {
+      read: (vi.fn(async () => disk) as unknown) as AnyMockFn,
+      process: (vi.fn(async (_f, transform: (s: string) => string) => transform(disk)) as unknown) as AnyMockFn,
     },
   };
 }
@@ -157,16 +171,16 @@ describe('applyAuthoritativeBodyAndFrontmatter', () => {
     expect(peerB.dispatchAuthoritativeBodySwap).toHaveBeenCalledWith(newBody, newSlug);
   });
 
-  it('(4) acknowledgeAuthoritativeBody is called on originator + every peer after flushNow + processFrontMatter', async () => {
+  it('(4) acknowledgeAuthoritativeBody is called on originator + every peer after vault.process + processFrontMatter', async () => {
     const widget = makeFakeWidget();
     const peer = makeFakeWidget({ registryKey: 'LeetCode/two-sum.md::0::leaf-B' });
     const app = makeFakeApp();
     const suppression = new SelfWriteSuppression();
 
     const callOrder: string[] = [];
-    widget.flushNow = vi.fn(async () => {
-      await Promise.resolve();
-      callOrder.push('flushNow');
+    app.vault.process = vi.fn(async (_f, transform: (s: string) => string) => {
+      callOrder.push('vault.process');
+      return transform(DEFAULT_DISK);
     }) as unknown as AnyMockFn;
     app.fileManager.processFrontMatter = vi.fn(async (_f, fn: (fm: Record<string, unknown>) => void) => {
       callOrder.push('processFrontMatter');
@@ -197,9 +211,9 @@ describe('applyAuthoritativeBodyAndFrontmatter', () => {
       },
     );
 
-    // Order: flushNow → processFrontMatter → both acknowledges.
+    // Order: vault.process → processFrontMatter → both acknowledges.
     expect(callOrder).toEqual([
-      'flushNow',
+      'vault.process',
       'processFrontMatter',
       'originator.acknowledge',
       'peer.acknowledge',
@@ -328,8 +342,9 @@ describe('applyAuthoritativeBodyAndFrontmatter', () => {
     widget.dispatchAuthoritativeBodySwap = vi.fn(() => {
       callOrder.push(`dispatch:hash=${widget.currentDocHash}`);
     }) as unknown as AnyMockFn;
-    widget.flushNow = vi.fn(async () => {
-      callOrder.push(`flushNow:hash=${widget.currentDocHash}`);
+    app.vault.process = vi.fn(async (_f, transform: (s: string) => string) => {
+      callOrder.push(`vault.process:hash=${widget.currentDocHash}`);
+      return transform(DEFAULT_DISK);
     }) as unknown as AnyMockFn;
     app.fileManager.processFrontMatter = vi.fn(async (_f, fn) => {
       callOrder.push(`processFrontMatter:hash=${widget.currentDocHash}`);
@@ -359,9 +374,9 @@ describe('applyAuthoritativeBodyAndFrontmatter', () => {
     expect(peer.currentDocHash).toBe(expectedHash);
 
     // Every step that runs after the pre-update sees the new hash — proving
-    // the update lands BEFORE dispatch + flushNow + processFrontMatter.
+    // the update lands BEFORE dispatch + vault.process + processFrontMatter.
     expect(callOrder[0]).toBe(`dispatch:hash=${expectedHash}`);
-    expect(callOrder[1]).toBe(`flushNow:hash=${expectedHash}`);
+    expect(callOrder[1]).toBe(`vault.process:hash=${expectedHash}`);
     expect(callOrder[2]).toBe(`processFrontMatter:hash=${expectedHash}`);
   });
 });

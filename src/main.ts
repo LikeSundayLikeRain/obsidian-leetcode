@@ -1281,6 +1281,7 @@ export default class LeetCodePlugin extends Plugin {
           {
             let writerPending: string = 'n/a';
             let originatorPeek: string | null = null;
+            let mapSnapshot: Array<{ path: string; expectedHash: string; expiresAt: number; originator: string | undefined }> = [];
             try {
               if (this.widgetRegistry) {
                 for (const ctl of this.widgetRegistry.values()) {
@@ -1295,8 +1296,11 @@ export default class LeetCodePlugin extends Plugin {
             try {
               originatorPeek = this.selfWriteSuppression.peekOriginator(file.path);
             } catch { /* swallow */ }
+            try {
+              mapSnapshot = this.selfWriteSuppression.peekMapDebug();
+            } catch { /* swallow */ }
             logger.debug(
-              `[lc-debug] modify:enter path=${file.path} ts=${Date.now()} writerPending=${writerPending} originator=${originatorPeek ?? 'null'}`,
+              `[lc-debug] modify:enter path=${file.path} ts=${Date.now()} writerPending=${writerPending} originator=${originatorPeek ?? 'null'} mapKeys=${JSON.stringify(mapSnapshot.map((e) => e.path))} mapHashes=${JSON.stringify(mapSnapshot.map((e) => ({ path: e.path, hash: e.expectedHash, ttlMs: e.expiresAt - Date.now(), originator: e.originator ?? null })))}`,
             );
           }
           // (a) gate — find ALL widgets matching this file's path. Plan
@@ -1354,8 +1358,18 @@ export default class LeetCodePlugin extends Plugin {
             firstMatch.currentDocHash.length > 0 &&
             firstMatch.currentDocHash === observedHash
           ) {
+            // BRAT diagnostic — log Pitfall P2 absorption (frontmatter-only
+            // echo / pre-updated currentDocHash chevron-switch path).
+            logger.debug(
+              `[lc-debug] modify:branch=p2-absorbed path=${file.path} ts=${Date.now()} observedHash=${observedHash} currentDocHash=${firstMatch.currentDocHash} reason=fence-body-unchanged-or-pre-updated firstMatchKey=${firstMatch.registryKey} matchCount=${allMatching.length}`,
+            );
             return;
           }
+          // BRAT diagnostic — P2 NOT taken; record the predicate values so
+          // the user can see why the gate missed.
+          logger.debug(
+            `[lc-debug] modify:p2-miss path=${file.path} ts=${Date.now()} observedHash=${observedHash} currentDocHash=${firstMatch.currentDocHash || '<empty>'} firstMatchKey=${firstMatch.registryKey} hashLen=${firstMatch.currentDocHash?.length ?? 0}`,
+          );
 
           // (c) Plan 21-17 — capture originator BEFORE tryConsume drops
           // the entry. peekOriginator is read-only (does NOT mutate the
@@ -1557,11 +1571,19 @@ export default class LeetCodePlugin extends Plugin {
           {
             const mineDoc = firstMatch.view.state.doc.toString();
             const mineHash = await sha1(mineDoc);
+            // BRAT diagnostic — capture all upstream values that contributed
+            // to reaching the conflict-modal-open construction site so the
+            // user can dogfood and see why P2 missed and why suppression
+            // didn't consume.
+            let upstreamMap: Array<{ path: string; expectedHash: string; expiresAt: number; originator: string | undefined }> = [];
+            try {
+              upstreamMap = this.selfWriteSuppression.peekMapDebug();
+            } catch { /* swallow */ }
             logger.debug(
-              `[lc-debug] conflict:open path=${file.path} writerPending=${hasPending} mineHash=${mineHash} extHash=${observedHash} ts=${Date.now()} reason=external-edit-with-pending-writer`,
+              `[lc-debug] conflict:open path=${file.path} ts=${Date.now()} writerPending=${hasPending} mineHash=${mineHash} extHash=${observedHash} mineLen=${mineDoc.length} extLen=${observedBody.length} childDirty=${firstMatch.childDirty} firstMatchKey=${firstMatch.registryKey} matchCount=${allMatching.length} consumeResult=${consumeResult} originatingRegistryKey=${originatingRegistryKey ?? 'null'} decisionKind=${decision.kind} currentDocHash=${firstMatch.currentDocHash || '<empty>'} mapAtModalOpen=${JSON.stringify(upstreamMap.map((e) => ({ path: e.path, hash: e.expectedHash, ttlMs: e.expiresAt - Date.now(), originator: e.originator ?? null })))} reason=external-edit-with-pending-writer`,
             );
             logger.debug(
-              `[lc-debug] modify:branch=conflict-modal-open path=${file.path} reason=external-edit-with-pending-writer`,
+              `[lc-debug] modify:branch=conflict-modal-open path=${file.path} ts=${Date.now()} reason=external-edit-with-pending-writer`,
             );
           }
 

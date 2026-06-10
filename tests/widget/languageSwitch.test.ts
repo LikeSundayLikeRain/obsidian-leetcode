@@ -67,6 +67,7 @@ interface FakeWidget {
   };
   file: { path: string };
   registryKey: string;
+  fenceIndex: number;
   readOnly: boolean;
   isEmbed: boolean;
   childDirty: boolean;
@@ -87,6 +88,7 @@ function makeFakeWidget(overrides: Partial<FakeWidget> = {}): FakeWidget {
     },
     file: { path: 'LeetCode/two-sum.md' },
     registryKey: 'LeetCode/two-sum.md::0::leaf-0',
+    fenceIndex: 0,
     readOnly: false,
     isEmbed: false,
     childDirty: false,
@@ -99,10 +101,17 @@ function makeFakeWidget(overrides: Partial<FakeWidget> = {}): FakeWidget {
   return { ...base, ...overrides };
 }
 
+// Default disk content with a v1.3 leetcode-solve fence at index 0. Tests
+// that exercise the body-swap path read this via app.vault.read and rewrite
+// via app.vault.process. Tests overriding diskBody pass full file contents
+// that must include a leetcode-solve fence opener for rewriteFenceBody to
+// succeed.
+const DEFAULT_DISK = '---\nlc-slug: two-sum\nlc-language: python3\n---\n\n```leetcode-solve\nORIGINAL_BODY\n```\n';
+
 interface FakeApp {
   metadataCache: { getFileCache: AnyMockFn };
   fileManager: { processFrontMatter: AnyMockFn };
-  vault: { read: AnyMockFn };
+  vault: { read: AnyMockFn; process: AnyMockFn };
 }
 
 function makeFakeApp(opts: {
@@ -110,6 +119,7 @@ function makeFakeApp(opts: {
   diskBody?: string;
 }): FakeApp {
   const { fmAtEntry, diskBody } = opts;
+  const disk = diskBody ?? DEFAULT_DISK;
   const fmStore: Record<string, unknown> = { ...(fmAtEntry ?? {}) };
   return {
     metadataCache: {
@@ -121,7 +131,8 @@ function makeFakeApp(opts: {
       }) as unknown as AnyMockFn,
     },
     vault: {
-      read: vi.fn(async () => diskBody ?? '') as unknown as AnyMockFn,
+      read: vi.fn(async () => disk) as unknown as AnyMockFn,
+      process: vi.fn(async (_f: unknown, transform: (s: string) => string) => transform(disk)) as unknown as AnyMockFn,
     },
   };
 }
