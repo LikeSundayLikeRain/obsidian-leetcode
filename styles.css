@@ -1239,6 +1239,28 @@ button.leetcode-language-chevron:hover {
   background: color-mix(in srgb, var(--background-modifier-error) 80%, transparent);
   color: var(--text-on-accent);
 }
+/* Mid-run RE chips (2026-06-11):
+   THREW = the case that raised an exception (red, like fail, but the
+           label distinguishes it from a wrong-answer FAIL).
+   SKIPPED = a case past the throw that LC never executed (muted gray,
+             so the user sees at a glance it isn't a comparable verdict). */
+.leetcode-verdict .leetcode-verdict-case-chip--threw {
+  background: color-mix(in srgb, var(--background-modifier-error) 80%, transparent);
+  color: var(--text-on-accent);
+}
+.leetcode-verdict .leetcode-verdict-case-chip--skipped {
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+/* "Not executed" placeholder body for cases past the throw. */
+.leetcode-verdict .leetcode-verdict-skipped-note {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
 
 /* Group 4 — D-07 state-driven title coloring (Run-mode verdict header). */
 .leetcode-verdict-title--success {

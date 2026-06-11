@@ -188,28 +188,69 @@ function renderRunResult(
   const correctAnswer =
     typeof res.correct_answer === 'boolean' ? res.correct_answer : undefined;
 
-  const passMask: Array<boolean | null> = [];
+  // ── Mid-run runtime error detection (2026-06-11) ─────────────────────
+  // When the user's solution throws on a later case, LC stops execution
+  // sequentially: status_code === 15, full_runtime_error/runtime_error is
+  // populated, and `code_answer` is TRUNCATED at the throwing case (the
+  // throwing case itself gets an empty-string entry; cases past it are
+  // never executed and get no entry at all). compare_result still spans
+  // the full arity, with '0' for both throwing and unexecuted cases.
+  //
+  // Verified live 2026-06-11 with a 3-case probe where call #2 raised:
+  //   status_code: 15
+  //   code_answer: ["[0,1]", ""]      ← throwing-idx = 1
+  //   compare_result: "100"
+  //   total_testcases: 3
+  //   full_runtime_error: <stack trace>
+  //
+  // throwIdx = code_answer.length - 1 (zero-based); cases with i > throwIdx
+  // are SKIPPED (LC didn't run them). The throwing case itself is
+  // distinguished from an ordinary FAIL because it carries no Output and
+  // owns the stack trace. We surface this as a fourth case state.
+  const errText = firstNonEmpty(res.full_runtime_error, res.runtime_error);
+  const codeAnswerLen = Array.isArray(res.code_answer)
+    ? res.code_answer.length
+    : typeof res.code_answer === 'string' && res.code_answer.length > 0
+      ? 1
+      : 0;
+  const isMidRunRE =
+    typeof res.status_code === 'number' &&
+    res.status_code === 15 &&
+    errText.length > 0 &&
+    codeAnswerLen > 0 &&
+    codeAnswerLen <= arity;
+  const throwIdx = isMidRunRE ? codeAnswerLen - 1 : -1;
+
+  type CaseState = 'pass' | 'fail' | 'threw' | 'skipped' | null;
+  const caseStates: CaseState[] = [];
   for (let i = 0; i < arity; i++) {
+    if (isMidRunRE && i === throwIdx) { caseStates.push('threw'); continue; }
+    if (isMidRunRE && i > throwIdx) { caseStates.push('skipped'); continue; }
     const exp = expected[i] ?? '';
     const out = outputs[i] ?? '';
     // Custom-input run: no expected → no chip.
-    if (exp.length === 0) {
-      passMask.push(null);
-      continue;
-    }
+    if (exp.length === 0) { caseStates.push(null); continue; }
     // LC's per-case bitmask is authoritative when present.
     if (compareResult.length > i) {
-      passMask.push(compareResult[i] === '1');
+      caseStates.push(compareResult[i] === '1' ? 'pass' : 'fail');
       continue;
     }
     // Aggregate boolean — broadcast to all cases when no per-case mask.
     if (correctAnswer !== undefined) {
-      passMask.push(correctAnswer);
+      caseStates.push(correctAnswer ? 'pass' : 'fail');
       continue;
     }
     // Defensive fallback — should not fire on a real LC response.
-    passMask.push(out.trim() === exp.trim());
+    caseStates.push(out.trim() === exp.trim() ? 'pass' : 'fail');
   }
+  // Compatibility shim: passMask preserves the boolean|null aggregate
+  // semantics used by Step 4's aggregatePass calculation downstream.
+  const passMask: Array<boolean | null> = caseStates.map((s) => {
+    if (s === 'pass') return true;
+    if (s === 'fail' || s === 'threw') return false;
+    if (s === 'skipped') return false; // LC counts skipped as fail in compare_result
+    return null;
+  });
 
   // ── Step 4: aggregate verdict ──────────────────────────────────────────
   // Prefer LC's authoritative correct_answer; fall back to passMask aggregate.
@@ -273,12 +314,67 @@ function renderRunResult(
     clear(caseBody);
     // Apply per-case state class for D-07 class-gated coloring.
     caseBody.className = 'leetcode-verdict-case-body';
-    const passState = passMask[activeIdx];
-    if (passState === true) addClass(caseBody, 'leetcode-verdict-case--pass');
-    else if (passState === false) addClass(caseBody, 'leetcode-verdict-case--fail');
+    const state = caseStates[activeIdx];
+    if (state === 'pass') addClass(caseBody, 'leetcode-verdict-case--pass');
+    else if (state === 'fail' || state === 'threw') addClass(caseBody, 'leetcode-verdict-case--fail');
+    else if (state === 'skipped') addClass(caseBody, 'leetcode-verdict-case--skipped');
 
     // ── Step 7a: Input section (D-08) ─────────────────────────────────────
     renderInputSection(caseBody, inputChunks[activeIdx] ?? '', md);
+
+    // ── Mid-run RE: throwing case shows the stack trace in place of Output.
+    if (state === 'threw') {
+      const section = appendEl(caseBody, 'div', 'leetcode-verdict-section');
+      const label = appendEl(section, 'div', 'leetcode-verdict-section-label');
+      setText(label, 'Error');
+      label.setAttribute('aria-label', 'Error');
+      const pre = appendEl(section, 'pre', 'leetcode-verdict-error-pre');
+      setText(pre, errText);
+      // Expected still rendered below for context (LC computed it).
+      if ((expected[activeIdx] ?? '').length > 0) {
+        renderValueSection(
+          caseBody,
+          'Expected',
+          expected[activeIdx] ?? '',
+          'leetcode-verdict-expected-value',
+        );
+      }
+      // Update active-tab class and bail before the normal Stdout/Output
+      // sections — those would just render empty pre boxes since LC stops
+      // populating them at the throwing case.
+      for (let i = 0; i < tabButtons.length; i++) {
+        const btn = tabButtons[i];
+        if (!btn) continue;
+        if (i === activeIdx) addClass(btn, 'is-active');
+        else btn.classList.remove('is-active');
+      }
+      return;
+    }
+
+    // ── Mid-run RE: skipped case (LC didn't execute past the throw).
+    if (state === 'skipped') {
+      const section = appendEl(caseBody, 'div', 'leetcode-verdict-section');
+      const label = appendEl(section, 'div', 'leetcode-verdict-section-label');
+      setText(label, 'Output');
+      label.setAttribute('aria-label', 'Output');
+      const note = appendEl(section, 'div', 'leetcode-verdict-skipped-note');
+      setText(note, 'Not executed — an earlier case raised an exception.');
+      if ((expected[activeIdx] ?? '').length > 0) {
+        renderValueSection(
+          caseBody,
+          'Expected',
+          expected[activeIdx] ?? '',
+          'leetcode-verdict-expected-value',
+        );
+      }
+      for (let i = 0; i < tabButtons.length; i++) {
+        const btn = tabButtons[i];
+        if (!btn) continue;
+        if (i === activeIdx) addClass(btn, 'is-active');
+        else btn.classList.remove('is-active');
+      }
+      return;
+    }
 
     // ── Step 7b: Stdout section (print/console.log output) ─────────────
     // BRAT #2 reversal (2026-06-11): the prior fix treated `code_output` as
@@ -320,7 +416,7 @@ function renderRunResult(
     );
 
     // ── Step 7d: Expected section (suppressed when no expected available) ─
-    if (passState !== null) {
+    if (state !== null) {
       renderValueSection(
         caseBody,
         'Expected',
@@ -344,24 +440,26 @@ function renderRunResult(
     tab.setAttribute('role', 'tab');
     const labelSpan = appendEl(tab, 'span', 'leetcode-verdict-case-tab-label');
     setText(labelSpan, `Case ${String(i + 1)}`);
-    const passState = passMask[i];
-    if (passState !== null) {
-      const chip = appendEl(
-        tab,
-        'span',
-        passState
-          ? 'leetcode-verdict-case-chip leetcode-verdict-case-chip--pass'
-          : 'leetcode-verdict-case-chip leetcode-verdict-case-chip--fail',
-      );
-      setText(chip, passState ? 'PASS' : 'FAIL');
+    const state = caseStates[i];
+    if (state !== null) {
+      const variant: Record<Exclude<CaseState, null>, { cls: string; text: string }> = {
+        pass:    { cls: 'leetcode-verdict-case-chip--pass',    text: 'PASS' },
+        fail:    { cls: 'leetcode-verdict-case-chip--fail',    text: 'FAIL' },
+        threw:   { cls: 'leetcode-verdict-case-chip--threw',   text: 'THREW' },
+        skipped: { cls: 'leetcode-verdict-case-chip--skipped', text: 'SKIP' },
+      };
+      const def = variant[state as Exclude<CaseState, null>];
+      const chip = appendEl(tab, 'span', `leetcode-verdict-case-chip ${def.cls}`);
+      setText(chip, def.text);
     }
     const idx = i;
     tab.addEventListener('click', () => { renderActiveCase(idx); });
     tabButtons.push(tab);
   }
 
-  // First tab active by default.
-  renderActiveCase(0);
+  // Default-active tab: throwing case on mid-run RE (so the user lands
+  // directly on the stack trace), else first tab.
+  renderActiveCase(throwIdx >= 0 ? throwIdx : 0);
 
   // ── Step 8: Footer — AI Debug button on failure (D-16 Run side) ─────────
   const footer = appendEl(contentEl, 'div', 'leetcode-verdict-footer leetcode-verdict-action-row');

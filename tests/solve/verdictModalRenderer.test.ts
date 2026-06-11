@@ -659,3 +659,194 @@ describe('per-case Stdout (wire shape verified 2026-06-11)', () => {
     expect(labels).not.toContain('Stdout');
   });
 });
+
+// ── Mid-run runtime error (wire shape verified 2026-06-11) ────────────────
+//
+// Live probe against leetcode.com with a 3-case Two Sum that solved case 1
+// then raised on call #2 returned:
+//   status_code: 15 (Runtime Error)
+//   code_answer: ["[0,1]", ""]    ← truncated at throwing case
+//   compare_result: "100"
+//   total_testcases: 3
+//   full_runtime_error: <stack trace>
+//   expected_code_answer: ["[0,1]", "[1,2]", "[0,1]", ""]
+//
+// Pre-fix the renderer routed this to renderRunResult and showed Case 1 PASS
+// / Case 2 FAIL / Case 3 FAIL with empty Output boxes — no stack trace
+// surfaced anywhere. Post-fix:
+//   • Throwing case (idx = code_answer.length - 1) shows THREW chip + the
+//     stack trace in place of Output.
+//   • Cases past the throw show SKIP chip + a "Not executed" placeholder.
+//   • Modal default-activates the throwing tab so the user lands on the
+//     stack trace without clicking.
+
+const MID_RUN_RE_PAYLOAD = {
+  state: 'SUCCESS',
+  status_code: 15,
+  status_msg: 'Runtime Error',
+  run_success: false,
+  runtime_error: 'Line 12: ValueError: PROBE_MID_RUN_FAIL call=2 nums=[3, 2, 4]',
+  full_runtime_error:
+    'ValueError: PROBE_MID_RUN_FAIL call=2 nums=[3, 2, 4]\n' +
+    '    raise ValueError(...)\n' +
+    'Line 12 in twoSum (Solution.py)\n' +
+    '    ret = Solution().twoSum(param_1, param_2)\n' +
+    'Line 43 in _driver (Solution.py)\n' +
+    '    _driver()\n' +
+    'Line 58 in <module> (Solution.py)',
+  status_runtime: 'N/A',
+  status_memory: 'N/A',
+  code_answer: ['[0,1]', ''],
+  expected_code_answer: ['[0,1]', '[1,2]', '[0,1]', ''],
+  correct_answer: false,
+  compare_result: '100',
+  total_correct: 1,
+  total_testcases: 3,
+  submission_id: 'runcode_1781204057.2188203_bimUnxfYW7',
+};
+
+describe('mid-run runtime error (wire shape verified 2026-06-11)', () => {
+  it('default-activates the throwing tab on open', () => {
+    const { contentEl } = renderFixtureRun(MID_RUN_RE_PAYLOAD, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+    });
+    const tabs = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-tab'),
+    ) as HTMLButtonElement[];
+    expect(tabs.length).toBe(3);
+    // Throwing case = code_answer.length - 1 = 1 → Case 2 active by default.
+    expect(tabs[1]!.classList.contains('is-active')).toBe(true);
+    expect(tabs[0]!.classList.contains('is-active')).toBe(false);
+    expect(tabs[2]!.classList.contains('is-active')).toBe(false);
+  });
+
+  it('renders PASS / THREW / SKIP chips on the three tabs', () => {
+    const { contentEl } = renderFixtureRun(MID_RUN_RE_PAYLOAD, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+    });
+    const chips = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-chip'),
+    ).map((el) => ({
+      text: el.textContent ?? '',
+      cls: el.className,
+    }));
+    expect(chips).toHaveLength(3);
+    expect(chips[0]!.text).toBe('PASS');
+    expect(chips[0]!.cls).toContain('leetcode-verdict-case-chip--pass');
+    expect(chips[1]!.text).toBe('THREW');
+    expect(chips[1]!.cls).toContain('leetcode-verdict-case-chip--threw');
+    expect(chips[2]!.text).toBe('SKIP');
+    expect(chips[2]!.cls).toContain('leetcode-verdict-case-chip--skipped');
+  });
+
+  it('throwing tab shows the stack trace in place of Output', () => {
+    const { contentEl } = renderFixtureRun(MID_RUN_RE_PAYLOAD, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+    });
+    // Default tab is throwing tab — body should hold the stack trace.
+    const errorPre = contentEl.querySelector(
+      '.leetcode-verdict-case-body .leetcode-verdict-error-pre',
+    );
+    expect(errorPre).not.toBeNull();
+    const errText = errorPre?.textContent ?? '';
+    expect(errText).toContain('ValueError: PROBE_MID_RUN_FAIL');
+    expect(errText).toContain('Line 12 in twoSum');
+    expect(errText).toContain('Line 58 in <module>');
+    // No Output section on the throwing tab — the error replaces it.
+    const labels = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-body .leetcode-verdict-section-label'),
+    ).map((el) => el.textContent ?? '');
+    expect(labels).toContain('Input');
+    expect(labels).toContain('Error');
+    expect(labels).toContain('Expected');
+    expect(labels).not.toContain('Output');
+  });
+
+  it('PASS tab keeps its normal Output rendering', () => {
+    const { contentEl } = renderFixtureRun(MID_RUN_RE_PAYLOAD, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+    });
+    const tabs = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-tab'),
+    ) as HTMLButtonElement[];
+    tabs[0]!.click();
+    const text = contentEl.textContent ?? '';
+    expect(text).toContain('[0,1]'); // case 1 output
+    // No stack trace pre on this tab.
+    const errPres = contentEl.querySelectorAll(
+      '.leetcode-verdict-case-body .leetcode-verdict-error-pre',
+    );
+    expect(errPres.length).toBe(0);
+    const labels = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-body .leetcode-verdict-section-label'),
+    ).map((el) => el.textContent ?? '');
+    expect(labels).toContain('Output');
+    expect(labels).not.toContain('Error');
+  });
+
+  it('SKIP tab shows a "Not executed" placeholder, no stack trace', () => {
+    const { contentEl } = renderFixtureRun(MID_RUN_RE_PAYLOAD, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+    });
+    const tabs = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-tab'),
+    ) as HTMLButtonElement[];
+    tabs[2]!.click();
+    const note = contentEl.querySelector(
+      '.leetcode-verdict-case-body .leetcode-verdict-skipped-note',
+    );
+    expect(note).not.toBeNull();
+    expect(note?.textContent ?? '').toMatch(/not executed/i);
+    // Stack trace not duplicated onto skipped tab.
+    const errPres = contentEl.querySelectorAll(
+      '.leetcode-verdict-case-body .leetcode-verdict-error-pre',
+    );
+    expect(errPres.length).toBe(0);
+    // Expected still rendered (LC pre-computed it on its reference solution).
+    const labels = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-body .leetcode-verdict-section-label'),
+    ).map((el) => el.textContent ?? '');
+    expect(labels).toContain('Expected');
+  });
+
+  it('title is "Runtime Error", AI Debug button is wired', () => {
+    const onOpenAIDebug = vi.fn();
+    const { titleEl, contentEl } = renderFixtureRun(MID_RUN_RE_PAYLOAD, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+      ...({ onOpenAIDebug } as Record<string, unknown>),
+    } as RenderRunOptions);
+    expect(titleEl.textContent).toMatch(/Runtime Error/);
+    const aiBtn = Array.from(contentEl.querySelectorAll('button')).find(
+      (b) => /AI: Debug/i.test(b.textContent ?? ''),
+    );
+    expect(aiBtn).toBeDefined();
+    aiBtn!.click();
+    expect(onOpenAIDebug).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not affect clean RE responses (full all-fail path)', () => {
+    // When EVERY case throws (code_answer is empty), the existing D-15
+    // hasRunErrorPayload path renders a single error block with no tabs.
+    // Verify we didn't regress that route.
+    const allFail = {
+      ...MID_RUN_RE_PAYLOAD,
+      code_answer: [],
+      // submission_id removed so hasRunErrorPayload's gate passes.
+      submission_id: undefined,
+    };
+    const { contentEl } = renderFixtureRun(allFail, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
+    });
+    const tabs = contentEl.querySelectorAll('.leetcode-verdict-case-tab');
+    expect(tabs.length).toBe(0);
+    const errPre = contentEl.querySelector('.leetcode-verdict-error-pre');
+    expect(errPre).not.toBeNull();
+  });
+});
