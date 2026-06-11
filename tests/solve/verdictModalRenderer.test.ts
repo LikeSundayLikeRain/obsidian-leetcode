@@ -491,75 +491,82 @@ describe('Phase 08 — AI Debug button on Run-mode failure paths', () => {
 });
 
 
-// ── BRAT #2 (2026-06-05) — multi-line Stdout regression guard ─────────────
+// ── Per-case Stdout wire-shape (2026-06-11) ──────────────────────────────
 //
-// Previously the renderer used `splitOutput(res.code_output, arity)` which
-// treats array elements as per-case strings. LC's wire format is the
-// opposite: `code_output: string[]` is a flat per-line list of the user's
-// combined stdout (verified against
-// node_modules/@leetnotion/leetcode-api/lib/index.js:1887 — formatTestOutput
-// joins on '\n'). For a single-case Run with a 3-line print() the previous
-// code rendered only line 1 and dropped lines 2-3.
+// Live probe against leetcode.com (3-case Two Sum, Python3, distinct
+// `print()` per case) returned:
+//   total_testcases: 3
+//   code_output:     ["CASE-MARKER ...=9",
+//                     "CASE-MARKER ...=6",
+//                     "CASE-MARKER ...=6"]              ← element-per-CASE
+//   std_output_list: ["CASE-MARKER ...=9\n",
+//                     "CASE-MARKER ...=6\n",
+//                     "CASE-MARKER ...=6\n",
+//                     ""]                                 ← padded + \n suffix
 //
-// These tests pin the fix: render asString(code_output) — the same
-// coercion submissionOrchestrator already uses for LastVerdict.actualOutput.
+// The earlier BRAT #2 hypothesis (array == per-LINE) was an artifact of the
+// leetnotion library's `formatTestOutput` joining on '\n' before exposing
+// the field. The wire itself is per-case. These tests pin the corrected
+// behavior: each tab shows ONLY its own case's stdout.
 
-describe('BRAT #2 — multi-line Stdout in Run modal', () => {
-  it('single-case run with array code_output renders ALL lines (regression)', () => {
+describe('per-case Stdout (wire shape verified 2026-06-11)', () => {
+  it('multi-case run: each tab shows its own case stdout, not combined', () => {
+    // Replicates the live probe payload exactly (Two Sum, 3 cases).
     const fixture = {
       state: 'SUCCESS',
       status_code: 10,
       status_msg: 'Accepted',
       run_success: true,
       correct_answer: true,
-      code_answer: ['[0,1]'],
-      // Multi-line stdout split LINE-PER-ELEMENT (LC wire shape).
-      code_output: ['line one', 'line two', 'line three'],
-      expected_code_answer: ['[0,1]'],
-      total_testcases: 1,
-      compare_result: '1',
-      status_runtime: '20 ms',
-    };
-    const { contentEl } = renderFixtureRun(fixture, {
-      metaData: TWO_SUM_META_DATA,
-      joinedDataInput: '[2,7,11,15]\n9',
-    });
-    const text = contentEl.textContent ?? '';
-    // All three stdout lines must be present in the rendered DOM.
-    expect(text).toContain('line one');
-    expect(text).toContain('line two');
-    expect(text).toContain('line three');
-  });
-
-  it('multi-case run with array code_output joins line-per-element with \n', () => {
-    // 3 cases. LC returns code_output as flat lines (NOT per-case).
-    const fixture = {
-      state: 'SUCCESS',
-      status_code: 10,
-      status_msg: 'Accepted',
-      run_success: true,
-      correct_answer: true,
-      code_answer: ['[0,1]', '[1,2]', '[0,1]'],
-      code_output: ['debug1', 'debug2', 'debug3', 'debug4'],
-      expected_code_answer: ['[0,1]', '[1,2]', '[0,1]'],
+      code_answer: ['[0,1]', '[1,2]', '[0,1]', ''],
+      code_output: [
+        'CASE-MARKER nums=[2, 7, 11, 15] target=9',
+        'CASE-MARKER nums=[3, 2, 4] target=6',
+        'CASE-MARKER nums=[3, 3] target=6',
+      ],
+      std_output_list: [
+        'CASE-MARKER nums=[2, 7, 11, 15] target=9\n',
+        'CASE-MARKER nums=[3, 2, 4] target=6\n',
+        'CASE-MARKER nums=[3, 3] target=6\n',
+        '',
+      ],
+      expected_code_answer: ['[0,1]', '[1,2]', '[0,1]', ''],
+      expected_std_output_list: ['', '', '', ''],
       total_testcases: 3,
       compare_result: '111',
-      status_runtime: '4 ms',
+      status_runtime: '0 ms',
     };
     const { contentEl } = renderFixtureRun(fixture, {
       metaData: TWO_SUM_META_DATA,
       joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
     });
-    const text = contentEl.textContent ?? '';
-    // All four lines of stdout must appear (they are the user's combined
-    // print() output across cases — LC does NOT split them per-case here).
-    expect(text).toContain('debug1');
-    expect(text).toContain('debug2');
-    expect(text).toContain('debug3');
-    expect(text).toContain('debug4');
+
+    // Default-active tab is Case 1 — only its CASE-MARKER must be visible.
+    const tab1Text = contentEl.textContent ?? '';
+    expect(tab1Text).toContain('CASE-MARKER nums=[2, 7, 11, 15] target=9');
+    expect(tab1Text).not.toContain('CASE-MARKER nums=[3, 2, 4]');
+    expect(tab1Text).not.toContain('CASE-MARKER nums=[3, 3]');
+
+    // Click Case 2 → only case 2's marker.
+    const tabs = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-tab'),
+    ) as HTMLButtonElement[];
+    expect(tabs.length).toBe(3);
+    tabs[1]!.click();
+    const tab2Text = contentEl.textContent ?? '';
+    expect(tab2Text).toContain('CASE-MARKER nums=[3, 2, 4] target=6');
+    expect(tab2Text).not.toContain('target=9');
+    expect(tab2Text).not.toContain('nums=[3, 3]');
+
+    // Click Case 3 → only case 3's marker.
+    tabs[2]!.click();
+    const tab3Text = contentEl.textContent ?? '';
+    expect(tab3Text).toContain('CASE-MARKER nums=[3, 3] target=6');
+    expect(tab3Text).not.toContain('nums=[2, 7, 11, 15]');
+    expect(tab3Text).not.toContain('nums=[3, 2, 4]');
   });
 
-  it('string code_output with embedded \n preserves all lines', () => {
+  it('std_output_list trailing newline is stripped for display', () => {
     const fixture = {
       state: 'SUCCESS',
       status_code: 10,
@@ -567,24 +574,88 @@ describe('BRAT #2 — multi-line Stdout in Run modal', () => {
       run_success: true,
       correct_answer: true,
       code_answer: ['[0,1]'],
-      code_output: 'first\nsecond\nthird',
+      std_output_list: ['hello\n'],
       expected_code_answer: ['[0,1]'],
       total_testcases: 1,
       compare_result: '1',
-      status_runtime: '5 ms',
+      status_runtime: '1 ms',
     };
     const { contentEl } = renderFixtureRun(fixture, {
       metaData: TWO_SUM_META_DATA,
       joinedDataInput: '[2,7,11,15]\n9',
     });
-    // Locate the Stdout <pre> by section label ordering: Stdout is rendered
-    // before Output, so we can target by textContent containment in any pre.
     const pres = Array.from(contentEl.querySelectorAll('pre')).map(
       (p) => p.textContent ?? '',
     );
-    const stdoutPre = pres.find((t) => t.includes('first'));
+    const stdoutPre = pres.find((t) => t.startsWith('hello'));
     expect(stdoutPre).toBeDefined();
-    expect(stdoutPre).toContain('second');
-    expect(stdoutPre).toContain('third');
+    // No trailing whitespace (rstrip applied to avoid extra blank line in <pre>).
+    expect(stdoutPre).toBe('hello');
+  });
+
+  it('falls back to code_output when std_output_list is absent', () => {
+    // Older / partial response shape: only code_output present, no
+    // std_output_list. Treat code_output as element-per-case (its true
+    // wire shape per live probe + leetcode-runner Java model).
+    const fixture = {
+      state: 'SUCCESS',
+      status_code: 10,
+      status_msg: 'Accepted',
+      run_success: true,
+      correct_answer: true,
+      code_answer: ['[0,1]', '[1,2]'],
+      code_output: ['only-case-1-stdout', 'only-case-2-stdout'],
+      expected_code_answer: ['[0,1]', '[1,2]'],
+      total_testcases: 2,
+      compare_result: '11',
+      status_runtime: '2 ms',
+    };
+    const { contentEl } = renderFixtureRun(fixture, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6',
+    });
+    // Default tab = case 1.
+    const tab1Text = contentEl.textContent ?? '';
+    expect(tab1Text).toContain('only-case-1-stdout');
+    expect(tab1Text).not.toContain('only-case-2-stdout');
+
+    // Switch to case 2.
+    const tabs = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-tab'),
+    ) as HTMLButtonElement[];
+    tabs[1]!.click();
+    const tab2Text = contentEl.textContent ?? '';
+    expect(tab2Text).toContain('only-case-2-stdout');
+    expect(tab2Text).not.toContain('only-case-1-stdout');
+  });
+
+  it('empty std_output_list elements render no Stdout section on that tab', () => {
+    // LC pads std_output_list — case 2 has no print(), should show no Stdout.
+    const fixture = {
+      state: 'SUCCESS',
+      status_code: 10,
+      status_msg: 'Accepted',
+      run_success: true,
+      correct_answer: true,
+      code_answer: ['[0,1]', '[1,2]'],
+      std_output_list: ['only-case-1\n', ''],
+      expected_code_answer: ['[0,1]', '[1,2]'],
+      total_testcases: 2,
+      compare_result: '11',
+      status_runtime: '2 ms',
+    };
+    const { contentEl } = renderFixtureRun(fixture, {
+      metaData: TWO_SUM_META_DATA,
+      joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6',
+    });
+    // Tab 2: no Stdout label should appear in the case body when stdout is ''.
+    const tabs = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-tab'),
+    ) as HTMLButtonElement[];
+    tabs[1]!.click();
+    const labels = Array.from(
+      contentEl.querySelectorAll('.leetcode-verdict-case-body .leetcode-verdict-section-label'),
+    ).map((el) => el.textContent ?? '');
+    expect(labels).not.toContain('Stdout');
   });
 });

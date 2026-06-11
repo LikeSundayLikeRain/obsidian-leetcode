@@ -281,18 +281,27 @@ function renderRunResult(
     renderInputSection(caseBody, inputChunks[activeIdx] ?? '', md);
 
     // ── Step 7b: Stdout section (print/console.log output) ─────────────
-    // BRAT #2 fix (2026-06-05): LC's `code_output` is the user's combined
-    // stdout for the whole run, NOT a per-case array. When LC returns it as
-    // `string[]`, each element is ONE LINE (verified against
-    // node_modules/@leetnotion/leetcode-api/lib/index.js:1887 — formatTestOutput
-    // joins the array on '\n'). The previous code routed it through
-    // `splitOutput(arr, arity)` which treats array elements as per-case
-    // strings, so a multi-line `print()` showed only line 1 on the active tab
-    // and stranded the remaining lines on phantom case slots. The correct
-    // primitive is `asString(res.code_output)` — same coercion the
-    // submissionOrchestrator uses for `LastVerdict.actualOutput`
-    // (submissionOrchestrator.ts:411 + asString helper at 143).
-    const stdout = asString(res.code_output);
+    // BRAT #2 reversal (2026-06-11): the prior fix treated `code_output` as
+    // a flat run-global blob because the leetnotion library's
+    // `formatTestOutput` joins the array on '\n' before the caller sees it
+    // (node_modules/@leetnotion/leetcode-api/lib/index.js:1887). That made
+    // it look line-per-element on the wire. The wire is actually
+    // ELEMENT-PER-CASE — verified live 2026-06-11 with a 3-case Two Sum
+    // probe printing distinct CASE-MARKER strings:
+    //   total_testcases: 3
+    //   code_output:     [3 elements, exact-length, no trailing pad]
+    //   std_output_list: [4 elements, padded with trailing '', each elem
+    //                     ends with '\n']
+    // Both fields carry per-case stdout. We prefer `std_output_list` (the
+    // modern canonical name; `code_output` is a deprecated alias per the
+    // leetcode-runner Java model) and fall back to `code_output` for older
+    // responses or when the field is omitted. `splitOutput` truncates LC's
+    // padding to `arity` (driven by total_testcases). Trailing '\n' from
+    // std_output_list is stripped for display parity with code_output.
+    const stdoutSource: string | string[] | undefined =
+      res.std_output_list ?? res.code_output;
+    const stdoutPerCase = splitOutput(stdoutSource, arity);
+    const stdout = (stdoutPerCase[activeIdx] ?? '').replace(/\n+$/, '');
     if (stdout.length > 0) {
       renderValueSection(
         caseBody,
