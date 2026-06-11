@@ -77,7 +77,24 @@ export interface RunCheckResponse {
   run_success?: boolean;
   code_answer?: string | string[];
   expected_code_answer?: string | string[];
+  /** User's stdout per test case. Wire shape verified live 2026-06-11 against
+   *  leetcode.com: each array element is the FULL stdout of one test case
+   *  (NOT one line of combined stdout, contra prior BRAT #2 analysis). LC may
+   *  also return this as a single string when only one case ran.
+   *
+   *  Prefer `std_output_list` over `code_output` for per-case rendering —
+   *  external schemas and the leetcode-runner Java model mark `code_output`
+   *  as a deprecated alias of `std_output_list`. */
   code_output?: string | string[];
+  /** Modern per-case stdout array (canonical, post-2024). One element per
+   *  test case; LC pads to match `code_answer.length` (i.e. may include
+   *  trailing empty entries beyond `total_testcases`). Each element ends
+   *  with a trailing `\n` that callers should strip for display. */
+  std_output_list?: string[];
+  /** Reference solution's stdout per test case — mirror of std_output_list
+   *  for the LC-provided expected run. Typically all-empty (LC's reference
+   *  solutions don't print). */
+  expected_std_output_list?: string[];
   correct_answer?: boolean;
   lang?: string;
   runtime_error?: string;

@@ -85,6 +85,7 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 - Plan Phase 19: Widget Foundation + One-Way Sync — `/gsd:plan-phase 19`
+- Multi-fence support per problem note (planning, captured 2026-06-11) — `.planning/todos/pending/2026-06-11-multi-fence-support-per-problem-note.md`
 
 ### Blockers/Concerns
 
