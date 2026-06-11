@@ -721,7 +721,7 @@ describe('mid-run runtime error (wire shape verified 2026-06-11)', () => {
     expect(tabs[2]!.classList.contains('is-active')).toBe(false);
   });
 
-  it('renders PASS / THREW / SKIP chips on the three tabs', () => {
+  it('renders PASS / ERROR / SKIP chips on the three tabs', () => {
     const { contentEl } = renderFixtureRun(MID_RUN_RE_PAYLOAD, {
       metaData: TWO_SUM_META_DATA,
       joinedDataInput: '[2,7,11,15]\n9\n[3,2,4]\n6\n[3,3]\n6',
@@ -735,7 +735,7 @@ describe('mid-run runtime error (wire shape verified 2026-06-11)', () => {
     expect(chips).toHaveLength(3);
     expect(chips[0]!.text).toBe('PASS');
     expect(chips[0]!.cls).toContain('leetcode-verdict-case-chip--pass');
-    expect(chips[1]!.text).toBe('THREW');
+    expect(chips[1]!.text).toBe('ERROR');
     expect(chips[1]!.cls).toContain('leetcode-verdict-case-chip--threw');
     expect(chips[2]!.text).toBe('SKIP');
     expect(chips[2]!.cls).toContain('leetcode-verdict-case-chip--skipped');

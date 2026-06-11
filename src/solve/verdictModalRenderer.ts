@@ -445,7 +445,7 @@ function renderRunResult(
       const variant: Record<Exclude<CaseState, null>, { cls: string; text: string }> = {
         pass:    { cls: 'leetcode-verdict-case-chip--pass',    text: 'PASS' },
         fail:    { cls: 'leetcode-verdict-case-chip--fail',    text: 'FAIL' },
-        threw:   { cls: 'leetcode-verdict-case-chip--threw',   text: 'THREW' },
+        threw:   { cls: 'leetcode-verdict-case-chip--threw',   text: 'ERROR' },
         skipped: { cls: 'leetcode-verdict-case-chip--skipped', text: 'SKIP' },
       };
       const def = variant[state as Exclude<CaseState, null>];
