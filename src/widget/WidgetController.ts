@@ -81,6 +81,7 @@ import {
   createCmdSlashScopeExtension,
   type AppForCmdSlashScope,
 } from './cmdSlashScopeExtension';
+import { createSystemPasteExtension } from './systemPasteExtension';
 // WR-02 (Phase 21 cycle-2 review-fix) — log dispatch failures from
 // applyPeerSync at debug level so production debugging of split-pane
 // peer-sync regressions has an observable breadcrumb.
@@ -1584,6 +1585,19 @@ function buildExtensions(
     vimCompartment.of(
       vimEnabled ? vim({ status: true } as Parameters<typeof vim>[0]) : [],
     ),
+    // Debug session vim-cmd-v-paste-offset — capture-phase Cmd+V / Ctrl+V
+    // intercept. `@replit/codemirror-vim` 6.3.0 attaches a bubble-phase
+    // paste listener on contentDOM that, in normal/visual mode, advances
+    // the cursor by +1 and forces insert mode (collapsing visual selection)
+    // BEFORE the native paste insert runs — making system-clipboard paste
+    // land at cursor+1 and never replace a visual selection. This extension
+    // pre-empts that handler with a capture-phase listener so Cmd+V behaves
+    // as standard system paste in BOTH normal and visual modes. Vim's own
+    // register-based `p`/`P`/`yy` paste keys (which go through vim's
+    // internal command dispatcher, not the DOM paste event) are untouched.
+    // Always-on (vim ON or OFF) — when vim is off the capture handler
+    // produces the same result the native default would.
+    createSystemPasteExtension(),
     // Phase 22 D-polish-07 — vim mode → `.lc-vim-insert` class on container.
     // CSS keys on the class to render only the cursor layer matching the
     // current mode (Insert → blinking pipe; Normal/Visual → solid fat
