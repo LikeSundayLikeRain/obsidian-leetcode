@@ -1,27 +1,27 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.3
-milestone_name: milestone closes on BRAT pass.
-status: Awaiting next milestone
-stopped_at: "PR #10 merged; 1.3.0-beta.1 tag + release published; BRAT 7-day dogfood window starting"
+milestone_name: Inline Widget Architecture
+status: shipped
+stopped_at: "v1.3 shipped (1.3.0 tag) and archived; awaiting next milestone"
 last_updated: "2026-06-12T13:47:43.787Z"
 last_activity: 2026-06-12 — Milestone v1.3 completed and archived
 progress:
-  total_phases: 9
-  completed_phases: 4
-  total_plans: 36
-  completed_plans: 36
-  percent: 44
+  total_phases: 5
+  completed_phases: 5
+  total_plans: 35
+  completed_plans: 35
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
+See: .planning/PROJECT.md (updated 2026-06-12 — after v1.3 milestone)
 
 **Core value:** Every LeetCode problem you solve becomes a first-class note in your Obsidian vault — tagged, linked, and discoverable — so practice builds a knowledge graph instead of scattered code files.
-**Current focus:** Phase 22 — v1-2-path-removal-polish
+**Current focus:** Planning next milestone (v1.3 shipped)
 
 ## Current Position
 
@@ -32,22 +32,15 @@ Last activity: 2026-06-12 — Milestone v1.3 completed and archived
 
 ## Performance Metrics
 
-**Cumulative (v1.0 + v1.1 + v1.2):**
+**Cumulative (v1.0 + v1.1 + v1.2 + v1.3):**
 
-- Total phases completed: 25
-- Total plans completed: 133
+- Total phases completed: 30
+- Total plans completed: 168
 - v1.0: 10 phases, 61 plans (shipped 2026-05-14)
 - v1.1: 9 phases, 41 plans (shipped 2026-05-20)
 - v1.2: 6 phases, 31 plans (shipped 2026-05-26)
-- v1.2 stats: 1,713 tests passing, 1.71 MB raw / 459 KB gzipped bundle
-
-| Phase | Plan | Duration | Tasks | Files |
-|-------|------|----------|-------|-------|
-| 13 | 01 | 261s | 2 | 4 |
-| 13 | 02 | 294s | 1 | 3 |
-| 13 | 03 | 111s | 3 | 2 |
-| Phase 15 P01 | 136s | 2 tasks | 4 files |
-| Phase 15 P02 | 139s | 2 tasks | 4 files |
+- v1.3: 5 phases, 35 plans (shipped 2026-06-12)
+- v1.3 stats: ~2,873 tests passing, 1,723 KB raw bundle, net −3,325 LOC in src/
 
 ## Accumulated Context
 
@@ -84,15 +77,11 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Plan Phase 19: Widget Foundation + One-Way Sync — `/gsd:plan-phase 19`
-- Multi-fence support per problem note (planning, captured 2026-06-11) — `.planning/todos/pending/2026-06-11-multi-fence-support-per-problem-note.md`
+- Multi-fence support per problem note — deferred to v1.4 (see ROADMAP Backlog + `.planning/todos/completed/2026-06-11-multi-fence-support-per-problem-note.md`)
 
 ### Blockers/Concerns
 
-- **Phase 19 empirical risks:** Live Preview raw-source-reveal mitigation (`mousedown.stopPropagation()`) is empirically unverified — state-persistence map is the fallback regardless. `getSectionInfo` null-paths must be exercised on day one.
-- **Phase 20 empirical risks:** Section-protection narrowing has no precedent (must audit every `changeFilter` condition). `@replit/codemirror-vim` Compartment.reconfigure runtime-toggle is undocumented in the library README — early dev-vault probe required.
-- **Phase 21 risk:** Migration is the highest-risk surface in the milestone. Hand-edited note edge cases (extra blank lines, malformed frontmatter, missing `## Code` heading) need fixture coverage in CI.
-- **Bundle headroom:** ~92 KB remaining after v1.2's vim addition. v1.3 should net out negative (−2,400 LOC) but CI gate must guard.
+(None — all v1.3 empirical risks resolved; milestone shipped via BRAT dogfood.)
 
 ### Quick Tasks Completed
 
@@ -104,6 +93,7 @@ Recent decisions affecting current work:
 | 260605-wle | Document widget cursor-jump rollback debug findings (D/E/F/G followups) | 2026-06-06 | b8034bd | [260605-wle-document-widget-cursor-jump-rollback-deb](./quick/260605-wle-document-widget-cursor-jump-rollback-deb/) |
 | 260605-wux | Fix multi-pane preview→openProblem leaf-targeting bug | 2026-06-06 | 237de28 | [260605-wux-fix-multi-pane-preview-leaf-targeting](./quick/260605-wux-fix-multi-pane-preview-leaf-targeting/) |
 | 260607-uko | Add quick problem search via palette + double-shift | 2026-06-08 | 7131191 | [260607-uko-add-quick-search-shift-shift](./quick/260607-uko-add-quick-search-shift-shift/) |
+| 260608-qf6 | Fix issue #16 cookie filter (host-only csrftoken capture + 30s watchdog) | 2026-06-08 | — | [260608-qf6-issue-16-cookie-filter](./quick/260608-qf6-issue-16-cookie-filter/) |
 
 ## Deferred Items
 
@@ -123,13 +113,15 @@ Recent decisions affecting current work:
 | Widget | Multi-pane live/mirror — MULTI-01, MULTI-02 | Deferred to v1.4+ | 2026-05-29 |
 | Widget | Static palette for widget — PALETTE-01 (v1.2 backlog 999.1) | Deferred to v1.4+ | 2026-05-29 |
 | Widget | Triple-backtick bracket pair — BRACKET-01 (v1.2 carry-over) | Deferred to v1.4+ | 2026-05-29 |
+| Widget | Multi-fence support per problem note | Deferred to v1.4 | 2026-06-12 |
+| Lint | Repo-wide eslint baseline cleanup (~81 errors, predates Phase 22) — POLISH-03 tail | Deferred (post-v1.3) | 2026-06-03 |
 
 ## Session Continuity
 
-Last session: 2026-06-03T20:01:00.000Z
-Stopped at: PR #10 merged; 1.3.0-beta.1 tag + release published; BRAT 7-day dogfood window starting
-Resume file: .planning/phases/22-v1-2-path-removal-polish/22-03-SUMMARY.md
-Next action: Install/refresh in BRAT (`LikeSundayLikeRain/obsidian-leetcode` @ 1.3.0-beta.1), run 7-day dogfood logging daily entries in `22-VERIFICATION.md` § "22-03-07 BRAT 7-Day Dogfood", watch GitHub Issues for P0/P1. On BRAT pass: bump manifest+package to `1.3.0` (lockstep), commit, tag, push, file plugin-store re-review against `community-plugins.json` entry. On BRAT fail: hotfix → `1.3.0-beta.2` re-tag or mini-phase 22.1 escalation.
+Last session: 2026-06-12 — v1.3 milestone close
+Stopped at: v1.3 archived (milestones/v1.3-ROADMAP.md + v1.3-REQUIREMENTS.md), PROJECT.md evolved, RETROSPECTIVE.md created, REQUIREMENTS.md removed, git tag 1.3.0 present (stable shipped 2026-06-12).
+Resume file: —
+Next action: Start the next milestone with `/gsd-new-milestone`. First v1.4 candidate already on the board: multi-fence support per problem note (ROADMAP Backlog).
 
 ## Operator Next Steps
 
