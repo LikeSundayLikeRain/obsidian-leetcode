@@ -4,6 +4,55 @@ All notable changes to **LeetCode for Obsidian** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-06-12
+
+### Fixed
+- Typing in the solution editor no longer occasionally drops the last character or jumps the cursor, even while Obsidian Sync or another pane writes to the same note. The editor now tracks in-progress typing precisely and never clears its "still editing" state until your keystrokes have actually reached disk. ([#24])
+- Composing CJK text (Pinyin, Japanese, Korean) in the solution editor is now safe: a background sync or save arriving while the candidate menu is open can no longer overwrite your half-composed input. ([#24])
+- Auto-indent on Enter now respects each language's indent style and your **Indent size** setting. Previously it always inserted 4 spaces regardless of language or your override (so the 2-space default for JavaScript/TypeScript was unreachable). ([#26])
+- Pressing Tab in the solution editor now inserts the same indentation that Enter uses, instead of a literal tab character. This fixes the "mixed tabs and spaces in the same file" problem. ([#26])
+- Switching the fence language via the chevron dropdown now recolors the code immediately. Previously the syntax highlighting kept the old language's colors until your next keystroke. ([#25])
+- The chevron language switch once again swaps the fence body to the new language's starter code (restoring v1.2 behavior). If you've already started typing, your code is preserved and a notice points you to **LeetCode: Reset code**. When LeetCode has no starter for the chosen language or you're offline, the notice now tells you which case applies. ([#25])
+- System paste (Cmd+V) in the solution editor now lands at the cursor instead of one character to the right when vim mode is in normal or visual mode, and now correctly replaces a visual selection. Vim's own register paste (`p`/`P`/`yy`) is unchanged. ([#27])
+- The Run modal now shows each test case's own output under its tab again, instead of repeating one combined blob under every tab. Runtime errors that happen partway through a run now surface the stack trace on the failing case's tab rather than showing empty output boxes. ([#28])
+
+### Changed
+- The chevron language switch now swaps the fence body and re-highlights in a single undo-able step, so you never see new code briefly painted with the old language's colors. ([#25])
+- Changing the **Indent size** setting now applies live to every open solution editor; you no longer need to reopen the note. ([#26])
+
+## [1.3.0] - 2026-06-09
+
+The v1.3 inline-widget architecture milestone. The nested `## Code` child-editor is replaced by a single inline solution widget — one fenced code block per note that owns its own editor — giving more reliable sync, cleaner section locking, and faster editing.
+
+### Added
+
+#### Inline solution widget
+- A single inline code widget replaces the old nested `## Code` editor. The widget owns its own embedded editor and renders in both Reading mode and Live Preview, with language-aware syntax highlighting, auto-indent, bracket matching, and comment toggling for all 8 LeetCode languages.
+- The Run / Submit action row and the language chevron live directly inside the widget in both reading and editing modes.
+- `lc-language` frontmatter is now the single source of truth for which language Run, Submit, and AI features use.
+- Vim mode runs inside the widget, with keystrokes scoped to the editor so they never leak to the surrounding note. The vim toggle applies after reloading the note.
+- Line-number gutter with a vim-aware hybrid (relative) mode.
+
+#### Migration from v1.2
+- Notes created in v1.0–v1.2 are migrated to the single-fence widget the first time you open them, controlled by the **Auto-migrate on open** setting. A timestamped backup is written to the plugin folder before each migration and is automatically cleaned up after 30 days.
+- A banner on legacy notes lets you trigger migration manually if auto-migrate is off.
+
+#### Quick problem search
+- Find and open any problem from the command palette or by pressing Shift twice. ([#17])
+
+### Changed
+- External edits that arrive while you're typing now raise a conflict modal (Keep mine / Keep external / View diff) instead of silently clobbering either side.
+- Release titles dropped the leading "v" prefix; the release workflow patches `manifest.json` from the git tag.
+
+### Fixed
+- The AI knowledge-graph taxonomy now recognizes the Monotonic Queue pattern. ([#18])
+- AI review code is read from the widget so reviews see your current solution. ([#13])
+- The LeetCode login flow captures the session cookie more reliably via a URL filter and now surfaces a timeout state instead of hanging. ([#19])
+- Run verdicts now trust LeetCode's own per-case comparison, fixing spurious mismatches on order-agnostic answers.
+- Numerous editing-stability fixes for the new widget: cursor preservation during typing races, fence-closer protection, scroll jumps on Enter, and reading-mode re-render after migration.
+
+---
+
 ## [1.2.0-alpha.4] - 2026-05-29
 
 ### Added
@@ -144,6 +193,17 @@ These decisions are intentional v1.0 choices, documented here so future versions
 - `turndown` for HTML → Markdown conversion
 - `vitest` for unit testing — 652 tests passing, ~163 KB production bundle
 
+[1.3.1]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.3.1
+[1.3.0]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.3.0
 [1.2.0-alpha.1]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.2.0-alpha.1
 [1.1.0]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.1.0-alpha.2
 [1.0.0]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.0.0
+[#13]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/pull/13
+[#17]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/pull/17
+[#18]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/pull/18
+[#19]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/pull/19
+[#24]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/pull/24
+[#25]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/pull/25
+[#26]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/pull/26
+[#27]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/pull/27
+[#28]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/pull/28
