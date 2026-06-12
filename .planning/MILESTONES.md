@@ -1,5 +1,49 @@
 # Milestones
 
+## v1.3 Inline Widget Architecture (Shipped: 2026-06-12)
+
+**Phases completed:** 5 phases (19, 20, 21, 21.1, 22), 35 plans
+**Timeline:** 2026-05-28 → 2026-06-12 (15 days; in-tree work closed 2026-06-03, BRAT 7-day dogfood + 1.3.0 stable 2026-06-04→12)
+**Stats:** ~2,873 tests passing. Bundle: 1,723 KB raw (within 1.8 MB ceiling). Net −3,325 LOC in `src/` from the v1.2-path deletion. Tags: `1.3.0-beta.1`, `1.3.0-beta.2`, `1.3.0`.
+
+**Delivered:** A ground-up rewrite of the editing model. The v1.2 dual-CM6 nested-editor + bidirectional sync + section-lock stack is replaced by a self-contained inline `leetcode-solve` code-block widget driven by one-way sync. The widget owns its own embedded CM6 `EditorView`; edits flow through a single mutation primitive (`app.vault.process`) to disk, and the file becomes the single source of truth. This collapses v1.2's open-ended corner-case bug class (cmd-Z leaks, locked-range dispatches, fence-closer merges, cursor-visibility races) into one render path. Every v1.2 note migrates lazily and atomically on first open, with a 30-day backup sidecar. The `leetcode-solve` fence renders read-only inside `![[embeds]]` and degrades safely on stray fences.
+
+### Key accomplishments
+
+1. **Widget Foundation + One-Way Sync** (Phase 19) — Self-contained inline `leetcode-solve` widget mounted via a two-path strategy: `registerMarkdownCodeBlockProcessor` (Reading mode, `editable.of(false)`) + a Live Preview ViewPlugin with `Decoration.replace`. Debounced one-way sync to disk via `vault.process` with per-path content-hash echo suppression (2s TTL, NOT a boolean flag), per-file rate-limiting, and six flush-on-transition hooks (unload, blur, leaf-change, rename, button-click, `beforeunload`). `EditorView.atomicRanges` keeps the parent cursor out of the fence. State (cursor/scroll/undo) persists across unmount/remount via a 30s-TTL map. Embeds + stray fences route to read-only.
+
+2. **Reconciliation, UX, Action Row, Section Protection** (Phase 20) — External-edit reconciliation via `vault.on('modify')` with a conflict modal (Keep mine / Keep external / View diff + inline LCS line-diff) on in-flight-typing collisions. Run / Submit / AI Debug / Reset / Copy action row + language chevron mounted inside the widget DOM, reading code directly from the live `EditorView` (no disk round-trip). Language switching flips `lc-language` frontmatter → `metadataCache.on('changed')` → `Compartment.reconfigure` with no EditorView rebuild. `sectionLockExtension.ts` (527 LOC) narrowed to `sectionProtectionExtension.ts` (`## Problem` body + `## Techniques` heading only). Per-widget `vimCompartment` live-reconfigure. Live theme retheme via `css-change` + `requestMeasure`. Multi-pane single-active-per-file with a "Take over" affordance.
+
+3. **v1.2 Migration** (Phase 21) — Lazy-on-open atomic migration: a v1.2 lang-slug fence under `## Code` (gated on `lc-slug` frontmatter) is rewritten to ` ```leetcode-solve ` with `lc-language` verified/derived, all in one `vault.process` callback so disk never observes a half-migrated state. Backup sidecar at `.obsidian/plugins/obsidian-leetcode/migration-backup-{slug}-{ISO}/` with 30-day GC. Idempotent detection; never batch-migrates on plugin load. `codeExtractor.ts` sources language from frontmatter; `starterCodeInjector.ts` / `NoteTemplate.ts` emit `leetcode-solve` directly. CI fixtures span v1.0/v1.1/v1.2 sample notes with byte-exact assertions.
+
+4. **Migration follow-up — typing-flicker fix** (Phase 21.1) — Closed UAT R10: with `autoMigrateOnOpen=ON`, the LP StateField's migrate/repair side-effects re-fired on every parent docChange, remounting the widget on each ~500ms flush. Fixed with a per-path attempt-once-this-session gate. Also closed the R6 fresh-create regression (wait for `metadataCache` before `openLinkText`). MIGRATE-FLICKER-01 resolved.
+
+5. **v1.2 Path Removal + Polish + Ship** (Phase 22) — Hard cutover: `useInlineWidget` defaults ON, the 5 v1.2 files + 8 dead test files deleted, ~800 LOC of `src/main.ts` sync wiring removed, the `'leetcode.*'` userEvent convention retired (net −3,325 LOC across 34 files). Polish suite (vim-Tab cursor marker, widget hover border, action-row font). Release gates wired in-tree: bundle-size CI gate, `innerHTML` scan of `src/widget/`, README v1.3 architecture/migration/scoping docs, CLAUDE.md `## Architecture` rewrite, manifest bump. BRAT 7-day dogfood (1.3.0-beta.1) passed; surfaced regressions fixed via `/gsd-quick` (cursor-jump/char-rollback, multi-pane preview leaf-targeting, quick-search, issue-16 cookie filter). Shipped 1.3.0 stable.
+
+### Requirements outcome
+
+All 57 v1.3 requirements Resolved across phases 19/20/21/21.1/22 (WIDGET, SYNC, EMBED, ACTION, THEME, PROTECT, VIM, MIGRATE, DELETE, POLISH groups). VIM-03 resolved via documentation (vim-toggle in Settings requires an Obsidian reload — accepted as the v1.3 contract; the reload-on-toggle banner was explicitly not shipped). MIGRATE-FLICKER-01 added mid-milestone (Phase 21.1) and resolved.
+
+### Tech stack notes (vs v1.2)
+
+- Net code reduction: the dual-CM6 sync stack (`childEditorSync.ts` 809 LOC, `sectionLockExtension.ts` 527 LOC, `nestedEditorExtension.ts` 395 LOC, `childEditorRegistry.ts`, `codeActionsEditorExtension.ts`) deleted; replaced by a thin `widgetRegistry.ts` (`Map<key, EditorView>`) + `WidgetController`.
+- `app.vault.process` is the sole mutation primitive; `'leetcode.*'` userEvent bypass convention retired.
+- `@replit/codemirror-vim` carried over with per-widget `vimCompartment`.
+- ~2,873 tests passing (up from 1,713 in v1.2).
+
+### Known notes at close
+
+- **vim-toggle requires Obsidian reload** (VIM-03) — Settings-panel vim toggle does not hot-reload the widget; documented in README "Known notes". Banner explicitly not shipped.
+- **POLISH-03 eslint baseline** — `src/widget/` innerHTML scan PASS; a pre-existing repo-wide ~81-error eslint baseline (predates Phase 22) is deferred to a future cleanup pass. Plugin-store auto-rejection guard (innerHTML in widget code) is intact.
+- **Multi-fence per problem note** — deferred to v1.4 (todo captured 2026-06-11).
+
+### Archived artifacts
+
+- `.planning/milestones/v1.3-ROADMAP.md` — full phase + plan list
+- `.planning/milestones/v1.3-REQUIREMENTS.md` — requirements traceability with outcomes
+
+---
+
 ## v1.0 MVP (Shipped: 2026-05-14)
 
 **Phases completed:** 10 phases, 61 plans, 76 tasks

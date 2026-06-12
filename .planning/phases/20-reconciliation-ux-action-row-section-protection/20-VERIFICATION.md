@@ -1,8 +1,10 @@
 ---
 phase: 20
 slug: reconciliation-ux-action-row-section-protection
-status: human_needed
+status: passed
 verified_at: 2026-05-29
+human_verified_at: 2026-06-12
+human_verification_method: "20-HUMAN-UAT.md status=passed (user signoff 2026-05-31 after Plan 20-10 + 7 hotfix patches). BRAT 7-day dogfood (1.3.0-beta.1) confirmed action row, language switching, conflict modal, vim live-reconfigure, narrowed section protection, and theme reactivity in production."
 score: 12/12
 overrides_applied: 0
 ---

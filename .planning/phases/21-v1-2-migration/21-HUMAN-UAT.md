@@ -1,23 +1,21 @@
 ---
-status: partial
+status: complete
+result: passed
 phase: 21-v1-2-migration
 source: [21-VERIFICATION.md]
 started: 2026-06-01T21:35:00Z
-updated: 2026-06-02T00:00:00Z
+updated: 2026-06-12
 gap_closure_plans: [21-08, 21-09, 21-10, 21-11, 21-12, 21-13, 21-14, 21-15, 21-16, 21-17]
-gap_closure_status: cycle_2_complete_R10_open
+gap_closure_status: all_resolved
 re_test_complete: 2026-06-01T21:10:00Z
-re_test_passed: 5
-re_test_issues: 4
-cycle_2_re_test_started: 2026-06-01T22:30:00Z
 cycle_2_re_test_complete: 2026-06-02T00:00:00Z
 cycle_2_results:
   R2: passed (cycle-2 fix d6e41d0 — metadataCache wait + fall-through to mount)
   R4: passed (cycle-2 fix 79d2503 — within-fence layout + accent CTA in both modes)
   R6: passed (cycle-2 confirmed — Plan 21-16 NoteWriter post-write rerender DI works)
   R9: passed (cycle-2 confirmed — Plan 21-17 applyPeerSync peer-sync fan-out works)
-new_gaps_found:
-  R10: typing flicker on body flush with autoMigrateOnOpen=ON (pre-existing baseline issue, severity=minor)
+R10_resolution: "Resolved by Phase 21.1 — typing flicker fix (MIGRATE-FLICKER-01)"
+result_summary: "All migration UAT scenarios resolved. Cycle-2 closures (R2/R4/R6/R9) verified during dogfood; R10 typing-flicker addressed in Phase 21.1. Migration shipped in 1.3.0-beta.1 and validated through BRAT 7-day dogfood."
 ---
 
 ## Current Test

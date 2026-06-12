@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.3
-milestone_name: Inline Widget Architecture
-status: executing
-stopped_at: PR #10 merged + 1.3.0-beta.1 released; awaiting BRAT 7-day dogfood window
-last_updated: "2026-06-08T02:15:00.000Z"
-last_activity: 2026-06-08 -- Quick task 260607-uko: add JetBrains-style quick problem search. Two surfaces feed a SuggestModal<IndexedProblem> backed by settings.getProblemIndex — palette command "Quick search problems" (user-rebindable, no default hotkey) and a document-level shift-shift keydown detector (300ms window; disarms on non-Shift key, ignores e.repeat and modifier-held shifts; capture phase, never preventDefaults). Filter ranks numeric exact-id first, then id-prefix, then case-insensitive title/slug substring. New: src/main/shiftShiftDetector.ts, src/browse/QuickProblemSearchModal.ts, +14 tests. Full suite 2873 passing. Bundle 1,723 KB (within 1.8 MB v1.2 ceiling).
+milestone_name: milestone closes on BRAT pass.
+status: Awaiting next milestone
+stopped_at: "PR #10 merged; 1.3.0-beta.1 tag + release published; BRAT 7-day dogfood window starting"
+last_updated: "2026-06-12T13:47:43.787Z"
+last_activity: 2026-06-12 — Milestone v1.3 completed and archived
 progress:
-  total_phases: 1
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 9
+  completed_phases: 4
+  total_plans: 36
+  completed_plans: 36
+  percent: 44
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-28 — v1.3 milestone started)
 
 ## Current Position
 
-Phase: 22 (v1-2-path-removal-polish) — EXECUTING (PR #10 merged; 1.3.0-beta.1 released; BRAT 7-day window pending)
-Plan: 3 of 3 in-tree wave complete (22-01 cutover ✓, 22-02 polish ✓, 22-03 in-tree gates ✓ — all shipped 2026-06-03)
-Status: PR #10 merged to main (1c20e68 admin merge); tag 1.3.0-beta.1 pushed; GitHub Release published as prerelease with main.js+manifest+styles.css attached. Awaiting BRAT 7-day dogfood window. On BRAT pass: bump to 1.3.0 + plugin-store re-review submission.
-Last activity: 2026-06-06 -- Completed quick task 260605-wle: durable debug-session note for widget cursor-jump + char-rollback at `.planning/debug/widget-cursor-jump-and-char-rollback.md` capturing root causes 1-4, shipped A/B/C, and followups D/E/F/G so the deferred principled fixes can be picked up without re-running the 32-agent workflow.
+Phase: Milestone v1.3 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-12 — Milestone v1.3 completed and archived
 
 ## Performance Metrics
 
@@ -130,3 +130,7 @@ Last session: 2026-06-03T20:01:00.000Z
 Stopped at: PR #10 merged; 1.3.0-beta.1 tag + release published; BRAT 7-day dogfood window starting
 Resume file: .planning/phases/22-v1-2-path-removal-polish/22-03-SUMMARY.md
 Next action: Install/refresh in BRAT (`LikeSundayLikeRain/obsidian-leetcode` @ 1.3.0-beta.1), run 7-day dogfood logging daily entries in `22-VERIFICATION.md` § "22-03-07 BRAT 7-Day Dogfood", watch GitHub Issues for P0/P1. On BRAT pass: bump manifest+package to `1.3.0` (lockstep), commit, tag, push, file plugin-store re-review against `community-plugins.json` entry. On BRAT fail: hotfix → `1.3.0-beta.2` re-tag or mini-phase 22.1 escalation.
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

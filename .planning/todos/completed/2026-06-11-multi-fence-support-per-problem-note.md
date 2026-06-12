@@ -2,6 +2,10 @@
 created: 2026-06-11T03:38:10.951Z
 title: Multi-fence support per problem note
 area: planning
+status: deferred
+deferred_to: v1.4
+deferred_at: 2026-06-12
+deferred_reason: "Not in v1.3 scope. Surface as a v1.4 candidate during /gsd-new-milestone."
 files:
   - src/widget/selfWriteSuppression.ts:56
   - src/widget/selfWriteSuppression.ts:75

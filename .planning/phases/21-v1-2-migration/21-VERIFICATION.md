@@ -1,7 +1,9 @@
 ---
 phase: 21-v1-2-migration
 verified: 2026-06-01T00:00:00Z
-status: human_needed
+status: passed
+human_verified_at: 2026-06-12
+human_verification_method: "21-HUMAN-UAT cycle-2 R2/R4/R6/R9 passed (2026-06-02). R10 typing-flicker resolved by Phase 21.1 (MIGRATE-FLICKER-01). Migration validated in BRAT 7-day dogfood (1.3.0-beta.1) — atomic single-write migration, backup sidecar, idempotent re-open, and 30-day retention all confirmed in production usage."
 score: 16/16 must-haves verified
 overrides_applied: 0
 re_verification:

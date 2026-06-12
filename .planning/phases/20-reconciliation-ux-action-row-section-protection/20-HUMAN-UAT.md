@@ -1,5 +1,6 @@
 ---
-status: passed
+status: complete
+result: passed
 phase: 20-reconciliation-ux-action-row-section-protection
 source: [20-VERIFICATION.md]
 started: 2026-05-29

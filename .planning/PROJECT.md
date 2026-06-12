@@ -2,7 +2,7 @@
 
 ## What This Is
 
-An Obsidian community plugin that fetches LeetCode problems, lets users write and submit solutions without leaving Obsidian, and turns every solved problem into a linked note in their vault. Now with AI-powered coaching (debug suggestions, solution reviews, pattern classification), virtual contest mode, and a non-destructive problem preview surface. Inspired by vscode-leetcode, but leans into what Obsidian does well: tags, backlinks, and the knowledge graph — so a solving session compounds into a personal, searchable reference library of techniques and patterns.
+An Obsidian community plugin that fetches LeetCode problems, lets users write and submit solutions without leaving Obsidian, and turns every solved problem into a linked note in their vault. Code lives inside the note as a self-contained inline `leetcode-solve` widget — its own embedded CM6 editor with syntax highlighting, vim mode, and language switching — writing through to disk via one-way sync so the file is always the single source of truth. Layered on top: AI-powered coaching (debug suggestions, solution reviews, pattern classification), virtual contest mode, and a non-destructive problem preview surface. Inspired by vscode-leetcode, but leans into what Obsidian does well: tags, backlinks, and the knowledge graph — so a solving session compounds into a personal, searchable reference library of techniques and patterns.
 
 ## Core Value
 
@@ -10,9 +10,9 @@ Every LeetCode problem you solve becomes a first-class note in your Obsidian vau
 
 ## Current State
 
-**v1.2 shipped 2026-05-26.** 25 phases (across 3 milestones), 133 plans, 1,713 tests passing, 1.71 MB production bundle.
+**v1.3 shipped 2026-06-12.** 30 phases (across 4 milestones), 168 plans, ~2,873 tests passing, 1,723 KB production bundle. Tag `1.3.0`.
 
-The plugin now includes a nested code editor with full language support (8 languages), vim mode, relative line numbers, fence auto-recovery, and all v1.1 features (preview, AI coaching, contest mode, knowledge graph). Version 1.2.0-alpha.1 pre-released for testing.
+v1.3 replaced the v1.2 dual-CM6 nested-editor + bidirectional-sync + section-lock stack with a self-contained inline `leetcode-solve` code-block widget driven by one-way sync (`app.vault.process` as the sole mutation primitive; file is the single source of truth). This collapsed v1.2's open-ended corner-case bug class into one render path and netted −3,325 LOC in `src/`. Existing v1.2 notes migrate lazily and atomically on first open with a 30-day backup sidecar. All v1.2 editor features carry over (8 languages, vim, indent/bracket/comment rules, language switching, relative line numbers, theme integration), plus all v1.1 features (preview, AI coaching, contest mode, knowledge graph). Shipped via BRAT 7-day dogfood → 1.3.0 stable.
 
 ## Requirements
 
@@ -48,32 +48,24 @@ The plugin now includes a nested code editor with full language support (8 langu
 - ✓ Vim mode with keystroke isolation in code editor — v1.2
 - ✓ Fence auto-recovery on non-CM6 edits (vim dd, external tools) — v1.2
 - ✓ Optional relative line numbers in code editor — v1.2
+- ✓ Inline `leetcode-solve` widget mounts in Reading mode + Live Preview (two-path) with its own embedded CM6 editor — v1.3
+- ✓ One-way sync: widget edits → debounced `vault.process` → atomic fence-body rewrite; file is single source of truth — v1.3
+- ✓ Per-path content-hash echo suppression + per-file rate-limit + six flush-on-transition hooks (no lost edits) — v1.3
+- ✓ External-edit reconciliation via `vault.on('modify')` with cursor-preserving reload + conflict modal (Keep mine / external / diff) — v1.3
+- ✓ `atomicRanges` keeps parent cursor out of the fence; widget state (cursor/scroll/undo) persists across remount — v1.3
+- ✓ Action row (Run / Submit / AI Debug / Reset / Copy) + language chevron mount inside the widget — v1.3
+- ✓ `![[embed]]` and stray-fence rendering degrade to read-only safely — v1.3
+- ✓ Narrowed section protection (`## Problem` body + `## Techniques` heading only); fence opener/closer owned by widget — v1.3
+- ✓ Lazy atomic migration of v1.2 notes on first open + 30-day backup sidecar + CI fixtures — v1.3
+- ✓ v1.2 path deleted (5 files + ~800 LOC wiring + `'leetcode.*'` userEvent convention), net −3,325 LOC — v1.3
 
 ### Active
 
-**v1.3 Inline Widget Architecture** — see Current Milestone below.
+(None — v1.3 shipped. Next milestone requirements defined via `/gsd-new-milestone`.)
 
-## Current Milestone: v1.3 Inline Widget Architecture
+## Completed: v1.3 Inline Widget Architecture (2026-06-12)
 
-**Goal:** Replace the v1.2 dual-CM6 nested-editor + bidirectional sync + section-lock model with a self-contained inline code-block widget driven by one-way sync — preserving the "code lives inside the note" UX while eliminating the corner-case bug class.
-
-**Target features:**
-- Code-block processor for a `leetcode-solve` fence tag — renders inline in Reading mode and Live Preview (Dataview / Kanban / Excalidraw pattern)
-- Self-contained child CM6 instance per widget — own state, own undo stack, no parent-doc transactions
-- One-way continuous sync: widget edits → debounced (~300–500ms) `vault.process` → atomic fence-body rewrite; parent CM6 picks up via normal file-change pipeline
-- External-edit reconciliation via `vault.on('modify')` with self-write suppression window
-- Flush-on-unload / flush-on-blur so no in-flight edits are lost
-- Vim mode via `@replit/codemirror-vim`, conditional on `app.vault.getConfig('vimMode')` — reload-on-toggle accepted
-- Carry-over from v1.2: 8 language packs, theme integration, indent/bracket/comment rules, language switching, relative line numbers
-- Re-mount Run / Submit / AI Debug / Copy buttons inside the widget UI
-- Migration path for existing v1.2 notes (legacy `## Code` block with `lc-language`)
-- Deletion of `childEditorSync.ts`, `sectionLockExtension.ts`, `nestedEditorExtension.ts`, the `'leetcode.*'` userEvent convention, history-bypass mirror dance, fence-closer-merge guard
-
-**Key context:**
-- v1.2's dual-editor sync proved an open-ended bug surface (cmd-Z leaks, locked-range dispatches, fence-closer merges, cursor visibility). Inline-widget + one-way sync collapses it to a single source of truth.
-- ~1,700 LOC net deletion expected from `src/main/`; widget mount + sync layer estimated at ~300 LOC.
-- Cmd-Z (per-widget undo) and Cmd-F (focus-scoped) become intentional UX shifts — matches other inline-block plugins.
-- Existing v1.2 notes must remain readable/editable; migration must not break vault data.
+**Delivered:** Self-contained inline `leetcode-solve` widget + one-way sync replacing the v1.2 dual-CM6 stack; file is the single source of truth. Lazy atomic v1.2-note migration with backup sidecar. v1.2 path fully removed (net −3,325 LOC). See MILESTONES.md for full details.
 
 ## Completed: v1.2 Code Editor Experience (2026-05-26)
 
@@ -93,14 +85,23 @@ The plugin now includes a nested code editor with full language support (8 langu
 - **Auto-rewrite v1.0 `## Techniques` on plugin update** — Lazy-on-AC migration is mandatory default.
 - **Free-form AI cluster names** — Frozen 22-pattern taxonomy prevents graph fragmentation.
 - **Telemetry / usage analytics** — Non-negotiable for plugin-store.
+- **Multi-pane live/mirror widget sync** — Single-active-per-file is the v1.3 baseline; promote-on-focus live/mirror (MULTI-01/02) deferred to v1.4+.
+- **Widget editing inside `![[]]` embeds** — Embeds render read-only; edit the source note instead.
+- **`cm.dispatch` from widget into parent CM6** — Architectural anti-pattern; widget edits go through `vault.process` only.
+- **Batch migration on plugin load** — Lazy-on-open only; never freeze the vault rewriting v1.2 notes en masse.
+- **Static/opinionated widget palette (VS Code themes)** — Theme-tracking is the v1.3 behavior; static palette (PALETTE-01) deferred to v1.4+ backlog.
+- **Multiple `leetcode-solve` fences per problem note** — Single fence per note in v1.3; multi-fence support deferred to v1.4 candidate.
+- **Hot-reload of vim-mode toggle** — Settings-panel vim toggle requires an Obsidian reload (VIM-03 resolved via documentation; banner not shipped).
 
 ## Context
 
+- **v1.3 is the editing-model rewrite.** The widget owns its embedded CM6 `EditorView`; edits flow one-way through `app.vault.process` (the sole mutation primitive) to disk. File = single source of truth, widget = active editor, parent CM6 = passive consumer. Collapsed v1.2's bug surface into one render path.
 - **v1.1 shipped as a full practice + coaching platform.** Preview → solve → submit → AI review → pattern classification → knowledge graph — all without leaving Obsidian.
-- **Tech stack:** TypeScript, esbuild, Obsidian API, CM6, Vercel AI SDK 6.x, `@leetnotion/leetcode-api`, turndown, vitest.
-- **Bundle:** 1.155 MB (ceiling 1.2 MB). AI SDK is the primary contributor; CJS-no-splitting makes dynamic import ineffective.
+- **Tech stack:** TypeScript, esbuild, Obsidian API, CM6, `@replit/codemirror-vim`, Vercel AI SDK 6.x, `@leetnotion/leetcode-api`, turndown, vitest.
+- **Bundle:** 1,723 KB raw (ceiling 1.8 MB, set Phase 17 D-19 for vim). v1.3 netted −3,325 LOC in `src/` but bundle stayed flat (CodeMirror vim + language packs dominate). AI SDK + CM6 are the primary contributors; CJS-no-splitting makes dynamic import ineffective.
+- **Widget architecture (v1.3):** `WidgetController` per fence; `widgetRegistry.ts` is a thin `Map<key, EditorView>`; self-write echo suppression is a per-path content-hash map (2s TTL); the only fence-body write path is `applyAuthoritativeBody`. See CLAUDE.md `## Architecture` for the canonical detail.
 - **AI architecture:** `AIClient` facade → provider adapters → `obsidianFetch(mode)` transport. Native `window.fetch()` for streaming (confined to `src/ai/`), `requestUrl` for everything else.
-- **User is primary user:** Built by the author for daily LC practice; dogfood guides UX.
+- **User is primary user:** Built by the author for daily LC practice; dogfood guides UX. v1.3 shipped via a BRAT 7-day dogfood window with fixes landed through `/gsd-quick`.
 - **Primary languages:** Java and Python, but all LC languages supported.
 
 ## Constraints
@@ -132,8 +133,15 @@ The plugin now includes a nested code editor with full language support (8 langu
 | Look-ahead edges feature-flagged (v1.1) | Novel UX; can disable in field | ✓ Good |
 | Lazy-on-AC Techniques migration (v1.1) | Never batch-rewrite on plugin load | ✓ Good |
 | All AI vault writes via `app.vault.process` (v1.1) | Consistent with v1.0 vault-write discipline | ✓ Good |
-| Inline code-block widget + one-way sync (v1.3) | v1.2 dual-CM6 sync proved an open-ended bug surface; widget = single source of truth, file = passive consumer | Pending |
-| Reload-on-vim-toggle accepted (v1.3) | Listening for Obsidian vim toggle has no clean event; reload is acceptable to user | Pending |
+| Inline code-block widget + one-way sync (v1.3) | v1.2 dual-CM6 sync proved an open-ended bug surface; widget = single source of truth, file = passive consumer | ✓ Good — collapsed the bug class; net −3,325 LOC |
+| `app.vault.process` as sole mutation primitive (v1.3) | One write path; retry-safe; no `cm.dispatch` into parent | ✓ Good |
+| Two-path mount: code-block processor (Reading) + ViewPlugin `Decoration.replace` (Live Preview) (v1.3) | Single path breaks half of all user workflows | ✓ Good |
+| Per-path content-hash echo suppression, 2s TTL (v1.3) | Boolean flag is provably broken under concurrent multi-file flushes | ✓ Good |
+| `EditorView.atomicRanges` keeps parent cursor out of fence (v1.3) | Without it, Live Preview unmounts the widget on cursor approach, destroying state | ✓ Good |
+| Narrowed `sectionProtectionExtension` (`## Problem` + `## Techniques` only) (v1.3) | Widget owns the fence range, so opener/closer locks are moot; `'leetcode.*'` userEvent retired | ✓ Good |
+| Lazy atomic v1.2-note migration + 30-day backup (v1.3) | Never batch-rewrite vault data on plugin load; disk never sees a half-migrated state | ✓ Good |
+| Single-active-per-file multi-pane (v1.3) | Live/mirror promote-on-focus deferred to v1.4+; "Take over" affordance covers the common case | ✓ Good |
+| Reload-on-vim-toggle accepted (v1.3) | Listening for Obsidian vim toggle has no clean event; reload is acceptable to user | ✓ Good — VIM-03 resolved via README docs; banner not shipped |
 
 ## Evolution
 
@@ -146,4 +154,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-28 — v1.3 milestone started*
+*Last updated: 2026-06-12 — after v1.3 milestone (Inline Widget Architecture shipped)*
