@@ -190,7 +190,7 @@ import { StatePersistenceMap } from './widget/statePersistence';
 // Phase 4 Plan 05 — knowledge-graph wiring.
 import { KnowledgeGraphWriter } from './graph/KnowledgeGraphWriter';
 import { PatternClusterEngine } from './graph/PatternClusterEngine';
-import { ClusterHubWriter } from './graph/ClusterHubWriter';
+import { ClusterHubWriter, sanitizeHubFilename } from './graph/ClusterHubWriter';
 import { SubmissionHistoryStore } from './graph/SubmissionHistoryStore';
 import {
   listSubmissionsForSlug,
@@ -3500,7 +3500,7 @@ export default class LeetCodePlugin extends Plugin {
           : undefined,
       // Phase 12 Plan 03 (D-03/D-04) — pattern chip on AC (suppress during contest).
       file: this.contestSessionManager.getSession() ? null : file,
-      getPatternHubPath: (p) => `${this.lcSettings.getProblemsFolder()}/Patterns/${normalizePatternName(p)}.md`,
+      getPatternHubPath: (p) => `${this.lcSettings.getProblemsFolder()}/Patterns/${sanitizeHubFilename(normalizePatternName(p))}.md`,
     });
     modal.open();
 

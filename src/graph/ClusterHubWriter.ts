@@ -83,7 +83,7 @@ export class ClusterHubWriter {
   async ensureHub(patternName: string, firstEntry: HubEntry): Promise<void> {
     const normalized = normalizePatternName(patternName);
     const folderPath = `${this.problemsFolder}/Patterns`;
-    const filePath = `${folderPath}/${normalized}.md`;
+    const filePath = `${folderPath}/${sanitizeHubFilename(normalized)}.md`;
 
     // Check existence
     if (this.app.vault.getAbstractFileByPath(filePath)) return;
@@ -114,7 +114,7 @@ export class ClusterHubWriter {
    */
   async appendEntry(patternName: string, entry: HubEntry): Promise<void> {
     const normalized = normalizePatternName(patternName);
-    const filePath = `${this.problemsFolder}/Patterns/${normalized}.md`;
+    const filePath = `${this.problemsFolder}/Patterns/${sanitizeHubFilename(normalized)}.md`;
     const file = narrowToTFile(this.app.vault.getAbstractFileByPath(filePath));
     if (!file) {
       logger.debug('ClusterHubWriter.appendEntry: hub not found, calling ensureHub', { filePath });
@@ -171,7 +171,7 @@ export class ClusterHubWriter {
       // Rebuild each hub
       for (const [patternName, entries] of groups) {
         const folderPath = `${this.problemsFolder}/Patterns`;
-        const filePath = `${folderPath}/${patternName}.md`;
+        const filePath = `${folderPath}/${sanitizeHubFilename(patternName)}.md`;
         const file = narrowToTFile(this.app.vault.getAbstractFileByPath(filePath));
 
         if (file) {
@@ -206,6 +206,30 @@ export class ClusterHubWriter {
 }
 
 // ── Private helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Make a pattern DISPLAY name safe to use as a filesystem filename segment.
+ *
+ * A "/" in a pattern name (e.g. the seed "Heap / Priority Queue") is a path
+ * separator: passing it straight to `vault.create` silently fails because the
+ * "Patterns/Heap " parent folder doesn't exist, orphaning the whole cluster.
+ * This strips path separators, the Windows-reserved characters, and ASCII
+ * control chars, replacing each with a single space, then collapses runs and
+ * trims. The DISPLAY name is kept intact for note content; only the filename
+ * segment passes through here.
+ *
+ * Examples:
+ *   'Heap / Priority Queue' -> 'Heap Priority Queue'
+ *   'A:B*C'                 -> 'A B C'
+ * Idempotent.
+ */
+export function sanitizeHubFilename(name: string): string {
+  // eslint-disable-next-line no-control-regex -- intentional: strip ASCII control chars from a filename segment
+  return name
+    .replace(/[/\\:*?"<>|\x00-\x1F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 /**
  * Normalize difficulty string to the canonical union type.

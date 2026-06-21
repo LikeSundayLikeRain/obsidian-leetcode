@@ -6,8 +6,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { makeMockVaultApp } from '../helpers/mock-vault';
 import { mergeTechniquesSectionAI } from '../../src/graph/mergeTechniquesSection';
-import { ClusterHubWriter } from '../../src/graph/ClusterHubWriter';
+import { ClusterHubWriter, sanitizeHubFilename } from '../../src/graph/ClusterHubWriter';
 import type { HubEntry } from '../../src/graph/ClusterHubWriter';
+import { normalizePatternName } from '../../src/graph/patternTaxonomy';
 
 // ─── mergeTechniquesSectionAI ─────────────────────────────────────────────────
 
@@ -243,6 +244,87 @@ describe('ClusterHubWriter', () => {
     await writer.ensureHub('Two Pointers', entry);
     // Should attempt to create the Patterns folder
     expect(m.spies.createFolder).toHaveBeenCalledWith('LeetCode/Patterns');
+  });
+
+  // ─── Quick-260621-154 FIX 2: slash/reserved-char filename sanitization ──────
+
+  it('sanitizeHubFilename strips path separators / reserved / control chars', () => {
+    expect(sanitizeHubFilename('Heap / Priority Queue')).toBe('Heap Priority Queue');
+    expect(sanitizeHubFilename('A:B*C')).toBe('A B C');
+    expect(sanitizeHubFilename('a\\b?c"d<e>f|g')).toBe('a b c d e f g');
+    expect(sanitizeHubFilename('tab\there')).toBe('tab here');
+    // Idempotent
+    expect(sanitizeHubFilename(sanitizeHubFilename('Heap / Priority Queue'))).toBe('Heap Priority Queue');
+  });
+
+  it('ensureHub writes a slash-bearing pattern to a path with no "/" in the segment, content keeps display name', async () => {
+    const m = makeMockVaultApp({});
+    const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
+    const entry: HubEntry = { title: 'Kth Largest', fileBasename: '215-kth-largest', difficulty: 'Medium', solvedDate: '2026-06-21' };
+    await writer.ensureHub('Heap / Priority Queue', entry);
+    expect(m.spies.create).toHaveBeenCalled();
+    const createCall = m.spies.create.mock.calls[0]!;
+    // Filename segment is sanitized — no "/" splitting the pattern into a subfolder.
+    expect(createCall[0]).toBe('LeetCode/Patterns/Heap Priority Queue.md');
+    const body = createCall[1]! as string;
+    // Content keeps the unsanitized display name.
+    expect(body).toContain('# Heap / Priority Queue');
+    expect(body).toContain('pattern: "Heap / Priority Queue"');
+  });
+
+  it('ensureHub + appendEntry + reconcile resolve the SAME sanitized hub path (no orphan)', async () => {
+    const m = makeMockVaultApp({});
+    const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
+    const sanitizedPath = 'LeetCode/Patterns/Heap Priority Queue.md';
+
+    const first: HubEntry = { title: 'Kth Largest', fileBasename: '215-kth-largest', difficulty: 'Medium', solvedDate: '2026-06-21' };
+    await writer.ensureHub('Heap / Priority Queue', first);
+    expect(m.spies.create.mock.calls[0]![0]).toBe(sanitizedPath);
+
+    // appendEntry must find the file ensureHub created and process it (not create a second one).
+    const second: HubEntry = { title: 'Last Stone Weight', fileBasename: '1046-last-stone-weight', difficulty: 'Easy', solvedDate: '2026-06-21' };
+    await writer.appendEntry('Heap / Priority Queue', second);
+    expect(m.spies.process).toHaveBeenCalled();
+    expect(m.spies.process.mock.calls[0]![0].path).toBe(sanitizedPath);
+
+    // Still exactly one hub file for this pattern.
+    const content = m.getContent(sanitizedPath)!;
+    expect(content).toContain('[[215-kth-largest|Kth Largest]]');
+    expect(content).toContain('[[1046-last-stone-weight|Last Stone Weight]]');
+  });
+
+  it('reconcile derives the sanitized hub path for a slash pattern (no orphan)', async () => {
+    const m = makeMockVaultApp({
+      'LeetCode/kth-largest.md': '# Kth Largest\n',
+    });
+    m.seedFrontmatter('LeetCode/kth-largest.md', {
+      'lc-pattern': 'Heap / Priority Queue',
+      'lc-difficulty': 'Medium',
+      'lc-solved-date': '2026-06-21',
+      'lc-title': 'Kth Largest',
+    });
+    const mockFiles = [
+      { path: 'LeetCode/kth-largest.md', basename: '215-kth-largest', name: 'kth-largest.md', extension: 'md', stat: { ctime: 0 } },
+    ];
+    (m.app.vault as unknown as Record<string, unknown>).getMarkdownFiles = vi.fn(() => mockFiles);
+
+    const writer = new ClusterHubWriter({ app: m.app as never, problemsFolder });
+    await writer.reconcile();
+
+    expect(m.spies.create).toHaveBeenCalledTimes(1);
+    const createCall = m.spies.create.mock.calls[0]!;
+    expect(createCall[0]).toBe('LeetCode/Patterns/Heap Priority Queue.md');
+    const body = createCall[1]! as string;
+    expect(body).toContain('# Heap / Priority Queue');
+    expect(body).toContain('pattern: "Heap / Priority Queue"');
+  });
+
+  it('read/write transform-agreement lock: sanitizeHubFilename(normalizePatternName(...)) matches writer segment', () => {
+    // The read path (main.ts getPatternHubPath) and all three writer sites must
+    // produce the identical filename segment for a slash seed.
+    expect(sanitizeHubFilename(normalizePatternName('Heap / Priority Queue'))).toBe('Heap Priority Queue');
+    // Case variant from the AI canonicalizes then sanitizes to the same segment.
+    expect(sanitizeHubFilename(normalizePatternName('  heap / priority queue  '))).toBe('Heap Priority Queue');
   });
 
   it('buildHubNoteBody renders correct structure with frontmatter and difficulty tables', async () => {
