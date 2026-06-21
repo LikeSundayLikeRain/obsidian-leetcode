@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-12 — after v1.3 milestone)
 Phase: Milestone v1.3 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-06-12 — Milestone v1.3 completed and archived
+Last activity: 2026-06-21 — Completed quick task 260621-154: pattern-classification hub bug fixes
 
 ## Performance Metrics
 
@@ -94,6 +94,7 @@ Recent decisions affecting current work:
 | 260605-wux | Fix multi-pane preview→openProblem leaf-targeting bug | 2026-06-06 | 237de28 | [260605-wux-fix-multi-pane-preview-leaf-targeting](./quick/260605-wux-fix-multi-pane-preview-leaf-targeting/) |
 | 260607-uko | Add quick problem search via palette + double-shift | 2026-06-08 | 7131191 | [260607-uko-add-quick-search-shift-shift](./quick/260607-uko-add-quick-search-shift-shift/) |
 | 260608-qf6 | Fix issue #16 cookie filter (host-only csrftoken capture + 30s watchdog) | 2026-06-08 | — | [260608-qf6-issue-16-cookie-filter](./quick/260608-qf6-issue-16-cookie-filter/) |
+| 260621-154 | Fix pattern-classification hub bugs: seed-aware normalizePatternName + hub filename sanitization | 2026-06-21 | 64e9c84 | [260621-154-fix-pattern-classification-hub-bugs-seed](./quick/260621-154-fix-pattern-classification-hub-bugs-seed/) |
 
 ## Deferred Items
 
