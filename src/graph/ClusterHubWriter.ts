@@ -18,7 +18,13 @@
 import type { App } from 'obsidian';
 import { TFile } from 'obsidian';
 import { normalizePatternName } from './patternTaxonomy';
+import { sanitizeHubFilename } from './hubFilename';
 import { logger } from '../shared/logger';
+
+// Re-export the (now pure) sanitizeHubFilename so existing consumers — main.ts
+// line 193 and tests/graph/clusterHubWriter.test.ts line 9 — keep importing it
+// from './graph/ClusterHubWriter' unchanged.
+export { sanitizeHubFilename } from './hubFilename';
 
 /**
  * TFile narrowing — production runs go through `instanceof TFile`; unit tests
@@ -206,30 +212,6 @@ export class ClusterHubWriter {
 }
 
 // ── Private helpers ─────────────────────────────────────────────────────────
-
-/**
- * Make a pattern DISPLAY name safe to use as a filesystem filename segment.
- *
- * A "/" in a pattern name (e.g. the seed "Heap / Priority Queue") is a path
- * separator: passing it straight to `vault.create` silently fails because the
- * "Patterns/Heap " parent folder doesn't exist, orphaning the whole cluster.
- * This strips path separators, the Windows-reserved characters, and ASCII
- * control chars, replacing each with a single space, then collapses runs and
- * trims. The DISPLAY name is kept intact for note content; only the filename
- * segment passes through here.
- *
- * Examples:
- *   'Heap / Priority Queue' -> 'Heap Priority Queue'
- *   'A:B*C'                 -> 'A B C'
- * Idempotent.
- */
-export function sanitizeHubFilename(name: string): string {
-  return name
-    // eslint-disable-next-line no-control-regex -- intentional: strip path separators, reserved + ASCII control chars from a filename segment
-    .replace(/[/\\:*?"<>|\x00-\x1F]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 /**
  * Normalize difficulty string to the canonical union type.
