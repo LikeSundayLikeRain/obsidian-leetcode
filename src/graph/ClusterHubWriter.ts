@@ -224,8 +224,8 @@ export class ClusterHubWriter {
  * Idempotent.
  */
 export function sanitizeHubFilename(name: string): string {
-  // eslint-disable-next-line no-control-regex -- intentional: strip ASCII control chars from a filename segment
   return name
+    // eslint-disable-next-line no-control-regex -- intentional: strip path separators, reserved + ASCII control chars from a filename segment
     .replace(/[/\\:*?"<>|\x00-\x1F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
