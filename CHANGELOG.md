@@ -4,6 +4,18 @@ All notable changes to **LeetCode for Obsidian** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-06-22
+
+Fixes for the AI knowledge-graph pattern hubs: a missing hub, drifting pattern names, and broken hub links.
+
+### Fixed
+- Patterns whose name contains a slash — notably **Heap / Priority Queue** — now get a proper hub note. Previously the slash was treated as a folder separator, so the hub note silently failed to write and every problem in that pattern was left without a hub. Hub filenames now strip filesystem-reserved characters (`/ \ : * ? " < > |`) while the note keeps the original display name.
+- Pattern names with internal capitals — **1-D Dynamic Programming**, **2-D Dynamic Programming**, **Union-Find** — now keep their exact capitalization in note frontmatter and hub filenames. They were previously lowercased to `1-d` / `2-d` / `Union-find`, which risked splitting one pattern across two near-duplicate hubs.
+- The pattern chip in the verdict popup and the `## Techniques` wikilink now resolve to the real hub file for slash-named patterns, instead of pointing at a non-existent note. The in-note link uses an aliased form (`[[Heap Priority Queue|Heap / Priority Queue]]`) so it still displays the canonical name.
+
+### Changed
+- The pattern classifier prompt is tuned to reduce mislabeling: enabling steps (Sorting, Arrays & Hashing, Prefix Sum) are no longer chosen as the primary pattern when a real downstream technique exists (e.g. 3Sum is now Two Pointers, not Sorting); a second pattern is emitted only when it is genuinely load-bearing; and pattern names must be output verbatim from the known list.
+
 ## [1.3.1] - 2026-06-12
 
 ### Fixed
@@ -193,6 +205,7 @@ These decisions are intentional v1.0 choices, documented here so future versions
 - `turndown` for HTML → Markdown conversion
 - `vitest` for unit testing — 652 tests passing, ~163 KB production bundle
 
+[1.3.2]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.3.2
 [1.3.1]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.3.1
 [1.3.0]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.3.0
 [1.2.0-alpha.1]: https://github.com/LikeSundayLikeRain/obsidian-leetcode/releases/tag/1.2.0-alpha.1
