@@ -93,6 +93,58 @@ describe('mergeTechniquesSectionAI (D-09 full replacement)', () => {
     expect(result).not.toContain('[[Array]]');
     expect(result).not.toContain('[[Stack]]');
   });
+
+  // ─── Quick-260622-gkp: sanitize-driven aliased wikilinks for slash patterns ──
+
+  const slashBody = [
+    '## Notes',
+    'notes',
+    '',
+    '## Techniques',
+    '',
+    '- [[Hash Table]]',
+    '',
+  ].join('\n');
+
+  it('renders a slash pattern as an aliased wikilink to the sanitized hub file', () => {
+    const result = mergeTechniquesSectionAI(slashBody, 'Heap / Priority Queue');
+    expect(result).toContain('- [[Heap Priority Queue|Heap / Priority Queue]]');
+  });
+
+  it('renders a non-slash pattern as a plain wikilink (no alias)', () => {
+    const result = mergeTechniquesSectionAI(slashBody, 'Two Pointers');
+    expect(result).toContain('- [[Two Pointers]]');
+    expect(result).not.toContain('Two Pointers|');
+  });
+
+  it('is idempotent for a slash pattern (alias-pipe trap)', () => {
+    const once = mergeTechniquesSectionAI(slashBody, 'Heap / Priority Queue');
+    const twice = mergeTechniquesSectionAI(once, 'Heap / Priority Queue');
+    expect(twice).toBe(once);
+  });
+
+  it('does not duplicate or corrupt an already-aliased link on re-merge', () => {
+    const seeded = [
+      '## Notes',
+      'notes',
+      '',
+      '## Techniques',
+      '',
+      '- [[Heap Priority Queue|Heap / Priority Queue]]',
+      '',
+    ].join('\n');
+    const result = mergeTechniquesSectionAI(seeded, 'Heap / Priority Queue');
+    const matches = result.match(/- \[\[Heap Priority Queue\|Heap \/ Priority Queue\]\]/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+
+  it('array form renders plain + aliased and is idempotent', () => {
+    const once = mergeTechniquesSectionAI(slashBody, ['Trees', 'Heap / Priority Queue']);
+    expect(once).toContain('- [[Trees]]');
+    expect(once).toContain('- [[Heap Priority Queue|Heap / Priority Queue]]');
+    const twice = mergeTechniquesSectionAI(once, ['Trees', 'Heap / Priority Queue']);
+    expect(twice).toBe(once);
+  });
 });
 
 // ─── ClusterHubWriter ─────────────────────────────────────────────────────────

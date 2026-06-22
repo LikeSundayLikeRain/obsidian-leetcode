@@ -36,6 +36,9 @@ import {
   NOTES_HEADING_LINE,
   CUSTOM_TESTS_HEADING_LINE,
 } from '../notes/NoteTemplate';
+// Pure, zero-dependency import — keeps this module's purity contract (no
+// obsidian leak). Do NOT import from ClusterHubWriter (it depends on obsidian).
+import { sanitizeHubFilename } from './hubFilename';
 
 // Re-export heading constant for downstream consumers (ClusterHubWriter, etc.)
 export { TECHNIQUES_HEADING_LINE } from '../notes/NoteTemplate';
@@ -135,7 +138,17 @@ function parseItems(lines: string[], from: number, to: number): Item[] {
     const m = LINK_RE.exec(line);
     if (m) {
       flushFree();
-      items.push({ type: 'link', target: m[2] ?? '', bullet: m[1] ?? '-' });
+      // Alias-aware: LINK_RE group 2 is the whole inner text, possibly
+      // `fn|display`. Split on the FIRST '|' and store the DISPLAY name (the
+      // canonical pattern name) as `target` so dedup/identity compares against
+      // the pattern name, not the rendered "fn|display" string. This makes
+      // render→parse→render a fixed point (see renderSection). The renderer
+      // re-derives the alias deterministically via sanitizeHubFilename, so no
+      // separate alias field is needed on Item.
+      const inner = m[2] ?? '';
+      const pipe = inner.indexOf('|');
+      const display = pipe >= 0 ? inner.slice(pipe + 1) : inner;
+      items.push({ type: 'link', target: display, bullet: m[1] ?? '-' });
     } else {
       buf.push(line);
     }
@@ -161,7 +174,16 @@ function renderSection(items: Item[]): string {
       parts.push('');
     }
     if (item.type === 'link') {
-      parts.push(`${item.bullet} [[${item.target}]]`);
+      // Sanitize-driven render rule (both AI and non-AI paths). When the
+      // sanitized filename differs from the display name (slash / reserved
+      // chars), emit an aliased link `[[fn|display]]` so the link resolves to
+      // the real (already-sanitized) hub file instead of an orphan folder/note.
+      // Otherwise emit a plain `[[display]]` — preserving every existing
+      // non-slash assertion. parseItems strips the alias back to the display
+      // name, so this is a parse→render fixed point.
+      const fn = sanitizeHubFilename(item.target);
+      const link = fn === item.target ? `[[${item.target}]]` : `[[${fn}|${item.target}]]`;
+      parts.push(`${item.bullet} ${link}`);
     } else {
       parts.push(item.content);
     }
