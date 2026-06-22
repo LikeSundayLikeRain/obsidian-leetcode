@@ -117,4 +117,20 @@ describe('Phase 11 Plan 01 — buildKgPrompt pure helper', () => {
     expect(out).toMatch(/deque/i);
     expect(out).toContain('LC 239');
   });
+
+  it('prompt carries the three classifier-tuning edits (260622-00d)', () => {
+    const out = buildKgPrompt({
+      problemMd: 'Some problem.',
+      code: 'def foo(): pass',
+      language: 'python3',
+    });
+    // Edit #1 — verbatim-names constraint
+    expect(out).toContain('verbatim capitalization and punctuation');
+    expect(out).toContain('"1-D Dynamic Programming", not "1-d"');
+    // Edit #2 — demote enabling steps (appended to rule 1)
+    expect(out).toContain('frequently enabling steps, not the primary insight');
+    // Edit #3 — tighten the second-pattern bar (appended to rule 3)
+    expect(out).toContain('both load-bearing');
+    expect(out).toContain('When in doubt, emit one pattern.');
+  });
 });
